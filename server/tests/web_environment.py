@@ -83,7 +83,15 @@ async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
                 "setup_link": setup_link,
                 "active": {},
             }
-            for role in ("login", "recovery", "password", "layout"):
+            for role in (
+                "login",
+                "recovery",
+                "password",
+                "layout",
+                "registration",
+                "users",
+                "management-errors",
+            ):
                 email = f"ui-admin-{project}-{role}@example.com"
                 await create_admin(database, security, settings, email, ADMIN_PASSWORD)
                 secret = pyotp.random_base32(length=32)

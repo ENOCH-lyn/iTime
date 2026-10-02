@@ -19,7 +19,7 @@ const router = createRouter({
       path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),
       props: { mode },
     })),
-    { path: '/admin/:section(security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
+    { path: '/admin/:section(users|registration|security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
     { path: '/help', component: () => import('./pages/HelpPage.vue') },
     { path: '/:pathMatch(.*)*', component: () => import('./pages/NotFoundPage.vue') },
   ],

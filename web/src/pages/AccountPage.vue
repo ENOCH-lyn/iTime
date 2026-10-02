@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UserRound, KeyRound, Monitor, Palette, LogOut, ArrowUpRight } from 'lucide-vue-next'
+import { ArrowUpRight, CirclePause, KeyRound, LogOut, Monitor, Palette, UserRound } from 'lucide-vue-next'
 import { api, failure, type Failure } from '../lib/api'
 import { authError, authLoading, identity, refreshSession, clearSession, notifySessionChange } from '../lib/auth'
 import AppearanceControls from '../components/AppearanceControls.vue'
@@ -68,8 +68,13 @@ const links = [
       <template v-else-if="identity">
         <template v-if="section === 'overview'">
           <p class="page-description">管理你的账号，以及可以访问它的设备。</p>
+          <div v-if="identity.user.ai_access === 'frozen'" class="status restriction-status" role="status">
+            <CirclePause :size="20" aria-hidden="true" />
+            <p>此账号的 AI 功能已暂停，手动查看和编辑仍可使用。</p>
+          </div>
           <dl class="account-details">
             <div><dt>邮箱</dt><dd class="wrap-anywhere">{{ identity.user.email }}<span class="verified-label">已验证</span></dd></div>
+            <div><dt>AI 功能</dt><dd>{{ identity.user.ai_access === 'allowed' ? '可用' : '已暂停' }}</dd></div>
             <div><dt>当前会话到期</dt><dd>{{ new Date(identity.expires_at).toLocaleString('zh-CN') }}<small>按当前设备时区显示</small></dd></div>
           </dl>
           <div class="setting-links">

@@ -17,6 +17,8 @@
   --error-bg: #fff4f1;
   --error-border: #e9c6c0;
   --notice-bg: #f3ead5;
+  --notice-text: #76591d;
+  --notice-border: #c9a85f;
   --radius: 10px;
 }
 :root[data-theme="dark"] {
@@ -36,6 +38,8 @@
   --error-bg: #422f2a;
   --error-border: #745248;
   --notice-bg: #403c2d;
+  --notice-text: #e3c77f;
+  --notice-border: #806e42;
 }
 :root[data-font-size="large"] { font-size: 18px; }
 :root[data-font-size="larger"] { font-size: 20px; }

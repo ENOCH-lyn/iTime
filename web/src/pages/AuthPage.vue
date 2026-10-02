@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, ArrowLeft, MailCheck } from 'lucide-vue-next'
 import FormField from '../components/FormField.vue'
 import StatusMessage from '../components/StatusMessage.vue'
@@ -9,6 +9,7 @@ import { api, failure, localFailure, passwordError, type Failure, type Policy } 
 import { acceptSession, notifySessionChange, type Session } from '../lib/auth'
 
 const props = defineProps<{ mode: string }>()
+const route = useRoute()
 const router = useRouter()
 const copy: Record<string, { title: string; description: string; action: string }> = {
   login: { title: '欢迎回来', description: '登录 iTime，继续整理你的时间。', action: '登录' },
@@ -32,6 +33,7 @@ const loadingPolicy = ref(true)
 const pending = ref(false)
 const finished = ref(false)
 const token = ref('')
+const invitationToken = ref('')
 const cooldown = ref(0)
 let cooldownUntil = 0
 let timer: number | undefined
@@ -40,6 +42,19 @@ const passwordHint = computed(() => policy.value
   : '')
 const passwordLabel = computed(() => props.mode === 'reset-password' ? '新密码' : '密码')
 const mailFlow = computed(() => ['register', 'resend-verification', 'forgot-password'].includes(props.mode))
+const invitationRequired = computed(() =>
+  props.mode === 'register' && policy.value?.registration_mode === 'invite')
+
+watch(() => route.hash, hash => {
+  if (!hash || (!needsToken.value && props.mode !== 'register')) return
+  const fragment = new URLSearchParams(hash.slice(1))
+  token.value = fragment.get('token') ?? ''
+  invitationToken.value = fragment.get('invite') ?? ''
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token.value)) token.value = ''
+  if (!/^[A-Za-z0-9_-]{43}$/.test(invitationToken.value)) invitationToken.value = ''
+  // Keep secrets out of history, storage, referrers, and later navigations.
+  void router.replace({ path: route.path, query: route.query, hash: '' })
+}, { immediate: true })
 
 async function loadPolicy() {
   loadingPolicy.value = true
@@ -50,16 +65,16 @@ async function loadPolicy() {
 }
 onMounted(() => {
   document.title = `${info.value.title} · iTime`
-  if (needsToken.value) {
-    token.value = new URLSearchParams(location.hash.slice(1)).get('token') ?? ''
-    // Keep secrets out of history, storage, referrers, and later navigations.
-    void router.replace({ path: router.currentRoute.value.path, hash: '' })
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token.value)) token.value = ''
-  }
   void loadPolicy()
   timer = window.setInterval(() => { cooldown.value = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) }, 500)
 })
-onUnmounted(() => { clearInterval(timer); token.value = ''; values.password = ''; values.confirmation = '' })
+onUnmounted(() => {
+  clearInterval(timer)
+  token.value = ''
+  invitationToken.value = ''
+  values.password = ''
+  values.confirmation = ''
+})
 
 function validate(field: 'email' | 'password' | 'confirmation') {
   if (field === 'email') errors.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()) ? '' : '请输入完整的邮箱地址。'
@@ -83,6 +98,10 @@ async function submit() {
     error.value = localFailure('此页面没有有效的邮件链接。请重新打开邮件，或重新发送。')
     return
   }
+  if (invitationRequired.value && !invitationToken.value) {
+    error.value = localFailure('当前仅接受邀请注册，请打开管理员提供的邀请链接。')
+    return
+  }
   pending.value = true
   try {
     const email = values.email.trim()
@@ -97,12 +116,17 @@ async function submit() {
     } else {
       const body = needsToken.value
         ? { token: token.value, [props.mode === 'reset-password' ? 'new_password' : 'password']: values.password }
-        : { email, ...(props.mode === 'register' ? { password: values.password } : {}) }
+        : {
+            email,
+            ...(props.mode === 'register'
+              ? { password: values.password, invitation_token: invitationToken.value || undefined }
+              : {}),
+          }
       const result = await api<{ message: string }>(`/auth/${props.mode}`, body)
       success.value = result.message
       finished.value = true
       if (mailFlow.value) startCooldown()
-      else { token.value = ''; notifySessionChange() }
+      else { token.value = ''; invitationToken.value = ''; notifySessionChange() }
     }
     values.password = ''; values.confirmation = ''
   } catch (err) {
@@ -164,6 +188,9 @@ async function resend() {
             <StatusMessage :error="error" :retry-label="!policy && !loadingPolicy ? '重新连接' : undefined" @retry="loadPolicy" />
             <p v-if="loadingPolicy" role="status" class="muted">正在连接账号服务…</p>
             <form v-if="policy" novalidate :aria-busy="pending" @submit.prevent="submit">
+              <p v-if="invitationRequired" class="invitation-notice" :class="{ 'missing-invitation': !invitationToken }">
+                {{ invitationToken ? '此注册将使用邮箱专属邀请。' : '当前仅接受邀请注册，请打开管理员提供的邀请链接。' }}
+              </p>
               <FormField v-if="needsEmail" id="email" v-model="values.email" label="邮箱" type="email" autocomplete="username"
                 :error="errors.email" :disabled="pending" @blur="validate('email')" />
               <FormField v-if="needsPassword" id="password" v-model="values.password" :label="passwordLabel" type="password"
@@ -172,12 +199,14 @@ async function resend() {
               <FormField v-if="needsConfirmation" id="confirmation" v-model="values.confirmation" label="确认密码" type="password"
                 autocomplete="new-password" :error="errors.confirmation" :disabled="pending" @blur="validate('confirmation')" />
               <div v-if="mode === 'login'" class="form-meta"><RouterLink to="/forgot-password">忘记密码？</RouterLink></div>
-              <button class="button full-width" type="submit" :disabled="pending || (needsToken && !token)">
+              <button class="button full-width" type="submit"
+                :disabled="pending || (needsToken && !token) || (invitationRequired && !invitationToken)">
                 {{ pending ? '正在处理…' : info.action }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
               </button>
               <p v-if="mode === 'login'" class="field-hint">本次登录最长保留 {{ Math.round(policy.session_hours / 24 * 10) / 10 }} 天。公共设备使用后请退出。</p>
             </form>
-            <p v-if="mode === 'login'" class="auth-switch">还没有账号？<RouterLink to="/register">创建账号</RouterLink></p>
+            <p v-if="mode === 'login' && policy?.registration_mode === 'open'" class="auth-switch">还没有账号？<RouterLink to="/register">创建账号</RouterLink></p>
+            <p v-else-if="mode === 'login'" class="auth-switch">当前仅接受邀请注册</p>
             <p v-else-if="mode === 'register'" class="auth-switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
             <RouterLink v-if="['verify-email', 'login'].includes(mode)" to="/resend-verification" class="secondary-link">重新发送验证邮件</RouterLink>
             <RouterLink v-if="mode === 'reset-password'" to="/forgot-password" class="secondary-link">重新获取重设链接</RouterLink>

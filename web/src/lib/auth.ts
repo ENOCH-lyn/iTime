@@ -2,7 +2,14 @@ import { ref } from 'vue'
 import { api, setCsrf, type Failure, failure, ApiError } from './api'
 
 export interface Session {
-  user: { id: string; email: string; email_verified: boolean; is_admin: boolean; created_at: string }
+  user: {
+    id: string
+    email: string
+    email_verified: boolean
+    ai_access: 'allowed' | 'frozen'
+    is_admin: boolean
+    created_at: string
+  }
   session_id: string
   expires_at: string
   csrf_token: string

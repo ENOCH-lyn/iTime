@@ -76,6 +76,7 @@ export interface Policy {
   verification_minutes: number
   password_reset_minutes: number
   mail_cooldown_seconds: number
+  registration_mode: 'open' | 'invite'
 }
 
 export function passwordError(value: string, policy: Policy) {

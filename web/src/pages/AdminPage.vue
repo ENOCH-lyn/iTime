@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ExternalLink, FileKey2, KeyRound, LogOut, Palette, ShieldCheck } from 'lucide-vue-next'
+import { ExternalLink, FileKey2, KeyRound, LogOut, MailPlus, Palette, ShieldCheck, Users } from 'lucide-vue-next'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import AdminPasswordSettings from '../components/AdminPasswordSettings.vue'
 import AdminRecoverySettings from '../components/AdminRecoverySettings.vue'
+import AdminRegistrationSettings from '../components/AdminRegistrationSettings.vue'
+import AdminUserManagement from '../components/AdminUserManagement.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import { adminAuthError, adminAuthLoading, adminIdentity, clearAdminSession, notifyAdminSessionChange, refreshAdminSession } from '../lib/admin'
 import { api, failure, type Failure } from '../lib/api'
@@ -13,7 +15,8 @@ const route = useRoute()
 const router = useRouter()
 const section = computed(() => String(route.params.section ?? 'security'))
 const titles: Record<string, string> = {
-  security: '账号安全', password: '修改密码', recovery: '恢复码', appearance: '外观',
+  users: '用户管理', registration: '注册与邀请', security: '账号安全',
+  password: '修改密码', recovery: '恢复码', appearance: '外观',
 }
 const pending = ref(false)
 const booted = ref(false)
@@ -40,6 +43,8 @@ async function logout() {
   finally { pending.value = false }
 }
 const links = [
+  { to: '/admin/users', title: '用户管理', icon: Users },
+  { to: '/admin/registration', title: '注册与邀请', icon: MailPlus },
   { to: '/admin/security', title: '账号安全', icon: ShieldCheck },
   { to: '/admin/password', title: '修改密码', icon: KeyRound },
   { to: '/admin/recovery', title: '恢复码', icon: FileKey2 },
@@ -71,7 +76,9 @@ const links = [
       <StatusMessage :error="adminAuthError" :retry-label="adminAuthError?.retryable ? '重新连接' : undefined" @retry="refresh" />
       <p v-if="!booted || (!adminIdentity && adminAuthLoading)" role="status" class="muted">正在验证管理身份…</p>
       <template v-else-if="adminIdentity">
-        <template v-if="section === 'security'">
+        <AdminUserManagement v-if="section === 'users'" />
+        <AdminRegistrationSettings v-else-if="section === 'registration'" />
+        <template v-else-if="section === 'security'">
           <p class="page-description">管理会话与普通用户登录相互独立。</p>
           <dl class="account-details">
             <div><dt>管理员邮箱</dt><dd class="wrap-anywhere">{{ adminIdentity.admin.email }}</dd></div>
@@ -85,7 +92,7 @@ const links = [
         </template>
         <AdminPasswordSettings v-else-if="section === 'password'" />
         <AdminRecoverySettings v-else-if="section === 'recovery'" />
-        <template v-else>
+        <template v-else-if="section === 'appearance'">
           <p class="page-description">选择管理后台的显示方式。</p>
           <AppearanceControls />
         </template>

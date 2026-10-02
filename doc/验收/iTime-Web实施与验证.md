@@ -185,4 +185,32 @@
 | `uv run alembic upgrade head && uv run alembic check` | `0004_user_management (head)`，无模型漂移 | 开发库迁移与 ORM 一致 |
 | `uv build --no-sources` | 通过 | sdist 和 wheel |
 
-Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效小时数，没有把界面建议值写成固定运营期限；没有实现申诉；AI 在途作业的取消、继续与结算留待 AI/额度状态机确定。对应注册和后台管理页面将在 M2-F 验证，因此本节不代表 UI 已完成。
+Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效小时数，没有把界面建议值写成固定运营期限；没有实现申诉；AI 在途作业的取消、继续与结算留待 AI/额度状态机确定。对应注册和后台管理页面见 M2-F；本节只记录服务证据。
+
+## M2-F：邀请注册与用户状态管理 Web 页面
+
+对应 Git 提交主题：`feat: 完成邀请注册与后台用户管理页面`。实际代码为 `web/src/components/AdminRegistrationSettings.vue`、`AdminUserManagement.vue`、邀请注册页面接入、`web/e2e/admin-management.spec.ts` 及隔离环境数据准备。
+
+已实现：
+
+- `/admin/registration` 切换开放/邀请注册；创建邮箱绑定邀请、一次复制链接、按状态筛选和撤销未使用邀请。
+- `/register` 根据公开策略显示注册入口；邀请 fragment 在首次进入和同页打开新链接时均立即清除，无邀请时不能在邀请制下提交。
+- `/admin/users` 搜索和筛选用户，分别冻结 AI、停用账号及恢复；确认对话框明确对会话、邮件链接和手动功能的影响。
+- `/account` 展示本人 AI 暂停状态；冻结 AI 不退出普通账号，停用账号则使现有页面刷新后返回登录。
+- 管理列表覆盖空、加载、失败、分页和版本冲突恢复；管理员账号不提供普通用户状态按钮。
+
+2026-10-02 在 Playwright Chromium 153、本地随机 PostgreSQL、真实 API、邮件工作进程、Mailpit 和生产构建预览中执行：
+
+| 命令（`web/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `pnpm build` | 通过 | Vue TypeScript 检查和 Vite 生产构建 |
+| `pnpm exec playwright test e2e/admin-management.spec.ts` | **9 passed in 24.2s** | 3 条邀请/状态/恢复流程 × 电脑、手机、平板 |
+| `pnpm test:e2e` | **51 passed in 1.7m** | 17 条账号、管理认证和用户管理流程 × 三种视口全量回归 |
+| `uv run ruff check .` | 通过 | 更新后的隔离浏览器环境及全部 Python 静态检查 |
+| `uv run pytest -q` | **45 passed in 31.14s** | 服务端全量回归 |
+
+动态覆盖邀请模式切换、邮箱错误后继续使用原邀请、真实注册和邮件入队、链接只显示一次且 fragment/Web Storage 不留令牌、邀请状态刷新、AI 冻结后普通账号继续、停用会话即时失效、恢复后重新登录、筛选空状态、网络失败恢复、两个后台页面的版本冲突、输入校验焦点、控制台异常、axe 及横向溢出。
+
+浏览器验证使用 1440×1000、390×844、768×1024，并在每个项目中额外切换到 320×700。截图位于 `/tmp/itime-ui-evidence/*admin-management*`；实际检查确认长邮箱、邀请链接、操作按钮和移动导航没有重叠或越界。第一轮测试使用不可见 radio 的 `check()` 导致标签拦截，改为真实点击分段标签；随后同页打开邀请链接暴露 fragment 未重新消费的产品问题，已通过监听路由 hash 并立即替换历史记录修复。
+
+仍未验证真实 Edge、实体手机/平板、正式邀请交付渠道和外部生产邮件。邀请默认运营期限、申诉及 AI 在途作业处理仍待确认；额度、AI 配置、正文/日志、审计和质检后台仍未实现。

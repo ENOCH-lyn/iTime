@@ -5,10 +5,14 @@ import { Eye, EyeOff } from 'lucide-vue-next'
 const props = defineProps<{
   id: string
   label: string
-  type?: 'text' | 'email' | 'password'
+  type?: 'text' | 'email' | 'password' | 'number'
   autocomplete?: string
   inputmode?: 'text' | 'numeric'
   maxlength?: number
+  min?: number
+  max?: number
+  step?: number
+  readonly?: boolean
   hint?: string
   error?: string
   disabled?: boolean
@@ -27,7 +31,8 @@ watch(() => [props.hint, props.error], values => {
     <label :for="id">{{ label }}</label>
     <div class="input-wrap">
       <input :id="id" v-model="model" :name="id" :type="type === 'password' && visible ? 'text' : (type ?? 'text')"
-        :autocomplete="autocomplete" :inputmode="inputmode" :maxlength="maxlength" :disabled="disabled"
+        :autocomplete="autocomplete" :inputmode="inputmode" :maxlength="maxlength" :min="min" :max="max"
+        :step="step" :readonly="readonly" :disabled="disabled"
         :spellcheck="false" :aria-invalid="!!error"
         :aria-describedby="[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined"
         :class="{ 'password-input': type === 'password' }" @blur="$emit('blur')" />
