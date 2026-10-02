@@ -819,6 +819,163 @@
   gap: 7px;
 }
 
+.task-schedule-editor > .status {
+  margin: 16px 0;
+}
+
+.task-schedule-editor > .editor-section-heading svg {
+  color: var(--accent);
+}
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.schedule-grid input,
+.schedule-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.schedule-splittable {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.task-schedule-editor .schedule-splittable input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.recurrence-grid {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.inline-number-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-number-field > span {
+  min-width: 1.5rem;
+  color: var(--muted);
+  font-size: .8125rem;
+}
+
+.weekday-field,
+.schedule-end-field {
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.weekday-field legend,
+.schedule-end-field legend {
+  margin-bottom: 8px;
+  font-size: .8125rem;
+  font-weight: 550;
+}
+
+.weekday-field > div {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(40px, 1fr));
+  gap: 6px;
+}
+
+.weekday-field label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: .8125rem;
+  cursor: pointer;
+}
+
+.weekday-field label.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--selected);
+  font-weight: 600;
+}
+
+.weekday-field input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.weekday-field label:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.schedule-end-field {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 1fr) auto minmax(90px, .55fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-end-field > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: .875rem;
+}
+
+.schedule-end-field input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.schedule-end-field input[type="date"],
+.schedule-end-field input[type="number"] {
+  min-width: 0;
+}
+
+.schedule-end-field .field-error {
+  grid-column: 1 / -1;
+}
+
+.schedule-warning {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--notice-border);
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: .8125rem;
+}
+
+.schedule-warning p {
+  margin-top: 4px;
+}
+
+.schedule-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.schedule-save-row .section-empty {
+  padding: 0;
+}
+
 @media (max-width: 1180px) {
   .task-workspace {
     grid-template-columns: 190px minmax(0, 1fr);
@@ -1036,6 +1193,27 @@
   .task-editor-body,
   .task-editor-footer {
     padding-inline: 18px;
+  }
+
+  .schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-end-field {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .schedule-end-field > span {
+    display: none;
+  }
+
+  .schedule-save-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .schedule-save-row .button {
+    width: 100%;
   }
 
   .task-list-panel {

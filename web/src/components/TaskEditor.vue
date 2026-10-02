@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
+import TaskScheduleEditor from './TaskScheduleEditor.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
   createTask,
@@ -69,6 +70,7 @@ const error = ref<Failure | null>(null)
 const success = ref('')
 const latest = ref<TaskDetail | null>(null)
 const fieldErrors = reactive<Record<string, string>>({})
+const scheduleDirty = ref(false)
 const operations = new Map<string, { id: string; fingerprint: string }>()
 const priorityNames = ['未设置', '低', '中', '高']
 
@@ -84,7 +86,8 @@ const dirty = computed(() => {
     )
   }
   if (!working.value) return false
-  return values.title !== working.value.title
+  return scheduleDirty.value
+    || values.title !== working.value.title
     || values.description !== working.value.description
     || values.project_id !== (working.value.project?.id ?? '')
     || String(values.estimated_minutes) !== (working.value.estimated_minutes?.toString() ?? '')
@@ -118,6 +121,7 @@ onUnmounted(() => {
 })
 
 function resetFields(task: TaskDetail | null) {
+  scheduleDirty.value = false
   values.title = task?.title ?? ''
   values.description = task?.description ?? ''
   values.project_id = task?.project?.id ?? props.initialProjectId ?? ''
@@ -456,7 +460,8 @@ function isHttpUrl(value: string) {
           <h1>{{ creating ? '记下一件要做的事' : '任务详情' }}</h1>
         </div>
         <div class="task-editor-actions">
-          <button v-if="working" type="button" class="button secondary"
+          <button v-if="working && working.schedule.recurrence.frequency === 'none'"
+            type="button" class="button secondary"
             :disabled="!!pendingAction" @click="toggleCompletion">
             <RotateCcw v-if="working.status === 'completed'" :size="17" aria-hidden="true" />
             <CheckCircle2 v-else :size="17" aria-hidden="true" />
@@ -542,6 +547,13 @@ function isHttpUrl(value: string) {
             </div>
           </div>
         </section>
+
+        <TaskScheduleEditor
+          v-if="working"
+          :task="working"
+          @updated="applyTask"
+          @dirty="scheduleDirty = $event"
+        />
 
         <section class="editor-section" aria-labelledby="task-steps-title">
           <div class="editor-section-heading">

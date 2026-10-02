@@ -166,6 +166,74 @@ test('项目、任务、步骤、链接、明确完成、搜索和持久化形�
   await screenshot(page, info, 'complete-detail')
 })
 
+test('任务截止、重复规则和拆分偏好保存到服务端并生成独立实例', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  await createSimpleTask(page, '每日整理实验记录')
+  await openTask(page, '每日整理实验记录')
+
+  await page.getByLabel('截止类型').selectOption('datetime')
+  await page.getByLabel('截止日期', { exact: true }).fill('2030-10-07')
+  await page.getByLabel('截止时刻', { exact: true }).fill('18:30')
+  await page.getByLabel('最小连续时长').fill('30')
+  await page.getByLabel('规划时允许拆成多个时间块').uncheck()
+  await page.getByLabel('重复方式').selectOption('daily')
+  await page.getByLabel('每隔').fill('1')
+  await page.getByLabel('共').check()
+  await page.getByLabel('重复次数').fill('3')
+  await page.getByRole('button', { name: '保存日期与重复', exact: true }).click()
+
+  await expect(page.getByText('日期与重复设置已保存。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '标为完成', exact: true })).toHaveCount(0)
+  const response = await page.request.get(
+    '/api/v1/task-occurrences?start=2030-10-07&end=2030-10-10',
+  )
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  expect(payload.items).toHaveLength(3)
+  expect(payload.items.map((item: { due_time: string }) => item.due_time)).toEqual([
+    '18:30:00',
+    '18:30:00',
+    '18:30:00',
+  ])
+  expect(payload.items.every((item: {
+    splittable: boolean
+    minimum_block_minutes: number
+    occurrence_version: number
+  }) => (
+    item.splittable === false
+    && item.minimum_block_minutes === 30
+    && item.occurrence_version === 0
+  ))).toBeTruthy()
+
+  await page.reload()
+  await openTask(page, '每日整理实验记录')
+  await expect(page.getByLabel('截止类型')).toHaveValue('datetime')
+  await expect(page.getByLabel('截止日期', { exact: true })).toHaveValue('2030-10-07')
+  await expect(page.getByLabel('截止时刻', { exact: true })).toHaveValue('18:30')
+  await expect(page.getByLabel('重复方式')).toHaveValue('daily')
+  await expect(page.getByLabel('重复次数')).toHaveValue('3')
+  await expect(page.getByLabel('规划时允许拆成多个时间块')).not.toBeChecked()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await screenshot(page, info, 'schedule-detail')
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'light', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.reload()
+    await openTask(page, '每日整理实验记录')
+    await page.getByRole('heading', { name: '日期与重复' }).scrollIntoViewIfNeeded()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'schedule-320-large-font')
+  }
+})
+
 test('批量版本冲突由真实第二页面触发且整批不部分保存', async ({
   page,
   request,

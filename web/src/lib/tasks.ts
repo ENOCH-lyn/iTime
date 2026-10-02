@@ -1,4 +1,5 @@
 import { api } from './api'
+import type { TaskSchedule } from './task-schedules'
 
 export type ProjectKind = 'project' | 'goal'
 export type TaskStatus = 'open' | 'completed'
@@ -76,6 +77,7 @@ export interface TaskSummary {
   labels: Label[]
   step_progress: { total: number; completed: number }
   link_count: number
+  schedule: TaskSchedule
   created_at: string
   updated_at: string
 }
