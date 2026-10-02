@@ -15,6 +15,7 @@ interface ActiveAdmin {
 interface Bootstrap {
   project: string
   password: string
+  ai_endpoint: string
   active: Record<string, ActiveAdmin>
 }
 
@@ -284,4 +285,47 @@ test('管理列表可从网络失败和版本冲突恢复并适配窄屏', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, 'registration-320')
+})
+
+test('创建、测试、发布并回滚截图识别配置', async ({ page }, info) => {
+  const data = await bootstrap(info)
+  await loginAdmin(page, data.active['ai-config']!, data.password)
+  await page.goto('/admin/ai')
+  await expect(page).toHaveTitle('AI 配置 · iTime 管理后台')
+  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible()
+
+  const key = `sk-ui-${randomUUID()}`
+  const model = `vision-ui-${info.project.name}-${randomUUID().slice(0, 8)}`
+  await page.getByLabel('OpenAI 兼容端点', { exact: true }).fill(data.ai_endpoint)
+  await page.getByLabel('模型', { exact: true }).fill(model)
+  await page.getByLabel('API Key', { exact: true }).fill(key)
+  await page.getByLabel('单次超时（秒）', { exact: true }).fill('10')
+  await page.getByLabel('最大输出 Token', { exact: true }).fill('2048')
+  await page.getByRole('button', { name: '保存新版本', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已保存为草稿')
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
+  await expect(page.locator('body')).not.toContainText(key)
+
+  const row = page.locator('.ai-config-list li').filter({ hasText: model })
+  await expect(row.getByText('草稿', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: '测试', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已通过合成图片测试')
+  await expect(row.getByText('测试通过', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: '发布', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已发布')
+  await expect(row.getByText('当前发布', { exact: true })).toBeVisible()
+
+  const historical = page.locator('.ai-config-list li').filter({
+    has: page.getByText('历史版本', { exact: true }),
+  }).first()
+  await historical.getByRole('button', { name: '回滚', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已回滚到版本')
+  await expect(page.locator('.ai-config-list').getByText('当前发布', { exact: true })).toHaveCount(1)
+  await expect(row.getByText('历史版本', { exact: true })).toBeVisible()
+
+  expect(await page.locator('vite-error-overlay').count()).toBe(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await page.evaluate(() => scrollTo(0, 0))
+  await screenshot(page, info, 'ai-config-published')
 })

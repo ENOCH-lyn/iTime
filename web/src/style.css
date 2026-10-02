@@ -177,6 +177,14 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .management-filters select { min-height: 48px; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .protected-admin { align-self: center; }
+.ai-config-settings { max-width: 920px; }
+.ai-config-form { max-width: 760px; }
+.ai-config-number-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.ai-config-submit { width: fit-content; }
+.ai-config-list li { align-items: center; }
+.ai-config-list .management-primary > p + p { margin-top: 2px; }
+.state-label[data-state="published"], .state-label[data-state="tested"] { color: var(--accent); border-color: var(--accent); }
+.state-label[data-state="draft"] { color: var(--notice-text); border-color: var(--notice-border); }
 .dialog-target { margin-bottom: 8px; color: var(--text); font-weight: 550; }
 .invitation-notice { padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--selected); font-size: .875rem; }
 .invitation-notice.missing-invitation { border-color: var(--notice-border); background: var(--notice-bg); }
@@ -216,6 +224,8 @@ dialog p { font-size: .9375rem; color: var(--muted); }
   .admin-wordmark span { display: block; }
   .recovery-code-list { grid-template-columns: 1fr; }
   .recovery-actions .button { width: 100%; }
+  .ai-config-number-grid { grid-template-columns: 1fr; }
+  .ai-config-submit { width: 100%; }
 }
 @media (max-width: 360px) {
   .sidebar-bottom { flex-direction: column; align-items: flex-start; }

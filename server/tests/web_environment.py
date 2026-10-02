@@ -9,9 +9,12 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import ExitStack, contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pyotp
@@ -21,6 +24,7 @@ from sqlalchemy.engine import make_url
 from itime.admin.models import AdminCredential, AdminEnrollment, AdminRecoveryCode
 from itime.admin.operations import create_admin
 from itime.admin.security import normalize_recovery_code
+from itime.ai.models import AIConfigCapability, AIConfigVersion
 from itime.auth.models import User
 from itime.auth.security import Security, now
 from itime.config import Settings
@@ -29,6 +33,92 @@ from tests.conftest import SERVER, isolated_database
 
 WEB = SERVER.parent / "web"
 ADMIN_PASSWORD = "Playwright-admin-password-123"
+
+
+def recognized_calendar_draft() -> dict:
+    return {
+        "kind": "fixed",
+        "term_id": None,
+        "name": "高等数学",
+        "description": "",
+        "location": "教学楼 A101",
+        "busy": True,
+        "time_zone": "Asia/Shanghai",
+        "start_date": "2026-10-05",
+        "starts_at": "09:00:00",
+        "ends_at": "10:30:00",
+        "end_day_offset": 0,
+        "start_period_number": None,
+        "end_period_number": None,
+        "ambiguous_utc_offset_minutes": None,
+        "recurrence": {
+            "frequency": "none",
+            "interval": 1,
+            "weekdays": [],
+            "month": None,
+            "day_of_month": None,
+            "until": None,
+            "count": None,
+            "week_numbers": [],
+        },
+    }
+
+
+class FakeAIHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length))
+        prompt = json.dumps(body.get("messages", []), ensure_ascii=False)
+        content = (
+            '{"marker":"09:00"}'
+            if "synthetic vision endpoint check" in prompt
+            else json.dumps(
+                {
+                    "items": [
+                        {
+                            "raw_text": "周一 09:00 高等数学",
+                            "confidence": 0.98,
+                            "warnings": [],
+                            "draft": recognized_calendar_draft(),
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+        encoded = json.dumps(
+            {"choices": [{"message": {"content": content}}]}
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("x-request-id", "playwright-fake-ai")
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def log_message(self, format: str, *args) -> None:
+        pass
+
+
+@contextmanager
+def fake_ai_server():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeAIHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 @contextmanager
@@ -61,7 +151,11 @@ def ready(url, child, log_path):
     raise RuntimeError(f"UI 测试服务未就绪，请检查 {log_path}")
 
 
-async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
+async def seed_admins(
+    database_url: str,
+    public_origin: str,
+    ai_endpoint: str,
+) -> list[dict]:
     settings = Settings(
         database_url=database_url,
         environment="test",
@@ -79,6 +173,7 @@ async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
             entry = {
                 "project": project,
                 "password": ADMIN_PASSWORD,
+                "ai_endpoint": ai_endpoint,
                 "setup_email": setup_email,
                 "setup_link": setup_link,
                 "active": {},
@@ -91,6 +186,7 @@ async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
                 "registration",
                 "users",
                 "management-errors",
+                "ai-config",
             ):
                 email = f"ui-admin-{project}-{role}@example.com"
                 await create_admin(database, security, settings, email, ADMIN_PASSWORD)
@@ -128,6 +224,31 @@ async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
                     "recovery_code": recovery,
                 }
             result.append(entry)
+        current = now()
+        async with database.transaction() as session:
+            state = await session.get(
+                AIConfigCapability,
+                "calendar_screenshot",
+                with_for_update=True,
+            )
+            config = AIConfigVersion(
+                capability="calendar_screenshot",
+                version=state.next_version,
+                endpoint_url=ai_endpoint,
+                model="vision-test-model",
+                api_key_ciphertext=security.ai_cipher.encrypt(b"playwright-ai-key"),
+                timeout_seconds=10,
+                max_output_tokens=4096,
+                status="published",
+                last_test_id=uuid4(),
+                last_test_started_at=current,
+                last_test_completed_at=current,
+                published_at=current,
+            )
+            state.next_version += 1
+            session.add(config)
+            await session.flush()
+            state.current_version_id = config.id
         return result
     finally:
         await database.close()
@@ -146,11 +267,12 @@ def main():
         sock.bind(("127.0.0.1", 0))
         api_port = sock.getsockname()[1]
     with ExitStack() as stack:
+        ai_endpoint = stack.enter_context(fake_ai_server())
         url = stack.enter_context(isolated_database(
             parsed.set(database="postgres").render_as_string(hide_password=False)
         ))
         public_origin = "http://localhost:4173"
-        payload = asyncio.run(seed_admins(url, public_origin))
+        payload = asyncio.run(seed_admins(url, public_origin, ai_endpoint))
         configured_file = os.environ.get("ITIME_E2E_BOOTSTRAP_FILE")
         if configured_file:
             bootstrap_file = Path(configured_file)
@@ -183,6 +305,9 @@ def main():
         mail_process = stack.enter_context(process(
             [sys.executable, "-m", "itime.mail_worker"], SERVER, env, logs / "mail.log",
         ))
+        ai_process = stack.enter_context(process(
+            [sys.executable, "-m", "itime.ai.worker"], SERVER, env, logs / "ai.log",
+        ))
         web_process = stack.enter_context(process(
             [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
              "--port", "4173"],
@@ -190,7 +315,10 @@ def main():
         ))
         ready("http://localhost:4173", web_process, logs / "web.log")
         print(f"iTime UI isolated services ready; logs: {logs}", flush=True)
-        while all(child.poll() is None for child in (api_process, mail_process, web_process)):
+        while all(
+            child.poll() is None
+            for child in (api_process, mail_process, ai_process, web_process)
+        ):
             time.sleep(0.5)
         raise RuntimeError(f"UI 测试进程意外退出，请检查 {logs}")
 

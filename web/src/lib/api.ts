@@ -24,11 +24,16 @@ export function setCsrf(value: string) { csrf = value }
 export function setAdminCsrf(value: string) { adminCsrf = value }
 
 // Credentials stay in HttpOnly cookies; CSRF and account data stay in memory.
-export async function api<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
+export async function api<T>(
+  path: string,
+  body?: unknown,
+  method = body === undefined ? 'GET' : 'POST',
+  timeoutMs = 15_000,
+): Promise<T> {
   const requestId = crypto.randomUUID()
   const csrfToken = path.startsWith('/admin/') ? adminCsrf : csrf
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 15_000)
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(`/api/v1${path}`, {
       method, credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
