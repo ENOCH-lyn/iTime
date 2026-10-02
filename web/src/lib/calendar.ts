@@ -37,6 +37,7 @@ export interface CalendarSeries {
   kind: 'course' | 'fixed'
   term_id: string | null
   predecessor_id: string | null
+  source_id: string | null
   name: string
   description: string
   location: string
@@ -72,6 +73,8 @@ export interface CalendarOccurrence {
   occurrence_type: 'base' | 'addition'
   kind: 'course' | 'fixed'
   term_id: string | null
+  source_id: string | null
+  source_type: 'manual' | 'import'
   name: string
   description: string
   location: string

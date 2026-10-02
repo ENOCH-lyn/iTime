@@ -10,6 +10,7 @@ import {
   RefreshCw,
 } from 'lucide-vue-next'
 import CalendarGrid from '../components/CalendarGrid.vue'
+import CalendarImportDialog from '../components/CalendarImportDialog.vue'
 import CalendarNavigation from '../components/CalendarNavigation.vue'
 import CalendarOccurrencePanel from '../components/CalendarOccurrencePanel.vue'
 import CalendarSeriesDialog from '../components/CalendarSeriesDialog.vue'
@@ -54,6 +55,7 @@ const loaded = ref(false)
 const pendingLogout = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
+const importOpen = ref(false)
 const settingsOpen = ref(false)
 const seriesOpen = ref(false)
 const editingSeries = ref<CalendarSeries | null>(null)
@@ -349,6 +351,12 @@ function openCreate() {
   seriesOpen.value = true
 }
 
+async function openImport() {
+  importOpen.value = false
+  await nextTick()
+  importOpen.value = true
+}
+
 async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
   pageError.value = null
   try {
@@ -432,6 +440,7 @@ watch(pageError, value => {
       :series-count="series.length"
       :term-count="terms.length"
       @create-series="openCreate"
+      @open-import="openImport"
       @open-settings="settingsOpen = true"
       @logout="logout"
     />
@@ -538,6 +547,14 @@ watch(pageError, value => {
       :browser-time-zone="browserTimeZone"
       @close="settingsOpen = false"
       @changed="onSettingsChanged"
+    />
+    <CalendarImportDialog
+      :open="importOpen"
+      :terms="terms"
+      :time-zone="settings?.time_zone ?? browserTimeZone"
+      :initial-date="anchor"
+      @close="importOpen = false"
+      @changed="onCalendarChanged"
     />
     <CalendarSeriesDialog
       :open="seriesOpen"

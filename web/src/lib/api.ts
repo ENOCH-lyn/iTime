@@ -63,6 +63,57 @@ export async function api<T>(path: string, body?: unknown, method = body === und
   } finally { window.clearTimeout(timer) }
 }
 
+export async function uploadApi<T>(
+  path: string,
+  file: File,
+  operationId: string,
+): Promise<T> {
+  const requestId = crypto.randomUUID()
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 30_000)
+  try {
+    const response = await fetch(`/api/v1${path}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-CSRF-Token': csrf,
+        'X-Operation-ID': operationId,
+        'X-Request-ID': requestId,
+      },
+      body: file,
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) {
+      if (result?.error?.message) throw new ApiError(result.error, response.status)
+      throw new ApiError({
+        code: 'service_unavailable',
+        message: '服务暂时不可用，请稍后重试。',
+        request_id: response.headers.get('X-Request-ID') ?? requestId,
+        saved: 'unknown',
+        retryable: true,
+      }, response.status)
+    }
+    if (result === null) throw new Error('invalid_response')
+    return result as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError({
+      code: controller.signal.aborted ? 'request_timeout' : 'network_error',
+      message: controller.signal.aborted
+        ? '文件处理超时。请检查导入历史后再重试。'
+        : '无法连接服务。文件尚未确认导入，请检查网络后重试。',
+      request_id: requestId,
+      saved: 'unknown',
+      retryable: true,
+    })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 export function failure(error: unknown): Failure {
   return error instanceof ApiError ? error.info : {
     code: 'unexpected_error', message: '操作未能完成，请稍后重试。',

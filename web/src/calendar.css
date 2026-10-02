@@ -827,6 +827,391 @@
   height: 36px;
 }
 
+.calendar-import-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-width: 980px;
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.calendar-import-dialog > section,
+.calendar-import-dialog > .status,
+.calendar-import-dialog > .dialog-actions {
+  margin-inline: 28px;
+}
+
+.import-dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  align-items: flex-start;
+  padding: 24px 28px 18px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.import-dialog-heading > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.import-close {
+  margin: -8px -8px 0 auto;
+}
+
+.calendar-import-dialog > .status {
+  margin-top: 20px;
+  margin-bottom: 0;
+}
+
+.calendar-import-dialog .success-status p,
+.calendar-import-dialog .error-status p,
+.import-outcome p {
+  color: currentColor;
+}
+
+.import-upload,
+.import-history,
+.import-review {
+  padding-block: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-upload,
+.import-section-heading,
+.import-upload-actions,
+.import-selection-bar,
+.import-confirm-bar,
+.import-editor-heading,
+.import-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.import-upload h3,
+.import-section-heading h3 {
+  font-size: .9375rem;
+}
+
+.import-upload p,
+.import-section-heading p,
+.import-selection-bar,
+.import-confirm-bar,
+.import-history-list small,
+.import-candidate-copy > p,
+.import-editor-heading span {
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.import-upload-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.import-file-button {
+  position: relative;
+  max-width: 260px;
+}
+
+.import-file-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.import-file-button:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.import-section-heading {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.import-history-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.import-history-list > button {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.import-history-list > button:hover,
+.import-history-list > button.selected {
+  background: var(--selected);
+}
+
+.import-history-list > button.selected small {
+  color: var(--text);
+}
+
+.import-history-list > button > span:not(.state-label) {
+  min-width: 0;
+}
+
+.import-history-list strong,
+.import-history-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-history-list strong {
+  font-size: .8125rem;
+}
+
+.state-label[data-state="valid"],
+.state-label[data-state="confirmed"],
+.state-label[data-state="completed"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.state-label[data-state="invalid"],
+.state-label[data-state="expired"] {
+  color: var(--error);
+  border-color: var(--error-border);
+}
+
+.state-label[data-state="duplicate"],
+.state-label[data-state="ready"],
+.state-label[data-state="partially_confirmed"] {
+  color: var(--notice-text);
+  border-color: var(--notice-border);
+}
+
+.import-outcome,
+.import-complete-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  margin-bottom: 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--selected);
+  color: var(--accent);
+  font-size: .8125rem;
+}
+
+.import-selection-bar {
+  min-height: 44px;
+  padding: 4px 0 10px;
+}
+
+.import-candidate-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.import-candidate-list > li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.import-candidate-list > li.candidate-invalid {
+  border-left-color: var(--error);
+}
+
+.import-candidate-list > li.candidate-duplicate {
+  border-left-color: var(--notice-border);
+}
+
+.import-candidate-list > li.candidate-confirmed,
+.import-candidate-list > li.candidate-skipped {
+  border-left-color: var(--border);
+  background: var(--canvas);
+}
+
+.import-candidate-list > li.editing {
+  display: block;
+  padding: 18px;
+}
+
+.import-candidate-select {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 36px;
+}
+
+.import-candidate-select input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.calendar-import-dialog .checkbox-label input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.import-candidate-copy {
+  min-width: 0;
+}
+
+.import-candidate-copy strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: .875rem;
+}
+
+.import-candidate-copy > p {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.import-candidate-copy .import-candidate-error {
+  color: var(--error);
+}
+
+.import-candidate-copy .import-candidate-warning {
+  color: var(--notice-text);
+}
+
+.import-candidate-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.import-candidate-actions .small-icon-button {
+  width: 38px;
+  height: 38px;
+}
+
+.import-confirm-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 16px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.import-confirm-bar .button {
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.import-candidate-editor {
+  gap: 16px;
+}
+
+.import-editor-heading {
+  align-items: flex-start;
+}
+
+.import-editor-heading > div {
+  min-width: 0;
+}
+
+.import-editor-heading strong,
+.import-editor-heading span {
+  display: block;
+}
+
+.import-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.import-editor-grid .span-two {
+  grid-column: 1 / -1;
+}
+
+.import-editor-grid input,
+.import-editor-grid textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.import-editor-grid input {
+  min-height: 44px;
+}
+
+.import-editor-grid textarea {
+  resize: vertical;
+}
+
+.import-busy-field {
+  align-self: end;
+}
+
+.import-editor-actions {
+  justify-content: flex-end;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.import-editor-actions .button {
+  min-height: 42px;
+  padding: 8px 14px;
+  font-size: .8125rem;
+}
+
+.import-dialog-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: 16px 0 24px;
+  margin-top: 0;
+  background: var(--surface);
+}
+
 @media (max-width: 1180px) {
   .calendar-workspace {
     grid-template-columns: 190px minmax(0, 1fr);
@@ -1013,6 +1398,49 @@
 
   .calendar-status {
     padding-inline: 16px;
+  }
+
+  .calendar-import-dialog {
+    width: 100vw;
+    max-width: none;
+    max-height: 100dvh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .calendar-import-dialog > section,
+  .calendar-import-dialog > .status,
+  .calendar-import-dialog > .dialog-actions {
+    margin-inline: 18px;
+  }
+
+  .import-dialog-heading {
+    padding-inline: 18px;
+  }
+
+  .import-upload {
+    display: grid;
+  }
+
+  .import-upload-actions {
+    justify-content: stretch;
+  }
+
+  .import-upload-actions .button {
+    flex: 1 1 160px;
+  }
+
+  .import-history-list {
+    grid-template-columns: 1fr;
+  }
+
+  .import-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .import-editor-grid .span-two {
+    grid-column: 1;
   }
 
   .calendar-grid {
