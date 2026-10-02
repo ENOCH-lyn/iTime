@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_va
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from itime.admin.models import AdminSession
 from itime.auth.mail import queue_email
 from itime.auth.models import DeviceSession, EmailToken, User
 from itime.auth.security import COOKIE_NAME, digest, now, rate_limit
@@ -257,6 +258,11 @@ async def reset(data: ResetInput, request: Request) -> dict:
         await session.execute(
             update(DeviceSession)
             .where(DeviceSession.user_id == user.id, DeviceSession.revoked_at.is_(None))
+            .values(revoked_at=now())
+        )
+        await session.execute(
+            update(AdminSession)
+            .where(AdminSession.user_id == user.id, AdminSession.revoked_at.is_(None))
             .values(revoked_at=now())
         )
         await session.execute(

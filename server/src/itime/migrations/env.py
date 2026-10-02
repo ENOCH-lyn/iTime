@@ -3,6 +3,7 @@ import asyncio
 from alembic import context
 from sqlalchemy.engine import Connection
 
+from itime.admin import models as admin_models  # noqa: F401
 from itime.auth import models as auth_models  # noqa: F401
 from itime.config import get_settings
 from itime.database import Base, Database

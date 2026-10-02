@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=2, gt=0, le=10)
     encryption_key: SecretStr
     session_hours: int = Field(default=24 * 30, ge=1, le=24 * 90)
+    admin_session_hours: int = Field(default=8, ge=1, le=24)
+    admin_setup_minutes: int = Field(default=30, ge=5, le=120)
     verification_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_minutes: int = Field(default=15, ge=5, le=60)
     mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)
