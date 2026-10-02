@@ -65,6 +65,13 @@ class Task(Base):
             "(status = 'completed') = (completed_at IS NOT NULL)",
             name="completion_consistency",
         ),
+        CheckConstraint(
+            "(deleted_at IS NULL AND purge_after IS NULL AND purged_at IS NULL) "
+            "OR (deleted_at IS NOT NULL AND purge_after IS NOT NULL "
+            "AND purge_after >= deleted_at "
+            "AND (purged_at IS NULL OR purged_at >= deleted_at))",
+            name="lifecycle_consistency",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_tasks_id_owner"),
         ForeignKeyConstraint(
             ["project_id", "owner_id"],
@@ -76,6 +83,20 @@ class Task(Base):
         Index("ix_tasks_owner_status_updated", "owner_id", "status", "updated_at", "id"),
         Index("ix_tasks_owner_project_updated", "owner_id", "project_id", "updated_at", "id"),
         Index("ix_tasks_owner_priority_updated", "owner_id", "priority", "updated_at", "id"),
+        Index(
+            "ix_tasks_owner_lifecycle_updated",
+            "owner_id",
+            "deleted_at",
+            "archived_at",
+            "updated_at",
+            "id",
+        ),
+        Index(
+            "ix_tasks_purge_due",
+            "purge_after",
+            "id",
+            postgresql_where=text("deleted_at IS NOT NULL AND purged_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -88,6 +109,10 @@ class Task(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(12), default="open", server_default="open")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -466,7 +491,8 @@ class UserOperation(Base):
     operation_id: Mapped[UUID] = mapped_column(primary_key=True)
     scope: Mapped[str] = mapped_column(String(120))
     request_hash: Mapped[str] = mapped_column(String(64))
-    response: Mapped[dict] = mapped_column(JSONB)
+    response: Mapped[dict | None] = mapped_column(JSONB)
+    response_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -483,7 +509,8 @@ class ChangeEvent(Base):
         CheckConstraint(
             "action IN "
             "('created', 'updated', 'completed', 'reopened', 'deleted', "
-            "'skipped', 'rescheduled')",
+            "'skipped', 'rescheduled', 'archived', 'unarchived', 'restored', "
+            "'purged')",
             name="action",
         ),
         Index("ix_change_events_owner_sequence", "owner_id", "sequence"),

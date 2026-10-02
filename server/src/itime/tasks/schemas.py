@@ -88,6 +88,14 @@ class CompletionInput(OperationInput):
     completed: bool
 
 
+class TaskLifecycleInput(OperationInput):
+    expected_version: int = Field(ge=1)
+
+
+class TaskArchiveInput(TaskLifecycleInput):
+    archived: bool
+
+
 class StepCreate(OperationInput):
     expected_task_version: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=300)

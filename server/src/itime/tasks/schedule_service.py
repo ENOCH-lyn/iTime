@@ -609,6 +609,9 @@ async def query_task_occurrences(
                 )
                 .where(
                     Task.owner_id == owner_id,
+                    Task.archived_at.is_(None),
+                    Task.deleted_at.is_(None),
+                    Task.purged_at.is_(None),
                     TaskSchedule.due_kind != "none",
                     TaskSchedule.start_date < coarse_end,
                     TaskSchedule.last_occurrence_date >= coarse_start,
@@ -620,8 +623,19 @@ async def query_task_occurrences(
     )
     moved_task_ids = set(
         await session.scalars(
-            select(TaskOccurrenceState.task_id).where(
+            select(TaskOccurrenceState.task_id)
+            .join(
+                Task,
+                and_(
+                    Task.id == TaskOccurrenceState.task_id,
+                    Task.owner_id == TaskOccurrenceState.owner_id,
+                ),
+            )
+            .where(
                 TaskOccurrenceState.owner_id == owner_id,
+                Task.archived_at.is_(None),
+                Task.deleted_at.is_(None),
+                Task.purged_at.is_(None),
                 TaskOccurrenceState.effective_date >= coarse_start,
                 TaskOccurrenceState.effective_date < coarse_end,
                 or_(
@@ -645,6 +659,9 @@ async def query_task_occurrences(
                     .where(
                         Task.owner_id == owner_id,
                         Task.id.in_(missing_ids),
+                        Task.archived_at.is_(None),
+                        Task.deleted_at.is_(None),
+                        Task.purged_at.is_(None),
                     )
                 )
             ).all()

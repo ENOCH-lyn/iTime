@@ -34,6 +34,7 @@ from itime.tasks.schemas import (
 )
 from itime.tasks.service import (
     emit_change,
+    ensure_task_readable,
     locked_task,
     replay_operation,
     save_operation,
@@ -138,6 +139,7 @@ async def get_task_schedule(task_id: UUID, request: Request) -> dict:
         )
         if task is None:
             raise AppError("task_not_found", "未找到此任务。", status=404)
+        ensure_task_readable(task)
         schedule = await identity.session.scalar(
             select(TaskSchedule).where(
                 TaskSchedule.task_id == task_id,

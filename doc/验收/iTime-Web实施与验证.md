@@ -1,6 +1,6 @@
 # iTime Web 实施与验证
 
-更新：2026-10-02。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
+更新：2026-10-03。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
 
 ## M1-A：服务运行基础
 
@@ -723,3 +723,30 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 | `cd web && pnpm test:e2e` | **105 passed in 4.2m** | 账号、后台、任务、日历、导入、订阅和全部公开页面 Chromium 回归 |
 
 浏览器流程真实访问帮助锚点、协议和隐私路由，核对 7 天日志、30 天样本及“已实现/待实现”状态。三个视口均验证 axe、控制台、API 500 和根级横向溢出；修复了可滚动表格键盘焦点，并将手机表格进一步改为完整标签列表。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-privacy.png` 与 `desktop-public-privacy-320-large-font.png`，已人工检查。正式运营主体/供应商/地区仍是发布前配置与披露项；真实 Edge 和实体设备仍未验证。
+
+## M6-A：任务归档与 30 天回收站服务
+
+对应 Git 提交主题：`feat: 实现任务归档与回收站服务`。实际代码为迁移 `0016_task_lifecycle`、`tasks/lifecycle_service.py`、生命周期 API、任务/日历过滤、独立清理进程及 `server/tests/test_task_lifecycle.py`；完整合同见[任务生命周期设计](../设计/iTime-任务生命周期设计.md)。
+
+已实现：
+
+- 任务完成与归档正交；活动、已归档、回收站三个范围可独立分页筛选。默认任务列表、项目/标签计数和任务日历 occurrence 只包含活动任务。
+- 归档、取消归档、删除和恢复均使用本人权限、CSRF、操作幂等、任务行锁与乐观版本。归档或回收站任务的普通编辑、完成、步骤、批量、截止、实例及拆分写入统一拒绝。
+- 删除保留原归档与完成状态、步骤、链接、标签、日期/重复规则和实例事实，固定在服务端删除时间后 30×24 小时到期；恢复回到删除前活动或归档范围。
+- 生命周期变化清空旧任务操作的缓存响应正文但保留操作号、范围和请求哈希。旧操作同内容重放返回“结果已过期”，不同内容仍拒绝复用，不能以响应丢失或离线重放复活任务。
+- `python -m itime.tasks.cleanup_worker` 以每批 100 条和 PostgreSQL `FOR UPDATE SKIP LOCKED` 清理到期任务。正文、项目、估时、完成事实及直接关联明细被清空，任务 ID、所有者、删除时间、版本和 `purged` 事件保留为墓碑；重复任务后继外键继续有效。
+
+2026-10-03 在本地 PostgreSQL 18.6 和真实 Uvicorn HTTP 中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q tests/test_task_lifecycle.py` | **10 passed in 8.60s** | 三种范围、计数、恢复、所有权、幂等/版本、全部写入阻断、日历隐藏、到期脱敏、双 worker 与独立进程 |
+| `uv run pytest -q tests/test_foundation.py::test_migrations_round_trip_in_disposable_database tests/test_tasks.py tests/test_task_schedules.py` | **15 passed in 26.26s** | 迁移往返及原任务/日期回归 |
+| `uv run pytest -q` | **170 passed in 128.56s** | 服务端真实 HTTP/PostgreSQL 全量回归 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic current && uv run alembic check` | `0016_task_lifecycle (head)`，无模型漂移 | 开发库与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+专项清理测试实际建立带步骤、链接、标签、重复日程及后继系列的任务，推进到期时间后确认正文和直接关联表已清空、后继前序外键仍指向墓碑、旧操作响应为空且哈希保留。两个独立数据库连接并发领取三条到期任务时分别处理 2 条和 1 条；`--once` 在独立 Python 进程中成功执行，输出不含测试正文。
+
+本节只完成服务与清理进程。任务工作区的归档/回收站切换、只读详情、删除确认、剩余天数和恢复按钮仍待下一提交；计划、报告、困难、AI 日志与质检样本尚未接入，跨聚合清理规则仍按 Q-DATA-01 / Q-PRIV-01 后续补齐。

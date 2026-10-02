@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -8,6 +8,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from itime.auth.security import now
 from itime.auth.session import authorized
 from itime.errors import AppError
+from itime.tasks.lifecycle_service import expire_task_operation_responses
 from itime.tasks.models import (
     Label,
     Project,
@@ -26,12 +27,15 @@ from itime.tasks.schemas import (
     StepDelete,
     StepReorder,
     StepUpdate,
+    TaskArchiveInput,
     TaskBulkInput,
     TaskCreate,
+    TaskLifecycleInput,
     TaskUpdate,
 )
 from itime.tasks.service import (
     emit_change,
+    ensure_task_readable,
     label_result,
     locked_task,
     normalized_label,
@@ -49,6 +53,15 @@ from itime.tasks.service import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["任务与目标"])
+TASK_TRASH_RETENTION = timedelta(days=30)
+
+
+def active_task_conditions():
+    return (
+        Task.archived_at.is_(None),
+        Task.deleted_at.is_(None),
+        Task.purged_at.is_(None),
+    )
 
 
 @router.post("/projects", status_code=201)
@@ -135,6 +148,7 @@ async def list_projects(
                     .where(
                         Task.owner_id == identity.user.id,
                         Task.project_id.in_(project_ids),
+                        *active_task_conditions(),
                     )
                     .group_by(Task.project_id)
                 )
@@ -178,6 +192,7 @@ async def get_project(project_id: UUID, request: Request) -> dict:
                 ).where(
                     Task.owner_id == identity.user.id,
                     Task.project_id == project.id,
+                    *active_task_conditions(),
                 )
             )
         ).one()
@@ -267,7 +282,17 @@ async def list_labels(
                 label_id: count
                 for label_id, count in await identity.session.execute(
                     select(TaskLabel.label_id, func.count(TaskLabel.task_id))
-                    .where(TaskLabel.label_id.in_(ids))
+                    .join(
+                        Task,
+                        and_(
+                            Task.id == TaskLabel.task_id,
+                            Task.owner_id == TaskLabel.owner_id,
+                        ),
+                    )
+                    .where(
+                        TaskLabel.label_id.in_(ids),
+                        *active_task_conditions(),
+                    )
                     .group_by(TaskLabel.label_id)
                 )
             }
@@ -352,6 +377,7 @@ async def list_tasks(
     request: Request,
     search: Annotated[str | None, Query(max_length=100)] = None,
     status: Literal["all", "open", "completed"] = "all",
+    lifecycle: Literal["active", "archived", "trashed"] = "active",
     project_id: UUID | None = None,
     location: Literal["all", "inbox"] = "all",
     priority: Annotated[int | None, Query(ge=0, le=3)] = None,
@@ -367,6 +393,19 @@ async def list_tasks(
         if project_id is not None:
             await require_project(identity.session, identity.user.id, project_id)
         statement = select(Task).where(Task.owner_id == identity.user.id)
+        if lifecycle == "active":
+            statement = statement.where(*active_task_conditions())
+        elif lifecycle == "archived":
+            statement = statement.where(
+                Task.archived_at.is_not(None),
+                Task.deleted_at.is_(None),
+                Task.purged_at.is_(None),
+            )
+        else:
+            statement = statement.where(
+                Task.deleted_at.is_not(None),
+                Task.purged_at.is_(None),
+            )
         if search and (term := search.strip()):
             statement = statement.where(
                 or_(
@@ -430,6 +469,202 @@ async def get_task(task_id: UUID, request: Request) -> dict:
         if task is None:
             raise AppError("task_not_found", "未找到此任务。", status=404)
         return {"task": await task_detail(identity.session, task)}
+
+
+@router.put("/tasks/{task_id}/archive")
+async def set_task_archive(
+    task_id: UUID,
+    data: TaskArchiveInput,
+    request: Request,
+) -> dict:
+    scope = f"tasks.archive:{task_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        task = await locked_task(
+            identity.session,
+            identity.user.id,
+            task_id,
+            editable=False,
+        )
+        ensure_task_readable(task)
+        if task.deleted_at is not None:
+            raise AppError(
+                "task_in_trash",
+                "此任务位于回收站，请先恢复后再修改归档状态。",
+                status=409,
+                details={"lifecycle": "trashed"},
+            )
+        if task.version != data.expected_version:
+            raise task_version_conflict(task)
+        changed = (task.archived_at is not None) != data.archived
+        if changed:
+            await expire_task_operation_responses(
+                identity.session,
+                identity.user.id,
+                task.id,
+            )
+            task.archived_at = now() if data.archived else None
+            task.version += 1
+            task.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "task",
+                task.id,
+                "archived" if data.archived else "unarchived",
+                task.version,
+            )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "task": await task_detail(identity.session, task),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.delete("/tasks/{task_id}")
+async def trash_task(
+    task_id: UUID,
+    data: TaskLifecycleInput,
+    request: Request,
+) -> dict:
+    scope = f"tasks.delete:{task_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        task = await locked_task(
+            identity.session,
+            identity.user.id,
+            task_id,
+            editable=False,
+        )
+        ensure_task_readable(task)
+        if task.version != data.expected_version:
+            raise task_version_conflict(task)
+        if task.deleted_at is None:
+            await expire_task_operation_responses(
+                identity.session,
+                identity.user.id,
+                task.id,
+            )
+            deleted_at = now()
+            task.deleted_at = deleted_at
+            task.purge_after = deleted_at + TASK_TRASH_RETENTION
+            task.version += 1
+            task.updated_at = deleted_at
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "task",
+                task.id,
+                "deleted",
+                task.version,
+            )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "task": await task_detail(identity.session, task),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.post("/tasks/{task_id}/restore")
+async def restore_task(
+    task_id: UUID,
+    data: TaskLifecycleInput,
+    request: Request,
+) -> dict:
+    scope = f"tasks.restore:{task_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        task = await locked_task(
+            identity.session,
+            identity.user.id,
+            task_id,
+            editable=False,
+        )
+        ensure_task_readable(task)
+        if task.version != data.expected_version:
+            raise task_version_conflict(task)
+        if task.deleted_at is None:
+            raise AppError(
+                "task_not_in_trash",
+                "此任务不在回收站，无需恢复。",
+                status=409,
+                details={
+                    "lifecycle": "archived" if task.archived_at is not None else "active"
+                },
+            )
+        await expire_task_operation_responses(
+            identity.session,
+            identity.user.id,
+            task.id,
+        )
+        task.deleted_at = None
+        task.purge_after = None
+        task.version += 1
+        task.updated_at = now()
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "task",
+            task.id,
+            "restored",
+            task.version,
+        )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "task": await task_detail(identity.session, task),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
 
 
 @router.put("/tasks/{task_id}")
@@ -813,7 +1048,11 @@ async def bulk_update_tasks(data: TaskBulkInput, request: Request) -> dict:
         tasks = list(
             await identity.session.scalars(
                 select(Task)
-                .where(Task.owner_id == identity.user.id, Task.id.in_(ids))
+                .where(
+                    Task.owner_id == identity.user.id,
+                    Task.id.in_(ids),
+                    *active_task_conditions(),
+                )
                 .order_by(Task.id)
                 .with_for_update()
             )

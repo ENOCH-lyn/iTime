@@ -2,6 +2,7 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime
+from math import ceil
 from uuid import UUID
 
 from fastapi.encoders import jsonable_encoder
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.auth.security import now
 from itime.errors import AppError
 from itime.tasks.models import (
     ChangeEvent,
@@ -60,6 +62,13 @@ async def replay_operation(
             "operation_id_reused",
             "此操作编号已经用于不同的内容，请刷新状态后重新提交。",
             status=409,
+        )
+    if operation.response is None:
+        raise AppError(
+            "operation_result_expired",
+            "此操作已经保存，但原响应已按数据生命周期清理，请刷新当前状态。",
+            status=409,
+            saved="saved",
         )
     return operation.response
 
@@ -153,7 +162,13 @@ async def require_project(
     return project
 
 
-async def locked_task(session: AsyncSession, owner_id: UUID, task_id: UUID) -> Task:
+async def locked_task(
+    session: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID,
+    *,
+    editable: bool = True,
+) -> Task:
     task = await session.scalar(
         select(Task)
         .where(Task.id == task_id, Task.owner_id == owner_id)
@@ -161,7 +176,48 @@ async def locked_task(session: AsyncSession, owner_id: UUID, task_id: UUID) -> T
     )
     if task is None:
         raise AppError("task_not_found", "未找到此任务。", status=404)
+    if editable:
+        ensure_task_editable(task)
     return task
+
+
+def task_lifecycle(task: Task) -> str:
+    if task.purged_at is not None:
+        return "purged"
+    if task.deleted_at is not None:
+        return "trashed"
+    if task.archived_at is not None:
+        return "archived"
+    return "active"
+
+
+def ensure_task_readable(task: Task) -> None:
+    if task.purged_at is not None:
+        raise AppError(
+            "task_purged",
+            "此任务已超过回收站恢复期并完成清理。",
+            status=410,
+            details={"lifecycle": "purged"},
+        )
+
+
+def ensure_task_editable(task: Task) -> None:
+    ensure_task_readable(task)
+    lifecycle = task_lifecycle(task)
+    if lifecycle == "trashed":
+        raise AppError(
+            "task_in_trash",
+            "此任务位于回收站，请先恢复后再修改。",
+            status=409,
+            details={"lifecycle": lifecycle},
+        )
+    if lifecycle == "archived":
+        raise AppError(
+            "task_archived",
+            "此任务已归档，请先取消归档后再修改。",
+            status=409,
+            details={"lifecycle": lifecycle},
+        )
 
 
 def task_version_conflict(task: Task) -> AppError:
@@ -321,6 +377,11 @@ async def task_context(session: AsyncSession, tasks: list[Task]) -> dict:
 
 def task_summary_result(task: Task, context: dict) -> dict:
     project = context["projects"].get(task.project_id)
+    remaining_days = (
+        max(0, ceil((task.purge_after - now()).total_seconds() / 86_400))
+        if task.deleted_at is not None and task.purge_after is not None
+        else None
+    )
     return {
         "id": task.id,
         "title": task.title,
@@ -335,6 +396,12 @@ def task_summary_result(task: Task, context: dict) -> dict:
         "priority": task.priority,
         "status": task.status,
         "completed_at": task.completed_at,
+        "lifecycle": task_lifecycle(task),
+        "archived_at": task.archived_at,
+        "deleted_at": task.deleted_at,
+        "purge_after": task.purge_after,
+        "purged_at": task.purged_at,
+        "trash_remaining_days": remaining_days,
         "version": task.version,
         "labels": [label_result(label) for label in context["labels"][task.id]],
         "step_progress": context["step_counts"].get(task.id, {"total": 0, "completed": 0}),
@@ -351,6 +418,7 @@ async def task_summaries(session: AsyncSession, tasks: list[Task]) -> list[dict]
 
 
 async def task_detail(session: AsyncSession, task: Task) -> dict:
+    ensure_task_readable(task)
     summary = (await task_summaries(session, [task]))[0]
     steps = list(
         await session.scalars(
