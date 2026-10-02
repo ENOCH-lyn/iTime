@@ -13,6 +13,7 @@ from itime import __version__
 from itime.admin.management import router as admin_management_router
 from itime.admin.router import router as admin_auth_router
 from itime.ai.admin_router import router as admin_ai_config_router
+from itime.ai.job_router import router as ai_job_router
 from itime.auth.router import router as auth_router
 from itime.auth.security import Security
 from itime.calendar.import_router import router as calendar_import_router
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_auth_router)
     app.include_router(admin_management_router)
     app.include_router(admin_ai_config_router)
+    app.include_router(ai_job_router)
     app.include_router(tasks_router)
     app.include_router(task_schedule_router)
     app.include_router(calendar_router)

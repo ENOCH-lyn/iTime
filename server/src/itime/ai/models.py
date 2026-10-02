@@ -10,10 +10,12 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
@@ -154,3 +156,183 @@ class AIConfigVersion(Base):
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TemporaryMedia(Base):
+    __tablename__ = "temporary_media"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('calendar_screenshot')", name="purpose"),
+        CheckConstraint(
+            "content_type IN ('image/png', 'image/jpeg', 'image/webp')",
+            name="content_type",
+        ),
+        CheckConstraint("length(btrim(original_filename)) > 0", name="filename"),
+        CheckConstraint("length(content_sha256) = 64", name="content_sha256"),
+        CheckConstraint("byte_size BETWEEN 1 AND 5242880", name="byte_size"),
+        CheckConstraint("width BETWEEN 1 AND 20000000", name="width"),
+        CheckConstraint("height BETWEEN 1 AND 20000000", name="height"),
+        CheckConstraint("width::bigint * height::bigint <= 20000000", name="pixels"),
+        CheckConstraint(
+            "(encrypted_content IS NULL) = "
+            "(deleted_at IS NOT NULL AND deletion_reason IS NOT NULL)",
+            name="deletion_state",
+        ),
+        CheckConstraint(
+            "deletion_reason IS NULL OR deletion_reason IN ('confirmed', 'expired')",
+            name="deletion_reason",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_temporary_media_id_owner"),
+        Index("ix_temporary_media_owner_created", "owner_id", "created_at", "id"),
+        Index(
+            "ix_temporary_media_expiry",
+            "expires_at",
+            postgresql_where=text("encrypted_content IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    purpose: Mapped[str] = mapped_column(String(40))
+    original_filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(40))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    encrypted_content: Mapped[bytes | None] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deletion_reason: Mapped[str | None] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AIJob(Base):
+    __tablename__ = "ai_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "capability IN ('calendar_screenshot')",
+            name="capability",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'timed_out', 'cancelled')",
+            name="status",
+        ),
+        CheckConstraint("jsonb_typeof(input_summary) = 'object'", name="input_summary"),
+        CheckConstraint(
+            "output IS NULL OR jsonb_typeof(output) = 'object'",
+            name="output",
+        ),
+        CheckConstraint("attempt_count BETWEEN 0 AND max_attempts", name="attempt_count"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts"),
+        CheckConstraint(
+            "(status = 'running') = (lease_id IS NOT NULL AND lease_until IS NOT NULL)",
+            name="lease_state",
+        ),
+        CheckConstraint(
+            "(status IN ('succeeded', 'failed', 'timed_out', 'cancelled')) "
+            "= (finished_at IS NOT NULL)",
+            name="finished_state",
+        ),
+        CheckConstraint(
+            "(status = 'succeeded') = (output IS NOT NULL)",
+            name="output_state",
+        ),
+        CheckConstraint(
+            "(error_code IS NULL) = (error_message IS NULL)",
+            name="error_pair",
+        ),
+        CheckConstraint(
+            "status NOT IN ('succeeded', 'cancelled') OR error_code IS NULL",
+            name="success_error",
+        ),
+        ForeignKeyConstraint(
+            ["config_version_id", "capability"],
+            ["ai_config_versions.id", "ai_config_versions.capability"],
+            name="fk_ai_jobs_config_version",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["input_media_id", "owner_id"],
+            ["temporary_media.id", "temporary_media.owner_id"],
+            name="fk_ai_jobs_input_media_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_ai_jobs_id_owner"),
+        UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
+        Index("ix_ai_jobs_owner_created", "owner_id", "created_at", "id"),
+        Index(
+            "ix_ai_jobs_due",
+            "available_at",
+            "deadline_at",
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    capability: Mapped[str] = mapped_column(String(50))
+    config_version_id: Mapped[UUID]
+    input_media_id: Mapped[UUID]
+    status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued")
+    input_summary: Mapped[dict] = mapped_column(JSONB)
+    output: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_id: Mapped[UUID | None]
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIJobAttempt(Base):
+    __tablename__ = "ai_job_attempts"
+    __table_args__ = (
+        CheckConstraint("attempt_number BETWEEN 1 AND 5", name="attempt_number"),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'retryable_failed', 'failed', "
+            "'timed_out', 'cancelled', 'abandoned')",
+            name="status",
+        ),
+        CheckConstraint(
+            "(status = 'running') = (finished_at IS NULL)",
+            name="finished_state",
+        ),
+        CheckConstraint(
+            "(error_code IS NULL) = (error_stage IS NULL)",
+            name="error_pair",
+        ),
+        ForeignKeyConstraint(
+            ["job_id", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.owner_id"],
+            name="fk_ai_job_attempts_job_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("job_id", "attempt_number", name="uq_ai_job_attempts_number"),
+        UniqueConstraint("job_id", "lease_id", name="uq_ai_job_attempts_lease"),
+        Index("ix_ai_job_attempts_owner_job", "owner_id", "job_id", "attempt_number"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    job_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    lease_id: Mapped[UUID]
+    status: Mapped[str] = mapped_column(String(24))
+    provider_request_id: Mapped[str | None] = mapped_column(String(255))
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_stage: Mapped[str | None] = mapped_column(String(40))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

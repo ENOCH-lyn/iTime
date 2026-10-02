@@ -88,3 +88,7 @@ class AIConfigVersionOutput(BaseModel):
 class AIConfigVersionListOutput(BaseModel):
     items: list[AIConfigVersionOutput]
     next_cursor: dict[str, datetime | UUID] | None
+
+
+class AIJobCancelInput(Input):
+    operation_id: UUID
