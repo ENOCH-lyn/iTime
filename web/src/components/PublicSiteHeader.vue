@@ -2,7 +2,7 @@
 import AppearanceControls from './AppearanceControls.vue'
 
 defineProps<{
-  current?: 'product' | 'help'
+  current?: 'product' | 'demo' | 'help'
 }>()
 </script>
 
@@ -14,6 +14,9 @@ defineProps<{
     <nav class="site-navigation" aria-label="公开页面">
       <RouterLink to="/" :aria-current="current === 'product' ? 'page' : undefined">
         产品
+      </RouterLink>
+      <RouterLink to="/demo" :aria-current="current === 'demo' ? 'page' : undefined">
+        演示
       </RouterLink>
       <RouterLink to="/help" :aria-current="current === 'help' ? 'page' : undefined">
         帮助

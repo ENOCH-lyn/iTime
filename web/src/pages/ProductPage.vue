@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { ArrowDown, ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, Play } from 'lucide-vue-next'
 import PublicSiteFooter from '../components/PublicSiteFooter.vue'
 import PublicSiteHeader from '../components/PublicSiteHeader.vue'
 import '../public-site.css'
@@ -76,10 +76,10 @@ const workflow = [
               开始使用
               <ArrowRight :size="18" aria-hidden="true" />
             </RouterLink>
-            <a href="#workflow" class="button secondary">
-              <ArrowDown :size="17" aria-hidden="true" />
-              看看如何安排
-            </a>
+            <RouterLink to="/demo" class="button secondary">
+              <Play :size="17" aria-hidden="true" />
+              查看演示
+            </RouterLink>
           </div>
           <p class="hero-note">首版免费使用，不需要绑定支付方式。</p>
         </div>

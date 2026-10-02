@@ -8,6 +8,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: () => import('./pages/ProductPage.vue') },
+    { path: '/demo', component: () => import('./pages/DemoPage.vue') },
     ...['login', 'register', 'verify-email', 'resend-verification', 'forgot-password', 'reset-password'].map(mode => ({
       path: `/${mode}`, name: mode,
       component: () => import('./pages/AuthPage.vue'), props: { mode },

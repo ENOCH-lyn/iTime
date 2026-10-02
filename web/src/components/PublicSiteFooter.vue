@@ -7,6 +7,7 @@
       <p>从容安排每一天。</p>
     </div>
     <nav aria-label="页脚">
+      <RouterLink to="/demo">产品演示</RouterLink>
       <RouterLink to="/help">帮助</RouterLink>
       <RouterLink to="/login">登录</RouterLink>
     </nav>
