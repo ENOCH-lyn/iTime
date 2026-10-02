@@ -323,6 +323,9 @@ def test_real_synthetic_http_test_and_atomic_concurrent_publish(
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(publish, [configs[1]["id"], configs[2]["id"]]))
     assert [response.status_code for response in responses] == [200, 200]
+    rolled_back = client.post(f"{AI_CONFIGS}/{configs[0]['id']}/publish")
+    assert rolled_back.status_code == 200, rolled_back.text
+    assert rolled_back.json()["status"] == "published"
 
     with psycopg.connect(psycopg_url(database_url)) as connection:
         rows = connection.execute(
@@ -334,7 +337,7 @@ def test_real_synthetic_http_test_and_atomic_concurrent_publish(
             "SELECT current_version_id FROM ai_config_capabilities"
             " WHERE capability='calendar_screenshot'"
         ).fetchone()[0]
-        assert pointer == next(row[0] for row in rows if row[1] == "published")
+        assert str(pointer) == configs[0]["id"]
         actions = connection.execute(
             "SELECT action FROM security_events WHERE user_id=%s"
             " AND action LIKE 'ai_config_%%'",
@@ -342,6 +345,7 @@ def test_real_synthetic_http_test_and_atomic_concurrent_publish(
         ).fetchall()
         assert sum(row[0] == "ai_config_test_succeeded" for row in actions) == 3
         assert sum(row[0] == "ai_config_version_published" for row in actions) == 3
+        assert sum(row[0] == "ai_config_version_rolled_back" for row in actions) == 1
 
 
 @pytest.mark.parametrize(

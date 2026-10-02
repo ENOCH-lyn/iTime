@@ -280,8 +280,9 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
             raise config_not_found()
         if state.current_version_id == config.id and config.status == "published":
             return config_result(config)
+        target_was_retired = config.status == "retired"
         if (
-            config.status != "tested"
+            config.status not in {"tested", "retired"}
             or config.last_test_completed_at is None
             or config.last_test_error_code is not None
         ):
@@ -308,6 +309,7 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
             await identity.session.flush()
         config.status = "published"
         config.published_at = current
+        config.retired_at = None
         config.published_by_user_id = identity.user.id
         config.updated_at = current
         state.current_version_id = config.id
@@ -316,7 +318,11 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
             request,
             identity.session,
             identity.user,
-            "ai_config_version_published",
+            (
+                "ai_config_version_rolled_back"
+                if target_was_retired
+                else "ai_config_version_published"
+            ),
             config.id,
         )
         return config_result(config)
