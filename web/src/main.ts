@@ -7,7 +7,7 @@ import './lib/appearance'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/tasks' },
+    { path: '/', component: () => import('./pages/ProductPage.vue') },
     ...['login', 'register', 'verify-email', 'resend-verification', 'forgot-password', 'reset-password'].map(mode => ({
       path: `/${mode}`, name: mode,
       component: () => import('./pages/AuthPage.vue'), props: { mode },

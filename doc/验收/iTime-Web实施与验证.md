@@ -657,3 +657,25 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 浏览器流程覆盖真实创建与后台抓取、304、暂停/恢复、从日历返回来源、来源更新、本地覆盖、覆盖版本冲突、逐字段重置、刷新失败保留旧 occurrence、URL/UID 不泄漏、axe、控制台、API 500 和根级横向溢出；桌面项目另在 320×700 最大字号检查。截图位于 `/tmp/itime-ui-evidence/*-calendar-subscription-*.png`，已人工检查桌面、平板、手机和 320px 大字号。Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium 流程。
 
 订阅 occurrence 的用户单次例外仍待统一例外 API；真实 Edge、实体设备及第三方私密订阅源兼容性未在本地完成。
+
+## M7-A：公开产品首页
+
+对应 Git 提交主题：`feat: 完成公开产品首页`。实际代码为 `web/src/pages/ProductPage.vue`、`PublicSiteHeader.vue`、`PublicSiteFooter.vue`、`public-site.css`、根路由及 `web/e2e/public.spec.ts`。
+
+已实现：
+
+- `/` 不再直接跳转登录后的任务页，而是向访客展示 iTime 产品首页；主动作统一进入注册，登录和帮助作为次级入口，未登录即可了解产品范围。
+- 首屏使用代码实现的真实日计划场景作为背景，展示固定安排、任务、专注与缓冲，不依赖外部图片或装饰性插画；正文不放入卡片，并在每种视口末端露出下一节内容。
+- 下方使用开放分栏和时间线说明“整理 → 安排 → 复盘”闭环，明确固定安排、任务排期、缓冲和复盘之间的区别，不加入分享、付费或 Web 提醒入口。
+- 桌面完整显示五日网格与计划块；平板隐藏会穿过主文案的背景标签但保留计划块；手机保留时间网格和当前时间线，避免裁切文字。320px 最大字号下标题、按钮、时间线和页脚均无根级横向溢出。
+- 公共页头与页脚复用现有主题/字号设置、注册、登录和帮助入口；当前没有公开演示、协议和隐私链接，避免尚未实现的死入口。
+
+2026-10-02 执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与生产构建 |
+| `cd web && pnpm exec playwright test e2e/public.spec.ts` | **3 passed in 10.6s** | 首页 × 1440×1000、390×844、768×1024，另含 320×700 最大字号 |
+| `cd web && pnpm test:e2e` | **99 passed in 4.1m** | 账号、后台、任务、日历、导入、订阅和公开首页全量 Chromium 回归 |
+
+专项测试验证主标题、注册入口、工作流锚点、产品场景、axe、控制台、API 500 监听和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-home.png` 与 `desktop-public-home-320-large-font.png`，已人工检查；修正了背景小字对比度、页头 landmark 及平板/手机背景标签与正文重叠问题。Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium 流程；真实 Edge 和实体设备仍未验证。
