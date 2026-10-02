@@ -1,0 +1,43 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.local/
+.credentials/
+*.pem
+*.key
+*.p12
+*.p8
+*.keystore
+*.jks
+credentials.json
+service-account*.json
+hosts.yml
+
+# Local tools / editors
+.DS_Store
+.idea/
+.vscode/
+.trae/
+*.swp
+*.log
+logs/
+
+# Common generated artifacts; the application stack is not chosen yet.
+node_modules/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+.next/
+.turbo/
+.venv/
+__pycache__/
+.pytest_cache/
+.dart_tool/
+.flutter-plugins*
+Pods/
+.gradle/
+DerivedData/
