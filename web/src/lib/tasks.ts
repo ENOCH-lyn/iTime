@@ -3,6 +3,7 @@ import type { TaskSchedule } from './task-schedules'
 
 export type ProjectKind = 'project' | 'goal'
 export type TaskStatus = 'open' | 'completed'
+export type TaskLifecycle = 'active' | 'archived' | 'trashed'
 export type BulkAction =
   | 'complete'
   | 'reopen'
@@ -73,6 +74,12 @@ export interface TaskSummary {
   priority: number
   status: TaskStatus
   completed_at: string | null
+  lifecycle: TaskLifecycle
+  archived_at: string | null
+  deleted_at: string | null
+  purge_after: string | null
+  purged_at: string | null
+  trash_remaining_days: number | null
   version: number
   labels: Label[]
   step_progress: { total: number; completed: number }
@@ -98,6 +105,7 @@ export interface TaskDraft {
 }
 
 export interface TaskFilters {
+  lifecycle: TaskLifecycle
   search: string
   status: 'all' | TaskStatus
   project_id: string | null
@@ -156,6 +164,7 @@ export async function listLabels() {
 
 export async function listTasks(filters: TaskFilters, cursor?: Cursor | null) {
   const params = new URLSearchParams({
+    lifecycle: filters.lifecycle,
     status: filters.status,
     location: filters.inbox ? 'inbox' : 'all',
     limit: '50',
@@ -207,6 +216,39 @@ export async function setTaskCompletion(
     `/tasks/${task.id}/completion`,
     mutationBody(operationId, { expected_version: task.version, completed }),
     'PUT',
+  )).task
+}
+
+export async function setTaskArchived(
+  task: Pick<TaskSummary, 'id' | 'version'>,
+  operationId: string,
+  archived: boolean,
+) {
+  return (await api<{ operation_id: string; task: TaskDetail }>(
+    `/tasks/${task.id}/archive`,
+    mutationBody(operationId, { expected_version: task.version, archived }),
+    'PUT',
+  )).task
+}
+
+export async function deleteTask(
+  task: Pick<TaskSummary, 'id' | 'version'>,
+  operationId: string,
+) {
+  return (await api<{ operation_id: string; task: TaskDetail }>(
+    `/tasks/${task.id}`,
+    mutationBody(operationId, { expected_version: task.version }),
+    'DELETE',
+  )).task
+}
+
+export async function restoreTask(
+  task: Pick<TaskSummary, 'id' | 'version'>,
+  operationId: string,
+) {
+  return (await api<{ operation_id: string; task: TaskDetail }>(
+    `/tasks/${task.id}/restore`,
+    mutationBody(operationId, { expected_version: task.version }),
   )).task
 }
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
+  Archive,
+  ArchiveRestore,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -20,10 +22,13 @@ import { failure, localFailure, type Failure } from '../lib/api'
 import {
   createTask,
   createTaskStep,
+  deleteTask as deleteTaskRequest,
   deleteTaskStep,
   getTask,
   reorderTaskSteps,
+  restoreTask,
   setTaskCompletion,
+  setTaskArchived,
   updateTask,
   updateTaskStep,
   type Project,
@@ -44,6 +49,7 @@ const emit = defineEmits<{
   close: []
   created: [task: TaskDetail]
   updated: [task: TaskDetail]
+  lifecycle: [message: string]
   dirty: [dirty: boolean]
 }>()
 
@@ -73,6 +79,13 @@ const fieldErrors = reactive<Record<string, string>>({})
 const scheduleDirty = ref(false)
 const operations = new Map<string, { id: string; fingerprint: string }>()
 const priorityNames = ['未设置', '低', '中', '高']
+const editable = computed(() => props.creating || working.value?.lifecycle === 'active')
+const headerState = computed(() => {
+  if (props.creating) return '新任务'
+  if (working.value?.lifecycle === 'archived') return '已归档'
+  if (working.value?.lifecycle === 'trashed') return '回收站'
+  return working.value?.status === 'completed' ? '已完成' : '未完成'
+})
 
 const dirty = computed(() => {
   if (props.creating) {
@@ -256,7 +269,7 @@ function useServerVersion() {
 }
 
 async function save() {
-  if (pendingAction.value) return
+  if (pendingAction.value || !editable.value) return
   clearMessages()
   const fields = draft()
   if (!fields) {
@@ -295,7 +308,7 @@ async function save() {
 }
 
 async function toggleCompletion() {
-  if (!working.value || pendingAction.value) return
+  if (!working.value || pendingAction.value || !editable.value) return
   clearMessages()
   pendingAction.value = 'completion'
   const completed = working.value.status !== 'completed'
@@ -317,7 +330,7 @@ async function toggleCompletion() {
 }
 
 async function addStep() {
-  if (!working.value || pendingAction.value) return
+  if (!working.value || pendingAction.value || !editable.value) return
   const title = newStep.value.trim()
   if (!title) {
     fieldErrors.newStep = '请输入步骤内容。'
@@ -346,7 +359,7 @@ async function addStep() {
 }
 
 async function saveStep(step: TaskStep, completed = step.completed) {
-  if (!working.value || pendingAction.value) return
+  if (!working.value || pendingAction.value || !editable.value) return
   const title = stepTitles[step.id]?.trim() ?? ''
   if (!title) {
     fieldErrors[`step-${step.id}`] = '步骤内容不能为空。'
@@ -382,7 +395,7 @@ async function saveStep(step: TaskStep, completed = step.completed) {
 }
 
 async function removeStep(step: TaskStep) {
-  if (!working.value || pendingAction.value) return
+  if (!working.value || pendingAction.value || !editable.value) return
   clearMessages()
   pendingAction.value = `delete-${step.id}`
   try {
@@ -403,7 +416,7 @@ async function removeStep(step: TaskStep) {
 }
 
 async function moveStep(step: TaskStep, direction: -1 | 1) {
-  if (!working.value || pendingAction.value) return
+  if (!working.value || pendingAction.value || !editable.value) return
   const index = working.value.steps.findIndex(item => item.id === step.id)
   const target = index + direction
   if (target < 0 || target >= working.value.steps.length) return
@@ -439,10 +452,53 @@ function addInitialStep() {
 function isHttpUrl(value: string) {
   return value.startsWith('http://') || value.startsWith('https://')
 }
+
+function formatDateTime(value: string | null) {
+  return value ? new Date(value).toLocaleString('zh-CN') : ''
+}
+
+async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'restore') {
+  if (!working.value || pendingAction.value) return
+  if (
+    action === 'delete'
+    && !window.confirm('删除后任务会进入回收站并保留 30 天，期间可以恢复。确定移到回收站吗？')
+  ) return
+  clearMessages()
+  pendingAction.value = action
+  const body = {
+    expected_version: working.value.version,
+    ...(action === 'archive' || action === 'unarchive'
+      ? { archived: action === 'archive' }
+      : {}),
+  }
+  const scope = `lifecycle-${action}`
+  try {
+    const id = operationId(scope, body)
+    const task = action === 'archive' || action === 'unarchive'
+      ? await setTaskArchived(working.value, id, action === 'archive')
+      : action === 'delete'
+        ? await deleteTaskRequest(working.value, id)
+        : await restoreTask(working.value, id)
+    operations.delete(scope)
+    emit('lifecycle', {
+      archive: '任务已归档。',
+      unarchive: '任务已取消归档。',
+      delete: '任务已移到回收站，将保留 30 天。',
+      restore: task.lifecycle === 'archived'
+        ? '任务已恢复到已归档。'
+        : '任务已恢复到活动任务。',
+    }[action])
+  } catch (reason) {
+    await handleError(reason)
+  } finally {
+    pendingAction.value = ''
+  }
+}
 </script>
 
 <template>
-  <section class="task-editor" :aria-label="creating ? '新建任务' : task ? `编辑任务 ${task.title}` : '任务详情'">
+  <section class="task-editor"
+    :aria-label="creating ? '新建任务' : task ? `${editable ? '编辑' : '查看'}任务 ${task.title}` : '任务详情'">
     <div v-if="!creating && !working" class="task-editor-placeholder">
       <CheckCircle2 :size="34" aria-hidden="true" />
       <h2>选择一项任务</h2>
@@ -456,18 +512,18 @@ function isHttpUrl(value: string) {
           <ArrowLeft :size="20" aria-hidden="true" />
         </button>
         <div>
-          <p>{{ creating ? '新任务' : working?.status === 'completed' ? '已完成' : '未完成' }}</p>
+          <p>{{ headerState }}</p>
           <h1>{{ creating ? '记下一件要做的事' : '任务详情' }}</h1>
         </div>
         <div class="task-editor-actions">
-          <button v-if="working && working.schedule.recurrence.frequency === 'none'"
+          <button v-if="working && editable && working.schedule.recurrence.frequency === 'none'"
             type="button" class="button secondary"
             :disabled="!!pendingAction" @click="toggleCompletion">
             <RotateCcw v-if="working.status === 'completed'" :size="17" aria-hidden="true" />
             <CheckCircle2 v-else :size="17" aria-hidden="true" />
             {{ pendingAction === 'completion' ? '正在保存…' : working.status === 'completed' ? '重新打开' : '标为完成' }}
           </button>
-          <button type="submit" class="button" :disabled="!!pendingAction">
+          <button v-if="editable" type="submit" class="button" :disabled="!!pendingAction">
             <Save :size="17" aria-hidden="true" />
             {{ pendingAction === 'save' ? '正在保存…' : creating ? '创建任务' : '保存修改' }}
           </button>
@@ -476,6 +532,52 @@ function isHttpUrl(value: string) {
 
       <div class="task-editor-messages">
         <StatusMessage :error="error" :success="success || externalSuccess" />
+        <div v-if="working" class="task-lifecycle-bar" :data-lifecycle="working.lifecycle">
+          <div class="task-lifecycle-copy">
+            <Archive v-if="working.lifecycle === 'archived'" :size="20" aria-hidden="true" />
+            <Trash2 v-else-if="working.lifecycle === 'trashed'" :size="20" aria-hidden="true" />
+            <div>
+              <strong v-if="working.lifecycle === 'active'">整理任务</strong>
+              <strong v-else-if="working.lifecycle === 'archived'">此任务已归档</strong>
+              <strong v-else>此任务在回收站中</strong>
+              <p v-if="working.lifecycle === 'active'">归档不会改变任务的完成状态。</p>
+              <p v-else-if="working.lifecycle === 'archived'">
+                当前内容只读。取消归档后可以继续编辑。
+              </p>
+              <p v-else>
+                当前内容只读，将于 {{ formatDateTime(working.purge_after) }} 清理
+                <template v-if="working.trash_remaining_days !== null">
+                  （{{ working.trash_remaining_days ? `还剩 ${working.trash_remaining_days} 天` : '即将清理' }}）
+                </template>。
+              </p>
+            </div>
+          </div>
+          <div class="task-lifecycle-actions">
+            <button v-if="working.lifecycle === 'active'" type="button"
+              class="button secondary compact-button" :disabled="!!pendingAction"
+              @click="changeLifecycle('archive')">
+              <Archive :size="16" aria-hidden="true" />
+              {{ pendingAction === 'archive' ? '正在归档…' : '归档' }}
+            </button>
+            <button v-else-if="working.lifecycle === 'archived'" type="button"
+              class="button secondary compact-button" :disabled="!!pendingAction"
+              @click="changeLifecycle('unarchive')">
+              <ArchiveRestore :size="16" aria-hidden="true" />
+              {{ pendingAction === 'unarchive' ? '正在恢复…' : '取消归档' }}
+            </button>
+            <button v-if="working.lifecycle !== 'trashed'" type="button"
+              class="button secondary compact-button lifecycle-delete"
+              :disabled="!!pendingAction" @click="changeLifecycle('delete')">
+              <Trash2 :size="16" aria-hidden="true" />
+              {{ pendingAction === 'delete' ? '正在删除…' : '移到回收站' }}
+            </button>
+            <button v-else type="button" class="button compact-button"
+              :disabled="!!pendingAction" @click="changeLifecycle('restore')">
+              <RotateCcw :size="16" aria-hidden="true" />
+              {{ pendingAction === 'restore' ? '正在恢复…' : '恢复任务' }}
+            </button>
+          </div>
+        </div>
         <div v-if="latest" class="conflict-comparison">
           <strong>服务器最新版</strong>
           <p>{{ latest.title }} · {{ latest.status === 'completed' ? '已完成' : '未完成' }} · 版本 {{ latest.version }}</p>
@@ -487,7 +589,7 @@ function isHttpUrl(value: string) {
         </div>
       </div>
 
-      <div class="task-editor-body">
+      <fieldset class="task-editor-body" :disabled="!!pendingAction || !editable">
         <section class="editor-section primary-fields">
           <div class="field">
             <label for="task-title">任务名称</label>
@@ -551,6 +653,7 @@ function isHttpUrl(value: string) {
         <TaskScheduleEditor
           v-if="working"
           :task="working"
+          :read-only="!editable"
           @updated="applyTask"
           @dirty="scheduleDirty = $event"
         />
@@ -598,7 +701,7 @@ function isHttpUrl(value: string) {
                     {{ fieldErrors[`step-${step.id}`] }}
                   </p>
                 </div>
-                <div class="step-actions">
+                <div v-if="editable" class="step-actions">
                   <button type="button" class="small-icon-button" title="保存步骤"
                     :aria-label="`保存步骤 ${step.title}`" :disabled="!!pendingAction"
                     @click="saveStep(step)">
@@ -623,7 +726,7 @@ function isHttpUrl(value: string) {
                 </div>
               </li>
             </ul>
-            <div class="new-step-row">
+            <div v-if="editable" class="new-step-row">
               <label class="sr-only" for="newStep">新步骤</label>
               <input id="newStep" v-model="newStep" maxlength="300" :disabled="!!pendingAction"
                 :aria-invalid="!!fieldErrors.newStep"
@@ -646,7 +749,7 @@ function isHttpUrl(value: string) {
               <h2 id="task-links-title">链接</h2>
               <p>{{ links.length }} 条</p>
             </div>
-            <button type="button" class="button secondary compact-button"
+            <button v-if="editable" type="button" class="button secondary compact-button"
               :disabled="!!pendingAction || links.length >= 20" @click="addLink">
               <Plus :size="16" aria-hidden="true" />添加链接
             </button>
@@ -672,7 +775,7 @@ function isHttpUrl(value: string) {
                 :aria-label="`打开链接 ${link.title || index + 1}`" title="在新窗口打开">
                 <ExternalLink :size="15" aria-hidden="true" />
               </a>
-              <button type="button" class="small-icon-button danger-icon" title="移除链接"
+              <button v-if="editable" type="button" class="small-icon-button danger-icon" title="移除链接"
                 :aria-label="`移除链接 ${link.title || index + 1}`"
                 @click="links.splice(index, 1)">
                 <Trash2 :size="15" aria-hidden="true" />
@@ -682,12 +785,12 @@ function isHttpUrl(value: string) {
           <p v-if="!links.length" class="section-empty">暂无链接。</p>
           <p v-if="fieldErrors.links" class="field-error">{{ fieldErrors.links }}</p>
         </section>
-      </div>
+      </fieldset>
 
       <footer class="task-editor-footer">
         <span v-if="working">版本 {{ working.version }} · 最近更新 {{ new Date(working.updated_at).toLocaleString('zh-CN') }}</span>
         <span v-else>尚未保存</span>
-        <button type="submit" class="button" :disabled="!!pendingAction">
+        <button v-if="editable" type="submit" class="button" :disabled="!!pendingAction">
           <Save :size="17" aria-hidden="true" />{{ pendingAction === 'save' ? '正在保存…' : creating ? '创建任务' : '保存修改' }}
         </button>
       </footer>

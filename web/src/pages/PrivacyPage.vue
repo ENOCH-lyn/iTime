@@ -46,7 +46,7 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
               <tr><th scope="col">数据</th><th scope="col">产品规则</th><th scope="col">当前状态</th></tr>
             </thead>
             <tbody>
-              <tr><th scope="row">任务与日历</th><td data-label="产品规则">账号存续期间保存；删除进入 30 天回收站</td><td data-label="当前状态">保存已实现，回收站待实现</td></tr>
+              <tr><th scope="row">任务与日历</th><td data-label="产品规则">账号存续期间保存；删除进入 30 天回收站</td><td data-label="当前状态">任务回收站已实现；日历对象回收站待实现</td></tr>
               <tr><th scope="row">识别原图</th><td data-label="产品规则">确认后删除；未完成最长保留 24 小时</td><td data-label="当前状态">已实现</td></tr>
               <tr><th scope="row">AI 技术正文日志</th><td data-label="产品规则">默认保留 7 天</td><td data-label="当前状态">待实现</td></tr>
               <tr><th scope="row">质量改进样本</th><td data-label="产品规则">默认参与，可关闭；最长保留 30 天；不用于训练</td><td data-label="当前状态">待实现</td></tr>

@@ -11,7 +11,7 @@ import {
   type TaskScheduleDraft,
 } from '../lib/task-schedules'
 
-const props = defineProps<{ task: TaskDetail }>()
+const props = defineProps<{ task: TaskDetail; readOnly?: boolean }>()
 const emit = defineEmits<{
   updated: [task: TaskDetail]
   dirty: [dirty: boolean]
@@ -76,7 +76,8 @@ function rawSnapshot() {
   })
 }
 
-const dirty = computed(() => rawSnapshot() !== initialSnapshot.value)
+const dirty = computed(() => !props.readOnly && rawSnapshot() !== initialSnapshot.value)
+const controlsDisabled = computed(() => pending.value || props.readOnly)
 watch(dirty, value => emit('dirty', value), { immediate: true })
 
 watch(
@@ -194,7 +195,7 @@ async function focusFirstError() {
 }
 
 async function save() {
-  if (pending.value) return
+  if (pending.value || props.readOnly) return
   error.value = null
   success.value = ''
   latest.value = null
@@ -295,7 +296,7 @@ function useServerVersion() {
     <div class="schedule-grid">
       <div class="field">
         <label for="task-schedule-kind">截止类型</label>
-        <select id="task-schedule-kind" v-model="values.due_kind" :disabled="pending">
+        <select id="task-schedule-kind" v-model="values.due_kind" :disabled="controlsDisabled">
           <option value="none">不设置截止</option>
           <option value="date">截止日期</option>
           <option value="datetime">具体日期与时刻</option>
@@ -304,26 +305,26 @@ function useServerVersion() {
       <div v-if="values.due_kind !== 'none'" class="field">
         <label for="task-schedule-due_date">截止日期</label>
         <input id="task-schedule-due_date" v-model="values.due_date" type="date"
-          :disabled="pending" :aria-invalid="!!fieldErrors.due_date" />
+          :disabled="controlsDisabled" :aria-invalid="!!fieldErrors.due_date" />
         <p v-if="fieldErrors.due_date" class="field-error">{{ fieldErrors.due_date }}</p>
       </div>
       <div v-if="values.due_kind === 'datetime'" class="field">
         <label for="task-schedule-due_time">截止时刻</label>
         <input id="task-schedule-due_time" v-model="values.due_time" type="time"
-          :disabled="pending" :aria-invalid="!!fieldErrors.due_time" />
+          :disabled="controlsDisabled" :aria-invalid="!!fieldErrors.due_time" />
         <p v-if="fieldErrors.due_time" class="field-error">{{ fieldErrors.due_time }}</p>
       </div>
       <div class="field">
         <label for="task-schedule-minimum">最小连续时长 <span class="muted">分钟</span></label>
         <input id="task-schedule-minimum" v-model="values.minimum_block_minutes"
-          type="number" inputmode="numeric" min="1" max="1440" :disabled="pending"
+          type="number" inputmode="numeric" min="1" max="1440" :disabled="controlsDisabled"
           :aria-invalid="!!fieldErrors.minimum" />
         <p v-if="fieldErrors.minimum" class="field-error">{{ fieldErrors.minimum }}</p>
       </div>
     </div>
 
     <label class="checkbox-label schedule-splittable">
-      <input v-model="values.splittable" type="checkbox" :disabled="pending" />
+      <input v-model="values.splittable" type="checkbox" :disabled="controlsDisabled" />
       规划时允许拆成多个时间块
     </label>
 
@@ -331,7 +332,7 @@ function useServerVersion() {
       <div class="schedule-grid recurrence-grid">
         <div class="field">
           <label for="task-schedule-frequency">重复方式</label>
-          <select id="task-schedule-frequency" v-model="values.frequency" :disabled="pending">
+          <select id="task-schedule-frequency" v-model="values.frequency" :disabled="controlsDisabled">
             <option v-for="(name, value) in frequencyNames" :key="value" :value="value">
               {{ name }}
             </option>
@@ -341,7 +342,7 @@ function useServerVersion() {
           <label for="task-schedule-interval">每隔</label>
           <div class="inline-number-field">
             <input id="task-schedule-interval" v-model="values.interval" type="number"
-              inputmode="numeric" min="1" max="366" :disabled="pending"
+              inputmode="numeric" min="1" max="366" :disabled="controlsDisabled"
               :aria-invalid="!!fieldErrors.interval" />
             <span>{{ values.frequency === 'daily' ? '天' : values.frequency === 'weekly' ? '周' : values.frequency === 'monthly' ? '月' : '年' }}</span>
           </div>
@@ -355,7 +356,7 @@ function useServerVersion() {
           <label v-for="day in weekdays" :key="day.value"
             :class="{ selected: values.weekdays.includes(day.value) }">
             <input type="checkbox" :checked="values.weekdays.includes(day.value)"
-              :disabled="pending" @change="toggleWeekday(day.value)" />
+              :disabled="controlsDisabled" @change="toggleWeekday(day.value)" />
             {{ day.label }}
           </label>
         </div>
@@ -367,19 +368,19 @@ function useServerVersion() {
       <fieldset v-if="values.frequency !== 'none'" class="schedule-end-field">
         <legend>重复结束</legend>
         <label>
-          <input v-model="values.end_mode" type="radio" value="until" :disabled="pending" />
+          <input v-model="values.end_mode" type="radio" value="until" :disabled="controlsDisabled" />
           到日期
         </label>
         <input id="task-schedule-until" v-model="values.until" type="date"
-          :disabled="pending || values.end_mode !== 'until'"
+          :disabled="controlsDisabled || values.end_mode !== 'until'"
           :aria-invalid="!!fieldErrors.until" aria-label="重复结束日期" />
         <label>
-          <input v-model="values.end_mode" type="radio" value="count" :disabled="pending" />
+          <input v-model="values.end_mode" type="radio" value="count" :disabled="controlsDisabled" />
           共
         </label>
         <input id="task-schedule-count" v-model="values.count" type="number"
           inputmode="numeric" min="1" max="366"
-          :disabled="pending || values.end_mode !== 'count'"
+          :disabled="controlsDisabled || values.end_mode !== 'count'"
           :aria-invalid="!!fieldErrors.count" aria-label="重复次数" />
         <span>次</span>
         <p v-if="fieldErrors.until || fieldErrors.count" class="field-error">
@@ -393,7 +394,7 @@ function useServerVersion() {
         使用 {{ task.schedule.time_zone }}；修改个人时区不会改写已保存的截止时间。
       </p>
       <p v-else class="section-empty">首次保存时采用当前浏览器时区。</p>
-      <button type="button" class="button secondary compact-button"
+      <button v-if="!readOnly" type="button" class="button secondary compact-button"
         :disabled="pending || !dirty" @click="save">
         <Save :size="16" aria-hidden="true" />
         {{ pending ? '正在保存…' : '保存日期与重复' }}

@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
+  Archive,
   Check,
   CheckCircle2,
   ChevronDown,
   Circle,
   Clock3,
+  ListTodo,
   Link2,
   Plus,
   Search,
   SlidersHorizontal,
   Tags,
+  Trash2,
   X,
 } from 'lucide-vue-next'
 import type {
@@ -18,6 +21,7 @@ import type {
   Label,
   Project,
   TaskFilters,
+  TaskLifecycle,
   TaskSummary,
 } from '../lib/tasks'
 
@@ -36,6 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   newTask: []
+  lifecycle: [lifecycle: TaskLifecycle]
   openTask: [task: TaskSummary]
   search: [value: string]
   filters: [changes: Partial<TaskFilters>]
@@ -63,6 +68,11 @@ const hasFilters = computed(() =>
   || props.filters.priority !== null
   || !!props.filters.label
   || !!props.filters.search.trim())
+const scopeTitle = computed(() => ({
+  active: '任务',
+  archived: '已归档',
+  trashed: '回收站',
+})[props.filters.lifecycle])
 
 const priorityNames = ['未设置', '低', '中', '高']
 
@@ -101,12 +111,28 @@ function projectName() {
     <header class="task-list-heading">
       <div>
         <p>{{ projectName() }}</p>
-        <h1 tabindex="-1">任务</h1>
+        <h1 tabindex="-1">{{ scopeTitle }}</h1>
       </div>
-      <button type="button" class="button task-new-button" @click="emit('newTask')">
+      <button v-if="filters.lifecycle === 'active'" type="button"
+        class="button task-new-button" @click="emit('newTask')">
         <Plus :size="18" aria-hidden="true" />新建任务
       </button>
     </header>
+
+    <div class="task-lifecycle-tabs" role="group" aria-label="任务范围">
+      <button type="button" :class="{ active: filters.lifecycle === 'active' }"
+        :aria-pressed="filters.lifecycle === 'active'" @click="emit('lifecycle', 'active')">
+        <ListTodo :size="16" aria-hidden="true" />活动
+      </button>
+      <button type="button" :class="{ active: filters.lifecycle === 'archived' }"
+        :aria-pressed="filters.lifecycle === 'archived'" @click="emit('lifecycle', 'archived')">
+        <Archive :size="16" aria-hidden="true" />已归档
+      </button>
+      <button type="button" :class="{ active: filters.lifecycle === 'trashed' }"
+        :aria-pressed="filters.lifecycle === 'trashed'" @click="emit('lifecycle', 'trashed')">
+        <Trash2 :size="16" aria-hidden="true" />回收站
+      </button>
+    </div>
 
     <form class="task-search" role="search" @submit.prevent="submitSearch">
       <label class="sr-only" for="task-search">搜索任务</label>
@@ -154,7 +180,7 @@ function projectName() {
       </button>
     </div>
 
-    <div v-if="tasks.length" class="list-selection">
+    <div v-if="tasks.length && filters.lifecycle === 'active'" class="list-selection">
       <label class="checkbox-label">
         <input type="checkbox" :checked="allVisibleSelected"
           @change="emit('selectVisible', ($event.target as HTMLInputElement).checked)" />
@@ -163,7 +189,8 @@ function projectName() {
       <span>{{ tasks.length }} 项</span>
     </div>
 
-    <div v-if="selectedIds.length" class="bulk-toolbar" aria-label="批量操作">
+    <div v-if="selectedIds.length && filters.lifecycle === 'active'"
+      class="bulk-toolbar" aria-label="批量操作">
       <strong>已选 {{ selectedIds.length }} 项</strong>
       <select v-model="bulkAction" aria-label="批量操作类型" :disabled="bulkPending">
         <option value="complete">标为完成</option>
@@ -199,16 +226,20 @@ function projectName() {
     </div>
 
     <ul class="task-list" aria-live="polite">
-      <li v-for="task in tasks" :key="task.id" :class="{ active: activeTaskId === task.id }">
-        <label class="task-select">
+      <li v-for="task in tasks" :key="task.id"
+        :class="{ active: activeTaskId === task.id, 'read-only-row': filters.lifecycle !== 'active' }">
+        <label v-if="filters.lifecycle === 'active'" class="task-select">
           <input type="checkbox" :checked="selectedIds.includes(task.id)"
             :aria-label="`选择任务 ${task.title}`"
             @change="emit('selection', task.id, ($event.target as HTMLInputElement).checked)" />
         </label>
         <button type="button" class="task-row" @click="emit('openTask', task)">
           <span class="task-row-main">
-            <span class="task-state-icon" :data-state="task.status">
-              <CheckCircle2 v-if="task.status === 'completed'" :size="19" aria-hidden="true" />
+            <span class="task-state-icon"
+              :data-state="task.lifecycle === 'active' ? task.status : task.lifecycle">
+              <Archive v-if="task.lifecycle === 'archived'" :size="19" aria-hidden="true" />
+              <Trash2 v-else-if="task.lifecycle === 'trashed'" :size="19" aria-hidden="true" />
+              <CheckCircle2 v-else-if="task.status === 'completed'" :size="19" aria-hidden="true" />
               <Circle v-else :size="19" aria-hidden="true" />
             </span>
             <span class="task-copy">
@@ -217,6 +248,10 @@ function projectName() {
             </span>
           </span>
           <span class="task-meta">
+            <span v-if="task.lifecycle === 'archived'">已归档</span>
+            <span v-else-if="task.lifecycle === 'trashed'">
+              {{ task.trash_remaining_days ? `还剩 ${task.trash_remaining_days} 天` : '即将清理' }}
+            </span>
             <span v-if="task.priority" class="priority-mark" :data-priority="task.priority">
               {{ priorityNames[task.priority] }}
             </span>
@@ -233,9 +268,17 @@ function projectName() {
 
     <p v-if="loading" role="status" class="task-list-state">正在读取任务…</p>
     <div v-else-if="loaded && !tasks.length" class="task-list-empty">
-      <CheckCircle2 :size="28" aria-hidden="true" />
-      <strong>{{ hasFilters ? '没有符合条件的任务' : '这里还没有任务' }}</strong>
-      <p>{{ hasFilters ? '可以调整或清除筛选条件。' : '先记下一件要完成的事。' }}</p>
+      <Archive v-if="filters.lifecycle === 'archived'" :size="28" aria-hidden="true" />
+      <Trash2 v-else-if="filters.lifecycle === 'trashed'" :size="28" aria-hidden="true" />
+      <CheckCircle2 v-else :size="28" aria-hidden="true" />
+      <strong v-if="hasFilters">没有符合条件的任务</strong>
+      <strong v-else-if="filters.lifecycle === 'archived'">还没有归档任务</strong>
+      <strong v-else-if="filters.lifecycle === 'trashed'">回收站是空的</strong>
+      <strong v-else>这里还没有任务</strong>
+      <p v-if="hasFilters">可以调整或清除筛选条件。</p>
+      <p v-else-if="filters.lifecycle === 'archived'">归档后的任务会保留在这里。</p>
+      <p v-else-if="filters.lifecycle === 'trashed'">删除的任务会在这里保留 30 天。</p>
+      <p v-else>先记下一件要完成的事。</p>
     </div>
     <button v-if="hasMore" type="button" class="button secondary load-more"
       :disabled="loading" @click="emit('loadMore')">

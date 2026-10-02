@@ -27,6 +27,7 @@ import {
   type ProjectKind,
   type TaskDetail,
   type TaskFilters,
+  type TaskLifecycle,
   type TaskSummary,
 } from '../lib/tasks'
 import '../task-workspace.css'
@@ -37,6 +38,7 @@ const labels = ref<Awaited<ReturnType<typeof listLabels>>>([])
 const tasks = ref<TaskSummary[]>([])
 const cursor = ref<Cursor | null>(null)
 const filters = ref<TaskFilters>({
+  lifecycle: 'active',
   search: '',
   status: 'open',
   project_id: null,
@@ -126,6 +128,21 @@ async function setLocation(projectId: string | null, inbox: boolean) {
   await loadTasks()
 }
 
+async function setLifecycle(lifecycle: TaskLifecycle) {
+  if (filters.value.lifecycle === lifecycle || !canLeaveEditor()) return
+  filters.value = {
+    ...filters.value,
+    lifecycle,
+    status: lifecycle === 'active' ? 'open' : 'all',
+  }
+  selectedTask.value = null
+  creating.value = false
+  editorDirty.value = false
+  editorSuccess.value = ''
+  selectedIds.value = []
+  await loadTasks()
+}
+
 function beginProject(kind: ProjectKind) {
   projectDialogProject.value = null
   projectDialogKind.value = kind
@@ -198,11 +215,23 @@ async function taskCreated(task: TaskDetail) {
 
 function taskUpdated(task: TaskDetail) {
   selectedTask.value = task
-  const summary: TaskSummary = task
   const others = tasks.value.filter(item => item.id !== task.id)
-  tasks.value = [summary, ...others].sort((left, right) =>
-    right.updated_at.localeCompare(left.updated_at))
+  tasks.value = task.lifecycle === filters.value.lifecycle
+    ? [task as TaskSummary, ...others].sort((left, right) =>
+        right.updated_at.localeCompare(left.updated_at))
+    : others
+  selectedIds.value = selectedIds.value.filter(id => id !== task.id)
   void refreshProjectsAndLabels()
+}
+
+async function taskLifecycleChanged(message: string) {
+  selectedTask.value = null
+  creating.value = false
+  editorDirty.value = false
+  editorSuccess.value = ''
+  selectedIds.value = []
+  pageSuccess.value = message
+  await Promise.all([refreshProjectsAndLabels(), loadTasks(false, true)])
 }
 
 function patchFilters(changes: Partial<TaskFilters>) {
@@ -221,7 +250,7 @@ function clearFilters() {
   filters.value = {
     ...filters.value,
     search: '',
-    status: 'open',
+    status: filters.value.lifecycle === 'active' ? 'open' : 'all',
     priority: null,
     label: '',
   }
@@ -339,6 +368,7 @@ async function logout() {
           :has-more="!!cursor"
           :bulk-pending="bulkPending"
           @new-task="startTask"
+          @lifecycle="setLifecycle"
           @open-task="openTask"
           @search="search"
           @filters="patchFilters"
@@ -362,6 +392,7 @@ async function logout() {
         @close="closeEditor"
         @created="taskCreated"
         @updated="taskUpdated"
+        @lifecycle="taskLifecycleChanged"
         @dirty="editorDirty = $event"
       />
     </main>

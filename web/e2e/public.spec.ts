@@ -138,6 +138,8 @@ test('帮助、协议与隐私说明公开可达且区分当前实现', async ({
 
   await page.goto('/privacy')
   await expect(page.getByRole('heading', { level: 1, name: '隐私说明' })).toBeVisible()
+  await expect(page.getByRole('row', { name: /任务与日历.*任务回收站已实现.*日历对象回收站待实现/ }))
+    .toBeVisible()
   await expect(page.getByRole('row', { name: /识别原图.*确认后删除.*已实现/ }))
     .toBeVisible()
   await expect(page.getByRole('row', { name: /AI 技术正文日志.*7 天.*待实现/ }))
