@@ -34,9 +34,11 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=12 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
     readiness_timeout_seconds: float = Field(default=2, gt=0, le=10)
     encryption_key: SecretStr
+    ai_encryption_key: SecretStr | None = None
     session_hours: int = Field(default=24 * 30, ge=1, le=24 * 90)
     admin_session_hours: int = Field(default=8, ge=1, le=24)
     admin_setup_minutes: int = Field(default=30, ge=5, le=120)
+    ai_private_endpoint_hosts: list[str] = Field(default_factory=list)
     verification_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_minutes: int = Field(default=15, ge=5, le=60)
     mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)
@@ -51,13 +53,15 @@ class Settings(BaseSettings):
     smtp_from: str = "iTime <account@itime.local>"
     smtp_timeout_seconds: float = Field(default=5, ge=1, le=30)
 
-    @field_validator("encryption_key")
+    @field_validator("encryption_key", "ai_encryption_key")
     @classmethod
-    def fernet_key(cls, value: SecretStr) -> SecretStr:
+    def fernet_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
         try:
             Fernet(value.get_secret_value())
         except (ValueError, TypeError) as exc:
-            raise ValueError("encryption_key 必须是独立保管的 Fernet 密钥") from exc
+            raise ValueError("加密配置必须是独立保管的 Fernet 密钥") from exc
         return value
 
     @field_validator("database_url")
@@ -91,10 +95,31 @@ class Settings(BaseSettings):
             raise ValueError("allowed_hosts 必须列出明确主机名")
         return value
 
+    @field_validator("ai_private_endpoint_hosts")
+    @classmethod
+    def explicit_ai_hosts(cls, value: list[str]) -> list[str]:
+        normalized = [host.strip().lower() for host in value]
+        if any(
+            not host
+            or "*" in host
+            or "/" in host
+            or ":" in host
+            or "@" in host
+            for host in normalized
+        ):
+            raise ValueError("ai_private_endpoint_hosts 必须列出不含端口的明确主机名")
+        return list(dict.fromkeys(normalized))
+
     @model_validator(mode="after")
     def production_contract(self) -> "Settings":
         if self.environment == "production" and not self.public_origin.startswith("https://"):
             raise ValueError("生产环境 public_origin 必须启用 HTTPS")
+        if self.environment == "production" and (
+            self.ai_encryption_key is None
+            or self.ai_encryption_key.get_secret_value()
+            == self.encryption_key.get_secret_value()
+        ):
+            raise ValueError("生产环境必须配置与基础密钥不同的 ai_encryption_key")
         if self.smtp_host not in {"localhost", "127.0.0.1", "::1"} and not self.smtp_starttls:
             raise ValueError("外部 SMTP 必须启用 STARTTLS")
         return self

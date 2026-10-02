@@ -38,6 +38,12 @@ class Security:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.cipher = Fernet(settings.encryption_key.get_secret_value())
+        self.ai_cipher = Fernet(
+            (
+                settings.ai_encryption_key
+                or settings.encryption_key
+            ).get_secret_value()
+        )
         self.key = settings.encryption_key.get_secret_value().encode()
         self.hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1)
         self.dummy_hash = self.hasher.hash(new_token())
