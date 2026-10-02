@@ -215,7 +215,7 @@ class ChangeEvent(Base):
         CheckConstraint(
             "entity_type IN "
             "('project', 'task', 'step', 'label', 'time_settings', 'term', "
-            "'calendar_series')",
+            "'calendar_series', 'calendar_exception')",
             name="entity_type",
         ),
         CheckConstraint(

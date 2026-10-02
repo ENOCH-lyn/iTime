@@ -105,12 +105,13 @@ def build_recurrence_plan(
                 "course_has_no_occurrences",
                 "所选星期和周次在学期范围内没有课程日期。",
             )
-        if requested_start_date is not None and requested_start_date != dates[0]:
-            raise AppError(
-                "invalid_course_start_date",
-                "课程开始日期应留空，或与首个有效上课日期一致。",
-                details={"expected_start_date": dates[0].isoformat()},
-            )
+        if requested_start_date is not None:
+            if requested_start_date not in dates:
+                raise AppError(
+                    "invalid_course_start_date",
+                    "课程开始日期必须对应所选星期和有效周次。",
+                )
+            dates = [value for value in dates if value >= requested_start_date]
         if len(dates) > MAX_SERIES_OCCURRENCES:
             raise AppError(
                 "too_many_occurrences",

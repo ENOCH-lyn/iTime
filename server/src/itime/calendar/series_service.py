@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
@@ -6,8 +7,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.calendar.exception_service import apply_exception
 from itime.calendar.models import (
     AcademicTerm,
+    CalendarException,
     CalendarSeries,
     TermPeriod,
     UserTimeSettings,
@@ -350,6 +353,8 @@ def occurrence_result(series: CalendarSeries, occurrence_date: date) -> dict:
         "busy": series.busy,
         "status": "scheduled",
         "time_zone": series.time_zone,
+        "original_local_start_date": occurrence_date,
+        "original_local_start_time": series.starts_at,
         "local_start_date": occurrence_date,
         "local_start_time": series.starts_at,
         "local_end_date": occurrence_date + timedelta(days=series.end_day_offset),
@@ -357,6 +362,9 @@ def occurrence_result(series: CalendarSeries, occurrence_date: date) -> dict:
         "start_at": interval.start_at,
         "end_at": interval.end_at,
         "warning_codes": list(interval.warning_codes),
+        "exception_id": None,
+        "exception_version": None,
+        "exception_action": None,
         "conflict_with": [],
     }
 
@@ -375,6 +383,7 @@ def _query_utc_bounds(
 
 def _filter_occurrences(
     series: CalendarSeries,
+    exceptions: dict[date, CalendarException],
     *,
     query_start: datetime,
     query_end: datetime,
@@ -382,20 +391,50 @@ def _filter_occurrences(
     local_end: date,
 ) -> list[dict]:
     results: list[dict] = []
-    for occurrence_date in occurrence_dates(plan_from_series(series)):
-        if occurrence_date < _shift_date_clamped(local_start, -2):
-            continue
-        if occurrence_date > _shift_date_clamped(local_end, 1):
-            break
-        occurrence = occurrence_result(series, occurrence_date)
+    for occurrence in all_series_occurrences(series, exceptions):
         if occurrence["start_at"] is None or occurrence["end_at"] is None:
-            if local_start <= occurrence_date < local_end:
+            if local_start <= occurrence["local_start_date"] < local_end:
                 results.append(occurrence)
         elif (
             occurrence["start_at"] < query_end
             and occurrence["end_at"] > query_start
         ):
             results.append(occurrence)
+    return results
+
+
+async def load_exception_maps(
+    session: AsyncSession,
+    owner_id: UUID,
+    series_ids: list[UUID],
+) -> dict[UUID, dict[date, CalendarException]]:
+    result: defaultdict[UUID, dict[date, CalendarException]] = defaultdict(dict)
+    if not series_ids:
+        return result
+    exceptions = await session.scalars(
+        select(CalendarException).where(
+            CalendarException.owner_id == owner_id,
+            CalendarException.series_id.in_(series_ids),
+        )
+    )
+    for exception in exceptions:
+        result[exception.series_id][exception.original_start_date] = exception
+    return result
+
+
+def all_series_occurrences(
+    series: CalendarSeries,
+    exceptions: dict[date, CalendarException],
+) -> list[dict]:
+    results: list[dict] = []
+    for occurrence_date in occurrence_dates(plan_from_series(series)):
+        occurrence = occurrence_result(series, occurrence_date)
+        exception = exceptions.get(occurrence_date)
+        results.append(
+            apply_exception(series, occurrence, exception)
+            if exception is not None
+            else occurrence
+        )
     return results
 
 
@@ -481,17 +520,44 @@ async def query_occurrences(
         .limit(MAX_CANDIDATE_SERIES + 1)
     )
     series_rows = list(await session.scalars(statement))
+    moved_series_ids = set(
+        await session.scalars(
+            select(CalendarException.series_id).where(
+                CalendarException.owner_id == owner_id,
+                CalendarException.action == "moved",
+                CalendarException.moved_start_date >= coarse_start,
+                CalendarException.moved_start_date < coarse_end,
+            )
+        )
+    )
+    loaded_ids = {series.id for series in series_rows}
+    missing_ids = moved_series_ids - loaded_ids
+    if missing_ids:
+        series_rows.extend(
+            await session.scalars(
+                select(CalendarSeries).where(
+                    CalendarSeries.owner_id == owner_id,
+                    CalendarSeries.id.in_(missing_ids),
+                )
+            )
+        )
     if len(series_rows) > MAX_CANDIDATE_SERIES:
         raise AppError(
             "calendar_result_too_large",
             "该范围内的日历系列过多，请缩小查询范围。",
             status=422,
         )
+    exception_maps = await load_exception_maps(
+        session,
+        owner_id,
+        [series.id for series in series_rows],
+    )
     occurrences: list[dict] = []
     for series in series_rows:
         occurrences.extend(
             _filter_occurrences(
                 series,
+                exception_maps[series.id],
                 query_start=query_start,
                 query_end=query_end,
                 local_start=start_date,
@@ -521,16 +587,22 @@ async def find_series_conflicts(
     owner_id: UUID,
     candidate: CalendarSeries,
 ) -> dict:
-    if not candidate.busy:
-        return {"items": [], "has_more": False}
-    candidate_occurrences = [
-        occurrence_result(candidate, value)
-        for value in occurrence_dates(plan_from_series(candidate))
-    ]
+    candidate_exception_maps = await load_exception_maps(
+        session,
+        owner_id,
+        [candidate.id],
+    )
+    candidate_occurrences = all_series_occurrences(
+        candidate,
+        candidate_exception_maps[candidate.id],
+    )
     candidate_timed = [
         occurrence
         for occurrence in candidate_occurrences
-        if occurrence["start_at"] is not None and occurrence["end_at"] is not None
+        if occurrence["busy"]
+        and occurrence["status"] == "scheduled"
+        and occurrence["start_at"] is not None
+        and occurrence["end_at"] is not None
     ]
     if not candidate_timed:
         return {"items": [], "has_more": False}
@@ -550,7 +622,6 @@ async def find_series_conflicts(
             .where(
                 CalendarSeries.owner_id == owner_id,
                 CalendarSeries.id != candidate.id,
-                CalendarSeries.busy.is_(True),
                 CalendarSeries.start_date <= coarse_end,
                 or_(
                     and_(
@@ -565,17 +636,45 @@ async def find_series_conflicts(
             .limit(MAX_CANDIDATE_SERIES + 1)
         )
     )
+    moved_series_ids = set(
+        await session.scalars(
+            select(CalendarException.series_id).where(
+                CalendarException.owner_id == owner_id,
+                CalendarException.action == "moved",
+                CalendarException.moved_start_date >= coarse_start,
+                CalendarException.moved_start_date <= coarse_end,
+                CalendarException.series_id != candidate.id,
+            )
+        )
+    )
+    loaded_ids = {series.id for series in existing}
+    missing_ids = moved_series_ids - loaded_ids
+    if missing_ids:
+        existing.extend(
+            await session.scalars(
+                select(CalendarSeries).where(
+                    CalendarSeries.owner_id == owner_id,
+                    CalendarSeries.id.in_(missing_ids),
+                )
+            )
+        )
     if len(existing) > MAX_CANDIDATE_SERIES:
         raise AppError(
             "conflict_check_too_large",
             "现有固定安排过多，暂时无法完成完整冲突检查。",
             status=422,
         )
+    existing_exception_maps = await load_exception_maps(
+        session,
+        owner_id,
+        [series.id for series in existing],
+    )
     existing_occurrences: list[dict] = []
     for series in existing:
         existing_occurrences.extend(
             _filter_occurrences(
                 series,
+                existing_exception_maps[series.id],
                 query_start=query_start,
                 query_end=query_end,
                 local_start=first_date,
@@ -607,7 +706,9 @@ async def find_series_conflicts(
                 occurrence,
             )
             for occurrence in existing_occurrences
-            if occurrence["start_at"] is not None
+            if occurrence["busy"]
+            and occurrence["status"] == "scheduled"
+            and occurrence["start_at"] is not None
             and occurrence["end_at"] is not None
         ],
         key=lambda item: (item[0], item[1]),

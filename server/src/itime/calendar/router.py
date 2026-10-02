@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -7,15 +7,30 @@ from sqlalchemy import and_, func, or_, select
 
 from itime.auth.security import now
 from itime.auth.session import authorized
+from itime.calendar.exception_service import (
+    ensure_exceptions_remain_valid,
+    exception_result,
+    exception_values,
+    exception_version_conflict,
+    find_occurrence_date,
+    locked_exception,
+    series_exceptions,
+    validate_exception_fields,
+)
 from itime.calendar.models import (
     AcademicTerm,
+    CalendarException,
     CalendarSeries,
     TermPeriod,
     UserTimeSettings,
 )
+from itime.calendar.recurrence import occurrence_dates, plan_from_series
 from itime.calendar.schemas import (
+    ExceptionCreate,
+    ExceptionUpdate,
     PeriodsReplace,
     SeriesCreate,
+    SeriesSplit,
     SeriesUpdate,
     TermCreate,
     TermUpdate,
@@ -581,6 +596,12 @@ async def update_calendar_series(
             identity.user.id,
             data,
         )
+        await ensure_exceptions_remain_valid(
+            identity.session,
+            identity.user.id,
+            series.id,
+            resolved.plan,
+        )
         values = series_values(data, resolved)
         changed = any(getattr(series, field) != value for field, value in values.items())
         if changed:
@@ -637,3 +658,364 @@ async def get_calendar_occurrences(
             "time_zone": time_zone,
             "items": occurrences,
         }
+
+
+@router.get("/calendar/series/{series_id}/exceptions")
+async def list_calendar_exceptions(series_id: UUID, request: Request) -> dict:
+    async with authorized(request) as identity:
+        series = await identity.session.scalar(
+            select(CalendarSeries).where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == identity.user.id,
+            )
+        )
+        if series is None:
+            raise AppError(
+                "calendar_series_not_found",
+                "未找到此日历系列。",
+                status=404,
+            )
+        exceptions = await series_exceptions(
+            identity.session,
+            identity.user.id,
+            series.id,
+        )
+        return {
+            "series_version": series.version,
+            "items": [exception_result(exception) for exception in exceptions],
+        }
+
+
+@router.post("/calendar/series/{series_id}/exceptions", status_code=201)
+async def create_calendar_exception(
+    series_id: UUID,
+    data: ExceptionCreate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_exceptions.create:{series_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_series_version:
+            raise series_version_conflict(series)
+        original_start_date = await find_occurrence_date(
+            identity.session,
+            identity.user.id,
+            series,
+            data.occurrence_key,
+        )
+        existing = await identity.session.scalar(
+            select(CalendarException).where(
+                CalendarException.series_id == series.id,
+                CalendarException.original_start_date == original_start_date,
+            )
+        )
+        if existing is not None:
+            raise AppError(
+                "calendar_exception_exists",
+                "该次安排已经有单次修改，请编辑现有例外。",
+                status=409,
+                details={
+                    "exception_id": str(existing.id),
+                    "current_version": existing.version,
+                },
+            )
+        validate_exception_fields(series, data)
+        exception = CalendarException(
+            series_id=series.id,
+            owner_id=identity.user.id,
+            occurrence_key=data.occurrence_key,
+            original_start_date=original_start_date,
+            **exception_values(data),
+        )
+        identity.session.add(exception)
+        series.version += 1
+        series.updated_at = now()
+        await identity.session.flush()
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_exception",
+            exception.id,
+            "created",
+            exception.version,
+        )
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_series",
+            series.id,
+            "updated",
+            series.version,
+        )
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "exception": exception_result(exception),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.put("/calendar/series/{series_id}/exceptions/{exception_id}")
+async def update_calendar_exception(
+    series_id: UUID,
+    exception_id: UUID,
+    data: ExceptionUpdate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_exceptions.update:{series_id}:{exception_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_series_version:
+            raise series_version_conflict(series)
+        exception = await locked_exception(
+            identity.session,
+            identity.user.id,
+            series.id,
+            exception_id,
+        )
+        if exception.version != data.expected_version:
+            raise exception_version_conflict(exception)
+        validate_exception_fields(series, data)
+        values = exception_values(data)
+        changed = any(
+            getattr(exception, field) != value for field, value in values.items()
+        )
+        if changed:
+            for field, value in values.items():
+                setattr(exception, field, value)
+            exception.version += 1
+            exception.updated_at = now()
+            series.version += 1
+            series.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_exception",
+                exception.id,
+                "updated",
+                exception.version,
+            )
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_series",
+                series.id,
+                "updated",
+                series.version,
+            )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "exception": exception_result(exception),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.post("/calendar/series/{series_id}/split", status_code=201)
+async def split_calendar_series(
+    series_id: UUID,
+    data: SeriesSplit,
+    request: Request,
+) -> dict:
+    scope = f"calendar_series.split:{series_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_version:
+            raise series_version_conflict(series)
+        if series.recurrence_frequency == "none":
+            raise AppError(
+                "series_not_recurring",
+                "不重复安排不能按“本次及以后”拆分。",
+            )
+        split_date = await find_occurrence_date(
+            identity.session,
+            identity.user.id,
+            series,
+            data.occurrence_key,
+        )
+        old_dates = occurrence_dates(plan_from_series(series))
+        split_index = old_dates.index(split_date)
+        if split_index == 0:
+            raise AppError(
+                "split_at_first_occurrence",
+                "从首个实例开始修改等同于修改整个系列，请使用系列编辑。",
+            )
+        resolved = await resolve_series_draft(
+            identity.session,
+            identity.user.id,
+            data.replacement,
+        )
+        if (
+            data.replacement.kind != series.kind
+            or data.replacement.term_id != series.term_id
+        ):
+            raise AppError(
+                "invalid_series_split",
+                "拆分后的系列必须保留原类型和学期。",
+            )
+        if resolved.plan.start_date != split_date:
+            raise AppError(
+                "invalid_series_split_start",
+                "拆分后的系列必须从所选实例日期开始。",
+                details={"expected_start_date": split_date.isoformat()},
+            )
+        successor_dates = set(occurrence_dates(resolved.plan))
+        exceptions = await series_exceptions(
+            identity.session,
+            identity.user.id,
+            series.id,
+            lock=True,
+        )
+        future_exceptions = [
+            exception
+            for exception in exceptions
+            if exception.original_start_date >= split_date
+        ]
+        orphaned = [
+            exception
+            for exception in future_exceptions
+            if exception.original_start_date not in successor_dates
+        ]
+        if orphaned:
+            raise AppError(
+                "series_exceptions_would_be_orphaned",
+                "拆分后的重复规则不包含已有的未来单次修改。",
+                status=409,
+                details={
+                    "exception_ids": [
+                        str(exception.id) for exception in orphaned[:20]
+                    ],
+                    "has_more": len(orphaned) > 20,
+                },
+            )
+
+        if series.recurrence_count is not None:
+            series.recurrence_count = split_index
+        else:
+            series.recurrence_until = split_date - timedelta(days=1)
+        series.version += 1
+        series.updated_at = now()
+        successor = CalendarSeries(
+            owner_id=identity.user.id,
+            predecessor_id=series.id,
+            source_type=series.source_type,
+            **series_values(data.replacement, resolved),
+        )
+        identity.session.add(successor)
+        await identity.session.flush()
+        for exception in future_exceptions:
+            exception.series_id = successor.id
+            exception.version += 1
+            exception.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_exception",
+                exception.id,
+                "updated",
+                exception.version,
+            )
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_series",
+            series.id,
+            "updated",
+            series.version,
+        )
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_series",
+            successor.id,
+            "created",
+            successor.version,
+        )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "predecessor": series_result(series),
+            "successor": series_result(successor),
+            "moved_exception_count": len(future_exceptions),
+            "warnings": series_warnings(resolved.warning_occurrence_keys),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                successor,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result

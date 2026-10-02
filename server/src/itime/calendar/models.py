@@ -277,3 +277,99 @@ class CalendarSeries(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class CalendarException(Base):
+    __tablename__ = "calendar_exceptions"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('cancelled', 'moved', 'overridden')",
+            name="action",
+        ),
+        CheckConstraint(
+            "(action = 'moved') = "
+            "(moved_start_date IS NOT NULL AND moved_starts_at IS NOT NULL "
+            "AND moved_ends_at IS NOT NULL AND moved_end_day_offset IS NOT NULL)",
+            name="moved_fields",
+        ),
+        CheckConstraint(
+            "action = 'moved' OR "
+            "(moved_start_date IS NULL AND moved_starts_at IS NULL "
+            "AND moved_ends_at IS NULL AND moved_end_day_offset IS NULL "
+            "AND moved_ambiguous_offset_minutes IS NULL)",
+            name="non_moved_fields",
+        ),
+        CheckConstraint(
+            "moved_end_day_offset IS NULL OR moved_end_day_offset BETWEEN 0 AND 1",
+            name="moved_end_day_offset",
+        ),
+        CheckConstraint(
+            "moved_ambiguous_offset_minutes IS NULL OR "
+            "moved_ambiguous_offset_minutes BETWEEN -840 AND 840",
+            name="moved_ambiguous_offset_minutes",
+        ),
+        CheckConstraint(
+            "(action = 'overridden') = "
+            "(override_name IS NOT NULL OR override_description IS NOT NULL "
+            "OR override_location IS NOT NULL OR override_busy IS NOT NULL)",
+            name="override_fields",
+        ),
+        CheckConstraint(
+            "override_name IS NULL OR length(btrim(override_name)) > 0",
+            name="nonempty_override_name",
+        ),
+        ForeignKeyConstraint(
+            ["series_id", "owner_id"],
+            ["calendar_series.id", "calendar_series.owner_id"],
+            name="fk_calendar_exceptions_series_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_exceptions_id_owner"),
+        UniqueConstraint(
+            "series_id",
+            "occurrence_key",
+            name="uq_calendar_exceptions_series_occurrence",
+        ),
+        UniqueConstraint(
+            "series_id",
+            "original_start_date",
+            name="uq_calendar_exceptions_series_original_date",
+        ),
+        Index(
+            "ix_calendar_exceptions_owner_series",
+            "owner_id",
+            "series_id",
+            "original_start_date",
+        ),
+        Index(
+            "ix_calendar_exceptions_owner_moved_date",
+            "owner_id",
+            "moved_start_date",
+            "series_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    series_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    occurrence_key: Mapped[str] = mapped_column(String(64))
+    original_start_date: Mapped[date] = mapped_column(Date)
+    action: Mapped[str] = mapped_column(String(12))
+    moved_start_date: Mapped[date | None] = mapped_column(Date)
+    moved_starts_at: Mapped[time | None] = mapped_column(Time(timezone=False))
+    moved_ends_at: Mapped[time | None] = mapped_column(Time(timezone=False))
+    moved_end_day_offset: Mapped[int | None] = mapped_column(Integer)
+    moved_ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    override_name: Mapped[str | None] = mapped_column(String(200))
+    override_description: Mapped[str | None] = mapped_column(Text)
+    override_location: Mapped[str | None] = mapped_column(String(300))
+    override_busy: Mapped[bool | None] = mapped_column(Boolean)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
