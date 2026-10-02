@@ -62,7 +62,7 @@
 
 | 需求 | 当前代码与证据 | 仍未完成 |
 | --- | --- | --- |
-| REQ-WEB-01 | `web/src/pages/ProductPage.vue`、公共页组件与 `public-site.css` 已将 `/` 实现为访客产品入口，包含注册/登录、产品工作流和响应式日计划主视觉；已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 公开演示、协议隐私、全局 AI 主入口及首次使用引导仍待后续模块 |
+| REQ-WEB-01 | `web/src/pages/ProductPage.vue`、`DemoPage.vue`、`HelpPage.vue`、`TermsPage.vue`、`PrivacyPage.vue` 及公共页样式已实现产品介绍、不持久化演示、帮助、协议隐私和注册/登录入口；已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 全局 AI 主入口及登录后首次使用引导仍待后续模块 |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks` 与 `0009_task_schedules`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期和未来拆分已通过真实服务与三视口 Chromium UI 测试 | 任务实例补做 UI、归档、回收站及语音/AI 校对仍待后续模块 |

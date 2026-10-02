@@ -678,4 +678,48 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 | `cd web && pnpm exec playwright test e2e/public.spec.ts` | **3 passed in 10.6s** | 首页 × 1440×1000、390×844、768×1024，另含 320×700 最大字号 |
 | `cd web && pnpm test:e2e` | **99 passed in 4.1m** | 账号、后台、任务、日历、导入、订阅和公开首页全量 Chromium 回归 |
 
-专项测试验证主标题、注册入口、工作流锚点、产品场景、axe、控制台、API 500 监听和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-home.png` 与 `desktop-public-home-320-large-font.png`，已人工检查；修正了背景小字对比度、页头 landmark 及平板/手机背景标签与正文重叠问题。Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium 流程；真实 Edge 和实体设备仍未验证。
+专项测试验证主标题、注册与演示入口、产品场景、axe、控制台、API 500 监听和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-home.png` 与 `desktop-public-home-320-large-font.png`，已人工检查；修正了背景小字对比度、页头 landmark 及平板/手机背景标签与正文重叠问题。Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium 流程；真实 Edge 和实体设备仍未验证。
+
+## M7-B：公开交互演示
+
+对应 Git 提交主题：`feat: 完成公开交互演示`。实际代码为 `web/src/pages/DemoPage.vue`、`demo.css`、公共页导航扩展和 `web/e2e/public.spec.ts`。
+
+已实现：
+
+- `/demo` 无需登录即可使用，明确说明所有内容为当前页面的预设数据，刷新后重置，不写入服务端或浏览器持久化存储，也不冒充真实 AI 结果。
+- 分段控件提供宽松、均衡、紧凑三种密度；切换后真实更新课程作业、阅读、运动与缓冲的开始/结束时间，固定课程始终保留原时间。
+- 左侧待办与右侧时间线分开表达任务事实和计划块。任务只能通过明确的完成按钮改变状态，计划块本身不会自动完成任务；完成计数、删除线和时间线状态同步更新。
+- “重新开始”恢复均衡密度与全部未完成状态；刷新页面同样恢复初始演示，避免访客误认为数据已保存。
+- 桌面采用任务/时间线双栏工具，平板和手机按任务在前、时间线在后单列展开；320px 最大字号下分段控件、任务按钮、时间区间和页脚无横向溢出。
+
+2026-10-02 执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与生产构建 |
+| `cd web && pnpm exec playwright test e2e/public.spec.ts` | **6 passed in 17.7s** | 首页与演示 × 1440×1000、390×844、768×1024，另含两页 320×700 最大字号 |
+| `cd web && pnpm test:e2e` | **102 passed in 4.0m** | 账号、后台、任务、日历、导入、订阅、公开首页和演示全量 Chromium 回归 |
+
+浏览器流程实际切换密度并检查时间变化，明确完成任务并检查双区域状态，再刷新确认演示数据重置。三个视口均验证 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-demo.png` 与 `desktop-public-demo-320-large-font.png`，已人工检查。真实 Edge 和实体设备仍未验证。
+
+## M7-C：公开帮助、协议与隐私说明
+
+对应 Git 提交主题：`feat: 完成公开帮助与法律说明`。实际代码为 `HelpPage.vue`、`TermsPage.vue`、`PrivacyPage.vue`、公共页样式/页脚、公开路由和 `web/e2e/public.spec.ts`。
+
+已实现：
+
+- 帮助中心从原账号排障扩展为首次使用、任务/日历语义、账号安全和失败恢复四组内容；可直接进入任务、日历、演示、重发验证、找回密码和设备管理。
+- 用户协议明确当前为 Web 开发版本，说明服务范围、账号责任、内容来源、AI 结果确认和中断恢复；不虚构尚未确定的运营主体、正式联系方式或争议条款。
+- 隐私说明如实列出当前已处理的账号/任务/日历数据、截图识别的 OpenAI 兼容端点处理、超级管理员正文访问，以及正式上线前仍需披露的供应商、地区和运营主体。
+- 生命周期表逐项区分“产品规则”和“当前状态”：识别原图清理已实现，30 天回收站、7 天 AI 正文日志、30 天质检样本和注销清理标为待实现，不把需求目标冒充现状。
+- 隐私表格在宽屏保持结构化表格；600px 以下转换为带字段标签的完整列表，不把“当前状态”藏在默认视口之外。所有公开页脚只链接真实路由。
+
+2026-10-02 执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与生产构建 |
+| `cd web && pnpm exec playwright test e2e/public.spec.ts` | **9 passed in 14.4s** | 五类公共页面 × 1440×1000、390×844、768×1024，另含首页、演示、隐私 320×700 最大字号 |
+| `cd web && pnpm test:e2e` | **105 passed in 4.2m** | 账号、后台、任务、日历、导入、订阅和全部公开页面 Chromium 回归 |
+
+浏览器流程真实访问帮助锚点、协议和隐私路由，核对 7 天日志、30 天样本及“已实现/待实现”状态。三个视口均验证 axe、控制台、API 500 和根级横向溢出；修复了可滚动表格键盘焦点，并将手机表格进一步改为完整标签列表。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-privacy.png` 与 `desktop-public-privacy-320-large-font.png`，已人工检查。正式运营主体/供应商/地区仍是发布前配置与披露项；真实 Edge 和实体设备仍未验证。

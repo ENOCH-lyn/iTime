@@ -24,6 +24,8 @@ const router = createRouter({
     })),
     { path: '/admin/:section(users|registration|ai|security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
     { path: '/help', component: () => import('./pages/HelpPage.vue') },
+    { path: '/terms', component: () => import('./pages/TermsPage.vue') },
+    { path: '/privacy', component: () => import('./pages/PrivacyPage.vue') },
     { path: '/:pathMatch(.*)*', component: () => import('./pages/NotFoundPage.vue') },
   ],
   scrollBehavior: () => ({ top: 0 }),

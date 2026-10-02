@@ -122,3 +122,44 @@ test('公开演示可切换密度、明确完成并在刷新后重置', async ({
     await screenshot(page, info, 'demo-320-large-font')
   }
 })
+
+test('帮助、协议与隐私说明公开可达且区分当前实现', async ({ page }, info) => {
+  await page.goto('/help')
+  await expect(page.getByRole('heading', { level: 1, name: '帮助中心' })).toBeVisible()
+  await page.getByRole('link', { name: '任务与日历' }).click()
+  await expect(page.locator('#calendar')).toBeInViewport()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+
+  await page.goto('/terms')
+  await expect(page.getByRole('heading', { level: 1, name: '用户协议' })).toBeVisible()
+  await expect(page.getByText(/正式上线前还会补充运营主体和联系方式/))
+    .toBeVisible()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+
+  await page.goto('/privacy')
+  await expect(page.getByRole('heading', { level: 1, name: '隐私说明' })).toBeVisible()
+  await expect(page.getByRole('row', { name: /识别原图.*确认后删除.*已实现/ }))
+    .toBeVisible()
+  await expect(page.getByRole('row', { name: /AI 技术正文日志.*7 天.*待实现/ }))
+    .toBeVisible()
+  await expect(page.getByRole('row', { name: /质量改进样本.*30 天.*待实现/ }))
+    .toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'privacy')
+
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'light', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.reload()
+    await expect(page.getByRole('heading', { level: 1, name: '隐私说明' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'privacy-320-large-font')
+  }
+})
