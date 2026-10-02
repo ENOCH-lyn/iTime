@@ -214,7 +214,8 @@ class ChangeEvent(Base):
     __table_args__ = (
         CheckConstraint(
             "entity_type IN "
-            "('project', 'task', 'step', 'label', 'time_settings', 'term')",
+            "('project', 'task', 'step', 'label', 'time_settings', 'term', "
+            "'calendar_series')",
             name="entity_type",
         ),
         CheckConstraint(

@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -7,12 +7,28 @@ from sqlalchemy import and_, func, or_, select
 
 from itime.auth.security import now
 from itime.auth.session import authorized
-from itime.calendar.models import AcademicTerm, TermPeriod, UserTimeSettings
+from itime.calendar.models import (
+    AcademicTerm,
+    CalendarSeries,
+    TermPeriod,
+    UserTimeSettings,
+)
 from itime.calendar.schemas import (
     PeriodsReplace,
+    SeriesCreate,
+    SeriesUpdate,
     TermCreate,
     TermUpdate,
     TimeSettingsUpdate,
+)
+from itime.calendar.series_service import (
+    find_series_conflicts,
+    locked_series,
+    query_occurrences,
+    resolve_series_draft,
+    series_result,
+    series_values,
+    series_version_conflict,
 )
 from itime.calendar.service import (
     default_term_time_zone,
@@ -391,3 +407,233 @@ async def replace_term_periods(
             result,
         )
         return result
+
+
+def series_warnings(occurrence_keys: tuple[str, ...]) -> list[dict]:
+    return [
+        {
+            "code": "invalid_local_time",
+            "occurrence_key": key,
+            "message": "该次安排位于夏令时跳过的本地时间，未自动平移。",
+        }
+        for key in occurrence_keys
+    ]
+
+
+@router.post("/calendar/series", status_code=201)
+async def create_calendar_series(data: SeriesCreate, request: Request) -> dict:
+    scope = "calendar_series.create"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        resolved = await resolve_series_draft(
+            identity.session,
+            identity.user.id,
+            data,
+        )
+        series = CalendarSeries(
+            owner_id=identity.user.id,
+            predecessor_id=None,
+            source_type="manual",
+            **series_values(data, resolved),
+        )
+        identity.session.add(series)
+        await identity.session.flush()
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_series",
+            series.id,
+            "created",
+            series.version,
+        )
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "warnings": series_warnings(resolved.warning_occurrence_keys),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.get("/calendar/series")
+async def list_calendar_series(
+    request: Request,
+    kind: Literal["all", "course", "fixed"] = "all",
+    term_id: UUID | None = None,
+    before_time: datetime | None = None,
+    before_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict:
+    validate_cursor(before_time, before_id)
+    async with authorized(request) as identity:
+        if term_id is not None:
+            owned = await identity.session.scalar(
+                select(AcademicTerm.id).where(
+                    AcademicTerm.id == term_id,
+                    AcademicTerm.owner_id == identity.user.id,
+                )
+            )
+            if owned is None:
+                raise AppError("term_not_found", "未找到此学期。", status=404)
+        statement = select(CalendarSeries).where(
+            CalendarSeries.owner_id == identity.user.id
+        )
+        if kind != "all":
+            statement = statement.where(CalendarSeries.kind == kind)
+        if term_id is not None:
+            statement = statement.where(CalendarSeries.term_id == term_id)
+        if before_time is not None:
+            statement = statement.where(
+                or_(
+                    CalendarSeries.updated_at < before_time,
+                    and_(
+                        CalendarSeries.updated_at == before_time,
+                        CalendarSeries.id < before_id,
+                    ),
+                )
+            )
+        rows = list(
+            await identity.session.scalars(
+                statement.order_by(
+                    CalendarSeries.updated_at.desc(),
+                    CalendarSeries.id.desc(),
+                ).limit(limit + 1)
+            )
+        )
+        page = rows[:limit]
+        return {
+            "items": [series_result(series) for series in page],
+            "next_cursor": (
+                {
+                    "before_time": page[-1].updated_at,
+                    "before_id": page[-1].id,
+                }
+                if len(rows) > limit
+                else None
+            ),
+        }
+
+
+@router.get("/calendar/series/{series_id}")
+async def get_calendar_series(series_id: UUID, request: Request) -> dict:
+    async with authorized(request) as identity:
+        series = await identity.session.scalar(
+            select(CalendarSeries).where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == identity.user.id,
+            )
+        )
+        if series is None:
+            raise AppError(
+                "calendar_series_not_found",
+                "未找到此日历系列。",
+                status=404,
+            )
+        return {"series": series_result(series)}
+
+
+@router.put("/calendar/series/{series_id}")
+async def update_calendar_series(
+    series_id: UUID,
+    data: SeriesUpdate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_series.update:{series_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_version:
+            raise series_version_conflict(series)
+        resolved = await resolve_series_draft(
+            identity.session,
+            identity.user.id,
+            data,
+        )
+        values = series_values(data, resolved)
+        changed = any(getattr(series, field) != value for field, value in values.items())
+        if changed:
+            for field, value in values.items():
+                setattr(series, field, value)
+            series.version += 1
+            series.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_series",
+                series.id,
+                "updated",
+                series.version,
+            )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "warnings": series_warnings(resolved.warning_occurrence_keys),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.get("/calendar/occurrences")
+async def get_calendar_occurrences(
+    request: Request,
+    start: date,
+    end: date,
+) -> dict:
+    async with authorized(request) as identity:
+        occurrences, time_zone = await query_occurrences(
+            identity.session,
+            identity.user.id,
+            start,
+            end,
+        )
+        return {
+            "start": start,
+            "end": end,
+            "time_zone": time_zone,
+            "items": occurrences,
+        }
