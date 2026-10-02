@@ -24,20 +24,13 @@ hosts.yml
 *.log
 logs/
 
-# Common generated artifacts; the application stack is not chosen yet.
+# Python and Vue development artifacts
 node_modules/
 dist/
 build/
 coverage/
 playwright-report/
 test-results/
-.next/
-.turbo/
 .venv/
 __pycache__/
 .pytest_cache/
-.dart_tool/
-.flutter-plugins*
-Pods/
-.gradle/
-DerivedData/
