@@ -67,6 +67,7 @@ test.afterEach(async ({ page }) => { expect(runtimeErrors.get(page)).toEqual([])
 test('注册校验、真实邮件验证、登录与刷新保持身份', async ({ page, request, context }, info) => {
   const address = email()
   await page.goto('/register')
+  const browserTimeZone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
   await expect(page.getByText('请输入完整的邮箱地址。')).toBeVisible()
   await expect(page.getByLabel('邮箱', { exact: true })).toBeFocused()
@@ -89,6 +90,16 @@ test('注册校验、真实邮件验证、登录与刷新保持身份', async ({
   await login(page, address)
   await page.reload()
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  const timeSettings = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/time-settings')
+    return response.json()
+  })
+  expect(timeSettings.settings).toMatchObject({
+    initialized: true,
+    time_zone: browserTimeZone,
+    week_starts_on: 1,
+    activity_day_start_minute: 240,
+  })
   await screenshot(page, info, 'account')
   const cookie = (await context.cookies()).find(c => c.name === 'itime_session')!
   expect(cookie.httpOnly).toBe(true)

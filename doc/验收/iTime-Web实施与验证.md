@@ -278,3 +278,32 @@ Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效�
 截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-tasks-complete-detail.png` 及对应 `*-tasks-320-large-font-list.png`。人工检查确认桌面三栏扫描关系、平板两行导航、手机单栏编辑、长表单、步骤操作和 320px 大字号无内容重叠。浏览器插件不可用，按既有测试方案使用 Playwright Chromium；尚未执行真实 Edge 和实体设备验证。
 
 本阶段仅覆盖 M3-A 已有服务字段。截止时间、重复实例、跨天拆分/不可拆、归档、任务回收站、语音转写及 AI 校对仍未实现，不能据此把完整 REQ-TASK-01/02 标为验收通过。
+
+## M3-C：用户时区、学期与节次服务
+
+对应 Git 提交主题：`feat: 实现时间设置与学期节次服务`。实际代码为 `server/src/itime/calendar/`、迁移 `0006_time_terms`、账号注册时区接入、`server/tests/test_calendar_foundation.py` 和注册浏览器测试；完整语义见[时间、课表与重复规则设计](../设计/iTime-时间课表与重复规则设计.md)。
+
+已实现：
+
+- 注册页面读取浏览器 `Intl` IANA 时区并随新账号提交；服务端校验后保存。旧账号没有设置时明确返回未初始化和空时区，不把 UTC 当作用户选择。
+- 本人时间设置读取和带版本更新；周起点固定为周一，活动日边界固定为当地 04:00，时区修改不触碰其他业务数据。
+- 学期创建、详情、稳定游标列表和带版本编辑；日期范围最多 400 天，第一周锚点必须是包含开始日的周一，学期可重叠。
+- 每学期完整节次表原子替换；最多 30 节，编号和名称唯一，本地结束时间晚于开始时间，相邻端点允许，重叠整批拒绝。
+- 所有读取按账号隔离；时间设置和学期写入复用 CSRF、`operation_id` 内容摘要重放、乐观版本及 `change_events`，不存在和他人对象统一返回 404。
+
+2026-10-02 在 PostgreSQL 18.6、真实 Uvicorn HTTP、生产前端构建和 Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q tests/test_calendar_foundation.py` | **6 passed in 9.05s** | 时间设置、学期、节次、含业务数据的迁移往返、双账号和双会话并发专项 |
+| `cd server && uv run pytest -q` | **56 passed in 37.18s** | 服务端全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic downgrade 0005_tasks` 后重新 `upgrade head` | 通过 | 已有开发库迁移回退及再升级 |
+| `cd server && uv run alembic check` | 无模型漂移 | `0006_time_terms (head)` 与 ORM 一致 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | 注册时区接入的 TypeScript 与生产构建 |
+| `cd web && pnpm test:e2e` | **63 passed in 2.1m** | 21 个场景在桌面、手机、平板全量回归 |
+
+动态覆盖首次读取、浏览器注册时区、无效 IANA 名称不回显、当地 03:59/04:00（含纽约夏令时切换日）、400 天边界、周一锚点、允许学期重叠、节次相邻/重叠/重复/带偏移时间、失败后原数据不变、无变化不增版本、操作重放、陈旧版本、跨账号 404，以及两个已登录设备持同一版本并发修改时仅一个成功。迁移专项还先写入真实时区、学期、变更事件和操作记录，再验证 downgrade 清除本功能旁路记录、重新 upgrade 可用。
+
+本节没有实现课程、固定安排、重复系列、单次例外、occurrence 查询、日历页面或导入，因此 CAL-01、CAL-03 和 TIME-01 仍只完成基础部分，不能标为完整验收通过。

@@ -20,7 +20,10 @@ from itime.auth.session import (
     session_result,
     set_session_cookie,
 )
+from itime.calendar.models import UserTimeSettings
+from itime.calendar.service import validate_time_zone
 from itime.errors import AppError
+from itime.tasks.models import ChangeEvent
 
 router = APIRouter(prefix="/api/v1/auth", tags=["账号"])
 
@@ -46,6 +49,12 @@ InvitationToken = Annotated[SecretStr, Field(min_length=43, max_length=43)]
 class RegisterInput(EmailInput):
     password: Password
     invitation_token: InvitationToken | None = None
+    time_zone: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator("time_zone")
+    @classmethod
+    def clean_time_zone(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
 
 
 class LoginInput(EmailInput):
@@ -111,6 +120,7 @@ async def policy(request: Request) -> dict:
 @router.post("/register", status_code=202)
 async def register(data: RegisterInput, request: Request) -> dict:
     await rate_limit(request, "register", data.email)
+    time_zone = validate_time_zone(data.time_zone) if data.time_zone is not None else None
     security = request.app.state.security
     encoded = await security.hash_password(data.password.get_secret_value())
     async with request.app.state.database.transaction() as session:
@@ -168,6 +178,22 @@ async def register(data: RegisterInput, request: Request) -> dict:
                     status=403,
                 )
         if new_id:
+            if time_zone is not None:
+                time_settings = UserTimeSettings(
+                    owner_id=user.id,
+                    time_zone=time_zone,
+                    version=1,
+                )
+                session.add(time_settings)
+                session.add(
+                    ChangeEvent(
+                        owner_id=user.id,
+                        entity_type="time_settings",
+                        entity_id=user.id,
+                        action="created",
+                        entity_version=1,
+                    )
+                )
             audit(
                 request,
                 session,

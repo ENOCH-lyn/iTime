@@ -5,6 +5,7 @@ from sqlalchemy.engine import Connection
 
 from itime.admin import models as admin_models  # noqa: F401
 from itime.auth import models as auth_models  # noqa: F401
+from itime.calendar import models as calendar_models  # noqa: F401
 from itime.config import get_settings
 from itime.database import Base, Database
 from itime.tasks import models as task_models  # noqa: F401

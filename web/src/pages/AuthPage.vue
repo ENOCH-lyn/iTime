@@ -86,6 +86,10 @@ function startCooldown() {
   cooldown.value = policy.value!.mail_cooldown_seconds
   cooldownUntil = Date.now() + cooldown.value * 1000
 }
+function browserTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined }
+  catch { return undefined }
+}
 async function submit() {
   if (pending.value || !policy.value) return
   error.value = null
@@ -119,7 +123,11 @@ async function submit() {
         : {
             email,
             ...(props.mode === 'register'
-              ? { password: values.password, invitation_token: invitationToken.value || undefined }
+              ? {
+                  password: values.password,
+                  invitation_token: invitationToken.value || undefined,
+                  time_zone: browserTimeZone(),
+                }
               : {}),
           }
       const result = await api<{ message: string }>(`/auth/${props.mode}`, body)

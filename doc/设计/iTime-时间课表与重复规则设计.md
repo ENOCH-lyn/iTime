@@ -143,3 +143,15 @@
 ## 8. 非本批范围
 
 第一批不调用 OCR 或外部订阅，不实现计划自动重排，也不删除任务或事件。它们分别在后续独立模块中实现，但必须复用本文的时间、来源、版本和 occurrence 标识，不建立第二套冲突语义。
+
+## 9. 已实现基础合同
+
+迁移 `0006_time_terms` 和 `server/src/itime/calendar/` 已实现第一批中的时间设置、学期与节次：
+
+- 注册请求可选传入 `time_zone`；只有新账号创建成功时才保存，经 IANA 数据库校验。未传入的历史或新账号读取时间设置时得到 `initialized=false`、`time_zone=null` 和 `version=0`，不以服务器 UTC 冒充用户设置。
+- `PUT /api/v1/time-settings` 以 `expected_version=0` 初始化，后续按当前版本更新；周起点和活动日边界首版固定为周一及 04:00。
+- `POST /api/v1/terms` 在未显式给出时区时继承已保存的用户时区；`GET /api/v1/terms` 使用更新时间和 ID 的稳定游标；`GET/PUT /api/v1/terms/{id}` 返回本人学期详情。
+- `PUT /api/v1/terms/{id}/periods` 接收完整节次表和学期版本。空列表可清空，最多 30 节；编号、大小写归一后的名称、时段和重叠任一非法时整批不保存；相邻端点允许。
+- 时间设置和学期变更写入 `change_events`；所有上述 PUT/POST 写入复用 `user_operations`，同操作号同内容重放原结果，不同内容返回冲突。学期和节次作为同一版本聚合，节次变化递增学期版本。
+
+课程/固定安排、重复规则、例外及 occurrence 查询仍未实现，继续按第 3、4、6 节合同推进。
