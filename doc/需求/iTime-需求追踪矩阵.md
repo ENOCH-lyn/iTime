@@ -65,8 +65,8 @@
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks` 与 `0009_task_schedules`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期和未来拆分已通过真实服务与三视口 Chromium UI 测试 | 任务实例补做 UI、归档、回收站及语音/AI 校对仍待后续模块 |
-| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0015`、`web/src/pages/CalendarPage.vue` 及日历组件；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、单次取消/调课/覆盖、独立补课、未来系列拆分、文件/截图导入及订阅 occurrence 已通过真实 HTTP/PostgreSQL 测试，既有界面通过三视口 Chromium 测试 | ICS 订阅管理界面及活动日相关额度/统计应用尚未实现 |
-| REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`server/src/itime/ai/`、迁移 `0011`—`0015`、`web/src/components/CalendarImport*.vue` 与 `CalendarScreenshotImport.vue`；已实现 XLSX/ICS 文件和截图的完整 Web 流程，以及 ICS URL 订阅的受限抓取、刷新、来源修订、本地字段覆盖和统一日历投影服务 | ICS 订阅管理界面尚未实现，因此 CAL-02 尚未完整通过 |
+| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0015`、`web/src/pages/CalendarPage.vue` 及日历组件；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、单次取消/调课/覆盖、独立补课、未来系列拆分、文件/截图导入及订阅 occurrence 已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 订阅 occurrence 的用户单次例外及活动日相关额度/统计应用尚未实现 |
+| REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`server/src/itime/ai/`、迁移 `0011`—`0015`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue` 与 `CalendarSubscriptionManager.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停恢复、字段覆盖、差异与统一日历投影 Web 流程 | 已完成首版可达流程；真实第三方私密订阅源兼容性仍需部署前联调 |
 | REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`server/src/itime/ai/admin_router.py`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请、普通用户/AI 状态管理，以及 AI 配置创建、真实测试、发布和回滚 | 最终恢复/交接规则及额度/正文/日志/质检管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。

@@ -623,12 +623,37 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 
 | 命令（`server/`） | 实际结果 | 范围 |
 | --- | --- | --- |
-| `uv run pytest -q tests/test_calendar_subscription_fetcher.py tests/test_calendar_subscription_parser.py tests/test_calendar_subscriptions.py` | **33 passed in 10.55s** | SSRF/peer/重定向/代理/gzip/超时、ICS 解析、真实 API/PostgreSQL/worker、304、失败保旧、RID、覆盖、容量、租约和迁移 |
-| `uv run pytest -q` | **159 passed** | 订阅服务接入后的服务端全量回归 |
+| `uv run pytest -q tests/test_calendar_subscription_fetcher.py tests/test_calendar_subscription_parser.py tests/test_calendar_subscriptions.py` | **34 passed** | SSRF/peer/重定向/代理/gzip/超时、ICS 解析、真实 API/PostgreSQL/worker、304、失败保旧、RID、覆盖、容量、租约和迁移 |
+| `uv run pytest -q` | **160 passed in 122.04s** | 订阅服务接入后的服务端全量回归 |
 | `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
 | `uv run alembic check` | 无模型漂移 | `0015_calendar_subscriptions (head)` 与 ORM 一致 |
 | `uv build --no-sources` | 通过 | sdist 和 wheel |
 
 专项测试还验证了代理环境变量不会接管连接、IPv4-mapped IPv6 与混合公网/私网解析被拒绝、条件验证器只发往原最终 URL、网络等待期间无数据库空闲事务、来源字段差异可见及旧刷新结果被 URL 新修订淘汰。
 
-本节只完成服务端与统一日历投影。订阅来源管理、刷新状态、差异处理和三视口真实 Chromium 流程在下一提交完成；尚未使用真实第三方私密订阅源测试。
+本节先完成服务端与统一日历投影；对应管理界面和浏览器证据见下一节。尚未使用真实第三方私密订阅源测试。
+
+## M3-P：ICS 订阅管理 Web 界面
+
+对应 Git 提交主题：`feat: 完成 ICS 订阅管理界面`。实际代码为 `CalendarSubscriptionManager.vue`、`calendar-subscriptions.ts`、导入对话框第三种模式、订阅 occurrence 详情分支和 `calendar-subscriptions.spec.ts`。
+
+已实现：
+
+- “导入日历”对话框以三段控件进入订阅模式；可创建来源、查看状态及最近十次刷新、修改名称/周期/可选新 URL、手动刷新、暂停和恢复。
+- 排队和执行状态按 1—5 秒有界轮询，页面隐藏或对话框关闭后停止前端轮询；后台 worker 继续执行。首次成功、304、失败且保留旧数据、无成功快照等状态使用不同明确文案。
+- 来源事件支持分页、解析错误、来源取消和本地覆盖数量展示。名称、说明、地点和占用状态可逐字段启用覆盖或重置；来源变化后同时显示覆盖时来源值、当前来源值和本地值。
+- 订阅 occurrence 使用可空系列标识和独立来源事件标识，详情显示“ICS 订阅”和来源取消，不再调用手工系列的取消、调课、补课或系列编辑 API；可直接返回对应来源与事件。
+- UI 不展示 URL 查询、敏感路径或原始 UID。桌面使用来源/详情双栏；840px 以下改为单栏，按钮保持触摸尺寸，长主机、错误和字段值允许换行。
+- UI 测试环境新增真实本机 ICS HTTP 服务和独立订阅 worker；浏览器不拦截订阅 API，也不直接伪造刷新成功。
+
+2026-10-02 执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与生产构建 |
+| `cd web && pnpm exec playwright test e2e/calendar-subscriptions.spec.ts` | **6 passed in 54.0s** | 2 个订阅完整流程 × 1440×1000、390×844、768×1024 |
+| `cd web && pnpm test:e2e` | **96 passed in 3.9m** | 账号、后台、任务、日历及三类导入全量 Chromium 回归 |
+
+浏览器流程覆盖真实创建与后台抓取、304、暂停/恢复、从日历返回来源、来源更新、本地覆盖、覆盖版本冲突、逐字段重置、刷新失败保留旧 occurrence、URL/UID 不泄漏、axe、控制台、API 500 和根级横向溢出；桌面项目另在 320×700 最大字号检查。截图位于 `/tmp/itime-ui-evidence/*-calendar-subscription-*.png`，已人工检查桌面、平板、手机和 320px 大字号。Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium 流程。
+
+订阅 occurrence 的用户单次例外仍待统一例外 API；真实 Edge、实体设备及第三方私密订阅源兼容性未在本地完成。

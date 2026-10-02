@@ -9,6 +9,7 @@ import {
   MapPin,
   Pencil,
   RotateCcw,
+  SlidersHorizontal,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   changed: [message: string, conflictCount: number]
   editSeries: [occurrence: CalendarOccurrence]
   splitSeries: [occurrence: CalendarOccurrence]
+  openSubscription: [sourceId: string, eventId: string]
 }>()
 
 type Action = 'none' | 'move' | 'override' | 'makeup' | 'task-move'
@@ -55,7 +57,9 @@ const taskMove = reactive({ date: '', time: '' })
 const occurrence = computed(() => props.item?.calendar ?? null)
 const task = computed(() => props.item?.task ?? null)
 const canSplit = computed(() => (
-  occurrence.value?.occurrence_type === 'base' && props.recurring
+  occurrence.value?.occurrence_type === 'base'
+  && occurrence.value.source_type !== 'subscription'
+  && props.recurring
 ))
 
 watch(() => props.item?.id, () => {
@@ -78,8 +82,30 @@ function dateTime(value: string | null) {
   }).format(new Date(value))
 }
 
-function localTime(value: string) {
-  return value.slice(0, 5)
+function localTime(value: string | null) {
+  return value?.slice(0, 5) ?? ''
+}
+
+function statusLabel(state: CalendarDisplayItem['state']) {
+  if (state === 'scheduled' || state === 'open') return '进行中'
+  if (state === 'completed') return '已完成'
+  if (state === 'cancelled') return '已取消'
+  if (state === 'source_cancelled') return '来源已取消'
+  return '已跳过'
+}
+
+function inclusiveEndDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  const result = new Date(Date.UTC(year, month - 1, day))
+  result.setUTCDate(result.getUTCDate() - 1)
+  return result.toISOString().slice(0, 10)
+}
+
+function allDayLabel(value: CalendarOccurrence) {
+  const inclusiveEnd = inclusiveEndDate(value.local_end_date)
+  return inclusiveEnd > value.local_start_date
+    ? `${value.local_start_date} 至 ${inclusiveEnd} 全天`
+    : `${value.local_start_date} 全天`
 }
 
 function offsetLabel(minutes: number) {
@@ -365,7 +391,15 @@ async function saveTaskMove() {
           <ArrowLeft :size="19" aria-hidden="true" />
         </button>
         <div>
-          <p>{{ item.kind === 'course' ? '课程' : item.kind === 'fixed' ? '固定安排' : '任务截止' }}</p>
+          <p>
+            {{ occurrence?.source_type === 'subscription'
+              ? 'ICS 订阅'
+              : item.kind === 'course'
+                ? '课程'
+                : item.kind === 'fixed'
+                  ? '固定安排'
+                  : '任务截止' }}
+          </p>
           <h1 tabindex="-1">{{ item.title }}</h1>
         </div>
       </header>
@@ -380,7 +414,10 @@ async function saveTaskMove() {
         <dl class="occurrence-facts">
           <div>
             <dt><CalendarClock :size="17" aria-hidden="true" />时间</dt>
-            <dd v-if="occurrence">{{ dateTime(occurrence.start_at) }} 至 {{ dateTime(occurrence.end_at) }}</dd>
+            <dd v-if="occurrence?.all_day">
+              {{ allDayLabel(occurrence) }}
+            </dd>
+            <dd v-else-if="occurrence">{{ dateTime(occurrence.start_at) }} 至 {{ dateTime(occurrence.end_at) }}</dd>
             <dd v-else>{{ item.date }} {{ item.time?.slice(0, 5) || '全天' }}</dd>
           </div>
           <div v-if="item.subtitle">
@@ -389,7 +426,7 @@ async function saveTaskMove() {
           </div>
           <div>
             <dt>状态</dt>
-            <dd>{{ item.state === 'scheduled' || item.state === 'open' ? '进行中' : item.state === 'completed' ? '已完成' : item.state === 'cancelled' ? '已取消' : '已跳过' }}</dd>
+            <dd>{{ statusLabel(item.state) }}</dd>
           </div>
           <div v-if="occurrence?.exception_action">
             <dt>单次修改</dt>
@@ -399,13 +436,29 @@ async function saveTaskMove() {
             <dt>来源</dt>
             <dd>关联补课 · {{ occurrence.original_local_start_date }}</dd>
           </div>
+          <div v-if="occurrence?.source_type === 'subscription'">
+            <dt>来源</dt>
+            <dd>只读 ICS 订阅</dd>
+          </div>
         </dl>
 
         <p v-if="occurrence?.description" class="occurrence-description">{{ occurrence.description }}</p>
         <p v-if="task?.description" class="occurrence-description">{{ task.description }}</p>
 
         <template v-if="occurrence">
-          <div v-if="occurrence.occurrence_type === 'addition'" class="occurrence-actions">
+          <div v-if="occurrence.source_type === 'subscription'" class="occurrence-actions">
+            <button
+              type="button"
+              class="button secondary"
+              :disabled="pending || !occurrence.source_id || !occurrence.subscription_event_id"
+              @click="occurrence.source_id && occurrence.subscription_event_id
+                && emit('openSubscription', occurrence.source_id, occurrence.subscription_event_id)"
+            >
+              <SlidersHorizontal :size="17" aria-hidden="true" />
+              管理来源与本地覆盖
+            </button>
+          </div>
+          <div v-else-if="occurrence.occurrence_type === 'addition'" class="occurrence-actions">
             <button type="button" class="button secondary" :disabled="pending" @click="toggleAddition">
               <RotateCcw v-if="occurrence.status === 'cancelled'" :size="17" aria-hidden="true" />
               <CircleSlash2 v-else :size="17" aria-hidden="true" />

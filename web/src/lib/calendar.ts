@@ -42,7 +42,7 @@ export interface CalendarSeries {
   description: string
   location: string
   busy: boolean
-  source_type: 'manual' | 'import'
+  source_type: 'manual' | 'import' | 'screenshot'
   time_zone: string
   start_date: string
   starts_at: string
@@ -58,35 +58,39 @@ export interface CalendarSeries {
 }
 
 export interface CalendarConflictLink {
-  series_id: string
+  series_id: string | null
+  subscription_event_id: string | null
   occurrence_key: string
-  occurrence_type: 'base' | 'addition'
+  occurrence_type: 'base' | 'addition' | 'subscription'
   addition_id: string | null
   overlap_start: string
   overlap_end: string
 }
 
 export interface CalendarOccurrence {
-  series_id: string
-  series_version: number
+  series_id: string | null
+  series_version: number | null
+  subscription_event_id?: string | null
+  source_event_version?: number | null
   occurrence_key: string
-  occurrence_type: 'base' | 'addition'
+  occurrence_type: 'base' | 'addition' | 'subscription'
   kind: 'course' | 'fixed'
   term_id: string | null
   source_id: string | null
-  source_type: 'manual' | 'import'
+  source_type: 'manual' | 'import' | 'screenshot' | 'subscription'
   name: string
   description: string
   location: string
   busy: boolean
-  status: 'scheduled' | 'cancelled'
+  status: 'scheduled' | 'cancelled' | 'source_cancelled'
   time_zone: string
+  all_day?: boolean
   original_local_start_date: string
-  original_local_start_time: string
+  original_local_start_time: string | null
   local_start_date: string
-  local_start_time: string
+  local_start_time: string | null
   local_end_date: string
-  local_end_time: string
+  local_end_time: string | null
   start_at: string | null
   end_at: string | null
   warning_codes: string[]
@@ -162,10 +166,11 @@ export interface SeriesDraft {
 
 export interface CalendarConflict {
   occurrence_key: string
-  occurrence_type: 'base' | 'addition'
-  conflicting_series_id: string
+  occurrence_type: 'base' | 'addition' | 'subscription'
+  conflicting_series_id: string | null
+  conflicting_subscription_event_id?: string | null
   conflicting_occurrence_key: string
-  conflicting_occurrence_type: 'base' | 'addition'
+  conflicting_occurrence_type: 'base' | 'addition' | 'subscription'
   overlap_start: string
   overlap_end: string
 }
@@ -196,7 +201,7 @@ export interface CalendarDisplayItem {
   end_time: string | null
   title: string
   subtitle: string
-  state: 'scheduled' | 'cancelled' | 'open' | 'completed' | 'skipped'
+  state: 'scheduled' | 'cancelled' | 'source_cancelled' | 'open' | 'completed' | 'skipped'
   kind: 'course' | 'fixed' | 'task'
   conflict: boolean
   calendar?: CalendarOccurrence
@@ -368,6 +373,9 @@ export async function saveOccurrenceException(
   },
   operationId: string = crypto.randomUUID(),
 ) {
+  if (!occurrence.series_id || occurrence.series_version === null) {
+    throw new Error('calendar_series_not_editable')
+  }
   const existing = occurrence.exception_id
     ? (await listCalendarExceptions(occurrence.series_id)).items.find(
       item => item.id === occurrence.exception_id,
@@ -412,6 +420,9 @@ export async function createCalendarAddition(
   },
   operationId: string = crypto.randomUUID(),
 ) {
+  if (!occurrence.series_id || occurrence.series_version === null) {
+    throw new Error('calendar_series_not_editable')
+  }
   return api<{
     series: CalendarSeries
     addition: CalendarAddition
@@ -430,6 +441,9 @@ export async function updateCalendarAddition(
   status: CalendarAddition['status'],
   operationId: string = crypto.randomUUID(),
 ) {
+  if (!occurrence.series_id || occurrence.series_version === null) {
+    throw new Error('calendar_series_not_editable')
+  }
   const additions = await listCalendarAdditions(occurrence.series_id)
   const addition = additions.items.find(item => item.id === occurrence.addition_id)
   if (!addition) throw new Error('calendar_addition_not_found')

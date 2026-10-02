@@ -45,7 +45,7 @@ class FakeResolver:
 
 @dataclass
 class FakeTransport:
-    responses: list[TransportResponse]
+    responses: list[TransportResponse | SubscriptionFetchError]
     requests: list[tuple[str, ResolvedAddress, dict[str, str]]] = field(default_factory=list)
 
     async def get(
@@ -55,7 +55,10 @@ class FakeTransport:
         headers: Mapping[str, str],
     ) -> TransportResponse:
         self.requests.append((url, address, dict(headers)))
-        return self.responses.pop(0)
+        response_value = self.responses.pop(0)
+        if isinstance(response_value, SubscriptionFetchError):
+            raise response_value
+        return response_value
 
 
 def response(
@@ -109,6 +112,25 @@ async def test_fetches_calendar_with_pinned_public_address():
     assert result.content_sha256 is not None
     assert transport.requests[0][1] == PUBLIC_V4
     assert transport.requests[0][2]["Accept-Encoding"] == "gzip, identity"
+
+
+async def test_retries_the_next_prevalidated_address_on_connection_failure():
+    resolver = FakeResolver({"calendar.example": [PUBLIC_V6, PUBLIC_V4]})
+    transport = FakeTransport(
+        [
+            SubscriptionFetchError(
+                "calendar_subscription_network_failed",
+                "无法连接订阅服务器，请稍后重试。",
+                retryable=True,
+            ),
+            response(),
+        ]
+    )
+
+    result = await fetch_with(resolver, transport)
+
+    assert result.status == 200
+    assert [request[1] for request in transport.requests] == [PUBLIC_V6, PUBLIC_V4]
 
 
 @pytest.mark.parametrize(

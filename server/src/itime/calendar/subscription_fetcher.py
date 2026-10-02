@@ -306,7 +306,6 @@ class RestrictedCalendarFetcher:
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
             addresses = await self.resolver.resolve(parsed.hostname or "", port)
             _validate_addresses(addresses, parsed.scheme, self.settings)
-            address = addresses[0]
             headers = {
                 "Accept": "text/calendar, application/ics;q=0.9, text/plain;q=0.5",
                 "Accept-Encoding": "gzip, identity",
@@ -322,12 +321,30 @@ class RestrictedCalendarFetcher:
                 if validators.last_modified:
                     headers["If-Modified-Since"] = validators.last_modified
                     validators_sent = True
-            response = await self.transport.get(current_url, address, headers)
-            if _normalize_ip(response.peer_ip) != address.ip:
+            response: TransportResponse | None = None
+            last_connection_error: SubscriptionFetchError | None = None
+            for address in addresses:
+                try:
+                    response = await self.transport.get(current_url, address, headers)
+                except SubscriptionFetchError as exc:
+                    if not exc.retryable:
+                        raise
+                    last_connection_error = exc
+                    continue
+                if _normalize_ip(response.peer_ip) != address.ip:
+                    raise SubscriptionFetchError(
+                        "calendar_subscription_peer_mismatch",
+                        "订阅服务器连接地址与已验证地址不一致。",
+                        retryable=False,
+                    )
+                break
+            if response is None:
+                if last_connection_error is not None:
+                    raise last_connection_error
                 raise SubscriptionFetchError(
-                    "calendar_subscription_peer_mismatch",
-                    "订阅服务器连接地址与已验证地址不一致。",
-                    retryable=False,
+                    "calendar_subscription_network_failed",
+                    "无法连接订阅服务器，请稍后重试。",
+                    retryable=True,
                 )
             if response.status in REDIRECT_STATUSES:
                 if redirect_count == MAX_REDIRECTS:

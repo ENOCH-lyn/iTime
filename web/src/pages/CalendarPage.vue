@@ -56,6 +56,7 @@ const pendingLogout = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const importOpen = ref(false)
+const subscriptionTarget = ref<{ sourceId: string; eventId: string | null } | null>(null)
 const settingsOpen = ref(false)
 const seriesOpen = ref(false)
 const editingSeries = ref<CalendarSeries | null>(null)
@@ -64,9 +65,11 @@ const filtersOpen = ref(false)
 const showTasks = ref(true)
 const showCourses = ref(true)
 const showFixed = ref(true)
+const showSubscriptions = ref(true)
 const showCancelled = ref(true)
 let loadRevision = 0
 let anchorTouched = false
+let importOpener: HTMLElement | null = null
 
 function parseLocalDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
@@ -166,8 +169,19 @@ const title = computed(() => {
   return `${firstLabel} - ${lastLabel}`
 })
 const visibleItems = computed(() => calendarItems.value.filter(item => (
-  (item.kind === 'task' ? showTasks.value : item.kind === 'course' ? showCourses.value : showFixed.value)
-  && (showCancelled.value || !['cancelled', 'skipped'].includes(item.state))
+  (
+    item.kind === 'task'
+      ? showTasks.value
+      : item.calendar?.source_type === 'subscription'
+        ? showSubscriptions.value
+        : item.kind === 'course'
+          ? showCourses.value
+          : showFixed.value
+  )
+  && (
+    showCancelled.value
+    || !['cancelled', 'source_cancelled', 'skipped'].includes(item.state)
+  )
 )))
 const selectedSeries = computed(() => {
   const id = selected.value?.calendar?.series_id
@@ -228,7 +242,7 @@ function mergeOccurrences(
         ? instantInZone(item.end_at, displayTimeZone)
         : { date: item.local_end_date, time: item.local_end_time }
       return {
-        id: `calendar:${item.series_id}:${item.occurrence_type}:${item.occurrence_key}`,
+        id: `calendar:${item.series_id ?? item.subscription_event_id}:${item.occurrence_type}:${item.occurrence_key}`,
         source: 'calendar' as const,
         date: start.date,
         end_date: end.date,
@@ -352,18 +366,32 @@ function openCreate() {
 }
 
 async function openImport() {
+  importOpener = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
+  subscriptionTarget.value = null
   importOpen.value = false
   await nextTick()
   importOpen.value = true
 }
 
 async function closeImport() {
+  const opener = importOpener
+  importOpener = null
   importOpen.value = false
+  subscriptionTarget.value = null
   await nextTick()
-  document.querySelector<HTMLElement>('[data-calendar-import-trigger]')?.focus()
+  if (opener?.isConnected && opener.offsetParent !== null) {
+    opener.focus()
+    return
+  }
+  document.querySelector<HTMLElement>(
+    '.occurrence-header h1, [data-calendar-import-trigger]',
+  )?.focus()
 }
 
 async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
+  if (!occurrence.series_id) return
   pageError.value = null
   try {
     editingSeries.value = await getSeries(occurrence.series_id)
@@ -372,6 +400,16 @@ async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
   } catch (reason) {
     pageError.value = failure(reason)
   }
+}
+
+async function openSubscription(sourceId: string, eventId: string) {
+  importOpener = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
+  subscriptionTarget.value = { sourceId, eventId }
+  importOpen.value = false
+  await nextTick()
+  importOpen.value = true
 }
 
 async function refreshMetadata() {
@@ -495,6 +533,7 @@ watch(pageError, value => {
         <div v-if="filtersOpen" class="calendar-filters">
           <label class="checkbox-label"><input v-model="showCourses" type="checkbox" />课程</label>
           <label class="checkbox-label"><input v-model="showFixed" type="checkbox" />固定安排</label>
+          <label class="checkbox-label"><input v-model="showSubscriptions" type="checkbox" />订阅</label>
           <label class="checkbox-label"><input v-model="showTasks" type="checkbox" />任务截止</label>
           <label class="checkbox-label"><input v-model="showCancelled" type="checkbox" />已取消/跳过</label>
         </div>
@@ -543,6 +582,7 @@ watch(pageError, value => {
         @changed="onCalendarChanged"
         @edit-series="openSeriesEditor($event)"
         @split-series="openSeriesEditor($event, true)"
+        @open-subscription="openSubscription"
       />
     </main>
 
@@ -559,6 +599,7 @@ watch(pageError, value => {
       :terms="terms"
       :time-zone="settings?.time_zone ?? browserTimeZone"
       :initial-date="anchor"
+      :subscription-target="subscriptionTarget"
       @close="closeImport"
       @changed="onCalendarChanged"
     />

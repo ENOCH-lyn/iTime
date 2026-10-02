@@ -5,6 +5,7 @@ import {
   Download,
   FileClock,
   FileSpreadsheet,
+  Link2,
   Pencil,
   RotateCw,
   SkipForward,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-vue-next'
 import CalendarImportCandidateEditor from './CalendarImportCandidateEditor.vue'
 import CalendarScreenshotImport from './CalendarScreenshotImport.vue'
+import CalendarSubscriptionManager from './CalendarSubscriptionManager.vue'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
@@ -32,6 +34,7 @@ const props = defineProps<{
   terms: Term[]
   timeZone: string
   initialDate: string
+  subscriptionTarget?: { sourceId: string; eventId: string | null } | null
 }>()
 
 const emit = defineEmits<{
@@ -52,7 +55,7 @@ const detailLoading = ref(false)
 const error = ref<Failure | null>(null)
 const success = ref('')
 const outcomes = ref<ImportOutcome[]>([])
-const importMode = ref<'file' | 'screenshot'>('file')
+const importMode = ref<'file' | 'screenshot' | 'subscription'>('file')
 const retryAction = ref<'history' | 'upload' | 'batch' | null>(null)
 const lastBatchId = ref<string | null>(null)
 let uploadOperation: { id: string; fingerprint: string } | null = null
@@ -102,6 +105,17 @@ watch(() => props.open, async open => {
   await nextTick()
   dialog.value?.showModal()
   if (dialog.value) dialog.value.scrollTop = 0
+  if (props.subscriptionTarget) importMode.value = 'subscription'
+  if (importMode.value === 'file') {
+    await loadHistory()
+    if (!detail.value) fileInput.value?.focus()
+  }
+})
+
+watch(importMode, async mode => {
+  error.value = null
+  success.value = ''
+  if (!props.open || mode !== 'file') return
   await loadHistory()
   if (!detail.value) fileInput.value?.focus()
 })
@@ -378,12 +392,13 @@ function onCandidateUpdated(
 
 <template>
   <dialog ref="dialog" class="calendar-dialog calendar-import-dialog"
+    :class="{ 'subscription-mode': importMode === 'subscription' }"
     aria-labelledby="calendar-import-title" @cancel.self.prevent="close">
     <div class="calendar-dialog-heading import-dialog-heading">
       <FileSpreadsheet :size="22" aria-hidden="true" />
       <div>
         <h2 id="calendar-import-title">导入日历</h2>
-        <p>截图、Excel 与 ICS 都会先生成候选，确认后才写入日历。</p>
+        <p>导入文件、识别截图，或连接自动更新的 ICS 来源。</p>
       </div>
       <button type="button" class="small-icon-button import-close"
         aria-label="关闭导入" title="关闭导入" :disabled="pending" @click="close">
@@ -403,12 +418,24 @@ function onCandidateUpdated(
       <label :class="{ selected: importMode === 'screenshot' }">
         <input v-model="importMode" type="radio" value="screenshot" />截图识别
       </label>
+      <label :class="{ selected: importMode === 'subscription' }">
+        <input v-model="importMode" type="radio" value="subscription" />
+        <Link2 :size="16" aria-hidden="true" />订阅 URL
+      </label>
     </fieldset>
 
     <CalendarScreenshotImport
       v-if="importMode === 'screenshot'"
       :active="open"
       @batch-ready="openScreenshotBatch"
+    />
+
+    <CalendarSubscriptionManager
+      v-if="importMode === 'subscription'"
+      :active="open"
+      :target-source-id="subscriptionTarget?.sourceId ?? null"
+      :target-event-id="subscriptionTarget?.eventId ?? null"
+      @changed="emit('changed', $event, 0)"
     />
 
     <section v-if="importMode === 'file'" class="import-upload" aria-labelledby="import-upload-title">
@@ -435,7 +462,8 @@ function onCandidateUpdated(
       </div>
     </section>
 
-    <section v-if="history.length" class="import-history" aria-labelledby="import-history-title">
+    <section v-if="importMode === 'file' && history.length" class="import-history"
+      aria-labelledby="import-history-title">
       <div class="import-section-heading">
         <h3 id="import-history-title">最近导入</h3>
         <button type="button" class="small-icon-button" aria-label="刷新导入历史"
@@ -458,7 +486,8 @@ function onCandidateUpdated(
       </div>
     </section>
 
-    <section v-if="batch" class="import-review" aria-labelledby="import-review-title">
+    <section v-if="importMode !== 'subscription' && batch" class="import-review"
+      aria-labelledby="import-review-title">
       <div class="import-section-heading">
         <div>
           <h3 id="import-review-title">{{ batch.filename }}</h3>

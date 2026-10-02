@@ -14,6 +14,7 @@ import time
 from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -121,6 +122,101 @@ def fake_ai_server():
         thread.join(timeout=5)
 
 
+class FakeCalendarHandler(BaseHTTPRequestHandler):
+    counts: dict[str, int] = {}
+    lock = threading.Lock()
+
+    def do_GET(self) -> None:
+        parsed = urlsplit(self.path)
+        if parsed.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            return
+        if not parsed.path.startswith("/calendar/"):
+            self.send_response(404)
+            self.end_headers()
+            return
+        scenario = parse_qs(parsed.query).get("scenario", ["basic"])[0]
+        with self.lock:
+            count = self.counts.get(self.path, 0) + 1
+            self.counts[self.path] = count
+        if scenario == "failure" and count > 1:
+            self.send_response(503)
+            self.end_headers()
+            return
+        if (
+            scenario == "basic"
+            and count > 1
+            and self.headers.get("If-None-Match") == '"basic-v1"'
+        ):
+            self.send_response(304)
+            self.end_headers()
+            return
+        title = "来源课程更新" if scenario == "update" and count > 1 else "订阅课程"
+        events = [
+            "BEGIN:VEVENT",
+            f"UID:{parsed.path}",
+            f"SUMMARY:{title}",
+            "LOCATION:教学楼 B203",
+            "DTSTART;TZID=Asia/Shanghai:20261006T090000",
+            "DTEND;TZID=Asia/Shanghai:20261006T100000",
+            "RRULE:FREQ=WEEKLY;BYDAY=TU",
+            "END:VEVENT",
+        ]
+        if scenario == "basic":
+            events.extend(
+                [
+                    "BEGIN:VEVENT",
+                    "UID:all-day@example.com",
+                    "SUMMARY:全天纪念日",
+                    "DTSTART;VALUE=DATE:20261006",
+                    "DTEND;VALUE=DATE:20261007",
+                    "END:VEVENT",
+                    "BEGIN:VEVENT",
+                    "UID:sensitive-private-token@example.com",
+                    "RECURRENCE-ID:20261007T010000Z",
+                    "STATUS:CANCELLED",
+                    "END:VEVENT",
+                ]
+            )
+        if scenario == "cancel" and count > 1:
+            events = []
+        body = (
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//iTime Playwright//EN\r\n"
+            + "\r\n".join(events)
+            + ("\r\n" if events else "")
+            + "END:VCALENDAR\r\n"
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/calendar; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header(
+            "ETag",
+            f'"{scenario}-v{2 if scenario in {"update", "cancel"} and count > 1 else 1}"',
+        )
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args) -> None:
+        pass
+
+
+@contextmanager
+def fake_calendar_server():
+    FakeCalendarHandler.counts = {}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCalendarHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://localhost:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 @contextmanager
 def process(args, cwd, env, log_path):
     with log_path.open("w") as log:
@@ -155,6 +251,7 @@ async def seed_admins(
     database_url: str,
     public_origin: str,
     ai_endpoint: str,
+    calendar_origin: str,
 ) -> list[dict]:
     settings = Settings(
         database_url=database_url,
@@ -174,6 +271,7 @@ async def seed_admins(
                 "project": project,
                 "password": ADMIN_PASSWORD,
                 "ai_endpoint": ai_endpoint,
+                "calendar_origin": calendar_origin,
                 "setup_email": setup_email,
                 "setup_link": setup_link,
                 "active": {},
@@ -268,11 +366,14 @@ def main():
         api_port = sock.getsockname()[1]
     with ExitStack() as stack:
         ai_endpoint = stack.enter_context(fake_ai_server())
+        calendar_origin = stack.enter_context(fake_calendar_server())
         url = stack.enter_context(isolated_database(
             parsed.set(database="postgres").render_as_string(hide_password=False)
         ))
         public_origin = "http://localhost:4173"
-        payload = asyncio.run(seed_admins(url, public_origin, ai_endpoint))
+        payload = asyncio.run(
+            seed_admins(url, public_origin, ai_endpoint, calendar_origin)
+        )
         configured_file = os.environ.get("ITIME_E2E_BOOTSTRAP_FILE")
         if configured_file:
             bootstrap_file = Path(configured_file)
@@ -308,6 +409,12 @@ def main():
         ai_process = stack.enter_context(process(
             [sys.executable, "-m", "itime.ai.worker"], SERVER, env, logs / "ai.log",
         ))
+        subscription_process = stack.enter_context(process(
+            [sys.executable, "-m", "itime.calendar.subscription_worker"],
+            SERVER,
+            env,
+            logs / "subscription.log",
+        ))
         web_process = stack.enter_context(process(
             [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
              "--port", "4173"],
@@ -317,7 +424,13 @@ def main():
         print(f"iTime UI isolated services ready; logs: {logs}", flush=True)
         while all(
             child.poll() is None
-            for child in (api_process, mail_process, ai_process, web_process)
+            for child in (
+                api_process,
+                mail_process,
+                ai_process,
+                subscription_process,
+                web_process,
+            )
         ):
             time.sleep(0.5)
         raise RuntimeError(f"UI 测试进程意外退出，请检查 {logs}")
