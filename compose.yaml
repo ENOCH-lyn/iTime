@@ -1,0 +1,39 @@
+name: itime
+
+services:
+  postgres:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      POSTGRES_USER: itime
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请先运行 python3 scripts/bootstrap.py}
+      POSTGRES_DB: itime
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itime -d itime"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    shm_size: 128mb
+    mem_limit: 768m
+
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    ports:
+      - "127.0.0.1:${SMTP_PORT:-51025}:1025"
+      - "127.0.0.1:${MAILPIT_PORT:-58025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: "false"
+    volumes:
+      - mailpit_data:/data
+    restart: unless-stopped
+    mem_limit: 128m
+
+volumes:
+  postgres_data:
+  mailpit_data:

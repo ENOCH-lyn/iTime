@@ -2,7 +2,7 @@
 
 iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容通用个人场景，通过任务与课表整理、日周规划、执行记录和复盘形成完整闭环。
 
-**当前为需求与设计文档阶段，业务开发尚未开始，没有可运行应用或产品测试结果。**
+**当前正在开发完整 Web 首版。服务端运行基础已建立，业务功能与用户界面仍在开发；尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 产品范围
 
@@ -20,6 +20,38 @@ iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容�
 3. [需求追踪](doc/需求/iTime-需求追踪矩阵.md)：功能到设计、用例及交付阶段。
 4. [AI 协作规范](AGENTS.md)：事实来源、工程约束与完成标准。
 
-原始 PRD 保留为输入档案，开发以现行规格为准；技术推荐和待定配置不视为已实现。实际安装、开发、构建、测试和部署命令将在业务工程建立后补充。
+原始 PRD 保留为输入档案，开发以现行规格为准；技术推荐和待定配置不视为已实现。
+
+## 本地开发
+
+需要 Python 3.13（由 uv 管理）、uv 和 Docker Compose。所有依赖锁定在 `server/uv.lock`，容器固定镜像摘要。
+
+```bash
+python3 scripts/bootstrap.py
+docker compose --env-file .env.local up -d --wait
+cd server
+uv sync --frozen
+uv run alembic upgrade head
+uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+使用独立 Colima profile 时，在 Docker 命令中加 `--context colima-itime`。开发配置只在忽略的 `.env.local`，初始化不会覆盖已有文件。
+
+- API 存活：`http://127.0.0.1:8000/api/health`
+- 数据库与迁移就绪：`http://127.0.0.1:8000/api/ready`
+- 开发 OpenAPI：`http://127.0.0.1:8000/api/docs`
+- 本地测试邮箱：`http://127.0.0.1:58025`，只收取开发邮件，不外发。
+
+## 服务验证
+
+在 `server/` 执行：
+
+```bash
+uv run ruff check .
+uv run pytest -q
+uv build --no-sources
+```
+
+集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖真实数据库故障恢复、事务及连接池边界。生产和外部数据库会被测试入口拒绝。UI 测试随前端模块接入，当前服务基础验证不代表完整产品验收。
 
 仓库：[ENOCH-lyn/iTime](https://github.com/ENOCH-lyn/iTime)，私有。
