@@ -252,3 +252,18 @@
 - 截图候选保留 30 天。首次确认或跳过候选时在同一事务清空原图密文；确认系列使用 `source_type=screenshot`，继续复用文件导入的重复、冲突和版本合同。
 
 `CalendarImportDialog.vue` 已在同一导入对话框接入截图模式，显示上传、排队/执行/终态、尝试次数、取消和最近作业。离开后重新进入会从服务端恢复，成功作业直接打开现有候选校对，不建立第二套编辑器。ICS URL 订阅继续按[ICS 订阅设计](iTime-ICS订阅设计.md)实现。
+
+## 17. 已实现 ICS 订阅服务合同
+
+迁移 `0015_calendar_subscriptions`、`calendar/subscription_*.py` 和受限抓取器已实现订阅服务端：
+
+- 订阅 URL 以独立 Fernet 密钥加密，另存 HMAC 用于变更比较；接口、刷新记录和日志只显示主机及省略敏感路径、查询参数后的地址。生产要求 `ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY` 与基础及 AI 密钥分离。
+- 抓取器逐跳验证 URL 和全部 A/AAAA 地址，拒绝 IP 字面量、私网、回环、链路本地、CGNAT、元数据、保留及混合地址；固定已验证 IP 建连，同时保留原 Host、TLS SNI 和证书校验，并核验实际 peer。测试环境只对全部解析为回环地址的 HTTP 来源放行。
+- 最多跟随 3 次手动重定向并拒绝 HTTPS 降级；禁用系统代理、Cookie 和平台凭据。连接、读取空闲和整个 DNS/重定向/下载链路共享 3/5/15 秒限制；压缩体、解压体和压缩比分别限制为 2 MiB、4 MiB 和 20。
+- `calendar.subscription_worker` 以 PostgreSQL `SKIP LOCKED` 和随机租约领取来源，网络和解析不占数据库事务。URL 更新、暂停、租约过期或更新的尝试号会让晚到结果失效。
+- 订阅事件使用来源内 `UID + RECURRENCE-ID` 身份，不复用文件导入的账号级只新增身份。支持无限 DAILY/WEEKLY/MONTHLY/YEARLY RRULE、RDATE、EXDATE、全天、UTC、IANA 和浮动时间；日历查询仍只展开 93 天且与手工安排共用 2000 条上限和冲突计算。
+- 200 响应只有在完整下载、完整日历解析和原子应用后才更新验证器与摘要；304 只在确实向同一最终 URL 发送条件头时接受。DNS、HTTP、容量、类型、压缩和解析失败均保留最近成功数据。
+- 已知 UID/RID 的坏项目或冲突重复项保留旧基线并显示项目错误；存在无法识别 UID 的事件时不执行缺失取消。来源主事件缺失/取消保留刷新前历史 occurrence，未来标记 `source_cancelled`；RID 缺失恢复未来主事件投影，RID 移动和取消优先于主事件。
+- `POST/GET/PUT /api/v1/calendar/subscriptions`、刷新、暂停、恢复和事件字段覆盖 API 均按账号隔离并使用操作幂等。名称、说明、地点和占用字段可本地覆盖，来源变化显示旧来源值、新来源值和本地值，逐字段重置后恢复来源值。
+
+订阅 Web 来源管理和真实浏览器流程在后续独立提交中接入；本节只说明服务、worker 和统一 occurrence 投影。

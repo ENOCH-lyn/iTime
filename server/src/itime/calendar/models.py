@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     Time,
@@ -153,6 +154,273 @@ class CalendarSource(Base):
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(24))
     name: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarSubscription(Base):
+    __tablename__ = "calendar_subscriptions"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_status IN ('active', 'paused')",
+            name="lifecycle_status",
+        ),
+        CheckConstraint(
+            "refresh_status IN ('idle', 'queued', 'running', 'error')",
+            name="refresh_status",
+        ),
+        CheckConstraint(
+            "refresh_interval_minutes BETWEEN 15 AND 10080",
+            name="refresh_interval_minutes",
+        ),
+        CheckConstraint("length(url_hmac) = 64", name="url_hmac"),
+        CheckConstraint("length(btrim(display_url)) > 0", name="display_url"),
+        CheckConstraint("length(btrim(display_host)) > 0", name="display_host"),
+        CheckConstraint("length(btrim(default_time_zone)) > 0", name="default_time_zone"),
+        CheckConstraint(
+            "(refresh_status = 'running') = "
+            "(lease_id IS NOT NULL AND lease_until IS NOT NULL)",
+            name="lease_state",
+        ),
+        CheckConstraint(
+            "lifecycle_status = 'active' OR refresh_status NOT IN ('queued', 'running')",
+            name="paused_state",
+        ),
+        CheckConstraint("attempt_count >= 0", name="attempt_count"),
+        CheckConstraint("generation >= 0", name="generation"),
+        CheckConstraint("fetch_revision >= 1", name="fetch_revision"),
+        CheckConstraint("consecutive_failures >= 0", name="consecutive_failures"),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_sources.id", "calendar_sources.owner_id"],
+            name="fk_calendar_subscriptions_source_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("source_id", "owner_id", name="uq_calendar_subscriptions_source_owner"),
+        Index(
+            "ix_calendar_subscriptions_due",
+            "lifecycle_status",
+            "refresh_status",
+            "next_refresh_at",
+            "source_id",
+        ),
+        Index(
+            "ix_calendar_subscriptions_owner_updated",
+            "owner_id",
+            "updated_at",
+            "source_id",
+        ),
+    )
+
+    source_id: Mapped[UUID] = mapped_column(primary_key=True)
+    owner_id: Mapped[UUID]
+    encrypted_url: Mapped[bytes] = mapped_column(LargeBinary)
+    url_hmac: Mapped[str] = mapped_column(String(64))
+    display_url: Mapped[str] = mapped_column(String(2048))
+    display_host: Mapped[str] = mapped_column(String(255))
+    default_time_zone: Mapped[str] = mapped_column(String(64))
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(12),
+        default="active",
+        server_default="active",
+    )
+    refresh_status: Mapped[str] = mapped_column(
+        String(12),
+        default="queued",
+        server_default="queued",
+    )
+    refresh_interval_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=360,
+        server_default="360",
+    )
+    next_refresh_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fetch_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_id: Mapped[UUID | None]
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    etag: Mapped[str | None] = mapped_column(String(1000))
+    last_modified: Mapped[str | None] = mapped_column(String(1000))
+    encrypted_final_url: Mapped[bytes | None] = mapped_column(LargeBinary)
+    final_url_hmac: Mapped[str | None] = mapped_column(String(64))
+    final_host: Mapped[str | None] = mapped_column(String(255))
+    content_sha256: Mapped[str | None] = mapped_column(String(64))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_message: Mapped[str | None] = mapped_column(String(500))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarSubscriptionRefresh(Base):
+    __tablename__ = "calendar_subscription_refreshes"
+    __table_args__ = (
+        CheckConstraint(
+            "trigger IN ('initial', 'manual', 'automatic')",
+            name="trigger",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'not_modified', 'failed', 'stale')",
+            name="status",
+        ),
+        CheckConstraint("attempt_number >= 1", name="attempt_number"),
+        CheckConstraint("fetch_revision >= 1", name="fetch_revision"),
+        CheckConstraint("jsonb_typeof(item_errors) = 'array'", name="item_errors"),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_subscriptions.source_id", "calendar_subscriptions.owner_id"],
+            name="fk_calendar_subscription_refreshes_source_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("source_id", "attempt_number", name="uq_subscription_refresh_attempt"),
+        Index(
+            "ix_calendar_subscription_refreshes_owner_source",
+            "owner_id",
+            "source_id",
+            "started_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    source_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    lease_id: Mapped[UUID]
+    fetch_revision: Mapped[int] = mapped_column(Integer)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    trigger: Mapped[str] = mapped_column(String(12))
+    status: Mapped[str] = mapped_column(String(16), default="running", server_default="running")
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    final_host: Mapped[str | None] = mapped_column(String(255))
+    content_sha256: Mapped[str | None] = mapped_column(String(64))
+    event_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    changed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cancelled_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    item_errors: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CalendarSubscriptionEvent(Base):
+    __tablename__ = "calendar_subscription_events"
+    __table_args__ = (
+        CheckConstraint("length(btrim(uid)) > 0", name="uid"),
+        CheckConstraint(
+            "parse_status IN ('valid', 'stale_error', 'error')",
+            name="parse_status",
+        ),
+        CheckConstraint(
+            "source_status IN ('active', 'cancelled')",
+            name="source_status",
+        ),
+        CheckConstraint(
+            "(parse_status = 'error') = (baseline IS NULL)",
+            name="baseline_state",
+        ),
+        CheckConstraint(
+            "baseline IS NULL OR jsonb_typeof(baseline) = 'object'",
+            name="baseline",
+        ),
+        CheckConstraint("length(content_sha256) = 64", name="content_sha256"),
+        CheckConstraint("first_seen_generation >= 1", name="first_seen_generation"),
+        CheckConstraint("last_seen_generation >= 1", name="last_seen_generation"),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_subscriptions.source_id", "calendar_subscriptions.owner_id"],
+            name="fk_calendar_subscription_events_source_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_subscription_events_id_owner"),
+        UniqueConstraint(
+            "source_id",
+            "uid",
+            "recurrence_id",
+            name="uq_calendar_subscription_events_identity",
+        ),
+        Index(
+            "ix_calendar_subscription_events_owner_source",
+            "owner_id",
+            "source_id",
+            "uid",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    source_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    uid: Mapped[str] = mapped_column(String(512))
+    recurrence_id: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    baseline: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    parse_status: Mapped[str] = mapped_column(String(12), default="valid", server_default="valid")
+    source_status: Mapped[str] = mapped_column(
+        String(12),
+        default="active",
+        server_default="active",
+    )
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    first_seen_generation: Mapped[int] = mapped_column(Integer)
+    last_seen_generation: Mapped[int] = mapped_column(Integer)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    missing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarSubscriptionOverride(Base):
+    __tablename__ = "calendar_subscription_overrides"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(values) = 'object'", name="values"),
+        CheckConstraint("jsonb_typeof(source_values) = 'object'", name="source_values"),
+        ForeignKeyConstraint(
+            ["event_id", "owner_id"],
+            ["calendar_subscription_events.id", "calendar_subscription_events.owner_id"],
+            name="fk_calendar_subscription_overrides_event_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("event_id", "owner_id", name="uq_subscription_overrides_event_owner"),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True)
+    owner_id: Mapped[UUID]
+    values: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    source_values: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

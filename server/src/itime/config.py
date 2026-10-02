@@ -35,12 +35,14 @@ class Settings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=2, gt=0, le=10)
     encryption_key: SecretStr
     ai_encryption_key: SecretStr | None = None
+    calendar_subscription_encryption_key: SecretStr | None = None
     session_hours: int = Field(default=24 * 30, ge=1, le=24 * 90)
     admin_session_hours: int = Field(default=8, ge=1, le=24)
     admin_setup_minutes: int = Field(default=30, ge=5, le=120)
     ai_private_endpoint_hosts: list[str] = Field(default_factory=list)
     ai_job_timeout_seconds: int = Field(default=180, ge=30, le=900)
     ai_job_lease_seconds: int = Field(default=210, ge=30, le=1200)
+    calendar_subscription_lease_seconds: int = Field(default=60, ge=30, le=300)
     verification_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_minutes: int = Field(default=15, ge=5, le=60)
     mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)
@@ -55,7 +57,11 @@ class Settings(BaseSettings):
     smtp_from: str = "iTime <account@itime.local>"
     smtp_timeout_seconds: float = Field(default=5, ge=1, le=30)
 
-    @field_validator("encryption_key", "ai_encryption_key")
+    @field_validator(
+        "encryption_key",
+        "ai_encryption_key",
+        "calendar_subscription_encryption_key",
+    )
     @classmethod
     def fernet_key(cls, value: SecretStr | None) -> SecretStr | None:
         if value is None:
@@ -122,6 +128,19 @@ class Settings(BaseSettings):
             == self.encryption_key.get_secret_value()
         ):
             raise ValueError("生产环境必须配置与基础密钥不同的 ai_encryption_key")
+        if self.environment == "production" and (
+            self.calendar_subscription_encryption_key is None
+            or self.calendar_subscription_encryption_key.get_secret_value()
+            in {
+                self.encryption_key.get_secret_value(),
+                self.ai_encryption_key.get_secret_value()
+                if self.ai_encryption_key is not None
+                else "",
+            }
+        ):
+            raise ValueError(
+                "生产环境必须配置独立的 calendar_subscription_encryption_key"
+            )
         if self.smtp_host not in {"localhost", "127.0.0.1", "::1"} and not self.smtp_starttls:
             raise ValueError("外部 SMTP 必须启用 STARTTLS")
         return self

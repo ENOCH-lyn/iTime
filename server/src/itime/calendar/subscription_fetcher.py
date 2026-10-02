@@ -7,7 +7,7 @@ import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
@@ -63,6 +63,7 @@ class TransportResponse:
     headers: Mapping[str, str]
     body: bytes
     peer_ip: ipaddress.IPv4Address | ipaddress.IPv6Address
+    body_decoded: bool = False
 
 
 @dataclass(frozen=True)
@@ -232,16 +233,12 @@ class AiohttpPinnedTransport:
                             "无法核验订阅服务器连接地址。",
                             retryable=True,
                         )
-                    body = bytearray()
+                    body_decoder = _LimitedBodyDecoder(
+                        response.headers.get("Content-Encoding", "identity"),
+                        http_status=response.status,
+                    )
                     async for chunk in response.content.iter_chunked(64 * 1024):
-                        body.extend(chunk)
-                        if len(body) > MAX_COMPRESSED_BYTES:
-                            raise SubscriptionFetchError(
-                                "calendar_subscription_response_too_large",
-                                "订阅响应超过 2 MiB 压缩体限制。",
-                                retryable=False,
-                                http_status=response.status,
-                            )
+                        body_decoder.feed(chunk)
                     response_headers: dict[str, str] = {}
                     for key in response.headers:
                         values = response.headers.getall(key, [])
@@ -249,8 +246,9 @@ class AiohttpPinnedTransport:
                     return TransportResponse(
                         status=response.status,
                         headers=response_headers,
-                        body=bytes(body),
+                        body=body_decoder.finish(),
                         peer_ip=peer_ip,
+                        body_decoded=True,
                     )
         except SubscriptionFetchError:
             raise
@@ -398,6 +396,24 @@ class RestrictedCalendarFetcher:
         raise AssertionError("redirect loop must terminate")
 
 
+def subscription_url_metadata(url: str, settings: Settings) -> tuple[str, str]:
+    parsed = _validate_url(url, settings)
+    hostname = parsed.hostname or ""
+    default_port = 443 if parsed.scheme == "https" else 80
+    display_host = hostname if parsed.port in {None, default_port} else f"{hostname}:{parsed.port}"
+    display_path = "/" if parsed.path in {"", "/"} else "/..."
+    display_url = urlunsplit(
+        (
+            parsed.scheme,
+            display_host,
+            display_path,
+            "",
+            "",
+        )
+    )
+    return display_url, display_host
+
+
 def _validate_url(url: str, settings: Settings):
     if url != url.strip() or any(ord(character) < 32 or ord(character) == 127 for character in url):
         raise SubscriptionFetchError(
@@ -515,55 +531,111 @@ def _optional_header(headers: Mapping[str, str], name: str) -> str | None:
 
 
 def _decode_body(response: TransportResponse) -> bytes:
-    encoding = response.headers.get("content-encoding", "identity").strip().casefold()
-    if encoding in {"", "identity"}:
-        content = response.body
-    elif encoding == "gzip":
-        decompressor = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        try:
-            content = decompressor.decompress(response.body, MAX_DECOMPRESSED_BYTES + 1)
-            if len(content) <= MAX_DECOMPRESSED_BYTES:
-                content += decompressor.flush(MAX_DECOMPRESSED_BYTES + 1 - len(content))
-        except zlib.error as exc:
+    if response.body_decoded:
+        return response.body
+    decoder = _LimitedBodyDecoder(
+        response.headers.get("content-encoding", "identity"),
+        http_status=response.status,
+    )
+    decoder.feed(response.body)
+    return decoder.finish()
+
+
+class _LimitedBodyDecoder:
+    def __init__(self, content_encoding: str, *, http_status: int) -> None:
+        self.http_status = http_status
+        self.encoding = content_encoding.strip().casefold()
+        if self.encoding not in {"", "identity", "gzip"}:
             raise SubscriptionFetchError(
-                "calendar_subscription_gzip_invalid",
-                "订阅响应的 gzip 内容已损坏。",
+                "calendar_subscription_encoding_unsupported",
+                "订阅响应使用了不支持的内容编码。",
                 retryable=False,
-                http_status=response.status,
-            ) from exc
+                http_status=http_status,
+            )
+        self.compressed_bytes = 0
+        self.output = bytearray()
+        self.decompressor = (
+            zlib.decompressobj(16 + zlib.MAX_WBITS)
+            if self.encoding == "gzip"
+            else None
+        )
+
+    def feed(self, chunk: bytes) -> None:
+        self.compressed_bytes += len(chunk)
+        if self.compressed_bytes > MAX_COMPRESSED_BYTES:
+            raise SubscriptionFetchError(
+                "calendar_subscription_response_too_large",
+                "订阅响应超过 2 MiB 压缩体限制。",
+                retryable=False,
+                http_status=self.http_status,
+            )
+        if self.decompressor is None:
+            self.output.extend(chunk)
+        else:
+            try:
+                self.output.extend(
+                    self.decompressor.decompress(
+                        chunk,
+                        MAX_DECOMPRESSED_BYTES + 1 - len(self.output),
+                    )
+                )
+            except zlib.error as exc:
+                raise self._invalid_gzip() from exc
+            if self.decompressor.unconsumed_tail:
+                raise self._too_large()
+        self._check_limits()
+
+    def finish(self) -> bytes:
+        if self.decompressor is not None:
+            try:
+                if len(self.output) <= MAX_DECOMPRESSED_BYTES:
+                    self.output.extend(
+                        self.decompressor.flush(
+                            MAX_DECOMPRESSED_BYTES + 1 - len(self.output)
+                        )
+                    )
+            except zlib.error as exc:
+                raise self._invalid_gzip() from exc
+            if (
+                not self.decompressor.eof
+                or self.decompressor.unused_data
+                or self.decompressor.unconsumed_tail
+            ):
+                raise self._invalid_gzip()
+        self._check_limits(final=True)
+        return bytes(self.output)
+
+    def _check_limits(self, *, final: bool = False) -> None:
+        if len(self.output) > MAX_DECOMPRESSED_BYTES:
+            raise self._too_large()
         if (
-            not decompressor.eof
-            or decompressor.unused_data
-            or decompressor.unconsumed_tail
+            final
+            and self.decompressor is not None
+            and self.compressed_bytes
+            and len(self.output) > self.compressed_bytes * MAX_COMPRESSION_RATIO
         ):
             raise SubscriptionFetchError(
-                "calendar_subscription_gzip_invalid",
-                "订阅响应必须使用单层完整 gzip 编码。",
+                "calendar_subscription_compression_ratio",
+                "订阅响应压缩比超过安全限制。",
                 retryable=False,
-                http_status=response.status,
+                http_status=self.http_status,
             )
-    else:
-        raise SubscriptionFetchError(
-            "calendar_subscription_encoding_unsupported",
-            "订阅响应使用了不支持的内容编码。",
-            retryable=False,
-            http_status=response.status,
-        )
-    if len(content) > MAX_DECOMPRESSED_BYTES:
-        raise SubscriptionFetchError(
+
+    def _too_large(self) -> SubscriptionFetchError:
+        return SubscriptionFetchError(
             "calendar_subscription_response_too_large",
             "订阅响应超过 4 MiB 解压体限制。",
             retryable=False,
-            http_status=response.status,
+            http_status=self.http_status,
         )
-    if response.body and len(content) > len(response.body) * MAX_COMPRESSION_RATIO:
-        raise SubscriptionFetchError(
-            "calendar_subscription_compression_ratio",
-            "订阅响应压缩比超过安全限制。",
+
+    def _invalid_gzip(self) -> SubscriptionFetchError:
+        return SubscriptionFetchError(
+            "calendar_subscription_gzip_invalid",
+            "订阅响应必须使用单层完整 gzip 编码。",
             retryable=False,
-            http_status=response.status,
+            http_status=self.http_status,
         )
-    return content
 
 
 def _validate_media_type(headers: Mapping[str, str], content: bytes) -> None:

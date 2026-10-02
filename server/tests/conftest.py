@@ -134,6 +134,9 @@ def live_server(database_url: str, tmp_path_factory) -> Iterator[LiveServer]:
 
 
 @pytest.fixture
-def client(live_server: LiveServer) -> Iterator[httpx.Client]:
+def client(live_server: LiveServer, database_url: str) -> Iterator[httpx.Client]:
+    # 限流持久化本身由单用例验证；跨用例累计会让测试顺序影响结果。
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute("DELETE FROM auth_rate_buckets")
     with httpx.Client(base_url=live_server.origin, timeout=5, trust_env=False) as client:
         yield client

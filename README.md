@@ -2,7 +2,7 @@
 
 iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容通用个人场景，通过任务与课表整理、日周规划、执行记录和复盘形成完整闭环。
 
-**当前正在开发完整 Web 首版。服务运行基础、账号与后台用户管理、目标/项目与任务、课表与统一日历，以及 Excel、ICS 文件和截图识别导入已经完成；ICS 订阅、其余 AI、规划、执行、复盘、同步及数据管理仍在开发，尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+**当前正在开发完整 Web 首版。服务运行基础、账号与后台用户管理、目标/项目与任务、课表与统一日历，以及 Excel、ICS 文件、截图识别和 ICS URL 订阅服务已经完成；订阅管理界面、其余 AI、规划、执行、复盘、同步及数据管理仍在开发，尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 产品范围
 
@@ -38,6 +38,8 @@ uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no
 另开终端，在 `server/` 执行 `uv run python -m itime.mail_worker` 启动邮件进程。账号接口把验证/找回邮件写入数据库队列，发送进程中断后可恢复。仅运行 API 不会发送队列中的邮件。
 
 截图识别还需要另开终端，在 `server/` 执行 `uv run python -m itime.ai.worker` 启动 AI 作业进程。管理员须先在管理 API 中创建、用合成图片真实测试并发布 `calendar_screenshot` 配置；未发布配置时上传接口不会保存原图。开发环境未设置独立 AI 加密密钥时暂回退到基础加密密钥，生产必须配置不同的 `ITIME_AI_ENCRYPTION_KEY`。
+
+ICS URL 订阅由独立刷新进程执行；在 `server/` 另开终端运行 `uv run python -m itime.calendar.subscription_worker`。生产必须配置独立的 `ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY`，用于加密可能包含访问令牌的订阅 URL；API 与日志只显示主机和省略敏感路径、查询参数后的地址。
 
 再在 `web/` 启动 Vue 前端：
 

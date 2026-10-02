@@ -477,7 +477,7 @@ class ChangeEvent(Base):
             "entity_type IN "
             "('project', 'task', 'step', 'label', 'time_settings', 'term', "
             "'calendar_series', 'calendar_exception', 'task_occurrence', "
-            "'calendar_addition')",
+            "'calendar_addition', 'calendar_source')",
             name="entity_type",
         ),
         CheckConstraint(

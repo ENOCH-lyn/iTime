@@ -603,3 +603,32 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 新增流程以真实 PNG 上传到隔离 API，由独立 AI worker 调用真实本地 OpenAI 兼容 HTTP 服务；浏览器在提交后关闭导入对话框，等待后台完成，再重新进入恢复作业、打开候选、确认并从日历读取 occurrence。三个视口均验证 axe、控制台、API 500、错误覆盖层和横向溢出；桌面项目另在 320×700 最大字号检查截图作业列表。截图位于 `/tmp/itime-ui-evidence/*-calendar-import-screenshot-*.png`，已人工检查。
 
 截图识别至此完成服务、管理配置和用户校对闭环；仍未接每日额度、正文日志与质检。M3 下一项为 ICS URL 订阅。
+
+## M3-O：ICS URL 订阅服务
+
+对应 Git 提交主题：`feat: 实现受限日历订阅抓取器` 和 `feat: 实现 ICS 订阅刷新服务`。实际代码为 `server/src/itime/calendar/subscription_*.py`、统一 occurrence 查询扩展及迁移 `0015_calendar_subscriptions`。
+
+已实现：
+
+- 创建、列表、详情、修改 URL/周期、手动刷新、暂停、恢复和来源事件字段覆盖 API；所有写请求使用操作号，账号隔离读取，只显示主机及省略敏感路径、查询参数后的地址。
+- 订阅 URL 使用独立密钥加密并以 HMAC 比较。生产配置要求订阅密钥与基础及 AI 密钥均不同；开发未设置时保留显式回退。
+- 受限抓取器逐跳完成 URL、DNS A/AAAA、地址范围、固定 IP、Host/SNI/证书和实际 peer 校验，禁止 HTTPS 降级和环境代理；总时限及 gzip 压缩体、解压体、压缩比均有硬上限。
+- 独立 worker 使用 `SKIP LOCKED`、随机租约、尝试号和 URL 修订号。网络、解压和解析不持有数据库事务；双 worker 不重复领取，URL 更新、暂停、租约过期和晚到结果不会覆盖新状态。
+- 200 完整解析后原子应用，304 只更新成功检查，DNS、HTTP、超时、类型、容量、压缩和解析失败均保留最近成功快照及 occurrence。
+- 来源事件按 `source_id + UID + normalized RECURRENCE-ID` 隔离，支持无限日/周/月/年重复、RDATE、EXDATE、全天、UTC、IANA 和浮动时间。RID 调时/取消、已知坏项目保旧、冲突重复保旧及缺失取消均按来源代次处理。
+- 来源删除或主事件取消只取消刷新生效后的 occurrence；历史实例保留。RID 缺失只撤销未来来源单次覆盖。本地名称、说明、地点和占用覆盖优先于后续来源更新，并可逐字段重置。
+- 订阅 occurrence 已接入统一 93 天/2000 条查询和冲突计算；手工创建安排时也会返回与订阅事件的冲突。
+
+2026-10-02 在本地 PostgreSQL 18.6、真实 Uvicorn HTTP 和真实本机流式 HTTP 服务中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q tests/test_calendar_subscription_fetcher.py tests/test_calendar_subscription_parser.py tests/test_calendar_subscriptions.py` | **33 passed in 10.55s** | SSRF/peer/重定向/代理/gzip/超时、ICS 解析、真实 API/PostgreSQL/worker、304、失败保旧、RID、覆盖、容量、租约和迁移 |
+| `uv run pytest -q` | **159 passed** | 订阅服务接入后的服务端全量回归 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic check` | 无模型漂移 | `0015_calendar_subscriptions (head)` 与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+专项测试还验证了代理环境变量不会接管连接、IPv4-mapped IPv6 与混合公网/私网解析被拒绝、条件验证器只发往原最终 URL、网络等待期间无数据库空闲事务、来源字段差异可见及旧刷新结果被 URL 新修订淘汰。
+
+本节只完成服务端与统一日历投影。订阅来源管理、刷新状态、差异处理和三视口真实 Chromium 流程在下一提交完成；尚未使用真实第三方私密订阅源测试。

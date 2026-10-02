@@ -77,7 +77,7 @@
 ## 5. API 与界面
 
 - `POST /api/v1/calendar/subscriptions`：名称、URL、刷新周期、操作 ID → 来源和首次刷新状态。
-- `GET /api/v1/calendar/subscriptions`、`GET /{id}`：本人来源、状态、最近成功/失败和字段差异；不返回完整 URL 查询。
+- `GET /api/v1/calendar/subscriptions`、`GET /{id}`：本人来源、状态、最近成功/失败和字段差异；只返回主机及省略路径和查询参数后的展示地址。
 - `POST /{id}/refresh`：幂等排队或返回当前在途刷新。
 - `PUT /{id}`：修改名称、URL 或周期；修改 URL 清除旧验证器并排队全量刷新。
 - `PUT /{id}/events/{event_id}/overrides`：字段级本地覆盖或重置。
@@ -95,3 +95,9 @@
 - 并发：双 worker、租约过期、进程中断、陈旧结果、重复手动刷新、URL 更新与旧刷新竞争。
 - 本地变更：字段覆盖优先、来源差异展示、重置来源、单次例外优先、冲突保留。
 - Web：创建、刷新、暂停、失败保留、差异处理和三视口真实浏览器流程。
+
+## 7. 实现状态
+
+迁移 `0015_calendar_subscriptions` 与 `server/src/itime/calendar/subscription_*.py` 已实现受限抓取、加密 URL、来源事件修订、持久化租约 worker、字段覆盖和统一 occurrence 投影。服务端专项测试覆盖 200/304/失败保旧、UID/RID 更新取消、缺失取消、无限重复、陈旧结果、网络期间无数据库事务及迁移回退。
+
+当前尚未实现订阅来源的 Web 管理界面和订阅事件的用户单次例外 API；来源级字段覆盖已经实现。计划冲突标记仍等待规划模块，当前只返回统一日历冲突。

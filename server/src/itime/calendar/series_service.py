@@ -25,6 +25,7 @@ from itime.calendar.recurrence import (
 )
 from itime.calendar.schemas import SeriesFields
 from itime.calendar.service import validate_time_zone
+from itime.calendar.subscription_projection import query_subscription_occurrences
 from itime.calendar.time_math import (
     occurrence_key,
     resolve_local_interval,
@@ -493,6 +494,7 @@ def apply_conflict_links(occurrences: list[dict]) -> None:
             current["conflict_with"].append(
                 {
                     "series_id": other["series_id"],
+                    "subscription_event_id": other.get("subscription_event_id"),
                     "occurrence_key": other["occurrence_key"],
                     "occurrence_type": other["occurrence_type"],
                     "addition_id": other["addition_id"],
@@ -503,6 +505,7 @@ def apply_conflict_links(occurrences: list[dict]) -> None:
             other["conflict_with"].append(
                 {
                     "series_id": current["series_id"],
+                    "subscription_event_id": current.get("subscription_event_id"),
                     "occurrence_key": current["occurrence_key"],
                     "occurrence_type": current["occurrence_type"],
                     "addition_id": current["addition_id"],
@@ -623,6 +626,21 @@ async def query_occurrences(
                 "该范围内超过 2000 条安排，请缩小查询范围。",
                 status=422,
             )
+    occurrences.extend(
+        await query_subscription_occurrences(
+            session,
+            owner_id,
+            query_start=query_start,
+            query_end=query_end,
+            remaining_limit=MAX_QUERY_OCCURRENCES - len(occurrences),
+        )
+    )
+    if len(occurrences) > MAX_QUERY_OCCURRENCES:
+        raise AppError(
+            "calendar_result_too_large",
+            "该范围内超过 2000 条安排，请缩小查询范围。",
+            status=422,
+        )
     apply_conflict_links(occurrences)
     occurrences.sort(
         key=lambda item: (
@@ -763,6 +781,15 @@ async def find_series_conflicts(
                 "冲突检查涉及超过 2000 条既有安排，请缩短系列范围。",
                 status=422,
             )
+    existing_occurrences.extend(
+        await query_subscription_occurrences(
+            session,
+            owner_id,
+            query_start=query_start,
+            query_end=query_end,
+            remaining_limit=MAX_QUERY_OCCURRENCES - len(existing_occurrences),
+        )
+    )
 
     timeline = sorted(
         [
@@ -804,6 +831,9 @@ async def find_series_conflicts(
                     "occurrence_type": current["occurrence_type"],
                     "addition_id": current["addition_id"],
                     "conflicting_series_id": other["series_id"],
+                    "conflicting_subscription_event_id": other.get(
+                        "subscription_event_id"
+                    ),
                     "conflicting_occurrence_key": other["occurrence_key"],
                     "conflicting_occurrence_type": other["occurrence_type"],
                     "conflicting_addition_id": other["addition_id"],
