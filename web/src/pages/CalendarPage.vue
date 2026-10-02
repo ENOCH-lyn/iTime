@@ -357,6 +357,12 @@ async function openImport() {
   importOpen.value = true
 }
 
+async function closeImport() {
+  importOpen.value = false
+  await nextTick()
+  document.querySelector<HTMLElement>('[data-calendar-import-trigger]')?.focus()
+}
+
 async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
   pageError.value = null
   try {
@@ -553,7 +559,7 @@ watch(pageError, value => {
       :terms="terms"
       :time-zone="settings?.time_zone ?? browserTimeZone"
       :initial-date="anchor"
-      @close="importOpen = false"
+      @close="closeImport"
       @changed="onCalendarChanged"
     />
     <CalendarSeriesDialog

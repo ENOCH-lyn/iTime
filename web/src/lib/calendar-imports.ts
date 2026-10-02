@@ -1,13 +1,13 @@
 import { api, uploadApi } from './api'
 import type { CalendarWriteResult, SeriesDraft } from './calendar'
 
-export type ImportFormat = 'xlsx' | 'ics'
+export type ImportFormat = 'xlsx' | 'ics' | 'screenshot'
 export type ImportState = 'ready' | 'partially_confirmed' | 'completed' | 'expired'
 export type CandidateState = 'valid' | 'invalid' | 'duplicate' | 'confirmed' | 'skipped'
 
 export interface CalendarSource {
   id: string
-  kind: 'excel_file' | 'ics_file'
+  kind: 'excel_file' | 'ics_file' | 'screenshot'
   name: string
   version: number
   created_at: string

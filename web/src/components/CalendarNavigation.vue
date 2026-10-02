@@ -29,7 +29,7 @@ const emit = defineEmits<{
       <button type="button" class="nav-link" @click="emit('createSeries')">
         <Plus :size="18" aria-hidden="true" />新建安排
       </button>
-      <button type="button" class="nav-link" @click="emit('openImport')">
+      <button type="button" class="nav-link" data-calendar-import-trigger @click="emit('openImport')">
         <FileUp :size="18" aria-hidden="true" />导入日历
       </button>
       <button type="button" class="nav-link" @click="emit('openSettings')">

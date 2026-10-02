@@ -868,6 +868,11 @@
   margin-bottom: 0;
 }
 
+.import-mode-switch {
+  max-width: 360px;
+  margin: 20px 28px 0;
+}
+
 .calendar-import-dialog .success-status p,
 .calendar-import-dialog .error-status p,
 .import-outcome p {
@@ -875,6 +880,7 @@
 }
 
 .import-upload,
+.import-screenshot,
 .import-history,
 .import-review {
   padding-block: 24px;
@@ -913,6 +919,74 @@
 .import-upload-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.screenshot-upload-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.screenshot-loading {
+  margin-top: 16px;
+  font-size: .8125rem;
+}
+
+.screenshot-job-list {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  margin: 18px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.screenshot-job-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.screenshot-job-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.screenshot-job-copy strong {
+  overflow-wrap: anywhere;
+  font-size: .8125rem;
+}
+
+.screenshot-job-copy > p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.screenshot-job-copy .import-candidate-error {
+  color: var(--error);
+}
+
+.state-label[data-state="queued"],
+.state-label[data-state="running"] {
+  color: var(--notice-text);
+  border-color: var(--notice-border);
+}
+
+.state-label[data-state="succeeded"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.state-label[data-state="failed"],
+.state-label[data-state="timed_out"],
+.state-label[data-state="cancelled"] {
+  color: var(--error);
+  border-color: var(--error-border);
 }
 
 .import-file-button {
@@ -1415,6 +1489,10 @@
     margin-inline: 18px;
   }
 
+  .import-mode-switch {
+    margin-inline: 18px;
+  }
+
   .import-dialog-heading {
     padding-inline: 18px;
   }
@@ -1429,6 +1507,10 @@
 
   .import-upload-actions .button {
     flex: 1 1 160px;
+  }
+
+  .screenshot-upload-actions .button {
+    flex: 1 1 180px;
   }
 
   .import-history-list {
@@ -1656,6 +1738,15 @@
 
   .dialog-actions .button {
     flex: 1 1 130px;
+  }
+
+  .screenshot-job-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .screenshot-job-list .row-actions .button {
+    width: 100%;
   }
 }
 

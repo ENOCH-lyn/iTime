@@ -579,3 +579,27 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 | `cd web && pnpm exec playwright test e2e/admin-management.spec.ts` | **12 passed in 28.1s** | 4 个管理流程 × 1440×1000、390×844、768×1024 |
 
 新增真实浏览器流程覆盖创建版本、Key 不回显、合成图片 HTTP 测试、发布、回滚、唯一当前版本、axe、控制台、Vite 错误覆盖层和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-admin-management-ai-config-published.png`，已人工检查三个视口。
+
+## M3-N：截图识别导入 Web 界面
+
+对应 Git 提交主题：`feat: 完成截图识别导入界面`。实际代码为 `web/src/components/CalendarScreenshotImport.vue`、现有 `CalendarImportDialog.vue` 扩展、`web/src/lib/ai-jobs.ts` 及 `web/e2e/calendar-imports.spec.ts`。
+
+已实现：
+
+- 导入对话框以分段控件切换 Excel/ICS 文件和截图识别；截图接受 PNG、JPEG、WebP，选择后显示文件名并在浏览器侧先检查类型与 5 MiB 上限。
+- 上传返回持久化作业后显示排队、识别、等待校对、失败、超时和取消状态，以及尝试次数；不展示伪进度百分比。
+- 活动作业按 1—3 秒有界轮询；页面隐藏或对话框关闭时停止前端轮询但不取消服务端作业，重新进入或窗口重新获得焦点时从服务端恢复。
+- 用户可显式取消排队或执行中的作业；取消操作号在未知响应时复用。成功作业可重新打开对应批次，自动复用现有候选编辑、版本冲突、部分确认和冲突提示。
+- 对话框关闭后焦点回到“导入日历”入口。桌面保持宽对话框，840px 以下使用全屏内部滚动；长截图文件名、状态、操作按钮和 320px 最大字号不产生根级横向溢出。
+
+2026-10-02 执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与生产构建 |
+| `cd web && pnpm exec playwright test e2e/calendar-imports.spec.ts` | **9 passed in 31.3s** | 3 个导入流程 × 1440×1000、390×844、768×1024 |
+| `cd web && pnpm test:e2e` | **90 passed in 3.2m** | 账号、后台、任务、日历、文件和截图导入全量 Chromium 回归 |
+
+新增流程以真实 PNG 上传到隔离 API，由独立 AI worker 调用真实本地 OpenAI 兼容 HTTP 服务；浏览器在提交后关闭导入对话框，等待后台完成，再重新进入恢复作业、打开候选、确认并从日历读取 occurrence。三个视口均验证 axe、控制台、API 500、错误覆盖层和横向溢出；桌面项目另在 320×700 最大字号检查截图作业列表。截图位于 `/tmp/itime-ui-evidence/*-calendar-import-screenshot-*.png`，已人工检查。
+
+截图识别至此完成服务、管理配置和用户校对闭环；仍未接每日额度、正文日志与质检。M3 下一项为 ICS URL 订阅。

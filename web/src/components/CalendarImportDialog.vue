@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import CalendarImportCandidateEditor from './CalendarImportCandidateEditor.vue'
+import CalendarScreenshotImport from './CalendarScreenshotImport.vue'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
@@ -51,6 +52,7 @@ const detailLoading = ref(false)
 const error = ref<Failure | null>(null)
 const success = ref('')
 const outcomes = ref<ImportOutcome[]>([])
+const importMode = ref<'file' | 'screenshot'>('file')
 const retryAction = ref<'history' | 'upload' | 'batch' | null>(null)
 const lastBatchId = ref<string | null>(null)
 let uploadOperation: { id: string; fingerprint: string } | null = null
@@ -209,6 +211,14 @@ async function openBatch(batchId: string) {
     retryAction.value = 'batch'
   } finally {
     if (revision === detailRevision) detailLoading.value = false
+  }
+}
+
+async function openScreenshotBatch(batchId: string) {
+  await openBatch(batchId)
+  if (detail.value?.batch.id === batchId) {
+    success.value = `已识别 ${detail.value.batch.candidate_count} 条候选，尚未写入日历。`
+    await loadHistory()
   }
 }
 
@@ -373,7 +383,7 @@ function onCandidateUpdated(
       <FileSpreadsheet :size="22" aria-hidden="true" />
       <div>
         <h2 id="calendar-import-title">导入日历</h2>
-        <p>Excel 与 ICS 会先生成候选，确认后才写入日历。</p>
+        <p>截图、Excel 与 ICS 都会先生成候选，确认后才写入日历。</p>
       </div>
       <button type="button" class="small-icon-button import-close"
         aria-label="关闭导入" title="关闭导入" :disabled="pending" @click="close">
@@ -385,7 +395,23 @@ function onCandidateUpdated(
       :retry-label="error?.retryable ? '重试' : undefined"
       @retry="retryFailure" />
 
-    <section class="import-upload" aria-labelledby="import-upload-title">
+    <fieldset class="segmented-field import-mode-switch">
+      <legend class="sr-only">导入方式</legend>
+      <label :class="{ selected: importMode === 'file' }">
+        <input v-model="importMode" type="radio" value="file" />Excel / ICS
+      </label>
+      <label :class="{ selected: importMode === 'screenshot' }">
+        <input v-model="importMode" type="radio" value="screenshot" />截图识别
+      </label>
+    </fieldset>
+
+    <CalendarScreenshotImport
+      v-if="importMode === 'screenshot'"
+      :active="open"
+      @batch-ready="openScreenshotBatch"
+    />
+
+    <section v-if="importMode === 'file'" class="import-upload" aria-labelledby="import-upload-title">
       <div>
         <h3 id="import-upload-title">选择文件</h3>
         <p>XLSX 最大 5 MiB，ICS 最大 2 MiB。</p>

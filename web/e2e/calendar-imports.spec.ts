@@ -6,6 +6,17 @@ import { mkdir, writeFile } from 'node:fs/promises'
 const password = 'Valid-calendar-import-ui-password-123'
 const evidence = '/tmp/itime-ui-evidence'
 const runtimeErrors = new WeakMap<Page, string[]>()
+const screenshotPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAASsAAABACAIAAADNgsbOAAABR0lEQVR42u3cwQ2DMAxA'
+  + '0czADlzZfztYgUiO41jvq9emisnjUCHGK2lfwwgkAiUCJREoESiJQIlASQRKBEoiUCJQ'
+  + 'EoESgZIyBF738/8TuFTaD00tNTXftOGsOyI1L0qbLRBIIIEEEkgggQQSSCCBBBJIYOip'
+  + 'arDy1JR3UU8TGHiLWbfUEVsgkEACCSSQQAIJJJBAAgkkkEACo4dO4NLj22ALBBJIIIEE'
+  + 'EkgggQQSSCCBBBJIYA2Bux5D67dBAgkkkEACCSSQQAIJJJBAAgkksIvAwO+2/y9016wI'
+  + 'JJBAAgkkkEACCSSQQAIJJJBAAgmscfUJJJBAAgkkkEACCSSQQAIJJLCYwLSHidYt5Z3Z'
+  + 'BSfpndkEEkgggQQSSCCBBBJIIIEEEigpMQIlAiUCJREoESiJQIlASQRKBEoiUCJQEoES'
+  + 'gZIIlE7uA2qfPFsoP349AAAAAElFTkSuQmCC',
+  'base64',
+)
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10)
@@ -277,5 +288,60 @@ test('ICS 部分错误可校对后确认，并展示候选间时间冲突', asyn
       .toBe(true)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, '320-large-font')
+  }
+})
+
+test('截图后台识别可离开后恢复并校对确认', async ({
+  page,
+  request,
+}, info) => {
+  const imagePath = `/tmp/itime-screenshot-${randomUUID()}.png`
+  await writeFile(imagePath, screenshotPng)
+  await account(page, request)
+  await page.getByRole('button', { name: '导入日历', exact: true }).click()
+  let dialog = page.getByRole('dialog', { name: '导入日历' })
+  await dialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
+  await dialog.locator('.import-screenshot input[type=file]').setInputFiles(imagePath)
+  await dialog.getByRole('button', { name: '开始识别', exact: true }).click()
+  await expect(dialog.getByText('截图已提交，离开此页面也会继续识别。')).toBeVisible()
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(dialog).toBeHidden()
+
+  await page.waitForTimeout(1200)
+  await page.getByRole('button', { name: '导入日历', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: '导入日历' })
+  await dialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
+  await expect(dialog.getByText('高等数学', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('可确认', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('等待校对', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '确认选中 1 条', exact: true }).click()
+  await expect(dialog.getByText('导入 1 条')).toBeVisible()
+  await expect(dialog.getByText('已完成', { exact: true }).first()).toBeVisible()
+  expect((await new AxeBuilder({ page }).include('.calendar-import-dialog').analyze()).violations)
+    .toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'screenshot-confirmed')
+
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await page.getByLabel('跳转日期').fill('2026-10-05')
+  await expect(page.getByText('正在读取日历…')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /高等数学/ }).first()).toBeVisible()
+
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'light', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.reload()
+    await page.getByRole('button', { name: '导入日历', exact: true }).click()
+    const narrowDialog = page.getByRole('dialog', { name: '导入日历' })
+    await narrowDialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
+    await expect(narrowDialog.getByText('等待校对', { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'screenshot-320-large-font')
   }
 })
