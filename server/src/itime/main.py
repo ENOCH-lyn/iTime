@@ -18,6 +18,7 @@ from itime.auth.router import router as auth_router
 from itime.auth.security import Security
 from itime.calendar.import_router import router as calendar_import_router
 from itime.calendar.router import router as calendar_router
+from itime.calendar.screenshot_router import router as calendar_screenshot_router
 from itime.config import Settings, get_settings
 from itime.database import Database
 from itime.errors import AppError, install_handlers
@@ -59,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(task_schedule_router)
     app.include_router(calendar_router)
+    app.include_router(calendar_screenshot_router)
     app.include_router(calendar_import_router)
 
     @app.get("/api/health", tags=["运行状态"])

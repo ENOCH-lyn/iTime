@@ -530,3 +530,31 @@ Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效�
 浏览器流程使用真实服务端模板文件和真实 ICS 文件，覆盖上传前不写日历、确认后 occurrence 可见、同文件重传识别重复、部分错误校对、候选版本冲突草稿保留、候选间冲突、终态禁写、焦点交接、axe、控制台及根级横向溢出。截图位于 `/tmp/itime-ui-evidence/*-calendar-import-*.png`，已人工检查桌面、平板、手机和 320×700 最大字号状态。
 
 Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS 订阅仍在后续模块。
+
+## M3-L：AI 配置、持久化作业与截图识别服务
+
+对应 Git 提交主题：`feat: 实现 AI 配置版本服务`、`feat: 建立 AI 作业与临时媒体基础` 和 `feat: 实现日历截图识别服务`。实际代码为 `server/src/itime/ai/`、`server/src/itime/calendar/screenshot_*.py`、日历导入复用逻辑及迁移 `0012`—`0014`。
+
+已实现：
+
+- 管理员可创建不可变的截图识别配置版本；Key 使用独立 AI Fernet 密钥加密且接口不回显。配置以合成图片真实调用 OpenAI 兼容端点，成功后才能原子发布，新发布版本不会改写在途作业。
+- 截图上传验证真实 PNG/JPEG/WebP、MIME、扩展名、完整解码、单帧、5 MiB 和 2000 万像素边界；上传结果是绑定配置和输入快照的持久化作业，不在 API 请求中同步等待模型。
+- AI worker 使用 PostgreSQL `SKIP LOCKED` 和随机租约领取任务，网络调用不占数据库事务；总截止时间不因重试重置。限流、网络和 5xx 有界重试，取消、超时、成功与晚到输出只能一个终态生效。
+- 视觉端点收到图片、用户时区、学期及节次快照；响应必须是受限 JSON。单项继续经过现有日历领域校验，部分错误不会丢失可判断候选，未经用户确认不写正式日历。
+- 作业成功以唯一 `origin_job_id` 创建截图导入批次，继续复用候选校对、部分确认、精确重复和冲突返回。首次确认或跳过时清空原图密文；未处理原图 24 小时清理，候选独立保留 30 天。
+
+2026-10-02 在本地 PostgreSQL 18.6、真实 Uvicorn HTTP 和本地 OpenAI 兼容测试端点中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q tests/test_ai_config.py` | **9 passed** | 配置加密、合成视觉请求、失败脱敏、并发发布、权限与迁移 |
+| `uv run pytest -q tests/test_ai_jobs.py tests/test_image_validation.py` | **20 passed** | 租约、重试、取消、媒体清理及真实三格式图片 |
+| `uv run pytest -q tests/test_calendar_screenshot_imports.py` | **5 passed** | 上传、真实 HTTP 识别、候选、确认清理、失败重试和取消竞争 |
+| `uv run pytest -q` | **126 passed in 114.62s** | 截图服务接入后的服务端全量回归 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic check` | 无模型漂移 | `0014_calendar_screenshot_imports (head)` 与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+测试端点接收真实 base64 图片请求并返回结构化候选，不以静态服务返回替代 worker 状态机。测试同时验证两个 worker 不重复领取、租约过期重领、取消胜过晚到成功、原图密文不等于明文、确认后正文为空、跨账号 404 及失败响应不泄漏 Key 或上游正文。
+
+当前未配置真实第三方模型 Key，因此只证明 OpenAI 兼容协议与真实 HTTP 链路可运行，不宣称具体供应商已通过。截图 Web 上传/轮询界面、AI 金额账本、正文日志、质检及 ICS 订阅仍待后续提交。

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     admin_session_hours: int = Field(default=8, ge=1, le=24)
     admin_setup_minutes: int = Field(default=30, ge=5, le=120)
     ai_private_endpoint_hosts: list[str] = Field(default_factory=list)
+    ai_job_timeout_seconds: int = Field(default=180, ge=30, le=900)
+    ai_job_lease_seconds: int = Field(default=210, ge=30, le=1200)
     verification_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_minutes: int = Field(default=15, ge=5, le=60)
     mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)

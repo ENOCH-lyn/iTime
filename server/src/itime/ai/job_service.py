@@ -66,7 +66,7 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     if job.status in TERMINAL_JOB_STATES:
         return False
     current = now()
-    await _finish_running_attempt(session, job, status="cancelled")
+    await finish_running_attempt(session, job, status="cancelled")
     job.status = "cancelled"
     job.output = None
     job.error_code = None
@@ -74,11 +74,11 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     job.finished_at = current
     job.updated_at = current
     job.version += 1
-    _clear_lease(job)
+    clear_job_lease(job)
     return True
 
 
-async def _finish_running_attempt(
+async def finish_running_attempt(
     session: AsyncSession,
     job: AIJob,
     *,
@@ -108,7 +108,7 @@ async def _finish_running_attempt(
     )
 
 
-def _clear_lease(job: AIJob) -> None:
+def clear_job_lease(job: AIJob) -> None:
     job.lease_id = None
     job.lease_until = None
 
@@ -149,7 +149,7 @@ async def claim_next_job(
             if stale_running and job.lease_until is not None and job.lease_until > current:
                 return None
             if job.deadline_at <= current:
-                await _finish_running_attempt(
+                await finish_running_attempt(
                     session,
                     job,
                     status="timed_out",
@@ -162,10 +162,10 @@ async def claim_next_job(
                 job.finished_at = current
                 job.updated_at = current
                 job.version += 1
-                _clear_lease(job)
+                clear_job_lease(job)
                 continue
             if job.attempt_count >= job.max_attempts:
-                await _finish_running_attempt(
+                await finish_running_attempt(
                     session,
                     job,
                     status="failed",
@@ -178,10 +178,10 @@ async def claim_next_job(
                 job.finished_at = current
                 job.updated_at = current
                 job.version += 1
-                _clear_lease(job)
+                clear_job_lease(job)
                 continue
             if stale_running:
-                await _finish_running_attempt(
+                await finish_running_attempt(
                     session,
                     job,
                     status="abandoned",
@@ -247,7 +247,7 @@ async def complete_job(
         if job is None:
             return False
         if job.deadline_at <= current:
-            await _finish_running_attempt(
+            await finish_running_attempt(
                 session,
                 job,
                 status="timed_out",
@@ -262,9 +262,9 @@ async def complete_job(
             job.finished_at = current
             job.updated_at = current
             job.version += 1
-            _clear_lease(job)
+            clear_job_lease(job)
             return False
-        await _finish_running_attempt(
+        await finish_running_attempt(
             session,
             job,
             status="succeeded",
@@ -278,7 +278,7 @@ async def complete_job(
         job.finished_at = current
         job.updated_at = current
         job.version += 1
-        _clear_lease(job)
+        clear_job_lease(job)
         return True
 
 
@@ -314,7 +314,7 @@ async def reject_or_retry_job(
         )
         if can_retry:
             delay = min(30, 2 ** job.attempt_count)
-            await _finish_running_attempt(
+            await finish_running_attempt(
                 session,
                 job,
                 status="retryable_failed",
@@ -329,7 +329,7 @@ async def reject_or_retry_job(
             job.error_message = error_message
             job.updated_at = current
             job.version += 1
-            _clear_lease(job)
+            clear_job_lease(job)
             return "queued"
 
         timed_out = job.deadline_at <= current
@@ -340,7 +340,7 @@ async def reject_or_retry_job(
             if timed_out
             else error_message
         )
-        await _finish_running_attempt(
+        await finish_running_attempt(
             session,
             job,
             status=status,
@@ -355,7 +355,7 @@ async def reject_or_retry_job(
         job.finished_at = current
         job.updated_at = current
         job.version += 1
-        _clear_lease(job)
+        clear_job_lease(job)
         return status
 
 

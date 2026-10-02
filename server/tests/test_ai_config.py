@@ -125,6 +125,9 @@ def reset_ai_configs(database_url):
             "UPDATE ai_config_capabilities"
             " SET current_version_id=NULL, next_version=1, updated_at=now()"
         )
+        connection.execute("DELETE FROM ai_job_attempts")
+        connection.execute("DELETE FROM ai_jobs")
+        connection.execute("DELETE FROM temporary_media")
         connection.execute("DELETE FROM ai_config_versions")
     yield
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
@@ -132,6 +135,9 @@ def reset_ai_configs(database_url):
             "UPDATE ai_config_capabilities"
             " SET current_version_id=NULL, next_version=1, updated_at=now()"
         )
+        connection.execute("DELETE FROM ai_job_attempts")
+        connection.execute("DELETE FROM ai_jobs")
+        connection.execute("DELETE FROM temporary_media")
         connection.execute("DELETE FROM ai_config_versions")
 
 

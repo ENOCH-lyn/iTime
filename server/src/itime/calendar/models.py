@@ -367,7 +367,7 @@ class CalendarSeries(Base):
 class CalendarImportBatch(Base):
     __tablename__ = "calendar_import_batches"
     __table_args__ = (
-        CheckConstraint("format IN ('xlsx', 'ics')", name="format"),
+        CheckConstraint("format IN ('xlsx', 'ics', 'screenshot')", name="format"),
         CheckConstraint(
             "state IN ('ready', 'partially_confirmed', 'completed', 'expired')",
             name="state",
@@ -381,8 +381,15 @@ class CalendarImportBatch(Base):
             name="fk_calendar_import_batches_source_owner",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["origin_job_id", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.owner_id"],
+            name="fk_calendar_import_batches_origin_job_owner",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_calendar_import_batches_id_owner"),
         UniqueConstraint("source_id", name="uq_calendar_import_batches_source"),
+        UniqueConstraint("origin_job_id", name="uq_calendar_import_batches_origin_job"),
         Index(
             "ix_calendar_import_batches_owner_updated",
             "owner_id",
@@ -394,7 +401,8 @@ class CalendarImportBatch(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     source_id: Mapped[UUID]
-    format: Mapped[str] = mapped_column(String(8))
+    origin_job_id: Mapped[UUID | None]
+    format: Mapped[str] = mapped_column(String(16))
     filename: Mapped[str] = mapped_column(String(255))
     content_sha256: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(24), default="ready", server_default="ready")
@@ -504,7 +512,7 @@ class CalendarImportCandidate(Base):
 class CalendarImportIdentity(Base):
     __tablename__ = "calendar_import_identities"
     __table_args__ = (
-        CheckConstraint("format IN ('xlsx', 'ics')", name="format"),
+        CheckConstraint("format IN ('xlsx', 'ics', 'screenshot')", name="format"),
         CheckConstraint("length(identity_key) = 64", name="identity_key"),
         CheckConstraint("length(content_fingerprint) = 64", name="content_fingerprint"),
         ForeignKeyConstraint(
@@ -540,7 +548,7 @@ class CalendarImportIdentity(Base):
     owner_id: Mapped[UUID]
     source_id: Mapped[UUID]
     series_id: Mapped[UUID]
-    format: Mapped[str] = mapped_column(String(8))
+    format: Mapped[str] = mapped_column(String(16))
     identity_key: Mapped[str] = mapped_column(String(64))
     content_fingerprint: Mapped[str] = mapped_column(String(64))
     external_uid: Mapped[str | None] = mapped_column(String(512))

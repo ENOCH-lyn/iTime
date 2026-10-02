@@ -8,6 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Header, Query, Request, Response
 from sqlalchemy import and_, or_, select
 
+from itime.ai.job_service import delete_media
+from itime.ai.models import AIJob, TemporaryMedia
 from itime.auth.security import now
 from itime.auth.session import authorized
 from itime.calendar.import_parsers import (
@@ -596,7 +598,9 @@ async def confirm_calendar_import(
                 owner_id=identity.user.id,
                 predecessor_id=None,
                 source_id=batch.source_id,
-                source_type="import",
+                source_type=(
+                    "screenshot" if batch.format == "screenshot" else "import"
+                ),
                 **series_values(fields, resolved),
             )
             identity.session.add(series)
@@ -633,6 +637,21 @@ async def confirm_calendar_import(
             candidate.updated_at = now()
             created.append((candidate, series, warnings))
             await identity.session.flush()
+
+        if batch.origin_job_id is not None:
+            media = await identity.session.scalar(
+                select(TemporaryMedia)
+                .join(AIJob, AIJob.input_media_id == TemporaryMedia.id)
+                .where(
+                    AIJob.id == batch.origin_job_id,
+                    AIJob.owner_id == identity.user.id,
+                    TemporaryMedia.owner_id == identity.user.id,
+                )
+                .with_for_update(of=TemporaryMedia)
+            )
+            if media is None:
+                raise RuntimeError("screenshot import media is missing")
+            delete_media(media, reason="confirmed")
 
         for candidate, series, warnings in created:
             outcomes[candidate.id] = confirmed_series_result(

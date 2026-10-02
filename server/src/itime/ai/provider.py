@@ -65,7 +65,7 @@ def enforce_endpoint_policy(endpoint_url: str, settings: Settings) -> None:
             )
 
 
-async def _resolved_endpoint_allowed(
+async def resolved_endpoint_allowed(
     endpoint_url: str, settings: Settings
 ) -> bool | None:
     parsed = urlsplit(endpoint_url)
@@ -134,7 +134,7 @@ async def _network_test(
     settings: Settings,
     api_key: str,
 ) -> ProviderTestResult:
-    endpoint_allowed = await _resolved_endpoint_allowed(config.endpoint_url, settings)
+    endpoint_allowed = await resolved_endpoint_allowed(config.endpoint_url, settings)
     if endpoint_allowed is None:
         return _failure(
             "ai_config_test_unreachable",
