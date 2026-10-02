@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
-from itime.tasks.schemas import Input, OperationInput, clean_required
+from itime.schemas import Input, OperationInput, clean_required
 
 
 def clean_time_zone(value: str) -> str:

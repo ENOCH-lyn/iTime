@@ -17,9 +17,11 @@ from itime.tasks.models import (
     Task,
     TaskLabel,
     TaskLink,
+    TaskSchedule,
     TaskStep,
     UserOperation,
 )
+from itime.tasks.schedule_service import task_schedule_result
 
 
 def validate_cursor(before_time: datetime | None, before_id: UUID | None) -> None:
@@ -253,6 +255,7 @@ async def task_context(session: AsyncSession, tasks: list[Task]) -> dict:
             "labels": defaultdict(list),
             "step_counts": {},
             "link_counts": {},
+            "schedules": {},
         }
     project_ids = {task.project_id for task in tasks if task.project_id is not None}
     projects = (
@@ -301,11 +304,18 @@ async def task_context(session: AsyncSession, tasks: list[Task]) -> dict:
             .group_by(TaskLink.task_id)
         )
     }
+    schedules = {
+        schedule.task_id: schedule
+        for schedule in await session.scalars(
+            select(TaskSchedule).where(TaskSchedule.task_id.in_(task_ids))
+        )
+    }
     return {
         "projects": projects,
         "labels": labels,
         "step_counts": step_counts,
         "link_counts": link_counts,
+        "schedules": schedules,
     }
 
 
@@ -329,6 +339,7 @@ def task_summary_result(task: Task, context: dict) -> dict:
         "labels": [label_result(label) for label in context["labels"][task.id]],
         "step_progress": context["step_counts"].get(task.id, {"total": 0, "completed": 0}),
         "link_count": context["link_counts"].get(task.id, 0),
+        "schedule": task_schedule_result(context["schedules"].get(task.id)),
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }

@@ -1,29 +1,11 @@
+from datetime import date, time
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import (
-    AnyHttpUrl,
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 
-
-class Input(BaseModel):
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-
-
-class OperationInput(Input):
-    operation_id: UUID
-
-
-def clean_required(value: str) -> str:
-    cleaned = value.strip()
-    if not cleaned:
-        raise ValueError("不能只包含空白字符")
-    return cleaned
+from itime.calendar.schemas import RecurrenceInput
+from itime.schemas import Input, OperationInput, clean_required
 
 
 class ProjectCreate(OperationInput):
@@ -183,3 +165,63 @@ class TaskBulkInput(OperationInput):
         if self.action not in {"add_labels", "remove_labels"} and self.labels:
             raise ValueError("当前批量操作不接受 labels")
         return self
+
+
+class TaskScheduleFields(Input):
+    due_kind: Literal["none", "date", "datetime"] = "none"
+    due_date: date | None = None
+    due_time: time | None = None
+    time_zone: str | None = Field(default=None, min_length=1, max_length=64)
+    ambiguous_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+    splittable: bool = True
+    minimum_block_minutes: int = Field(default=15, ge=1, le=1440)
+    recurrence: RecurrenceInput = Field(default_factory=RecurrenceInput)
+
+    @field_validator("time_zone")
+    @classmethod
+    def clean_zone(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class TaskScheduleUpdate(TaskScheduleFields):
+    operation_id: UUID
+    expected_task_version: int = Field(ge=1)
+
+
+class TaskOccurrenceUpdate(OperationInput):
+    expected_task_version: int = Field(ge=1)
+    expected_occurrence_version: int = Field(ge=0)
+    occurrence_key: str = Field(min_length=10, max_length=80)
+    status: Literal["open", "completed", "skipped"]
+    completed_step_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+    @field_validator("completed_step_ids")
+    @classmethod
+    def unique_completed_steps(cls, values: list[UUID]) -> list[UUID]:
+        if len(values) != len(set(values)):
+            raise ValueError("已完成步骤不能重复")
+        return values
+
+
+class TaskOccurrenceReschedule(OperationInput):
+    expected_task_version: int = Field(ge=1)
+    expected_occurrence_version: int = Field(ge=0)
+    occurrence_key: str = Field(min_length=10, max_length=80)
+    due_date: date
+    due_time: time | None = None
+    ambiguous_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+
+
+class TaskMakeupCreate(OperationInput):
+    expected_task_version: int = Field(ge=1)
+    original_occurrence_key: str = Field(min_length=10, max_length=80)
+    due_date: date
+    due_time: time | None = None
+    ambiguous_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+
+
+class TaskScheduleSplit(Input):
+    operation_id: UUID
+    expected_task_version: int = Field(ge=1)
+    occurrence_key: str = Field(min_length=10, max_length=80)
+    replacement: TaskScheduleFields

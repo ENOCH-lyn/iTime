@@ -21,6 +21,7 @@ from itime.errors import AppError, install_handlers
 from itime.middleware import RequestEnvelope
 from itime.observability import configure_logging
 from itime.tasks.router import router as tasks_router
+from itime.tasks.schedule_router import router as task_schedule_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -51,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_auth_router)
     app.include_router(admin_management_router)
     app.include_router(tasks_router)
+    app.include_router(task_schedule_router)
     app.include_router(calendar_router)
 
     @app.get("/api/health", tags=["运行状态"])

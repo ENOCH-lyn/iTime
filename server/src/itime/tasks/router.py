@@ -8,7 +8,16 @@ from sqlalchemy import and_, delete, func, or_, select
 from itime.auth.security import now
 from itime.auth.session import authorized
 from itime.errors import AppError
-from itime.tasks.models import Label, Project, Task, TaskLabel, TaskLink, TaskStep
+from itime.tasks.models import (
+    Label,
+    Project,
+    Task,
+    TaskLabel,
+    TaskLink,
+    TaskOccurrenceState,
+    TaskSchedule,
+    TaskStep,
+)
 from itime.tasks.schemas import (
     CompletionInput,
     ProjectCreate,
@@ -492,6 +501,13 @@ async def set_task_completion(
         task = await locked_task(identity.session, identity.user.id, task_id)
         if task.version != data.expected_version:
             raise task_version_conflict(task)
+        schedule = await identity.session.get(TaskSchedule, task.id)
+        if schedule is not None and schedule.recurrence_frequency != "none":
+            raise AppError(
+                "repeating_task_requires_occurrence",
+                "重复任务必须明确完成或重新打开某一次实例。",
+                status=409,
+            )
         desired = "completed" if data.completed else "open"
         if task.status != desired:
             task.status = desired
@@ -534,6 +550,17 @@ async def create_step(task_id: UUID, data: StepCreate, request: Request) -> dict
         task = await locked_task(identity.session, identity.user.id, task_id)
         if task.version != data.expected_task_version:
             raise task_version_conflict(task)
+        occurrence_state = await identity.session.scalar(
+            select(TaskOccurrenceState.id).where(
+                TaskOccurrenceState.task_id == task.id
+            )
+        )
+        if occurrence_state is not None:
+            raise AppError(
+                "task_steps_frozen_by_occurrences",
+                "已有重复任务实例进度后不能增删模板步骤，可以继续改名或排序。",
+                status=409,
+            )
         last_position = await identity.session.scalar(
             select(func.max(TaskStep.position)).where(TaskStep.task_id == task.id)
         )
@@ -599,6 +626,17 @@ async def update_step(
         )
         if step is None:
             raise AppError("step_not_found", "未找到此步骤。", status=404)
+        schedule = await identity.session.get(TaskSchedule, task.id)
+        if (
+            schedule is not None
+            and schedule.recurrence_frequency != "none"
+            and step.completed != data.completed
+        ):
+            raise AppError(
+                "repeating_task_requires_occurrence",
+                "重复任务的步骤进度必须记录到具体实例。",
+                status=409,
+            )
         changed = step.title != data.title or step.completed != data.completed
         if changed:
             step.title = data.title
@@ -659,6 +697,17 @@ async def delete_step(
         step = next((candidate for candidate in steps if candidate.id == step_id), None)
         if step is None:
             raise AppError("step_not_found", "未找到此步骤。", status=404)
+        occurrence_state = await identity.session.scalar(
+            select(TaskOccurrenceState.id).where(
+                TaskOccurrenceState.task_id == task.id,
+            )
+        )
+        if occurrence_state is not None:
+            raise AppError(
+                "task_step_in_use",
+                "已有重复任务实例进度后不能增删模板步骤，可以继续改名或排序。",
+                status=409,
+            )
         await identity.session.delete(step)
         for position, remaining in enumerate(candidate for candidate in steps if candidate != step):
             remaining.position = position
@@ -788,6 +837,25 @@ async def bulk_update_tasks(data: TaskBulkInput, request: Request) -> dict:
                 status=409,
                 details={"conflicts": conflicts},
             )
+        if data.action in {"complete", "reopen"}:
+            repeating_ids = set(
+                await identity.session.scalars(
+                    select(TaskSchedule.task_id).where(
+                        TaskSchedule.task_id.in_(ids),
+                        TaskSchedule.recurrence_frequency != "none",
+                    )
+                )
+            )
+            if repeating_ids:
+                raise AppError(
+                    "repeating_task_requires_occurrence",
+                    "批量完成或重新打开不能包含重复任务模板。",
+                    status=409,
+                    details={"task_ids": [str(task_id) for task_id in sorted(
+                        repeating_ids,
+                        key=str,
+                    )]},
+                )
         if data.action == "set_project":
             await require_project(identity.session, identity.user.id, data.project_id)
         labels = (

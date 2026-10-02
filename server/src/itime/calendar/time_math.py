@@ -98,6 +98,31 @@ def _resolve_local(
     return matches[0].astimezone(UTC), None
 
 
+def resolve_local_datetime(
+    local_value: datetime,
+    time_zone: str,
+    *,
+    preferred_offset_minutes: int | None,
+    strict_ambiguous: bool,
+) -> tuple[datetime | None, str | None]:
+    return _resolve_local(
+        local_value,
+        ZoneInfo(time_zone),
+        preferred_offset_minutes=preferred_offset_minutes,
+        strict_ambiguous=strict_ambiguous,
+    )
+
+
+def earliest_valid_local_datetime(
+    local_value: datetime,
+    time_zone: str,
+) -> datetime | None:
+    candidates = _local_candidates(local_value, ZoneInfo(time_zone))
+    if not candidates:
+        return None
+    return min(candidate.astimezone(UTC) for candidate in candidates)
+
+
 def resolve_local_interval(
     local_date: date,
     starts_at: time,

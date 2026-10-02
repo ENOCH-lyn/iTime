@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime, time
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -86,6 +88,265 @@ class Task(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(12), default="open", server_default="open")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TaskSchedule(Base):
+    __tablename__ = "task_schedules"
+    __table_args__ = (
+        CheckConstraint(
+            "due_kind IN ('none', 'date', 'datetime')",
+            name="due_kind",
+        ),
+        CheckConstraint(
+            "(due_kind = 'none' AND start_date IS NULL "
+            "AND last_occurrence_date IS NULL "
+            "AND due_local_time IS NULL AND due_at IS NULL AND time_zone IS NULL) "
+            "OR (due_kind = 'date' AND start_date IS NOT NULL "
+            "AND last_occurrence_date IS NOT NULL "
+            "AND due_local_time IS NULL AND due_at IS NULL AND time_zone IS NOT NULL) "
+            "OR (due_kind = 'datetime' AND start_date IS NOT NULL "
+            "AND last_occurrence_date IS NOT NULL "
+            "AND due_local_time IS NOT NULL AND due_at IS NOT NULL "
+            "AND time_zone IS NOT NULL)",
+            name="due_fields",
+        ),
+        CheckConstraint(
+            "due_kind != 'none' OR recurrence_frequency = 'none'",
+            name="no_due_no_recurrence",
+        ),
+        CheckConstraint(
+            "recurrence_frequency IN "
+            "('none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly')",
+            name="recurrence_frequency",
+        ),
+        CheckConstraint(
+            "recurrence_interval BETWEEN 1 AND 366",
+            name="recurrence_interval",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(recurrence_weekdays) = 'array'",
+            name="recurrence_weekdays",
+        ),
+        CheckConstraint(
+            "recurrence_month IS NULL OR recurrence_month BETWEEN 1 AND 12",
+            name="recurrence_month",
+        ),
+        CheckConstraint(
+            "recurrence_day_of_month IS NULL OR recurrence_day_of_month BETWEEN 1 AND 31",
+            name="recurrence_day_of_month",
+        ),
+        CheckConstraint(
+            "recurrence_count IS NULL OR recurrence_count BETWEEN 1 AND 366",
+            name="recurrence_count",
+        ),
+        CheckConstraint(
+            "(recurrence_frequency = 'none' "
+            "AND recurrence_interval = 1 "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL "
+            "AND recurrence_until IS NULL "
+            "AND recurrence_count IS NULL) "
+            "OR (recurrence_frequency != 'none' "
+            "AND ((recurrence_until IS NULL) != (recurrence_count IS NULL)))",
+            name="recurrence_end_shape",
+        ),
+        CheckConstraint(
+            "recurrence_until IS NULL OR recurrence_until >= start_date",
+            name="recurrence_until",
+        ),
+        CheckConstraint(
+            "last_occurrence_date IS NULL OR last_occurrence_date >= start_date",
+            name="last_occurrence_date",
+        ),
+        CheckConstraint(
+            "recurrence_frequency != 'weekdays' OR recurrence_interval = 1",
+            name="weekdays_interval",
+        ),
+        CheckConstraint(
+            "(recurrence_frequency = 'weekly' "
+            "AND jsonb_array_length(recurrence_weekdays) > 0 "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL) "
+            "OR (recurrence_frequency = 'monthly' "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NOT NULL) "
+            "OR (recurrence_frequency = 'yearly' "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NOT NULL "
+            "AND recurrence_day_of_month IS NOT NULL) "
+            "OR (recurrence_frequency IN ('none', 'daily', 'weekdays') "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL)",
+            name="recurrence_parameters",
+        ),
+        CheckConstraint(
+            "ambiguous_offset_minutes IS NULL OR "
+            "ambiguous_offset_minutes BETWEEN -840 AND 840",
+            name="ambiguous_offset_minutes",
+        ),
+        CheckConstraint(
+            "minimum_block_minutes BETWEEN 1 AND 1440",
+            name="minimum_block_minutes",
+        ),
+        ForeignKeyConstraint(
+            ["task_id", "owner_id"],
+            ["tasks.id", "tasks.owner_id"],
+            name="fk_task_schedules_task_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["predecessor_task_id", "owner_id"],
+            ["tasks.id", "tasks.owner_id"],
+            name="fk_task_schedules_predecessor_owner",
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_task_schedules_owner_start",
+            "owner_id",
+            "start_date",
+            "last_occurrence_date",
+            "task_id",
+        ),
+        Index(
+            "uq_task_schedules_predecessor",
+            "predecessor_task_id",
+            unique=True,
+            postgresql_where=text("predecessor_task_id IS NOT NULL"),
+        ),
+    )
+
+    task_id: Mapped[UUID] = mapped_column(primary_key=True)
+    owner_id: Mapped[UUID]
+    predecessor_task_id: Mapped[UUID | None]
+    due_kind: Mapped[str] = mapped_column(String(10), default="none", server_default="none")
+    start_date: Mapped[date | None] = mapped_column(Date)
+    last_occurrence_date: Mapped[date | None] = mapped_column(Date)
+    due_local_time: Mapped[time | None] = mapped_column(Time(timezone=False))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    time_zone: Mapped[str | None] = mapped_column(String(64))
+    ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    recurrence_frequency: Mapped[str] = mapped_column(
+        String(12),
+        default="none",
+        server_default="none",
+    )
+    recurrence_interval: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    recurrence_weekdays: Mapped[list[int]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    recurrence_month: Mapped[int | None] = mapped_column(Integer)
+    recurrence_day_of_month: Mapped[int | None] = mapped_column(Integer)
+    recurrence_until: Mapped[date | None] = mapped_column(Date)
+    recurrence_count: Mapped[int | None] = mapped_column(Integer)
+    splittable: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    minimum_block_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=15,
+        server_default="15",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TaskOccurrenceState(Base):
+    __tablename__ = "task_occurrence_states"
+    __table_args__ = (
+        CheckConstraint("kind IN ('base', 'makeup')", name="kind"),
+        CheckConstraint(
+            "status IN ('open', 'completed', 'skipped')",
+            name="status",
+        ),
+        CheckConstraint(
+            "(status = 'completed') = (completed_at IS NOT NULL)",
+            name="completion_consistency",
+        ),
+        CheckConstraint(
+            "(kind = 'makeup') = "
+            "(makeup_for_key IS NOT NULL AND makeup_for_date IS NOT NULL)",
+            name="makeup_consistency",
+        ),
+        CheckConstraint(
+            "(effective_local_time IS NULL) = (effective_at IS NULL)",
+            name="effective_time_consistency",
+        ),
+        CheckConstraint(
+            "(kind = 'makeup' OR rescheduled) = (effective_time_zone IS NOT NULL)",
+            name="effective_time_zone_consistency",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(completed_step_ids) = 'array'",
+            name="completed_step_ids",
+        ),
+        CheckConstraint("step_count_snapshot >= 0", name="step_count_snapshot"),
+        CheckConstraint(
+            "jsonb_array_length(completed_step_ids) <= step_count_snapshot",
+            name="completed_steps_within_snapshot",
+        ),
+        ForeignKeyConstraint(
+            ["task_id", "owner_id"],
+            ["tasks.id", "tasks.owner_id"],
+            name="fk_task_occurrence_states_task_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_task_occurrence_states_id_owner"),
+        UniqueConstraint(
+            "task_id",
+            "occurrence_key",
+            name="uq_task_occurrence_states_task_occurrence",
+        ),
+        Index(
+            "uq_task_occurrence_states_task_base_date",
+            "task_id",
+            "original_date",
+            unique=True,
+            postgresql_where=text("kind = 'base'"),
+        ),
+        Index(
+            "ix_task_occurrence_states_owner_effective",
+            "owner_id",
+            "effective_date",
+            "task_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    task_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    occurrence_key: Mapped[str] = mapped_column(String(80))
+    original_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(10), default="base", server_default="base")
+    effective_date: Mapped[date] = mapped_column(Date)
+    effective_local_time: Mapped[time | None] = mapped_column(Time(timezone=False))
+    effective_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    effective_time_zone: Mapped[str | None] = mapped_column(String(64))
+    ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    rescheduled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+    )
+    status: Mapped[str] = mapped_column(String(12), default="open", server_default="open")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_step_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    step_count_snapshot: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+    )
+    makeup_for_key: Mapped[str | None] = mapped_column(String(80))
+    makeup_for_date: Mapped[date | None] = mapped_column(Date)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -215,11 +476,13 @@ class ChangeEvent(Base):
         CheckConstraint(
             "entity_type IN "
             "('project', 'task', 'step', 'label', 'time_settings', 'term', "
-            "'calendar_series', 'calendar_exception')",
+            "'calendar_series', 'calendar_exception', 'task_occurrence')",
             name="entity_type",
         ),
         CheckConstraint(
-            "action IN ('created', 'updated', 'completed', 'reopened', 'deleted')",
+            "action IN "
+            "('created', 'updated', 'completed', 'reopened', 'deleted', "
+            "'skipped', 'rescheduled')",
             name="action",
         ),
         Index("ix_change_events_owner_sequence", "owner_id", "sequence"),
