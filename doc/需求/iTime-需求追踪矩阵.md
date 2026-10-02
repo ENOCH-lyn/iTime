@@ -65,7 +65,8 @@
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks` 与 `0009_task_schedules`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期和未来拆分已通过真实服务与三视口 Chromium UI 测试 | 任务实例补做 UI、归档、回收站及语音/AI 校对仍待后续模块 |
-| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0010`、`web/src/pages/CalendarPage.vue` 及日历组件；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、单次取消/调课/覆盖、独立补课及未来系列拆分已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 文件/截图/订阅导入及活动日相关额度/统计应用尚未实现 |
+| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0011`、`web/src/pages/CalendarPage.vue` 及日历组件；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、单次取消/调课/覆盖、独立补课、未来系列拆分及 Excel/ICS 文件导入服务已通过真实 HTTP/PostgreSQL 测试，既有日历界面已通过三视口 Chromium 测试 | 文件候选 Web 界面、截图/订阅导入及活动日相关额度/统计应用尚未实现 |
+| REQ-CAL-02 | `server/src/itime/calendar/import_*.py` 与迁移 `0011_calendar_file_imports`；已实现 XLSX 模板、受限 XLSX/ICS 解析、7 天候选、逐项校对、部分确认、UID/指纹去重、冲突返回、版本与事务保护 | 文件候选 Web 界面及浏览器验证、截图识别、ICS 订阅仍未实现，因此 CAL-02 尚未完整通过 |
 | REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请和普通用户/AI 状态管理 | 最终恢复/交接规则及额度/AI 配置/正文/日志/质检管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。

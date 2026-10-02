@@ -477,3 +477,31 @@ Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效�
 日历浏览器测试覆盖真实注册、邮件验证和登录，手工创建学期/节次/课程/固定安排，统一展示任务截止，冲突保留与解释，单次取消/恢复/调课、补课创建/取消/恢复，双页面系列版本冲突与草稿保留，未来系列拆分总次数不膨胀，跨时区投影、跨午夜、DST 缺失及重复时刻。三个视口均检查 axe、控制台、API 500、横向溢出；另在 320×700 最大字号下验证议程布局。截图位于 `/tmp/itime-ui-evidence/*-calendar-*.png`，并已人工检查桌面月网格、手机议程、平板单栏详情和 320px 大字号。
 
 本节不包含 Excel、ICS、截图或订阅导入，也未实现任务实例补做、归档和回收站。真实 Edge、实体设备和全产品端到端验收仍待后续阶段。
+
+## M3-J：Excel 与 ICS 文件导入服务
+
+对应 Git 提交主题：`feat: 实现 Excel 与 ICS 文件导入服务`。实际代码为 `server/src/itime/calendar/import_{parsers,schemas,service,router}.py`、来源及候选模型、迁移 `0011_calendar_file_imports` 和 `server/tests/test_calendar_imports.py`。
+
+已实现：
+
+- 登录用户可下载真实 XLSX 模板，并以原始请求正文上传 `.xlsx` 或 `.ics`；操作号和文件摘要共同保护上传重试。原文件不落库，解析结束后仅保存受限的来源元数据和结构化候选。
+- XLSX 严格限制 5 MiB、500 条、32 列、4 个工作表、压缩项及解压体积；拒绝公式、宏、嵌入对象、外部关系、危险压缩比、未知/重复列和稀疏超范围工作表。
+- ICS 严格限制 2 MiB、500 个事件和组件/属性数量；支持 UTC、IANA 时区、浮动时间提示、单日全天事件、`DTEND`/`DURATION` 和可无损映射的有限重复规则。复杂 RRULE、未知时区、EXDATE/RDATE 和 `RECURRENCE-ID` 不会被静默简化，而是保留为可编辑的无效候选。
+- 候选保留原始行摘要、标准化草稿、错误、警告、UID/RECURRENCE-ID、内容指纹、版本和确认结果；校对窗口为 7 天，过期后只读并要求重新上传。
+- 候选可逐项校对、分批确认或明确跳过；每次最多确认 50 条。选中项在同一事务内全部写入或全部回滚，冲突保留双方并返回明细。
+- 同来源格式的 UID/RECURRENCE-ID 或无 UID 内容指纹用于精确去重；同 UID 内容变化不覆盖旧安排并明确提示；与手工安排内容相同只提示疑似重复。
+- 确认后的日历系列关联来源并标记 `source_type=import`；来源信息随系列和 occurrence 返回。跨账号访问统一 404，同批并发确认只有一个版本成功。
+
+2026-10-02 在本地 PostgreSQL 18.6 和真实 Uvicorn HTTP 中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q tests/test_calendar_imports.py` | **7 passed in 15.91s** | 真实 XLSX/ICS、模板、部分确认、校对、重复、冲突、过期、所有权、并发、原子回滚、DST 与迁移 |
+| `uv run pytest -q` | **92 passed in 89.80s** | 服务端全量真实 HTTP/PostgreSQL 回归 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic check` | 无模型漂移 | `0011_calendar_file_imports (head)` 与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+专项动态验证了上传只产生候选、候选纠错后重新校验、多轮部分确认、选中项失败整笔回滚、确认响应冲突、同文件重传、ICS 同 UID 内容变化、操作号重放、跨账号 404、7 天过期、双设备批次版本竞争及有导入系列时拒绝有损降级。解析边界另验证跨纽约春季 DST 的 `DURATION` 保持真实时长、超长 ICS 属性只使单项失败、`RECURRENCE-ID` 不误建重复事件，以及极远稀疏 XLSX 行在迭代前拒绝。
+
+本节仅完成服务能力；文件导入候选 Web 页面和真实 Chromium 测试将在下一提交完成。截图识别、原图清理和 ICS 订阅刷新仍属于后续独立模块。

@@ -471,6 +471,7 @@ async def create_calendar_series(data: SeriesCreate, request: Request) -> dict:
         series = CalendarSeries(
             owner_id=identity.user.id,
             predecessor_id=None,
+            source_id=None,
             source_type="manual",
             **series_values(data, resolved),
         )
@@ -1288,6 +1289,7 @@ async def split_calendar_series(
         successor = CalendarSeries(
             owner_id=identity.user.id,
             predecessor_id=series.id,
+            source_id=series.source_id,
             source_type=series.source_type,
             **series_values(data.replacement, resolved),
         )

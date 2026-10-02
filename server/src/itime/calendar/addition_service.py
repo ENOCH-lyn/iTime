@@ -131,6 +131,8 @@ def addition_occurrence_result(
         "occurrence_type": "addition",
         "kind": series.kind,
         "term_id": series.term_id,
+        "source_id": series.source_id,
+        "source_type": series.source_type,
         "name": (
             addition.override_name
             if addition.override_name is not None

@@ -137,13 +137,47 @@ class TermPeriod(Base):
     ends_at: Mapped[time] = mapped_column(Time(timezone=False))
 
 
+class CalendarSource(Base):
+    __tablename__ = "calendar_sources"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('excel_file', 'ics_file', 'screenshot', 'ics_subscription')",
+            name="kind",
+        ),
+        CheckConstraint("length(btrim(name)) > 0", name="nonempty_name"),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_sources_id_owner"),
+        Index("ix_calendar_sources_owner_created", "owner_id", "created_at", "id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(24))
+    name: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
 class CalendarSeries(Base):
     __tablename__ = "calendar_series"
     __table_args__ = (
         CheckConstraint("kind IN ('course', 'fixed')", name="kind"),
         CheckConstraint("length(btrim(name)) > 0", name="nonempty_name"),
         CheckConstraint("length(btrim(time_zone)) > 0", name="nonempty_time_zone"),
-        CheckConstraint("source_type = 'manual'", name="source_type"),
+        CheckConstraint(
+            "source_type IN ('manual', 'import', 'screenshot', 'subscription')",
+            name="source_type",
+        ),
+        CheckConstraint(
+            "(source_type = 'manual') = (source_id IS NULL)",
+            name="source_reference",
+        ),
         CheckConstraint("end_day_offset BETWEEN 0 AND 1", name="end_day_offset"),
         CheckConstraint(
             "(start_period_number IS NULL) = (end_period_number IS NULL)",
@@ -156,8 +190,7 @@ class CalendarSeries(Base):
             name="period_reference_range",
         ),
         CheckConstraint(
-            "recurrence_frequency IN "
-            "('none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly')",
+            "recurrence_frequency IN ('none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly')",
             name="recurrence_frequency",
         ),
         CheckConstraint(
@@ -224,13 +257,11 @@ class CalendarSeries(Base):
             name="course_week_numbers",
         ),
         CheckConstraint(
-            "ambiguous_offset_minutes IS NULL OR "
-            "ambiguous_offset_minutes BETWEEN -840 AND 840",
+            "ambiguous_offset_minutes IS NULL OR ambiguous_offset_minutes BETWEEN -840 AND 840",
             name="ambiguous_offset_minutes",
         ),
         CheckConstraint(
-            "(kind = 'course') = "
-            "(term_id IS NOT NULL AND course_first_week_monday IS NOT NULL)",
+            "(kind = 'course') = (term_id IS NOT NULL AND course_first_week_monday IS NOT NULL)",
             name="course_term",
         ),
         CheckConstraint(
@@ -252,6 +283,12 @@ class CalendarSeries(Base):
             ["predecessor_id", "owner_id"],
             ["calendar_series.id", "calendar_series.owner_id"],
             name="fk_calendar_series_predecessor_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_sources.id", "calendar_sources.owner_id"],
+            name="fk_calendar_series_source_owner",
             ondelete="RESTRICT",
         ),
         Index(
@@ -280,6 +317,7 @@ class CalendarSeries(Base):
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     term_id: Mapped[UUID | None]
     predecessor_id: Mapped[UUID | None]
+    source_id: Mapped[UUID | None]
     kind: Mapped[str] = mapped_column(String(10))
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
@@ -321,6 +359,193 @@ class CalendarSeries(Base):
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarImportBatch(Base):
+    __tablename__ = "calendar_import_batches"
+    __table_args__ = (
+        CheckConstraint("format IN ('xlsx', 'ics')", name="format"),
+        CheckConstraint(
+            "state IN ('ready', 'partially_confirmed', 'completed', 'expired')",
+            name="state",
+        ),
+        CheckConstraint("length(btrim(filename)) > 0", name="nonempty_filename"),
+        CheckConstraint("candidate_count BETWEEN 1 AND 500", name="candidate_count"),
+        CheckConstraint("length(content_sha256) = 64", name="content_sha256"),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_sources.id", "calendar_sources.owner_id"],
+            name="fk_calendar_import_batches_source_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_import_batches_id_owner"),
+        UniqueConstraint("source_id", name="uq_calendar_import_batches_source"),
+        Index(
+            "ix_calendar_import_batches_owner_updated",
+            "owner_id",
+            "updated_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    source_id: Mapped[UUID]
+    format: Mapped[str] = mapped_column(String(8))
+    filename: Mapped[str] = mapped_column(String(255))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24), default="ready", server_default="ready")
+    candidate_count: Mapped[int] = mapped_column(Integer)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarImportCandidate(Base):
+    __tablename__ = "calendar_import_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('valid', 'invalid', 'duplicate', 'confirmed', 'skipped')",
+            name="state",
+        ),
+        CheckConstraint("position BETWEEN 1 AND 500", name="position"),
+        CheckConstraint("jsonb_typeof(raw_data) = 'object'", name="raw_data"),
+        CheckConstraint(
+            "draft IS NULL OR jsonb_typeof(draft) = 'object'",
+            name="draft",
+        ),
+        CheckConstraint("jsonb_typeof(warnings) = 'array'", name="warnings"),
+        CheckConstraint(
+            "error_details IS NULL OR jsonb_typeof(error_details) = 'object'",
+            name="error_details",
+        ),
+        CheckConstraint(
+            "state NOT IN ('valid', 'duplicate', 'confirmed') OR draft IS NOT NULL",
+            name="draft_state",
+        ),
+        CheckConstraint(
+            "(state = 'confirmed') = (confirmed_series_id IS NOT NULL)",
+            name="confirmed_series",
+        ),
+        ForeignKeyConstraint(
+            ["batch_id", "owner_id"],
+            ["calendar_import_batches.id", "calendar_import_batches.owner_id"],
+            name="fk_calendar_import_candidates_batch_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["duplicate_series_id", "owner_id"],
+            ["calendar_series.id", "calendar_series.owner_id"],
+            name="fk_calendar_import_candidates_duplicate_series_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["confirmed_series_id", "owner_id"],
+            ["calendar_series.id", "calendar_series.owner_id"],
+            name="fk_calendar_import_candidates_confirmed_series_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_import_candidates_id_owner"),
+        UniqueConstraint(
+            "batch_id",
+            "position",
+            name="uq_calendar_import_candidates_batch_position",
+        ),
+        Index(
+            "ix_calendar_import_candidates_owner_batch",
+            "owner_id",
+            "batch_id",
+            "position",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    batch_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    position: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16))
+    raw_data: Mapped[dict] = mapped_column(JSONB)
+    draft: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    identity_key: Mapped[str | None] = mapped_column(String(64))
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    external_uid: Mapped[str | None] = mapped_column(String(512))
+    external_recurrence_id: Mapped[str | None] = mapped_column(String(255))
+    warnings: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    error_details: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    duplicate_series_id: Mapped[UUID | None]
+    confirmed_series_id: Mapped[UUID | None]
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarImportIdentity(Base):
+    __tablename__ = "calendar_import_identities"
+    __table_args__ = (
+        CheckConstraint("format IN ('xlsx', 'ics')", name="format"),
+        CheckConstraint("length(identity_key) = 64", name="identity_key"),
+        CheckConstraint("length(content_fingerprint) = 64", name="content_fingerprint"),
+        ForeignKeyConstraint(
+            ["series_id", "owner_id"],
+            ["calendar_series.id", "calendar_series.owner_id"],
+            name="fk_calendar_import_identities_series_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_sources.id", "calendar_sources.owner_id"],
+            name="fk_calendar_import_identities_source_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "identity_key",
+            name="uq_calendar_import_identities_owner_key",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "series_id",
+            name="uq_calendar_import_identities_owner_series",
+        ),
+        Index(
+            "ix_calendar_import_identities_owner_series",
+            "owner_id",
+            "series_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID]
+    source_id: Mapped[UUID]
+    series_id: Mapped[UUID]
+    format: Mapped[str] = mapped_column(String(8))
+    identity_key: Mapped[str] = mapped_column(String(64))
+    content_fingerprint: Mapped[str] = mapped_column(String(64))
+    external_uid: Mapped[str | None] = mapped_column(String(512))
+    external_recurrence_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
     )
@@ -443,8 +668,7 @@ class CalendarAddition(Base):
         CheckConstraint("length(btrim(time_zone)) > 0", name="nonempty_time_zone"),
         CheckConstraint("end_day_offset BETWEEN 0 AND 1", name="end_day_offset"),
         CheckConstraint(
-            "ambiguous_offset_minutes IS NULL OR "
-            "ambiguous_offset_minutes BETWEEN -840 AND 840",
+            "ambiguous_offset_minutes IS NULL OR ambiguous_offset_minutes BETWEEN -840 AND 840",
             name="ambiguous_offset_minutes",
         ),
         CheckConstraint(
