@@ -1,0 +1,532 @@
+<script setup lang="ts">
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  CircleSlash2,
+  MapPin,
+  Pencil,
+  RotateCcw,
+} from 'lucide-vue-next'
+import StatusMessage from './StatusMessage.vue'
+import { failure, localFailure, type Failure } from '../lib/api'
+import {
+  createCalendarAddition,
+  saveOccurrenceException,
+  updateCalendarAddition,
+  type CalendarDisplayItem,
+  type CalendarOccurrence,
+} from '../lib/calendar'
+import {
+  rescheduleTaskOccurrence,
+  updateTaskOccurrenceStatus,
+} from '../lib/task-schedules'
+
+const props = defineProps<{
+  item: CalendarDisplayItem | null
+  timeZone: string
+  recurring: boolean
+  seriesBusy: boolean
+  success: string
+}>()
+
+const emit = defineEmits<{
+  close: []
+  changed: [message: string, conflictCount: number]
+  editSeries: [occurrence: CalendarOccurrence]
+  splitSeries: [occurrence: CalendarOccurrence]
+}>()
+
+type Action = 'none' | 'move' | 'override' | 'makeup' | 'task-move'
+
+const action = ref<Action>('none')
+const pending = ref(false)
+const error = ref<Failure | null>(null)
+const operation = ref<{ id: string; fingerprint: string } | null>(null)
+const candidateOffsets = ref<number[]>([])
+const selectedOffset = ref<number | null>(null)
+const move = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0 | 1 })
+const override = reactive({ name: '', description: '', location: '', busy: true })
+const makeup = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0 | 1 })
+const taskMove = reactive({ date: '', time: '' })
+
+const occurrence = computed(() => props.item?.calendar ?? null)
+const task = computed(() => props.item?.task ?? null)
+const canSplit = computed(() => (
+  occurrence.value?.occurrence_type === 'base' && props.recurring
+))
+
+watch(() => props.item?.id, () => {
+  action.value = 'none'
+  error.value = null
+  operation.value = null
+  candidateOffsets.value = []
+  selectedOffset.value = null
+})
+
+function dateTime(value: string | null) {
+  if (!value) return '时间无效'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: props.timeZone,
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function localTime(value: string) {
+  return value.slice(0, 5)
+}
+
+function offsetLabel(minutes: number) {
+  const sign = minutes >= 0 ? '+' : '-'
+  const absolute = Math.abs(minutes)
+  return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`
+}
+
+function captureAmbiguousOffset(reason: unknown) {
+  error.value = failure(reason)
+  candidateOffsets.value = error.value.details?.candidate_offsets_minutes ?? []
+}
+
+function begin(next: Action) {
+  const current = occurrence.value
+  if (next === 'move' && current) {
+    move.date = props.item?.date ?? current.local_start_date
+    move.startsAt = localTime(props.item?.time ?? current.local_start_time)
+    move.endsAt = localTime(props.item?.end_time ?? current.local_end_time)
+    move.endDayOffset = props.item?.end_date === props.item?.date ? 0 : 1
+  }
+  if (next === 'override' && current) {
+    override.name = current.name
+    override.description = current.description
+    override.location = current.location
+    override.busy = current.busy
+  }
+  if (next === 'makeup' && current) {
+    makeup.date = props.item?.date ?? current.local_start_date
+    makeup.startsAt = localTime(props.item?.time ?? current.local_start_time)
+    makeup.endsAt = localTime(props.item?.end_time ?? current.local_end_time)
+    makeup.endDayOffset = props.item?.end_date === props.item?.date ? 0 : 1
+  }
+  if (next === 'task-move' && task.value) {
+    taskMove.date = task.value.due_date
+    taskMove.time = task.value.due_time?.slice(0, 5) ?? ''
+  }
+  action.value = next
+  error.value = null
+  candidateOffsets.value = []
+  selectedOffset.value = null
+}
+
+function operationId(fingerprint: string) {
+  if (!operation.value || operation.value.fingerprint !== fingerprint) {
+    operation.value = { id: crypto.randomUUID(), fingerprint }
+  }
+  return operation.value.id
+}
+
+async function runCalendarAction(
+  message: string,
+  fields: Parameters<typeof saveOccurrenceException>[1],
+) {
+  if (!occurrence.value || pending.value) return
+  const fingerprint = JSON.stringify({
+    occurrence: occurrence.value.occurrence_key,
+    version: occurrence.value.series_version,
+    fields,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    const result = await saveOccurrenceException(
+      occurrence.value,
+      fields,
+      operationId(fingerprint),
+    )
+    operation.value = null
+    action.value = 'none'
+    emit('changed', message, result.conflicts.items.length)
+  } catch (reason) {
+    captureAmbiguousOffset(reason)
+    await nextTick()
+    document.querySelector<HTMLElement>('.occurrence-panel .error-status')?.focus()
+  } finally {
+    pending.value = false
+  }
+}
+
+function cancelOccurrence() {
+  void runCalendarAction('本次安排已取消，其他实例未受影响。', {
+    action: 'cancelled',
+    moved_start_date: null,
+    moved_starts_at: null,
+    moved_ends_at: null,
+    moved_end_day_offset: null,
+    moved_time_zone: null,
+    moved_ambiguous_utc_offset_minutes: null,
+    override_name: null,
+    override_description: null,
+    override_location: null,
+    override_busy: null,
+  })
+}
+
+function restoreOccurrence() {
+  if (!occurrence.value) return
+  void runCalendarAction('本次安排已恢复。', {
+    action: 'overridden',
+    moved_start_date: null,
+    moved_starts_at: null,
+    moved_ends_at: null,
+    moved_end_day_offset: null,
+    moved_time_zone: null,
+    moved_ambiguous_utc_offset_minutes: null,
+    override_name: occurrence.value.name,
+    override_description: null,
+    override_location: null,
+    override_busy: props.seriesBusy,
+  })
+}
+
+function saveMove() {
+  if (!move.date || !move.startsAt || !move.endsAt) {
+    error.value = localFailure('请填写完整的调课日期与时间。')
+    return
+  }
+  void runCalendarAction('本次安排已调课。', {
+    action: 'moved',
+    moved_start_date: move.date,
+    moved_starts_at: move.startsAt,
+    moved_ends_at: move.endsAt,
+    moved_end_day_offset: move.endDayOffset,
+    moved_time_zone: props.timeZone,
+    moved_ambiguous_utc_offset_minutes: selectedOffset.value,
+    override_name: null,
+    override_description: null,
+    override_location: null,
+    override_busy: null,
+  })
+}
+
+function saveOverride() {
+  if (!override.name.trim()) {
+    error.value = localFailure('本次名称不能为空。')
+    return
+  }
+  void runCalendarAction('本次内容覆盖已保存。', {
+    action: 'overridden',
+    moved_start_date: null,
+    moved_starts_at: null,
+    moved_ends_at: null,
+    moved_end_day_offset: null,
+    moved_time_zone: null,
+    moved_ambiguous_utc_offset_minutes: null,
+    override_name: override.name.trim(),
+    override_description: override.description,
+    override_location: override.location,
+    override_busy: override.busy,
+  })
+}
+
+async function saveMakeup() {
+  if (!occurrence.value || pending.value) return
+  if (!makeup.date || !makeup.startsAt || !makeup.endsAt) {
+    error.value = localFailure('请填写完整的补课日期与时间。')
+    return
+  }
+  const fields = {
+    local_start_date: makeup.date,
+    starts_at: makeup.startsAt,
+    ends_at: makeup.endsAt,
+    end_day_offset: makeup.endDayOffset,
+    time_zone: props.timeZone,
+    ambiguous_utc_offset_minutes: selectedOffset.value,
+    override_name: null,
+    override_description: null,
+    override_location: null,
+    override_busy: null,
+  } as const
+  const fingerprint = JSON.stringify({
+    occurrence: occurrence.value.occurrence_key,
+    version: occurrence.value.series_version,
+    fields,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    const result = await createCalendarAddition(
+      occurrence.value,
+      fields,
+      operationId(fingerprint),
+    )
+    operation.value = null
+    action.value = 'none'
+    emit('changed', '补课已关联到本次原安排。', result.conflicts.items.length)
+  } catch (reason) {
+    captureAmbiguousOffset(reason)
+  } finally {
+    pending.value = false
+  }
+}
+
+async function toggleAddition() {
+  if (!occurrence.value || pending.value) return
+  const status = occurrence.value.status === 'cancelled' ? 'scheduled' : 'cancelled'
+  const fingerprint = JSON.stringify({
+    addition: occurrence.value.addition_id,
+    version: occurrence.value.series_version,
+    status,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    const result = await updateCalendarAddition(
+      occurrence.value,
+      status,
+      operationId(fingerprint),
+    )
+    operation.value = null
+    emit('changed', status === 'cancelled' ? '本次补课已取消。' : '本次补课已恢复。', result.conflicts.items.length)
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    pending.value = false
+  }
+}
+
+async function setTaskStatus(status: 'open' | 'completed' | 'skipped') {
+  if (!task.value || pending.value) return
+  const fingerprint = JSON.stringify({
+    task: task.value.task_id,
+    key: task.value.occurrence_key,
+    version: task.value.task_version,
+    occurrenceVersion: task.value.occurrence_version,
+    status,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    await updateTaskOccurrenceStatus(
+      task.value,
+      operationId(fingerprint),
+      status,
+      task.value.completed_step_ids,
+    )
+    operation.value = null
+    emit('changed', status === 'completed' ? '任务实例已完成。' : status === 'skipped' ? '任务实例已跳过。' : '任务实例已重新打开。', 0)
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    pending.value = false
+  }
+}
+
+async function saveTaskMove() {
+  if (!task.value || pending.value || !taskMove.date) return
+  const fingerprint = JSON.stringify({
+    task: task.value.task_id,
+    key: task.value.occurrence_key,
+    version: task.value.task_version,
+    date: taskMove.date,
+    time: taskMove.time || null,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    await rescheduleTaskOccurrence(
+      task.value,
+      operationId(fingerprint),
+      taskMove.date,
+      taskMove.time || null,
+      selectedOffset.value,
+    )
+    operation.value = null
+    action.value = 'none'
+    emit('changed', '任务实例已改期。', 0)
+  } catch (reason) {
+    captureAmbiguousOffset(reason)
+  } finally {
+    pending.value = false
+  }
+}
+</script>
+
+<template>
+  <aside class="occurrence-panel" :class="{ empty: !item }" aria-label="安排详情">
+    <template v-if="item">
+      <header class="occurrence-header">
+        <button type="button" class="small-icon-button occurrence-back" aria-label="返回日历" title="返回日历"
+          @click="emit('close')">
+          <ArrowLeft :size="19" aria-hidden="true" />
+        </button>
+        <div>
+          <p>{{ item.kind === 'course' ? '课程' : item.kind === 'fixed' ? '固定安排' : '任务截止' }}</p>
+          <h1 tabindex="-1">{{ item.title }}</h1>
+        </div>
+      </header>
+
+      <div class="occurrence-body">
+        <StatusMessage :error="error" :success="error ? '' : success" />
+        <div v-if="item.conflict" class="status restriction-status" role="status">
+          <AlertTriangle :size="20" aria-hidden="true" />
+          <p>这段时间与其他占用安排重叠。两项内容均已保留，请确认是否需要调整。</p>
+        </div>
+
+        <dl class="occurrence-facts">
+          <div>
+            <dt><CalendarClock :size="17" aria-hidden="true" />时间</dt>
+            <dd v-if="occurrence">{{ dateTime(occurrence.start_at) }} 至 {{ dateTime(occurrence.end_at) }}</dd>
+            <dd v-else>{{ item.date }} {{ item.time?.slice(0, 5) || '全天' }}</dd>
+          </div>
+          <div v-if="item.subtitle">
+            <dt><MapPin :size="17" aria-hidden="true" />{{ item.kind === 'task' ? '说明' : '地点' }}</dt>
+            <dd>{{ item.subtitle }}</dd>
+          </div>
+          <div>
+            <dt>状态</dt>
+            <dd>{{ item.state === 'scheduled' || item.state === 'open' ? '进行中' : item.state === 'completed' ? '已完成' : item.state === 'cancelled' ? '已取消' : '已跳过' }}</dd>
+          </div>
+          <div v-if="occurrence?.exception_action">
+            <dt>单次修改</dt>
+            <dd>{{ occurrence.exception_action === 'moved' ? '已调课' : occurrence.exception_action === 'overridden' ? '已覆盖内容' : '已取消' }}</dd>
+          </div>
+          <div v-if="occurrence?.occurrence_type === 'addition'">
+            <dt>来源</dt>
+            <dd>关联补课 · {{ occurrence.original_local_start_date }}</dd>
+          </div>
+        </dl>
+
+        <p v-if="occurrence?.description" class="occurrence-description">{{ occurrence.description }}</p>
+        <p v-if="task?.description" class="occurrence-description">{{ task.description }}</p>
+
+        <template v-if="occurrence">
+          <div v-if="occurrence.occurrence_type === 'addition'" class="occurrence-actions">
+            <button type="button" class="button secondary" :disabled="pending" @click="toggleAddition">
+              <RotateCcw v-if="occurrence.status === 'cancelled'" :size="17" aria-hidden="true" />
+              <CircleSlash2 v-else :size="17" aria-hidden="true" />
+              {{ occurrence.status === 'cancelled' ? '恢复补课' : '取消补课' }}
+            </button>
+          </div>
+          <template v-else>
+            <div class="occurrence-actions">
+              <button v-if="occurrence.status === 'cancelled'" type="button" class="button secondary"
+                :disabled="pending" @click="restoreOccurrence">
+                <RotateCcw :size="17" aria-hidden="true" />恢复本次
+              </button>
+              <button v-else type="button" class="button secondary" :disabled="pending" @click="cancelOccurrence">
+                <CircleSlash2 :size="17" aria-hidden="true" />取消本次
+              </button>
+              <button type="button" class="button secondary" :disabled="pending" @click="begin('move')">
+                调整本次时间
+              </button>
+              <button type="button" class="button secondary" :disabled="pending" @click="begin('override')">
+                <Pencil :size="17" aria-hidden="true" />覆盖本次内容
+              </button>
+              <button type="button" class="button secondary" :disabled="pending" @click="begin('makeup')">安排补课</button>
+            </div>
+            <div class="series-actions">
+              <button type="button" class="text-button" :disabled="pending" @click="emit('editSeries', occurrence)">
+                编辑整个系列
+              </button>
+              <button v-if="canSplit" type="button" class="text-button" :disabled="pending"
+                @click="emit('splitSeries', occurrence)">
+                修改本次及以后
+              </button>
+            </div>
+          </template>
+        </template>
+
+        <template v-if="task">
+          <div class="occurrence-actions">
+            <button v-if="task.status !== 'completed'" type="button" class="button" :disabled="pending"
+              @click="setTaskStatus('completed')">
+              <CheckCircle2 :size="17" aria-hidden="true" />标为完成
+            </button>
+            <button v-if="task.status !== 'open'" type="button" class="button secondary" :disabled="pending"
+              @click="setTaskStatus('open')">
+              <RotateCcw :size="17" aria-hidden="true" />重新打开
+            </button>
+            <button v-if="task.status === 'open'" type="button" class="button secondary" :disabled="pending"
+              @click="setTaskStatus('skipped')">
+              <CircleSlash2 :size="17" aria-hidden="true" />跳过本次
+            </button>
+            <button type="button" class="button secondary" :disabled="pending" @click="begin('task-move')">
+              调整截止日期
+            </button>
+            <RouterLink to="/tasks" class="text-button">前往任务</RouterLink>
+          </div>
+        </template>
+
+        <form v-if="action === 'move'" class="occurrence-action-form" @submit.prevent="saveMove">
+          <h3>调整本次时间</h3>
+          <div class="field"><label for="move-date">日期</label><input id="move-date" v-model="move.date" type="date" /></div>
+          <div class="calendar-form-grid">
+            <div class="field"><label for="move-start">开始</label><input id="move-start" v-model="move.startsAt" type="time" /></div>
+            <div class="field"><label for="move-end">结束</label><input id="move-end" v-model="move.endsAt" type="time" /></div>
+          </div>
+          <div v-if="candidateOffsets.length" class="field">
+            <label for="occurrence-offset">重复时刻的 UTC 偏移</label>
+            <select id="occurrence-offset" v-model.number="selectedOffset">
+              <option :value="null" disabled>请选择这次使用的时间点</option>
+              <option v-for="offset in candidateOffsets" :key="offset" :value="offset">{{ offsetLabel(offset) }}</option>
+            </select>
+          </div>
+          <label class="checkbox-label calendar-checkbox"><input v-model="move.endDayOffset" type="checkbox" :true-value="1" :false-value="0" />跨至次日结束</label>
+          <div class="dialog-actions"><button type="button" class="button secondary" @click="action = 'none'">取消</button><button class="button" :disabled="pending">保存本次</button></div>
+        </form>
+
+        <form v-else-if="action === 'override'" class="occurrence-action-form" @submit.prevent="saveOverride">
+          <h3>覆盖本次内容</h3>
+          <div class="field"><label for="override-name">名称</label><input id="override-name" v-model="override.name" maxlength="200" /></div>
+          <div class="field"><label for="override-location">地点</label><input id="override-location" v-model="override.location" maxlength="300" /></div>
+          <div class="field"><label for="override-description">说明</label><textarea id="override-description" v-model="override.description" rows="3" maxlength="20000"></textarea></div>
+          <label class="checkbox-label calendar-checkbox"><input v-model="override.busy" type="checkbox" />参与冲突检查</label>
+          <div class="dialog-actions"><button type="button" class="button secondary" @click="action = 'none'">取消</button><button class="button" :disabled="pending">保存本次</button></div>
+        </form>
+
+        <form v-else-if="action === 'makeup'" class="occurrence-action-form" @submit.prevent="saveMakeup">
+          <h3>安排关联补课</h3>
+          <div class="field"><label for="makeup-date">日期</label><input id="makeup-date" v-model="makeup.date" type="date" /></div>
+          <div class="calendar-form-grid">
+            <div class="field"><label for="makeup-start">开始</label><input id="makeup-start" v-model="makeup.startsAt" type="time" /></div>
+            <div class="field"><label for="makeup-end">结束</label><input id="makeup-end" v-model="makeup.endsAt" type="time" /></div>
+          </div>
+          <div v-if="candidateOffsets.length" class="field">
+            <label for="makeup-offset">重复时刻的 UTC 偏移</label>
+            <select id="makeup-offset" v-model.number="selectedOffset">
+              <option :value="null" disabled>请选择这次使用的时间点</option>
+              <option v-for="offset in candidateOffsets" :key="offset" :value="offset">{{ offsetLabel(offset) }}</option>
+            </select>
+          </div>
+          <label class="checkbox-label calendar-checkbox"><input v-model="makeup.endDayOffset" type="checkbox" :true-value="1" :false-value="0" />跨至次日结束</label>
+          <div class="dialog-actions"><button type="button" class="button secondary" @click="action = 'none'">取消</button><button class="button" :disabled="pending">创建补课</button></div>
+        </form>
+
+        <form v-else-if="action === 'task-move'" class="occurrence-action-form" @submit.prevent="saveTaskMove">
+          <h3>调整任务截止日期</h3>
+          <div class="field"><label for="task-move-date">日期</label><input id="task-move-date" v-model="taskMove.date" type="date" /></div>
+          <div class="field"><label for="task-move-time">时刻 <span class="muted">可选</span></label><input id="task-move-time" v-model="taskMove.time" type="time" /></div>
+          <div v-if="candidateOffsets.length" class="field">
+            <label for="task-move-offset">重复时刻的 UTC 偏移</label>
+            <select id="task-move-offset" v-model.number="selectedOffset">
+              <option :value="null" disabled>请选择这次使用的时间点</option>
+              <option v-for="offset in candidateOffsets" :key="offset" :value="offset">{{ offsetLabel(offset) }}</option>
+            </select>
+          </div>
+          <div class="dialog-actions"><button type="button" class="button secondary" @click="action = 'none'">取消</button><button class="button" :disabled="pending">保存改期</button></div>
+        </form>
+      </div>
+    </template>
+
+    <div v-else class="occurrence-placeholder">
+      <CalendarClock :size="30" aria-hidden="true" />
+      <h2>选择一项安排</h2>
+      <p>查看时间、冲突和单次修改操作。</p>
+    </div>
+  </aside>
+</template>

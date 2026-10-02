@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowUpRight, CirclePause, KeyRound, ListTodo, LogOut, Monitor, Palette, UserRound } from 'lucide-vue-next'
+import { ArrowUpRight, CalendarDays, CirclePause, KeyRound, ListTodo, LogOut, Monitor, Palette, UserRound } from 'lucide-vue-next'
 import { api, failure, type Failure } from '../lib/api'
 import { authError, authLoading, identity, refreshSession, clearSession, notifySessionChange } from '../lib/auth'
 import AppearanceControls from '../components/AppearanceControls.vue'
@@ -38,6 +38,7 @@ async function logout() {
 }
 const links = [
   { to: '/tasks', title: '返回任务', icon: ListTodo },
+  { to: '/calendar', title: '返回日历', icon: CalendarDays },
   { to: '/account', title: '账号与安全', icon: UserRound },
   { to: '/account/password', title: '修改密码', icon: KeyRound },
   { to: '/account/devices', title: '登录设备', icon: Monitor },

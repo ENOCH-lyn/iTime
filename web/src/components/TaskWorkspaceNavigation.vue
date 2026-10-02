@@ -6,10 +6,10 @@ import {
   LogOut,
   Pencil,
   Plus,
-  Settings,
   Target,
 } from 'lucide-vue-next'
 import type { Project, ProjectKind } from '../lib/tasks'
+import ProductNavigation from './ProductNavigation.vue'
 
 defineProps<{
   projects: Project[]
@@ -31,14 +31,7 @@ const emit = defineEmits<{
   <aside class="task-navigation" aria-label="iTime 导航">
     <div class="task-navigation-top">
       <RouterLink to="/tasks" class="wordmark" aria-label="iTime 任务">iTime<span aria-hidden="true">.</span></RouterLink>
-      <nav class="product-navigation" aria-label="产品">
-        <RouterLink to="/tasks" class="nav-link selected" aria-current="page" aria-label="任务">
-          <CheckSquare2 :size="18" :stroke-width="1.8" aria-hidden="true" /><span class="product-label">任务</span>
-        </RouterLink>
-        <RouterLink to="/account" class="nav-link" aria-label="设置">
-          <Settings :size="18" :stroke-width="1.8" aria-hidden="true" /><span class="product-label">设置</span>
-        </RouterLink>
-      </nav>
+      <ProductNavigation current="tasks" />
     </div>
 
     <div class="task-locations">

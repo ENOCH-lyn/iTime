@@ -13,6 +13,7 @@ const router = createRouter({
       component: () => import('./pages/AuthPage.vue'), props: { mode },
     })),
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
+    { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
     { path: '/account/:section(password|devices|appearance)', component: () => import('./pages/AccountPage.vue') },
     { path: '/admin', redirect: '/admin/security' },

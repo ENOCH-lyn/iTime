@@ -4,7 +4,12 @@ export interface Failure {
   request_id: string | null
   saved: 'not_saved' | 'saved' | 'unknown'
   retryable: boolean
-  details?: { fields?: { path: string; type: string }[] }
+  details?: {
+    fields?: { path: string; type: string }[]
+    current_version?: number
+    candidate_offsets_minutes?: number[]
+    [key: string]: unknown
+  }
 }
 
 export class ApiError extends Error {
