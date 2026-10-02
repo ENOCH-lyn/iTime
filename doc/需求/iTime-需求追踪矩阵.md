@@ -65,7 +65,7 @@
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks` 与 `0009_task_schedules`、`web/src/pages/TasksPage.vue`；任务核心、日期/定时截止、重复实例、步骤进度、跳过、调期、补做、可拆参数及未来系列拆分已通过真实 HTTP/PostgreSQL 测试，原任务界面通过三视口 Chromium 测试 | 新日期/重复交互、归档、回收站及语音/AI 校对仍待对应页面或模块 |
-| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0008`；浏览器时区、学期节次、课程/固定安排、六类重复、DST、冲突、单次取消/调课/覆盖及未来系列拆分已通过真实 HTTP/PostgreSQL 和并发测试 | 日历页面、导入及活动日相关额度/统计应用尚未实现 |
+| REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0010`；浏览器时区、学期节次、课程/固定安排、六类重复、DST、冲突、单次取消/调课/覆盖、独立补课及未来系列拆分已通过真实 HTTP/PostgreSQL 和并发测试 | 日历页面、导入及活动日相关额度/统计应用尚未实现 |
 | REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请和普通用户/AI 状态管理 | 最终恢复/交接规则及额度/AI 配置/正文/日志/质检管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。

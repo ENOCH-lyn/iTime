@@ -181,6 +181,45 @@ class CalendarSeries(Base):
             name="recurrence_count",
         ),
         CheckConstraint(
+            "(recurrence_frequency = 'none' "
+            "AND recurrence_interval = 1 "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL "
+            "AND recurrence_until IS NULL "
+            "AND recurrence_count IS NULL) "
+            "OR (recurrence_frequency != 'none' "
+            "AND ((recurrence_until IS NULL) != (recurrence_count IS NULL)))",
+            name="recurrence_end_shape",
+        ),
+        CheckConstraint(
+            "recurrence_until IS NULL OR recurrence_until >= start_date",
+            name="recurrence_until",
+        ),
+        CheckConstraint(
+            "recurrence_frequency != 'weekdays' OR recurrence_interval = 1",
+            name="weekdays_interval",
+        ),
+        CheckConstraint(
+            "(recurrence_frequency = 'weekly' "
+            "AND jsonb_array_length(recurrence_weekdays) > 0 "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL) "
+            "OR (recurrence_frequency = 'monthly' "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NOT NULL) "
+            "OR (recurrence_frequency = 'yearly' "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NOT NULL "
+            "AND recurrence_day_of_month IS NOT NULL) "
+            "OR (recurrence_frequency IN ('none', 'daily', 'weekdays') "
+            "AND recurrence_weekdays = '[]'::jsonb "
+            "AND recurrence_month IS NULL "
+            "AND recurrence_day_of_month IS NULL)",
+            name="recurrence_parameters",
+        ),
+        CheckConstraint(
             "jsonb_typeof(course_week_numbers) = 'array'",
             name="course_week_numbers",
         ),
@@ -193,6 +232,14 @@ class CalendarSeries(Base):
             "(kind = 'course') = "
             "(term_id IS NOT NULL AND course_first_week_monday IS NOT NULL)",
             name="course_term",
+        ),
+        CheckConstraint(
+            "(kind = 'course' "
+            "AND recurrence_frequency = 'weekly' "
+            "AND recurrence_interval = 1 "
+            "AND jsonb_array_length(course_week_numbers) > 0) "
+            "OR (kind = 'fixed' AND course_week_numbers = '[]'::jsonb)",
+            name="course_recurrence",
         ),
         UniqueConstraint("id", "owner_id", name="uq_calendar_series_id_owner"),
         ForeignKeyConstraint(
@@ -296,8 +343,13 @@ class CalendarException(Base):
             "action = 'moved' OR "
             "(moved_start_date IS NULL AND moved_starts_at IS NULL "
             "AND moved_ends_at IS NULL AND moved_end_day_offset IS NULL "
+            "AND moved_time_zone IS NULL "
             "AND moved_ambiguous_offset_minutes IS NULL)",
             name="non_moved_fields",
+        ),
+        CheckConstraint(
+            "(action = 'moved') = (moved_time_zone IS NOT NULL)",
+            name="moved_time_zone",
         ),
         CheckConstraint(
             "moved_end_day_offset IS NULL OR moved_end_day_offset BETWEEN 0 AND 1",
@@ -359,7 +411,94 @@ class CalendarException(Base):
     moved_starts_at: Mapped[time | None] = mapped_column(Time(timezone=False))
     moved_ends_at: Mapped[time | None] = mapped_column(Time(timezone=False))
     moved_end_day_offset: Mapped[int | None] = mapped_column(Integer)
+    moved_time_zone: Mapped[str | None] = mapped_column(String(64))
     moved_ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    override_name: Mapped[str | None] = mapped_column(String(200))
+    override_description: Mapped[str | None] = mapped_column(Text)
+    override_location: Mapped[str | None] = mapped_column(String(300))
+    override_busy: Mapped[bool | None] = mapped_column(Boolean)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class CalendarAddition(Base):
+    __tablename__ = "calendar_additions"
+    __table_args__ = (
+        CheckConstraint("status IN ('scheduled', 'cancelled')", name="status"),
+        CheckConstraint(
+            "length(btrim(occurrence_key)) > 0",
+            name="nonempty_occurrence_key",
+        ),
+        CheckConstraint(
+            "length(btrim(source_occurrence_key)) > 0",
+            name="nonempty_source_occurrence_key",
+        ),
+        CheckConstraint("length(btrim(time_zone)) > 0", name="nonempty_time_zone"),
+        CheckConstraint("end_day_offset BETWEEN 0 AND 1", name="end_day_offset"),
+        CheckConstraint(
+            "ambiguous_offset_minutes IS NULL OR "
+            "ambiguous_offset_minutes BETWEEN -840 AND 840",
+            name="ambiguous_offset_minutes",
+        ),
+        CheckConstraint(
+            "override_name IS NULL OR length(btrim(override_name)) > 0",
+            name="nonempty_override_name",
+        ),
+        ForeignKeyConstraint(
+            ["series_id", "owner_id"],
+            ["calendar_series.id", "calendar_series.owner_id"],
+            name="fk_calendar_additions_series_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("id", "owner_id", name="uq_calendar_additions_id_owner"),
+        UniqueConstraint(
+            "series_id",
+            "occurrence_key",
+            name="uq_calendar_additions_series_occurrence",
+        ),
+        UniqueConstraint(
+            "series_id",
+            "source_original_start_date",
+            name="uq_calendar_additions_series_source_date",
+        ),
+        Index(
+            "ix_calendar_additions_owner_series",
+            "owner_id",
+            "series_id",
+            "source_original_start_date",
+        ),
+        Index(
+            "ix_calendar_additions_owner_local_date",
+            "owner_id",
+            "local_start_date",
+            "series_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    series_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    occurrence_key: Mapped[str] = mapped_column(String(80))
+    source_occurrence_key: Mapped[str] = mapped_column(String(64))
+    source_original_start_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(
+        String(12),
+        default="scheduled",
+        server_default="scheduled",
+    )
+    local_start_date: Mapped[date] = mapped_column(Date)
+    starts_at: Mapped[time] = mapped_column(Time(timezone=False))
+    ends_at: Mapped[time] = mapped_column(Time(timezone=False))
+    end_day_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    time_zone: Mapped[str] = mapped_column(String(64))
+    ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
     override_name: Mapped[str | None] = mapped_column(String(200))
     override_description: Mapped[str | None] = mapped_column(Text)
     override_location: Mapped[str | None] = mapped_column(String(300))

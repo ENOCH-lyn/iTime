@@ -7,9 +7,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.calendar.addition_service import addition_occurrence_result
 from itime.calendar.exception_service import apply_exception
 from itime.calendar.models import (
     AcademicTerm,
+    CalendarAddition,
     CalendarException,
     CalendarSeries,
     TermPeriod,
@@ -345,6 +347,7 @@ def occurrence_result(series: CalendarSeries, occurrence_date: date) -> dict:
         "series_id": series.id,
         "series_version": series.version,
         "occurrence_key": occurrence_key(occurrence_date, series.starts_at),
+        "occurrence_type": "base",
         "kind": series.kind,
         "term_id": series.term_id,
         "name": series.name,
@@ -365,6 +368,9 @@ def occurrence_result(series: CalendarSeries, occurrence_date: date) -> dict:
         "exception_id": None,
         "exception_version": None,
         "exception_action": None,
+        "addition_id": None,
+        "addition_version": None,
+        "source_occurrence_key": None,
         "conflict_with": [],
     }
 
@@ -384,6 +390,7 @@ def _query_utc_bounds(
 def _filter_occurrences(
     series: CalendarSeries,
     exceptions: dict[date, CalendarException],
+    additions: list[CalendarAddition],
     *,
     query_start: datetime,
     query_end: datetime,
@@ -391,7 +398,7 @@ def _filter_occurrences(
     local_end: date,
 ) -> list[dict]:
     results: list[dict] = []
-    for occurrence in all_series_occurrences(series, exceptions):
+    for occurrence in all_series_occurrences(series, exceptions, additions):
         if occurrence["start_at"] is None or occurrence["end_at"] is None:
             if local_start <= occurrence["local_start_date"] < local_end:
                 results.append(occurrence)
@@ -422,9 +429,31 @@ async def load_exception_maps(
     return result
 
 
+async def load_addition_maps(
+    session: AsyncSession,
+    owner_id: UUID,
+    series_ids: list[UUID],
+) -> dict[UUID, list[CalendarAddition]]:
+    result: defaultdict[UUID, list[CalendarAddition]] = defaultdict(list)
+    if not series_ids:
+        return result
+    additions = await session.scalars(
+        select(CalendarAddition)
+        .where(
+            CalendarAddition.owner_id == owner_id,
+            CalendarAddition.series_id.in_(series_ids),
+        )
+        .order_by(CalendarAddition.local_start_date, CalendarAddition.id)
+    )
+    for addition in additions:
+        result[addition.series_id].append(addition)
+    return result
+
+
 def all_series_occurrences(
     series: CalendarSeries,
     exceptions: dict[date, CalendarException],
+    additions: list[CalendarAddition] | None = None,
 ) -> list[dict]:
     results: list[dict] = []
     for occurrence_date in occurrence_dates(plan_from_series(series)):
@@ -435,6 +464,10 @@ def all_series_occurrences(
             if exception is not None
             else occurrence
         )
+    results.extend(
+        addition_occurrence_result(series, addition)
+        for addition in additions or []
+    )
     return results
 
 
@@ -454,12 +487,12 @@ def apply_conflict_links(occurrences: list[dict]) -> None:
         for other in timed[index + 1 :]:
             if other["start_at"] >= current["end_at"]:
                 break
-            if other["series_id"] == current["series_id"]:
-                continue
             current["conflict_with"].append(
                 {
                     "series_id": other["series_id"],
                     "occurrence_key": other["occurrence_key"],
+                    "occurrence_type": other["occurrence_type"],
+                    "addition_id": other["addition_id"],
                     "overlap_start": max(current["start_at"], other["start_at"]),
                     "overlap_end": min(current["end_at"], other["end_at"]),
                 }
@@ -468,6 +501,8 @@ def apply_conflict_links(occurrences: list[dict]) -> None:
                 {
                     "series_id": current["series_id"],
                     "occurrence_key": current["occurrence_key"],
+                    "occurrence_type": current["occurrence_type"],
+                    "addition_id": current["addition_id"],
                     "overlap_start": max(current["start_at"], other["start_at"]),
                     "overlap_end": min(current["end_at"], other["end_at"]),
                 }
@@ -530,8 +565,17 @@ async def query_occurrences(
             )
         )
     )
+    addition_series_ids = set(
+        await session.scalars(
+            select(CalendarAddition.series_id).where(
+                CalendarAddition.owner_id == owner_id,
+                CalendarAddition.local_start_date >= coarse_start,
+                CalendarAddition.local_start_date < coarse_end,
+            )
+        )
+    )
     loaded_ids = {series.id for series in series_rows}
-    missing_ids = moved_series_ids - loaded_ids
+    missing_ids = (moved_series_ids | addition_series_ids) - loaded_ids
     if missing_ids:
         series_rows.extend(
             await session.scalars(
@@ -552,12 +596,18 @@ async def query_occurrences(
         owner_id,
         [series.id for series in series_rows],
     )
+    addition_maps = await load_addition_maps(
+        session,
+        owner_id,
+        [series.id for series in series_rows],
+    )
     occurrences: list[dict] = []
     for series in series_rows:
         occurrences.extend(
             _filter_occurrences(
                 series,
                 exception_maps[series.id],
+                addition_maps[series.id],
                 query_start=query_start,
                 query_end=query_end,
                 local_start=start_date,
@@ -576,6 +626,7 @@ async def query_occurrences(
             item["start_at"] is None,
             item["start_at"] or datetime.max.replace(tzinfo=UTC),
             str(item["series_id"]),
+            item["occurrence_type"],
             item["occurrence_key"],
         )
     )
@@ -592,9 +643,15 @@ async def find_series_conflicts(
         owner_id,
         [candidate.id],
     )
+    candidate_addition_maps = await load_addition_maps(
+        session,
+        owner_id,
+        [candidate.id],
+    )
     candidate_occurrences = all_series_occurrences(
         candidate,
         candidate_exception_maps[candidate.id],
+        candidate_addition_maps[candidate.id],
     )
     candidate_timed = [
         occurrence
@@ -647,8 +704,18 @@ async def find_series_conflicts(
             )
         )
     )
+    addition_series_ids = set(
+        await session.scalars(
+            select(CalendarAddition.series_id).where(
+                CalendarAddition.owner_id == owner_id,
+                CalendarAddition.local_start_date >= coarse_start,
+                CalendarAddition.local_start_date <= coarse_end,
+                CalendarAddition.series_id != candidate.id,
+            )
+        )
+    )
     loaded_ids = {series.id for series in existing}
-    missing_ids = moved_series_ids - loaded_ids
+    missing_ids = (moved_series_ids | addition_series_ids) - loaded_ids
     if missing_ids:
         existing.extend(
             await session.scalars(
@@ -669,12 +736,18 @@ async def find_series_conflicts(
         owner_id,
         [series.id for series in existing],
     )
+    existing_addition_maps = await load_addition_maps(
+        session,
+        owner_id,
+        [series.id for series in existing],
+    )
     existing_occurrences: list[dict] = []
     for series in existing:
         existing_occurrences.extend(
             _filter_occurrences(
                 series,
                 existing_exception_maps[series.id],
+                existing_addition_maps[series.id],
                 query_start=query_start,
                 query_end=query_end,
                 local_start=first_date,
@@ -718,15 +791,19 @@ async def find_series_conflicts(
     for start_at, end_at, is_candidate, occurrence in timeline:
         active = [item for item in active if item[0] > start_at]
         for _, active_is_candidate, active_occurrence in active:
-            if active_is_candidate == is_candidate:
+            if not (active_is_candidate or is_candidate):
                 continue
             current = occurrence if is_candidate else active_occurrence
             other = active_occurrence if is_candidate else occurrence
             conflicts.append(
                 {
                     "occurrence_key": current["occurrence_key"],
+                    "occurrence_type": current["occurrence_type"],
+                    "addition_id": current["addition_id"],
                     "conflicting_series_id": other["series_id"],
                     "conflicting_occurrence_key": other["occurrence_key"],
+                    "conflicting_occurrence_type": other["occurrence_type"],
+                    "conflicting_addition_id": other["addition_id"],
                     "overlap_start": max(
                         current["start_at"],
                         other["start_at"],

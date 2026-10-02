@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from itime.calendar.models import CalendarException, CalendarSeries
 from itime.calendar.recurrence import RecurrencePlan, occurrence_dates, plan_from_series
 from itime.calendar.schemas import ExceptionFields
+from itime.calendar.service import validate_time_zone
 from itime.calendar.time_math import (
     occurrence_key,
     resolve_local_interval,
@@ -44,14 +45,15 @@ async def find_occurrence_date(
 def validate_exception_fields(
     series: CalendarSeries,
     data: ExceptionFields,
-) -> None:
+) -> str | None:
     if data.action != "moved":
-        return
+        return None
     if data.moved_starts_at.tzinfo is not None or data.moved_ends_at.tzinfo is not None:
         raise AppError(
             "invalid_exception_time",
             "调课时刻必须是不带 UTC 偏移的本地墙上时间。",
         )
+    moved_time_zone = validate_time_zone(data.moved_time_zone or series.time_zone)
     wall_time_duration(
         data.moved_starts_at,
         data.moved_ends_at,
@@ -62,7 +64,7 @@ def validate_exception_fields(
         data.moved_starts_at,
         data.moved_ends_at,
         data.moved_end_day_offset,
-        series.time_zone,
+        moved_time_zone,
         preferred_offset_minutes=data.moved_ambiguous_utc_offset_minutes,
         strict_ambiguous=True,
     )
@@ -71,15 +73,20 @@ def validate_exception_fields(
             "invalid_local_time",
             "调课后的时刻位于夏令时跳过区间，请选择其他时刻。",
         )
+    return moved_time_zone
 
 
-def exception_values(data: ExceptionFields) -> dict:
+def exception_values(
+    data: ExceptionFields,
+    moved_time_zone: str | None,
+) -> dict:
     return {
         "action": data.action,
         "moved_start_date": data.moved_start_date,
         "moved_starts_at": data.moved_starts_at,
         "moved_ends_at": data.moved_ends_at,
         "moved_end_day_offset": data.moved_end_day_offset,
+        "moved_time_zone": moved_time_zone,
         "moved_ambiguous_offset_minutes": (
             data.moved_ambiguous_utc_offset_minutes
         ),
@@ -101,6 +108,7 @@ def exception_result(exception: CalendarException) -> dict:
         "moved_starts_at": exception.moved_starts_at,
         "moved_ends_at": exception.moved_ends_at,
         "moved_end_day_offset": exception.moved_end_day_offset,
+        "moved_time_zone": exception.moved_time_zone,
         "moved_ambiguous_utc_offset_minutes": (
             exception.moved_ambiguous_offset_minutes
         ),
@@ -207,15 +215,17 @@ def apply_exception(
         occurrence["status"] = "cancelled"
         occurrence["busy"] = False
     elif exception.action == "moved":
+        moved_time_zone = exception.moved_time_zone or series.time_zone
         interval = resolve_local_interval(
             exception.moved_start_date,
             exception.moved_starts_at,
             exception.moved_ends_at,
             exception.moved_end_day_offset,
-            series.time_zone,
+            moved_time_zone,
             preferred_offset_minutes=exception.moved_ambiguous_offset_minutes,
             strict_ambiguous=False,
         )
+        occurrence["time_zone"] = moved_time_zone
         occurrence["local_start_date"] = exception.moved_start_date
         occurrence["local_start_time"] = exception.moved_starts_at
         occurrence["local_end_date"] = exception.moved_start_date + timedelta(

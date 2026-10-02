@@ -122,6 +122,7 @@ class ExceptionFields(Input):
     moved_starts_at: time | None = None
     moved_ends_at: time | None = None
     moved_end_day_offset: int | None = Field(default=None, ge=0, le=1)
+    moved_time_zone: str | None = Field(default=None, min_length=1, max_length=64)
     moved_ambiguous_utc_offset_minutes: int | None = Field(
         default=None,
         ge=-840,
@@ -141,6 +142,11 @@ class ExceptionFields(Input):
     @classmethod
     def clean_override_text(cls, value: str | None) -> str | None:
         return value.strip() if value is not None else None
+
+    @field_validator("moved_time_zone")
+    @classmethod
+    def clean_moved_zone(cls, value: str | None) -> str | None:
+        return clean_time_zone(value) if value is not None else None
 
     @model_validator(mode="after")
     def action_fields(self) -> "ExceptionFields":
@@ -163,13 +169,15 @@ class ExceptionFields(Input):
                 raise ValueError("调课不能同时覆盖内容字段")
         elif self.action == "overridden":
             if any(value is not None for value in moved) or (
-                self.moved_ambiguous_utc_offset_minutes is not None
+                self.moved_time_zone is not None
+                or self.moved_ambiguous_utc_offset_minutes is not None
             ):
                 raise ValueError("内容覆盖不能携带移动时间")
             if not any(value is not None for value in overrides):
                 raise ValueError("内容覆盖至少需要修改一个字段")
         elif any(value is not None for value in moved + overrides) or (
-            self.moved_ambiguous_utc_offset_minutes is not None
+            self.moved_time_zone is not None
+            or self.moved_ambiguous_utc_offset_minutes is not None
         ):
             raise ValueError("取消操作不能携带移动或覆盖字段")
         return self
@@ -182,6 +190,48 @@ class ExceptionCreate(ExceptionFields):
 
 
 class ExceptionUpdate(ExceptionFields):
+    operation_id: UUID
+    expected_series_version: int = Field(ge=1)
+    expected_version: int = Field(ge=1)
+
+
+class AdditionFields(Input):
+    status: Literal["scheduled", "cancelled"] = "scheduled"
+    local_start_date: date
+    starts_at: time
+    ends_at: time
+    end_day_offset: int = Field(default=0, ge=0, le=1)
+    time_zone: str | None = Field(default=None, min_length=1, max_length=64)
+    ambiguous_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+    override_name: str | None = Field(default=None, max_length=200)
+    override_description: str | None = Field(default=None, max_length=20_000)
+    override_location: str | None = Field(default=None, max_length=300)
+    override_busy: bool | None = None
+
+    @field_validator("time_zone")
+    @classmethod
+    def clean_zone(cls, value: str | None) -> str | None:
+        return clean_time_zone(value) if value is not None else None
+
+    @field_validator("override_name")
+    @classmethod
+    def clean_override_name(cls, value: str | None) -> str | None:
+        return clean_required(value) if value is not None else None
+
+    @field_validator("override_description", "override_location")
+    @classmethod
+    def clean_override_text(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class AdditionCreate(AdditionFields):
+    status: Literal["scheduled"] = "scheduled"
+    operation_id: UUID
+    expected_series_version: int = Field(ge=1)
+    source_occurrence_key: str = Field(min_length=10, max_length=64)
+
+
+class AdditionUpdate(AdditionFields):
     operation_id: UUID
     expected_series_version: int = Field(ge=1)
     expected_version: int = Field(ge=1)

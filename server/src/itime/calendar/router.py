@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request
@@ -8,6 +8,16 @@ from sqlalchemy import and_, func, or_, select
 
 from itime.auth.security import now
 from itime.auth.session import authorized
+from itime.calendar.addition_service import (
+    addition_result,
+    addition_values,
+    addition_version_conflict,
+    ensure_additions_remain_valid,
+    locked_addition,
+    resolve_addition_time_zone,
+    series_additions,
+    validate_addition_fields,
+)
 from itime.calendar.exception_service import (
     ensure_exceptions_remain_valid,
     exception_result,
@@ -20,6 +30,7 @@ from itime.calendar.exception_service import (
 )
 from itime.calendar.models import (
     AcademicTerm,
+    CalendarAddition,
     CalendarException,
     CalendarSeries,
     TermPeriod,
@@ -27,6 +38,8 @@ from itime.calendar.models import (
 )
 from itime.calendar.recurrence import occurrence_dates, plan_from_series
 from itime.calendar.schemas import (
+    AdditionCreate,
+    AdditionUpdate,
     ExceptionCreate,
     ExceptionUpdate,
     PeriodsReplace,
@@ -604,6 +617,12 @@ async def update_calendar_series(
             series.id,
             resolved.plan,
         )
+        await ensure_additions_remain_valid(
+            identity.session,
+            identity.user.id,
+            series.id,
+            resolved.plan,
+        )
         values = series_values(data, resolved)
         changed = any(getattr(series, field) != value for field, value in values.items())
         if changed:
@@ -734,13 +753,25 @@ async def create_calendar_exception(
                     "current_version": existing.version,
                 },
             )
-        validate_exception_fields(series, data)
+        effective_data = data
+        if data.action == "moved" and data.moved_time_zone is None:
+            current_time_zone = await identity.session.scalar(
+                select(UserTimeSettings.time_zone).where(
+                    UserTimeSettings.owner_id == identity.user.id
+                )
+            )
+            effective_data = data.model_copy(
+                update={
+                    "moved_time_zone": current_time_zone or series.time_zone
+                }
+            )
+        moved_time_zone = validate_exception_fields(series, effective_data)
         exception = CalendarException(
             series_id=series.id,
             owner_id=identity.user.id,
             occurrence_key=data.occurrence_key,
             original_start_date=original_start_date,
-            **exception_values(data),
+            **exception_values(effective_data, moved_time_zone),
         )
         identity.session.add(exception)
         series.version += 1
@@ -816,8 +847,25 @@ async def update_calendar_exception(
         )
         if exception.version != data.expected_version:
             raise exception_version_conflict(exception)
-        validate_exception_fields(series, data)
-        values = exception_values(data)
+        effective_data = data
+        if data.action == "moved" and data.moved_time_zone is None:
+            default_time_zone = (
+                exception.moved_time_zone
+                if exception.action == "moved"
+                else (
+                    await identity.session.scalar(
+                        select(UserTimeSettings.time_zone).where(
+                            UserTimeSettings.owner_id == identity.user.id
+                        )
+                    )
+                    or series.time_zone
+                )
+            )
+            effective_data = data.model_copy(
+                update={"moved_time_zone": default_time_zone}
+            )
+        moved_time_zone = validate_exception_fields(series, effective_data)
+        values = exception_values(effective_data, moved_time_zone)
         changed = any(
             getattr(exception, field) != value for field, value in values.items()
         )
@@ -866,6 +914,226 @@ async def update_calendar_exception(
         return result
 
 
+@router.get("/calendar/series/{series_id}/additions")
+async def list_calendar_additions(series_id: UUID, request: Request) -> dict:
+    async with authorized(request) as identity:
+        series = await identity.session.scalar(
+            select(CalendarSeries).where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == identity.user.id,
+            )
+        )
+        if series is None:
+            raise AppError(
+                "calendar_series_not_found",
+                "未找到此日历系列。",
+                status=404,
+            )
+        additions = await series_additions(
+            identity.session,
+            identity.user.id,
+            series.id,
+        )
+        return {
+            "series_version": series.version,
+            "items": [addition_result(addition) for addition in additions],
+        }
+
+
+@router.post("/calendar/series/{series_id}/additions", status_code=201)
+async def create_calendar_addition(
+    series_id: UUID,
+    data: AdditionCreate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_additions.create:{series_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_series_version:
+            raise series_version_conflict(series)
+        source_date = await find_occurrence_date(
+            identity.session,
+            identity.user.id,
+            series,
+            data.source_occurrence_key,
+        )
+        existing = await identity.session.scalar(
+            select(CalendarAddition).where(
+                CalendarAddition.series_id == series.id,
+                CalendarAddition.source_original_start_date == source_date,
+            )
+        )
+        if existing is not None:
+            raise AppError(
+                "calendar_addition_exists",
+                "该次安排已经有关联补课，请编辑现有补课。",
+                status=409,
+                details={
+                    "addition_id": str(existing.id),
+                    "current_version": existing.version,
+                },
+            )
+        time_zone = await resolve_addition_time_zone(
+            identity.session,
+            identity.user.id,
+            series,
+            data.time_zone,
+        )
+        validate_addition_fields(data, time_zone)
+        addition_id = uuid4()
+        addition = CalendarAddition(
+            id=addition_id,
+            series_id=series.id,
+            owner_id=identity.user.id,
+            occurrence_key=f"makeup:{addition_id}",
+            source_occurrence_key=data.source_occurrence_key,
+            source_original_start_date=source_date,
+            **addition_values(data, time_zone),
+        )
+        identity.session.add(addition)
+        series.version += 1
+        series.updated_at = now()
+        await identity.session.flush()
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_addition",
+            addition.id,
+            "created",
+            addition.version,
+        )
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_series",
+            series.id,
+            "updated",
+            series.version,
+        )
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "addition": addition_result(addition),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.put("/calendar/series/{series_id}/additions/{addition_id}")
+async def update_calendar_addition(
+    series_id: UUID,
+    addition_id: UUID,
+    data: AdditionUpdate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_additions.update:{series_id}:{addition_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        series = await locked_series(
+            identity.session,
+            identity.user.id,
+            series_id,
+        )
+        if series.version != data.expected_series_version:
+            raise series_version_conflict(series)
+        addition = await locked_addition(
+            identity.session,
+            identity.user.id,
+            series.id,
+            addition_id,
+        )
+        if addition.version != data.expected_version:
+            raise addition_version_conflict(addition)
+        time_zone = await resolve_addition_time_zone(
+            identity.session,
+            identity.user.id,
+            series,
+            data.time_zone or addition.time_zone,
+        )
+        validate_addition_fields(data, time_zone)
+        values = addition_values(data, time_zone)
+        changed = any(
+            getattr(addition, field) != value
+            for field, value in values.items()
+        )
+        if changed:
+            for field, value in values.items():
+                setattr(addition, field, value)
+            addition.version += 1
+            addition.updated_at = now()
+            series.version += 1
+            series.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_addition",
+                addition.id,
+                "updated",
+                addition.version,
+            )
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_series",
+                series.id,
+                "updated",
+                series.version,
+            )
+        await identity.session.flush()
+        result = {
+            "operation_id": data.operation_id,
+            "series": series_result(series),
+            "addition": addition_result(addition),
+            "conflicts": await find_series_conflicts(
+                identity.session,
+                identity.user.id,
+                series,
+            ),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
 @router.post("/calendar/series/{series_id}/split", status_code=201)
 async def split_calendar_series(
     series_id: UUID,
@@ -894,6 +1162,19 @@ async def split_calendar_series(
             raise AppError(
                 "series_not_recurring",
                 "不重复安排不能按“本次及以后”拆分。",
+            )
+        existing_successor = await identity.session.scalar(
+            select(CalendarSeries.id).where(
+                CalendarSeries.owner_id == identity.user.id,
+                CalendarSeries.predecessor_id == series.id,
+            )
+        )
+        if existing_successor is not None:
+            raise AppError(
+                "calendar_series_already_split",
+                "此日历系列已经拆分；请从当前有效的后继系列继续修改。",
+                status=409,
+                details={"successor_series_id": str(existing_successor)},
             )
         split_date = await find_occurrence_date(
             identity.session,
@@ -952,6 +1233,17 @@ async def split_calendar_series(
             for exception in exceptions
             if exception.original_start_date >= split_date
         ]
+        additions = await series_additions(
+            identity.session,
+            identity.user.id,
+            series.id,
+            lock=True,
+        )
+        future_additions = [
+            addition
+            for addition in additions
+            if addition.source_original_start_date >= split_date
+        ]
         orphaned = [
             exception
             for exception in future_exceptions
@@ -967,6 +1259,23 @@ async def split_calendar_series(
                         str(exception.id) for exception in orphaned[:20]
                     ],
                     "has_more": len(orphaned) > 20,
+                },
+            )
+        orphaned_additions = [
+            addition
+            for addition in future_additions
+            if addition.source_original_start_date not in successor_dates
+        ]
+        if orphaned_additions:
+            raise AppError(
+                "series_additions_would_be_orphaned",
+                "拆分后的重复规则不包含已有补课的来源实例。",
+                status=409,
+                details={
+                    "addition_ids": [
+                        str(addition.id) for addition in orphaned_additions[:20]
+                    ],
+                    "has_more": len(orphaned_additions) > 20,
                 },
             )
 
@@ -996,6 +1305,18 @@ async def split_calendar_series(
                 "updated",
                 exception.version,
             )
+        for addition in future_additions:
+            addition.series_id = successor.id
+            addition.version += 1
+            addition.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_addition",
+                addition.id,
+                "updated",
+                addition.version,
+            )
         emit_change(
             identity.session,
             identity.user.id,
@@ -1018,6 +1339,7 @@ async def split_calendar_series(
             "predecessor": series_result(series),
             "successor": series_result(successor),
             "moved_exception_count": len(future_exceptions),
+            "moved_addition_count": len(future_additions),
             "warnings": series_warnings(resolved.warning_occurrence_keys),
             "conflicts": await find_series_conflicts(
                 identity.session,

@@ -305,6 +305,27 @@ def test_moved_exception_validates_dst_and_new_conflicts(client, database_url):
     assert november[0]["occurrence_key"] == "2026-03-07T09:00:00"
     assert november[0]["original_local_start_date"] == "2026-03-07"
     assert november[0]["start_at"] == "2026-11-01T06:30:00Z"
+    assert moved.json()["exception"]["moved_time_zone"] == "America/New_York"
+
+    changed_series_zone = client.put(
+        f"/api/v1/calendar/series/{series['id']}",
+        json={
+            **fixed_payload(
+                name="改为上海时区的系列",
+                time_zone="Asia/Shanghai",
+                start_date="2026-03-07",
+                starts_at="09:00:00",
+                ends_at="10:00:00",
+                recurrence=recurrence("daily", count=2),
+            ),
+            "expected_version": 2,
+        },
+    )
+    assert changed_series_zone.status_code == 200, changed_series_zone.text
+    unchanged_move = get_occurrences(client, "2026-11-01", "2026-11-02")
+    assert len(unchanged_move) == 1
+    assert unchanged_move[0]["start_at"] == "2026-11-01T06:30:00Z"
+    assert unchanged_move[0]["time_zone"] == "America/New_York"
 
     future = create_series(
         client,
