@@ -112,7 +112,7 @@ async function submit() {
       })
       acceptSession(session)
       notifySessionChange()
-      await router.replace('/account')
+      await router.replace('/tasks')
     } else {
       const body = needsToken.value
         ? { token: token.value, [props.mode === 'reset-password' ? 'new_password' : 'password']: values.password }

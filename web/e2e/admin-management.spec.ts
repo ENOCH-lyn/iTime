@@ -111,7 +111,7 @@ async function registerAndLogin(page: Page, request: APIRequestContext, email: s
   await page.getByLabel('邮箱', { exact: true }).fill(email)
   await page.getByLabel('密码', { exact: true }).fill(userPassword)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '账号与安全' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
 }
 
 async function screenshot(page: Page, info: TestInfo, name: string) {

@@ -7,11 +7,12 @@ import './lib/appearance'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/account' },
+    { path: '/', redirect: '/tasks' },
     ...['login', 'register', 'verify-email', 'resend-verification', 'forgot-password', 'reset-password'].map(mode => ({
       path: `/${mode}`, name: mode,
       component: () => import('./pages/AuthPage.vue'), props: { mode },
     })),
+    { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
     { path: '/account/:section(password|devices|appearance)', component: () => import('./pages/AccountPage.vue') },
     { path: '/admin', redirect: '/admin/security' },
