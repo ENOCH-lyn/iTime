@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from itime import __version__
+from itime.admin.management import router as admin_management_router
 from itime.admin.router import router as admin_auth_router
 from itime.auth.router import router as auth_router
 from itime.auth.security import Security
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestEnvelope, settings=settings)
     app.include_router(auth_router)
     app.include_router(admin_auth_router)
+    app.include_router(admin_management_router)
 
     @app.get("/api/health", tags=["运行状态"])
     async def health() -> dict:

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_va
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from itime.admin.models import AdminSession
+from itime.admin.models import AdminSession, RegistrationInvitation, RegistrationPolicy
 from itime.auth.mail import queue_email
 from itime.auth.models import DeviceSession, EmailToken, User
 from itime.auth.security import COOKIE_NAME, digest, now, rate_limit
@@ -40,13 +40,16 @@ class EmailInput(Input):
 
 Password = Annotated[SecretStr, Field(min_length=12, max_length=128)]
 Token = Annotated[SecretStr, Field(min_length=43, max_length=43)]
+InvitationToken = Annotated[SecretStr, Field(min_length=43, max_length=43)]
 
 
 class RegisterInput(EmailInput):
     password: Password
+    invitation_token: InvitationToken | None = None
 
 
-class LoginInput(RegisterInput):
+class LoginInput(EmailInput):
+    password: Password
     device_name: str = Field(default="网页浏览器", min_length=1, max_length=100)
 
 
@@ -85,6 +88,15 @@ def invalid_token() -> AppError:
 @router.get("/policy")
 async def policy(request: Request) -> dict:
     settings = request.app.state.settings
+    async with request.app.state.database.transaction() as session:
+        registration = await session.get(RegistrationPolicy, 1)
+    if registration is None:
+        raise AppError(
+            "registration_policy_unavailable",
+            "注册策略暂时不可用，请稍后重试。",
+            status=503,
+            retryable=True,
+        )
     return {
         "password_min_length": 12,
         "password_max_length": 128,
@@ -92,6 +104,7 @@ async def policy(request: Request) -> dict:
         "verification_minutes": settings.verification_minutes,
         "password_reset_minutes": settings.password_reset_minutes,
         "mail_cooldown_seconds": settings.mail_cooldown_seconds,
+        "registration_mode": registration.mode,
     }
 
 
@@ -101,6 +114,41 @@ async def register(data: RegisterInput, request: Request) -> dict:
     security = request.app.state.security
     encoded = await security.hash_password(data.password.get_secret_value())
     async with request.app.state.database.transaction() as session:
+        registration = await session.scalar(
+            select(RegistrationPolicy)
+            .where(RegistrationPolicy.id == 1)
+            .with_for_update(read=True)
+        )
+        if registration is None:
+            raise AppError(
+                "registration_policy_unavailable",
+                "注册策略暂时不可用，请稍后重试。",
+                status=503,
+                retryable=True,
+            )
+        invitation = None
+        if registration.mode == "invite":
+            raw_invitation = (
+                data.invitation_token.get_secret_value()
+                if data.invitation_token is not None
+                else ""
+            )
+            invitation = await session.scalar(
+                select(RegistrationInvitation)
+                .where(RegistrationInvitation.token_hash == digest(raw_invitation))
+                .with_for_update()
+            )
+            if (
+                invitation is None
+                or invitation.email != data.email
+                or invitation.revoked_at is not None
+                or invitation.expires_at <= now()
+            ):
+                raise AppError(
+                    "registration_invitation_required",
+                    "当前仅接受邀请注册，请使用与此邮箱匹配的有效邀请链接。",
+                    status=403,
+                )
         # 冲突不覆盖密码；并发注册由唯一键和用户锁保证只创建一个账号/验证请求。
         new_id = await session.scalar(
             insert(User)
@@ -109,8 +157,24 @@ async def register(data: RegisterInput, request: Request) -> dict:
             .returning(User.id)
         )
         user = await session.scalar(select(User).where(User.email == data.email).with_for_update())
+        if invitation is not None:
+            if invitation.consumed_at is None:
+                invitation.consumed_at = now()
+                invitation.consumed_by_user_id = user.id
+            elif invitation.consumed_by_user_id != user.id:
+                raise AppError(
+                    "registration_invitation_required",
+                    "当前仅接受邀请注册，请使用与此邮箱匹配的有效邀请链接。",
+                    status=403,
+                )
         if new_id:
-            audit(request, session, user, "registered")
+            audit(
+                request,
+                session,
+                user,
+                "registered_by_invitation" if invitation is not None else "registered",
+                invitation.id if invitation is not None else None,
+            )
         if user.email_verified_at is None and user.status == "active":
             await queue_email(request, session, user, "verify")
     return EMAIL_RESULT

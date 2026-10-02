@@ -32,6 +32,15 @@ def check_user(user: User) -> None:
         raise AppError("email_unverified", "邮箱尚未验证，请查收验证邮件或重新发送。", status=403)
 
 
+def check_ai_access(user: User) -> None:
+    if user.ai_access != "allowed":
+        raise AppError(
+            "ai_access_frozen",
+            "此账号的 AI 功能已暂停，手动查看和编辑仍可使用。",
+            status=403,
+        )
+
+
 @asynccontextmanager
 async def authorized(request: Request, *, write: bool = False) -> AsyncIterator[Identity]:
     raw = request.cookies.get(COOKIE_NAME, "")
@@ -118,6 +127,7 @@ def public_user(user: User) -> dict:
         "id": user.id,
         "email": user.email,
         "email_verified": user.email_verified_at is not None,
+        "ai_access": user.ai_access,
         "is_admin": user.is_admin,
         "created_at": user.created_at,
     }
