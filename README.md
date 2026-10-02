@@ -2,7 +2,7 @@
 
 iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容通用个人场景，通过任务与课表整理、日周规划、执行记录和复盘形成完整闭环。
 
-**当前正在开发完整 Web 首版。服务端运行基础及邮箱账号 API 已建立，用户界面和其余业务仍在开发；尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+**当前正在开发完整 Web 首版。服务运行基础、邮箱账号 API 和账号/设备管理页面已建立，其余业务及后台仍在开发；尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 产品范围
 
@@ -24,7 +24,7 @@ iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容�
 
 ## 本地开发
 
-需要 Python 3.13（由 uv 管理）、uv 和 Docker Compose。所有依赖锁定在 `server/uv.lock`，容器固定镜像摘要。
+需要 Python 3.13（由 uv 管理）、uv、Node.js 24、pnpm 11 和 Docker Compose。依赖锁定在 `server/uv.lock`、`web/pnpm-lock.yaml`，容器固定镜像摘要。
 
 ```bash
 python3 scripts/bootstrap.py
@@ -36,6 +36,15 @@ uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no
 ```
 
 另开终端，在 `server/` 执行 `uv run python -m itime.mail_worker` 启动邮件进程。账号接口把验证/找回邮件写入数据库队列，发送进程中断后可恢复。仅运行 API 不会发送队列中的邮件。
+
+再在 `web/` 启动 Vue 前端：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+访问 `http://localhost:5173`。账号页通过同源代理连接 `127.0.0.1:8000`；邮件中的链接指向这个网页地址。当前登录后进入账号设置，后续接入全局对话和业务页面。
 
 使用独立 Colima profile 时，在 Docker 命令中加 `--context colima-itime`。开发配置只在忽略的 `.env.local`，初始化不会覆盖已有文件。
 
@@ -54,6 +63,16 @@ uv run pytest -q
 uv build --no-sources
 ```
 
-集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖数据库故障恢复、账号并发、会话撤销、真实邮件发送与重试。生产和外部数据库会被测试入口拒绝。UI 测试随前端模块接入，当前服务验证不代表完整产品验收。
+集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖数据库故障恢复、账号并发、会话撤销、真实邮件发送与重试。生产和外部数据库会被测试入口拒绝。
+
+在 `web/` 执行真实浏览器验证：
+
+```bash
+pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+UI 测试自动启动独立数据库、API、邮件进程和生产构建预览，访问 `http://localhost:4173`；开发库不被改写。本地 PostgreSQL/Mailpit 需先运行。测试后清理独立进程和测试库；截图位于 `/tmp/itime-ui-evidence/`，失败证据位于 `/tmp/itime-ui-results/`。账号页面验证不代表完整产品验收，也不等同真机或 Edge 兼容性通过。
 
 仓库：[ENOCH-lyn/iTime](https://github.com/ENOCH-lyn/iTime)，私有。

@@ -1,0 +1,27 @@
+{
+  "name": "itime-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.15.0",
+  "scripts": {
+    "dev": "vite --host localhost",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host localhost",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "vue": "^3.5.22",
+    "vue-router": "^4.6.3",
+    "lucide-vue-next": "^0.468.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.9",
+    "vue-tsc": "^3.1.1"
+  }
+}

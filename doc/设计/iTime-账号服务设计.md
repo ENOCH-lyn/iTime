@@ -1,6 +1,6 @@
 # iTime 账号服务设计
 
-更新：2026-10-02。本模块实现邮箱账号与设备会话 API；浏览器页面、邀请制和管理员 TOTP 在后续模块验收。本文件中的工程默认值均可配置，不代表新的用户确认结论。
+更新：2026-10-02。本模块实现邮箱账号、设备会话 API 及相应浏览器页面；邀请制和管理员 TOTP 在后续模块验收。本文件中的工程默认值均可配置，不代表新的用户确认结论。
 
 ## 1. 已实现流程与恢复
 
@@ -58,8 +58,8 @@
 | POST | `/logout`、`/change-password` | 本人会话与 CSRF；重复退出可恢复 |
 | DELETE | `/sessions/{device_id}` | 本人会话与 CSRF |
 
-实现：`server/src/itime/auth/`；迁移 `0002_accounts`；工作进程 `server/src/itime/mail_worker.py`；动态测试 `server/tests/test_auth.py`。真实执行结果见[实施与验证](../验收/iTime-Web实施与验证.md)。
+实现：`server/src/itime/auth/`；迁移 `0002_accounts`；工作进程 `server/src/itime/mail_worker.py`；服务动态测试 `server/tests/test_auth.py`。Vue 页面位于 `web/src/pages/AuthPage.vue`、`AccountPage.vue`，设备与改密操作位于 `web/src/components/`；浏览器测试位于 `web/e2e/auth.spec.ts`。页面使用同源代理和 HttpOnly Cookie，CSRF 只在内存中保存；邮件令牌从 URL fragment 读取后立即从地址栏移除，不写入 Web Storage。真实执行结果见[实施与验证](../验收/iTime-Web实施与验证.md)。
 
 ## 5. 尚未覆盖的范围
 
-Q-AUTH-01 的改邮箱和申诉，Q-AUTH-02 的管理员引导/恢复/交接，Q-AUTH-03 的邀请与账号/AI 限制动作在对应功能模块继续细化。现有 `is_admin` 和 `status` 字段用于权限边界，不能表示后台用户管理或 TOTP 已完成。页面、邀请制和管理员认证完成前，不将整个 AUTH/ADM 需求标为验收通过。
+Q-AUTH-01 的改邮箱和申诉，Q-AUTH-02 的管理员引导/恢复/交接，Q-AUTH-03 的邀请与账号/AI 限制动作在对应功能模块继续细化。现有 `is_admin` 和 `status` 字段用于权限边界，不能表示后台用户管理或 TOTP 已完成。当前账号页面提供注册、验证、重发、登录、找回/重设、改密、设备管理、主题/字号和错误恢复；邀请制、管理员认证、离线业务队列与完整产品导航尚未完成，因此不将整个 AUTH/ADM 或 Web 产品标为验收通过。
