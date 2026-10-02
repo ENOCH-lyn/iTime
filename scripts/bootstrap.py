@@ -1,5 +1,6 @@
 """创建仅本地可读的开发配置；已有文件绝不覆盖。不输出密钥。"""
 
+import base64
 import os
 import secrets
 from pathlib import Path
@@ -15,6 +16,7 @@ values = {
     "ITIME_ENVIRONMENT": "development",
     "ITIME_DATABASE_URL": f"postgresql+psycopg://itime:{password}@127.0.0.1:55432/itime",
     "ITIME_PUBLIC_ORIGIN": "http://localhost:5173",
+    "ITIME_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
 }
 try:
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

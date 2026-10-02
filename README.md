@@ -2,7 +2,7 @@
 
 iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容通用个人场景，通过任务与课表整理、日周规划、执行记录和复盘形成完整闭环。
 
-**当前正在开发完整 Web 首版。服务端运行基础已建立，业务功能与用户界面仍在开发；尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+**当前正在开发完整 Web 首版。服务端运行基础及邮箱账号 API 已建立，用户界面和其余业务仍在开发；尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 产品范围
 
@@ -35,6 +35,8 @@ uv run alembic upgrade head
 uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
+另开终端，在 `server/` 执行 `uv run python -m itime.mail_worker` 启动邮件进程。账号接口把验证/找回邮件写入数据库队列，发送进程中断后可恢复。仅运行 API 不会发送队列中的邮件。
+
 使用独立 Colima profile 时，在 Docker 命令中加 `--context colima-itime`。开发配置只在忽略的 `.env.local`，初始化不会覆盖已有文件。
 
 - API 存活：`http://127.0.0.1:8000/api/health`
@@ -52,6 +54,6 @@ uv run pytest -q
 uv build --no-sources
 ```
 
-集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖真实数据库故障恢复、事务及连接池边界。生产和外部数据库会被测试入口拒绝。UI 测试随前端模块接入，当前服务基础验证不代表完整产品验收。
+集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖数据库故障恢复、账号并发、会话撤销、真实邮件发送与重试。生产和外部数据库会被测试入口拒绝。UI 测试随前端模块接入，当前服务验证不代表完整产品验收。
 
 仓库：[ENOCH-lyn/iTime](https://github.com/ENOCH-lyn/iTime)，私有。

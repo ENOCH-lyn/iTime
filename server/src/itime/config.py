@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,6 +33,30 @@ class Settings(BaseSettings):
     db_lock_timeout_ms: int = Field(default=2000, ge=100, le=30000)
     max_request_bytes: int = Field(default=12 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
     readiness_timeout_seconds: float = Field(default=2, gt=0, le=10)
+    encryption_key: SecretStr
+    session_hours: int = Field(default=24 * 30, ge=1, le=24 * 90)
+    verification_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_minutes: int = Field(default=15, ge=5, le=60)
+    mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)
+    auth_ip_limit: int = Field(default=60, ge=1, le=1000)
+    auth_identity_limit: int = Field(default=15, ge=1, le=100)
+    auth_window_seconds: int = Field(default=600, ge=10, le=3600)
+    smtp_host: str = "127.0.0.1"
+    smtp_port: int = Field(default=51025, ge=1, le=65535)
+    smtp_starttls: bool = False
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str = "iTime <account@itime.local>"
+    smtp_timeout_seconds: float = Field(default=5, ge=1, le=30)
+
+    @field_validator("encryption_key")
+    @classmethod
+    def fernet_key(cls, value: SecretStr) -> SecretStr:
+        try:
+            Fernet(value.get_secret_value())
+        except (ValueError, TypeError) as exc:
+            raise ValueError("encryption_key 必须是独立保管的 Fernet 密钥") from exc
+        return value
 
     @field_validator("database_url")
     @classmethod
@@ -68,6 +93,8 @@ class Settings(BaseSettings):
     def production_contract(self) -> "Settings":
         if self.environment == "production" and not self.public_origin.startswith("https://"):
             raise ValueError("生产环境 public_origin 必须启用 HTTPS")
+        if self.smtp_host not in {"localhost", "127.0.0.1", "::1"} and not self.smtp_starttls:
+            raise ValueError("外部 SMTP 必须启用 STARTTLS")
         return self
 
 

@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from itime.auth.session import audit, authorized
 from itime.main import create_app
 
 
@@ -33,5 +34,12 @@ def create_test_app() -> FastAPI:
         async with app.state.database.transaction() as session:
             value = await session.scalar(text("SELECT 1"))
         return {"value": value}
+
+    @app.post("/api/__test/authorized-write")
+    async def authorized_write(request: Request) -> dict:
+        async with authorized(request, write=True) as identity:
+            await identity.session.execute(text("SELECT pg_sleep(0.05)"))
+            audit(request, identity.session, identity.user, "test_write")
+        return {"saved": True}
 
     return app
