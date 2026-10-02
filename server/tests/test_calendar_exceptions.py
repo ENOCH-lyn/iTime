@@ -306,6 +306,33 @@ def test_moved_exception_validates_dst_and_new_conflicts(client, database_url):
     assert november[0]["original_local_start_date"] == "2026-03-07"
     assert november[0]["start_at"] == "2026-11-01T06:30:00Z"
 
+    future = create_series(
+        client,
+        name="未来 DST 系列",
+        start_date="2027-03-13",
+        starts_at="02:30:00",
+        ends_at="03:00:00",
+        recurrence=recurrence("daily", count=3),
+    )["series"]
+    replacement = fixed_payload(
+        name="DST 后继系列",
+        start_date="2027-03-14",
+        starts_at="03:30:00",
+        ends_at="04:00:00",
+        recurrence=recurrence("daily", count=2),
+    )
+    replacement.pop("operation_id")
+    split = client.post(
+        f"/api/v1/calendar/series/{future['id']}/split",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": 1,
+            "occurrence_key": "2027-03-14T02:30:00",
+            "replacement": replacement,
+        },
+    )
+    assert split.status_code == 201, split.text
+
 
 def test_series_update_rejects_orphaned_exception_but_preserves_date_binding(
     client,
@@ -518,6 +545,30 @@ def test_split_rejects_first_occurrence_or_orphaned_future_exception(
     assert client.get(f"/api/v1/calendar/series/{series['id']}").json()["series"][
         "version"
     ] == 2
+
+    historical = create_series(
+        client,
+        name="历史系列",
+        start_date="2020-01-01",
+        recurrence=recurrence("daily", count=3),
+    )["series"]
+    historical_replacement = fixed_payload(
+        name="不应改写历史",
+        start_date="2020-01-02",
+        recurrence=recurrence("daily", count=2),
+    )
+    historical_replacement.pop("operation_id")
+    past_split = client.post(
+        f"/api/v1/calendar/series/{historical['id']}/split",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": 1,
+            "occurrence_key": "2020-01-02T09:00:00",
+            "replacement": historical_replacement,
+        },
+    )
+    assert past_split.status_code == 409
+    assert past_split.json()["error"]["code"] == "historical_occurrence_immutable"
 
 
 def test_exception_ownership_and_concurrent_updates(

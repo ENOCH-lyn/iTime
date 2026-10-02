@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import and_, func, or_, select
@@ -39,6 +40,7 @@ from itime.calendar.schemas import (
 from itime.calendar.series_service import (
     find_series_conflicts,
     locked_series,
+    occurrence_result,
     query_occurrences,
     resolve_series_draft,
     series_result,
@@ -899,6 +901,19 @@ async def split_calendar_series(
             series,
             data.occurrence_key,
         )
+        split_occurrence = occurrence_result(series, split_date)
+        current_time = now()
+        historical = (
+            split_date <= current_time.astimezone(ZoneInfo(series.time_zone)).date()
+            if split_occurrence["start_at"] is None
+            else split_occurrence["start_at"] <= current_time
+        )
+        if historical:
+            raise AppError(
+                "historical_occurrence_immutable",
+                "已经发生或时间无效的实例不能作为未来系列分界点。",
+                status=409,
+            )
         old_dates = occurrence_dates(plan_from_series(series))
         split_index = old_dates.index(split_date)
         if split_index == 0:
