@@ -6,7 +6,7 @@
 - 提交显示名 `ENOCH-lyn`，邮箱 `enoch@enoch.host`，仅记录在 `.git/config`。
 - Git凭据助手先清空继承的helper，再使用本项目 `scripts/github.sh auth git-credential`。
 - `credential.useHttpPath=true`；助手仅为本地 `itime.githubRepository` 配置的仓库路径返回凭据。
-- GitHub远端所有者和可见性尚待确定；本地初始化不代表已创建远端。
+- 已在用户完成手动授权的 `ENOCH-lyn` 账号下建立 [iTime](https://github.com/ENOCH-lyn/iTime)，当前采用私有可见性，`origin` 为 `https://github.com/ENOCH-lyn/iTime.git`，`main` 跟踪 `origin/main`。是否公开及许可证待用户决定。
 
 ## 2. 手动登录
 
@@ -46,7 +46,7 @@ git status
 git diff --check
 ```
 
-远端建立后，普通 `git fetch` / `git push` 使用本项目helper。通过本地配置更新允许的目标仓库：
+普通 `git fetch` / `git push` 使用本项目helper；当前只允许 `ENOCH-lyn/iTime` 路径。通过本地配置更新允许的目标仓库：
 
 ```sh
 git config --local itime.githubRepository "OWNER/iTime"
@@ -82,4 +82,4 @@ git config --show-origin --show-scope --get-regexp '^(user\.|credential\.)'
 git diff --check
 ```
 
-认证测试全部使用假令牌和模拟响应，不访问真实GitHub、钥匙串或产品环境。真实登录和远端创建是独立状态，需在实际完成后记录。
+认证测试全部使用假令牌和模拟响应，不访问真实GitHub、钥匙串或产品环境。2026-10-02另行完成用户手工授权、远端创建和首次推送；真实登录后核验文件权限与全局配置不变，详见初始化验收记录。

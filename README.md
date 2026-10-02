@@ -24,6 +24,8 @@
 
 ## GitHub
 
+仓库：[ENOCH-lyn/iTime](https://github.com/ENOCH-lyn/iTime)，当前为私有，主分支为 `main`。已完成用户手工授权和首次推送；公开策略及许可证仍待确认。
+
 在项目目录运行：
 
 ```sh
