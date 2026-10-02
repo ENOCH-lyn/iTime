@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "iTime 服务端"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "aiohttp>=3.12,<4",
     "aiosmtplib>=5,<6",
     "alembic>=1.16,<2",
     "argon2-cffi>=25,<26",
