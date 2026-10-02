@@ -14,11 +14,14 @@ export class ApiError extends Error {
 }
 
 let csrf = ''
+let adminCsrf = ''
 export function setCsrf(value: string) { csrf = value }
+export function setAdminCsrf(value: string) { adminCsrf = value }
 
 // Credentials stay in HttpOnly cookies; CSRF and account data stay in memory.
 export async function api<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
   const requestId = crypto.randomUUID()
+  const csrfToken = path.startsWith('/admin/') ? adminCsrf : csrf
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), 15_000)
   try {
@@ -27,7 +30,7 @@ export async function api<T>(path: string, body?: unknown, method = body === und
       headers: {
         'X-Request-ID': requestId,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(method === 'GET' || !csrf ? {} : { 'X-CSRF-Token': csrf }),
+        ...(method === 'GET' || !csrfToken ? {} : { 'X-CSRF-Token': csrfToken }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })

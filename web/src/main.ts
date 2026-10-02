@@ -14,6 +14,12 @@ const router = createRouter({
     })),
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
     { path: '/account/:section(password|devices|appearance)', component: () => import('./pages/AccountPage.vue') },
+    { path: '/admin', redirect: '/admin/security' },
+    ...['login', 'setup'].map(mode => ({
+      path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),
+      props: { mode },
+    })),
+    { path: '/admin/:section(security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
     { path: '/help', component: () => import('./pages/HelpPage.vue') },
     { path: '/:pathMatch(.*)*', component: () => import('./pages/NotFoundPage.vue') },
   ],

@@ -64,6 +64,6 @@
 | --- | --- | --- |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱注册/验证/登录/找回/改密 API 和真实页面，已执行本地邮件与三种视口 Chromium 测试 | 邀请制、改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
-| REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/` 已实现 TOTP、恢复码、独立会话和本机创建/重置，见[管理员认证设计](../设计/iTime-管理员认证设计.md) | 管理认证页面、最终恢复/交接规则及用户/额度/AI/日志/质检管理动作 |
+| REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/` 与 `web/src/pages/Admin*.vue` 已实现 TOTP、恢复码、独立会话、本机创建/重置及管理认证页面 | 最终恢复/交接规则及用户/额度/AI/日志/质检管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。

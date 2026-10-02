@@ -1,6 +1,9 @@
 """Run the built Vue app, real API and mail worker against a disposable local database."""
 
+import asyncio
+import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -11,12 +14,21 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import httpx
+import pyotp
+from sqlalchemy import delete, select
 from sqlalchemy.engine import make_url
 
+from itime.admin.models import AdminCredential, AdminEnrollment, AdminRecoveryCode
+from itime.admin.operations import create_admin
+from itime.admin.security import normalize_recovery_code
+from itime.auth.models import User
+from itime.auth.security import Security, now
 from itime.config import Settings
+from itime.database import Database
 from tests.conftest import SERVER, isolated_database
 
 WEB = SERVER.parent / "web"
+ADMIN_PASSWORD = "Playwright-admin-password-123"
 
 
 @contextmanager
@@ -49,6 +61,70 @@ def ready(url, child, log_path):
     raise RuntimeError(f"UI 测试服务未就绪，请检查 {log_path}")
 
 
+async def seed_admins(database_url: str, public_origin: str) -> list[dict]:
+    settings = Settings(
+        database_url=database_url,
+        environment="test",
+        public_origin=public_origin,
+    )
+    database = Database(settings)
+    security = Security(settings)
+    result = []
+    try:
+        for project in ("desktop", "mobile", "tablet"):
+            setup_email = f"ui-admin-{project}-setup@example.com"
+            setup_link = await create_admin(
+                database, security, settings, setup_email, ADMIN_PASSWORD
+            )
+            entry = {
+                "project": project,
+                "password": ADMIN_PASSWORD,
+                "setup_email": setup_email,
+                "setup_link": setup_link,
+                "active": {},
+            }
+            for role in ("login", "recovery", "password", "layout"):
+                email = f"ui-admin-{project}-{role}@example.com"
+                await create_admin(database, security, settings, email, ADMIN_PASSWORD)
+                secret = pyotp.random_base32(length=32)
+                raw_recovery = secrets.token_hex(10).upper()
+                recovery = "-".join(
+                    raw_recovery[index:index + 5]
+                    for index in range(0, len(raw_recovery), 5)
+                )
+                normalized = normalize_recovery_code(recovery)
+                async with database.transaction() as session:
+                    user = await session.scalar(select(User).where(User.email == email))
+                    await session.execute(
+                        delete(AdminEnrollment).where(AdminEnrollment.user_id == user.id)
+                    )
+                    session.add(
+                        AdminCredential(
+                            user_id=user.id,
+                            totp_secret_ciphertext=security.cipher.encrypt(secret.encode()),
+                            totp_enabled_at=now(),
+                            last_totp_counter=None,
+                        )
+                    )
+                    session.add(
+                        AdminRecoveryCode(
+                            user_id=user.id,
+                            code_hash=security.keyed_digest(
+                                "admin-recovery:" + normalized
+                            ),
+                        )
+                    )
+                entry["active"][role] = {
+                    "email": email,
+                    "secret": secret,
+                    "recovery_code": recovery,
+                }
+            result.append(entry)
+        return result
+    finally:
+        await database.close()
+
+
 def main():
     settings = Settings()
     parsed = make_url(settings.database_url.get_secret_value())
@@ -65,9 +141,27 @@ def main():
         url = stack.enter_context(isolated_database(
             parsed.set(database="postgres").render_as_string(hide_password=False)
         ))
+        public_origin = "http://localhost:4173"
+        payload = asyncio.run(seed_admins(url, public_origin))
+        configured_file = os.environ.get("ITIME_E2E_BOOTSTRAP_FILE")
+        if configured_file:
+            bootstrap_file = Path(configured_file)
+            descriptor = os.open(
+                bootstrap_file,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+        else:
+            descriptor, generated_file = tempfile.mkstemp(
+                prefix="itime-ui-admin-bootstrap-", suffix=".json"
+            )
+            bootstrap_file = Path(generated_file)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(payload, output)
+        stack.callback(bootstrap_file.unlink, missing_ok=True)
         env = {
             **os.environ, "ITIME_ENVIRONMENT": "test", "ITIME_DATABASE_URL": url,
-            "ITIME_PUBLIC_ORIGIN": "http://localhost:4173",
+            "ITIME_PUBLIC_ORIGIN": public_origin,
             "ITIME_API_ORIGIN": f"http://127.0.0.1:{api_port}",
             "ITIME_AUTH_IP_LIMIT": "1000", "ITIME_AUTH_IDENTITY_LIMIT": "100",
             "ITIME_MAIL_COOLDOWN_SECONDS": "1",

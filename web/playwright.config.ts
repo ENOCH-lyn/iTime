@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
+process.env.ITIME_E2E_BOOTSTRAP_FILE ??=
+  `/tmp/itime-ui-admin-bootstrap-${process.pid}.json`
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 45_000,

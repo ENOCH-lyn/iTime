@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Eye, EyeOff } from 'lucide-vue-next'
 
-defineProps<{
+const props = defineProps<{
   id: string
   label: string
   type?: 'text' | 'email' | 'password'
   autocomplete?: string
+  inputmode?: 'text' | 'numeric'
+  maxlength?: number
   hint?: string
   error?: string
   disabled?: boolean
@@ -14,6 +16,10 @@ defineProps<{
 const model = defineModel<string>({ required: true })
 defineEmits<{ blur: [] }>()
 const visible = ref(false)
+const feedbackShown = ref(Boolean(props.hint || props.error))
+watch(() => [props.hint, props.error], values => {
+  if (values.some(Boolean)) feedbackShown.value = true
+})
 </script>
 
 <template>
@@ -21,7 +27,8 @@ const visible = ref(false)
     <label :for="id">{{ label }}</label>
     <div class="input-wrap">
       <input :id="id" v-model="model" :name="id" :type="type === 'password' && visible ? 'text' : (type ?? 'text')"
-        :autocomplete="autocomplete" :disabled="disabled" :aria-invalid="!!error"
+        :autocomplete="autocomplete" :inputmode="inputmode" :maxlength="maxlength" :disabled="disabled"
+        :spellcheck="false" :aria-invalid="!!error"
         :aria-describedby="[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined"
         :class="{ 'password-input': type === 'password' }" @blur="$emit('blur')" />
       <button v-if="type === 'password'" type="button" class="reveal" :aria-label="`${visible ? '隐藏' : '显示'}${label}`"
@@ -29,7 +36,7 @@ const visible = ref(false)
         <EyeOff v-if="visible" :size="18" aria-hidden="true" /><Eye v-else :size="18" aria-hidden="true" />
       </button>
     </div>
-    <p v-if="hint" :id="`${id}-hint`" class="field-hint">{{ hint }}</p>
-    <p v-if="error" :id="`${id}-error`" class="field-error">{{ error }}</p>
+    <p v-if="feedbackShown" :id="error ? `${id}-error` : `${id}-hint`"
+      :class="error ? 'field-error' : 'field-hint'">{{ error || hint || '\u00a0' }}</p>
   </div>
 </template>
