@@ -272,3 +272,17 @@ Web 使用真实生产构建和 Playwright Chromium：
 执行 Ruff、同步专项与受影响服务端测试、服务端全量 pytest、迁移检查、清理 worker、
 `uv build --no-sources`、前端生产构建、同步专项 Playwright 和全量 Chromium。完成本模块不
 代表账号注销、其他对象回收、Edge/真机、备份恢复、完整性能基线或生产部署已完成。
+
+## 13. 实施状态
+
+2026-10-04 已按本设计完成迁移 `0028_sync_feed`、`server/src/itime/sync/`、同步清理 worker、
+会话事件覆盖、两类任务步骤合并端点、Web 加密缓存、全局协调器、离线队列、页面刷新适配器、
+导航状态和 `/account/sync`。真实 PostgreSQL/Uvicorn 专项及受影响组合回归为
+**56 passed in 63.23s**，服务端全量为 **412 passed in 350.88s**；Ruff、Alembic head/漂移
+检查和 `uv build --no-sources` 通过。
+
+Playwright Chromium 同步专项为 **18 passed**，受影响页面组合为 **117 passed in 5.3m**，
+全量为 **207 passed in 10.0m**。双浏览器上下文以 5 秒超时上界验证跨端刷新，并覆盖断网缓存、
+普通与重复任务步骤重放、标题安全保留、终态冲突、游标过期、显式退出清理和三种视口。截图位于
+`/tmp/itime-ui-evidence/*sync-*`，已人工检查桌面、手机、平板、320px 深色最大字号及冲突状态。
+真实 Edge/实体设备、并发性能分位数、长历史容量、备份恢复和生产部署仍待后续阶段验证。

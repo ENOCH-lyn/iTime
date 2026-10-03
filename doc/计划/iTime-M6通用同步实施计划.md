@@ -87,7 +87,7 @@
 - Modify: `server/tests/test_planning_models.py`
 - Test: `server/tests/test_sync_models.py`
 
-- [ ] **Step 1: 写迁移和配置失败测试**
+- [x] **Step 1: 写迁移和配置失败测试**
 
 按现有集成测试模式在本文件定义 `create_account()`，通过公开注册、测试库邮箱验证和登录返回
 `(email, user_id)`。测试内容：
@@ -128,7 +128,7 @@ uv run pytest -q tests/test_sync_models.py tests/test_planning_models.py
 
 Expected: FAIL，`0028_sync_feed` 和 `SyncState` 尚不存在。
 
-- [ ] **Step 2: 新增配置和模型**
+- [x] **Step 2: 新增配置和模型**
 
 `Settings` 增加：
 
@@ -164,7 +164,7 @@ class SyncState(Base):
 
 `.env.example` 增加 `ITIME_SYNC_EVENT_RETENTION_DAYS=30`；无新密钥。
 
-- [ ] **Step 3: 实现迁移和用户触发器**
+- [x] **Step 3: 实现迁移和用户触发器**
 
 迁移必须：
 
@@ -177,7 +177,7 @@ class SyncState(Base):
 `server/src/itime/tasks/models.py` 使用与迁移完全一致的实体类型字符串，修复此前 ORM 未列出
 复盘和记忆类型的漂移。
 
-- [ ] **Step 4: 运行迁移、模型和静态检查**
+- [x] **Step 4: 运行迁移、模型和静态检查**
 
 ```bash
 cd server
@@ -190,7 +190,7 @@ uv run ruff check src/itime/sync src/itime/tasks/models.py tests/test_sync_model
 
 Expected: PASS；head 为 `0028_sync_feed`，无 ORM 漂移。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add .env.example server/src/itime/config.py server/src/itime/sync \
@@ -209,7 +209,7 @@ git commit -m "feat: 建立通用同步事件状态"
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_sync_feed.py`
 
-- [ ] **Step 1: 写游标与真实 HTTP 失败测试**
+- [x] **Step 1: 写游标与真实 HTTP 失败测试**
 
 覆盖：
 
@@ -239,7 +239,7 @@ Run: `cd server && uv run pytest -q tests/test_sync_feed.py`
 
 Expected: FAIL，路由和游标签名尚不存在。
 
-- [ ] **Step 2: 实现不透明游标**
+- [x] **Step 2: 实现不透明游标**
 
 `cursor.py` 固定结构和上限：
 
@@ -264,7 +264,7 @@ def encode_sync_cursor(security: Security, cursor: SyncCursor) -> str:
 解码必须限制长度、字段集合、版本、UUID、非负序号并常量时间校验签名；任何失败统一抛
 `invalid_sync_cursor`，不回显载荷。
 
-- [ ] **Step 3: 实现一致的增量读取**
+- [x] **Step 3: 实现一致的增量读取**
 
 `read_change_page()` 在一个事务中：
 
@@ -288,7 +288,7 @@ latest = await session.scalar(
 
 响应包含 `server_time`、`next_cursor`、`has_more`、`reset_required`、`reset_reason` 和事件数组。
 
-- [ ] **Step 4: 注册路由并验证**
+- [x] **Step 4: 注册路由并验证**
 
 提供：
 
@@ -316,7 +316,7 @@ uv run ruff check src/itime/sync tests/test_sync_feed.py
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/sync server/src/itime/main.py \
@@ -331,7 +331,7 @@ git commit -m "feat: 提供本人增量同步游标"
 - Modify: `server/src/itime/sync/service.py`
 - Test: `server/tests/test_sync_feed.py`
 
-- [ ] **Step 1: 写清理并发失败测试**
+- [x] **Step 1: 写清理并发失败测试**
 
 覆盖单批 1000 上限、未到期保留、两账号独立 floor、重复清理幂等、双 worker 不重复，以及读取
 事务与清理事务竞争：
@@ -349,7 +349,7 @@ Run: `cd server && uv run pytest -q tests/test_sync_feed.py -k cleanup`
 
 Expected: FAIL，清理函数尚不存在。
 
-- [ ] **Step 2: 实现有界清理**
+- [x] **Step 2: 实现有界清理**
 
 `cleanup_expired_events()`：
 
@@ -361,7 +361,7 @@ Expected: FAIL，清理函数尚不存在。
 
 不得按一个全局最小序号推进所有账号，也不得删除未选入本批的事件。
 
-- [ ] **Step 3: 实现独立 worker**
+- [x] **Step 3: 实现独立 worker**
 
 ```python
 async def run(*, once: bool = False) -> None:
@@ -383,7 +383,7 @@ async def run(*, once: bool = False) -> None:
 
 未知异常仅记录类型；`--once` 返回非零并给出不含正文的稳定错误。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
@@ -401,7 +401,7 @@ git commit -m "feat: 清理到期同步事件"
 - Modify: `server/src/itime/ai/conversation_service.py`
 - Test: `server/tests/test_sync_event_coverage.py`
 
-- [ ] **Step 1: 写会话事件失败测试**
+- [x] **Step 1: 写会话事件失败测试**
 
 真实 HTTP/worker 覆盖：
 
@@ -416,7 +416,7 @@ Run: `cd server && uv run pytest -q tests/test_sync_event_coverage.py`
 
 Expected: FAIL，会话目前不发通用事件。
 
-- [ ] **Step 2: 在现有事务中发聚合事件**
+- [x] **Step 2: 在现有事务中发聚合事件**
 
 每个 `conversation.version += 1` 的业务提交点紧邻调用：
 
@@ -434,7 +434,7 @@ emit_change(
 创建使用 `created`；归档/恢复使用 `archived/unarchived`；消息接单和终态使用 `updated`。重试中间态
 不增会话版本也不发事件，避免轮询风暴。
 
-- [ ] **Step 3: 审计既有领域覆盖**
+- [x] **Step 3: 审计既有领域覆盖**
 
 测试查询迁移约束允许的类型，并为以下代表操作逐项断言事件：
 
@@ -448,7 +448,7 @@ memory / memory_settings / privacy_settings / conversation
 
 只检查真实业务提交产生事件，不为内部作业或导出状态伪造业务事件。
 
-- [ ] **Step 4: 回归并提交**
+- [x] **Step 4: 回归并提交**
 
 ```bash
 cd server
@@ -470,7 +470,7 @@ git commit -m "feat: 同步普通会话变更"
 - Modify: `server/src/itime/tasks/progress_service.py`
 - Test: `server/tests/test_sync_task_completion.py`
 
-- [ ] **Step 1: 写普通和重复步骤失败测试**
+- [x] **Step 1: 写普通和重复步骤失败测试**
 
 输入：
 
@@ -501,7 +501,7 @@ Run: `cd server && uv run pytest -q tests/test_sync_task_completion.py`
 
 Expected: FAIL，专用同步端点尚不存在。
 
-- [ ] **Step 2: 实现普通步骤合并**
+- [x] **Step 2: 实现普通步骤合并**
 
 `merge_template_step_completion()` 锁定任务和步骤，复用活动任务及重复规则检查：
 
@@ -519,13 +519,13 @@ else:
 
 即使任务其他字段版本变化，也不从请求写回标题、顺序、日期或任务终态。
 
-- [ ] **Step 3: 实现 occurrence 步骤合并**
+- [x] **Step 3: 实现 occurrence 步骤合并**
 
 在 `tasks/progress_service.py` 增加只切换一个步骤的函数。它必须复用 occurrence 解析与步骤所有权
 校验，在状态缺失时创建 `open` 投影，在状态存在时锁行并只增删目标步骤 ID。返回当前
 occurrence、任务版本和 `applied/rebased/converged`。
 
-- [ ] **Step 4: 注册 API、验证并提交**
+- [x] **Step 4: 注册 API、验证并提交**
 
 ```bash
 cd server
@@ -545,7 +545,7 @@ git commit -m "feat: 安全同步离线步骤进度"
 - Modify: `web/src/lib/auth.ts`
 - Test: `web/e2e/sync.spec.ts`
 
-- [ ] **Step 1: 写缓存失败 E2E**
+- [x] **Step 1: 写缓存失败 E2E**
 
 流程：
 
@@ -565,7 +565,7 @@ pnpm exec playwright test e2e/sync.spec.ts --grep "offline cache"
 
 Expected: FAIL，IndexedDB 缓存尚不存在。
 
-- [ ] **Step 2: 实现缓存存储**
+- [x] **Step 2: 实现缓存存储**
 
 `data-cache.ts` 暴露：
 
@@ -598,7 +598,7 @@ export async function pruneAccountCache(accountId: string): Promise<void>
 单项 JSON 最多 2 MiB，每账号最多 20 MiB/200 项/7 天。路径白名单只允许用户业务 GET，
 明确排除 `/auth`、`/admin`、`/sync`、下载和 SSE。
 
-- [ ] **Step 3: 接入 API 和身份边界**
+- [x] **Step 3: 接入 API 和身份边界**
 
 `api.ts`：
 
@@ -610,7 +610,7 @@ export async function pruneAccountCache(accountId: string): Promise<void>
 `auth.ts` 在 `acceptSession()` 异步设置账号和会话密钥；账号变化或密钥重新建立时先清理不可读
 旧数据。显式清理函数在后续退出流程调用；普通网络错误不清空当前账号缓存。
 
-- [ ] **Step 4: 构建、运行 E2E 并提交**
+- [x] **Step 4: 构建、运行 E2E 并提交**
 
 ```bash
 cd web
@@ -634,7 +634,7 @@ git commit -m "feat: 缓存本人最近同步数据"
 - Modify: `web/src/style.css`
 - Test: `web/e2e/sync.spec.ts`
 
-- [ ] **Step 1: 写状态和游标失败 E2E**
+- [x] **Step 1: 写状态和游标失败 E2E**
 
 覆盖初始化、两秒轮询、成功写后立即拉取、跨标签广播、隐藏页暂停、重新可见追赶、网络退避、
 损坏游标重建和认证失效停止。断言 `/account/sync` 与主导航图标显示真实状态、时间和请求编号。
@@ -648,7 +648,7 @@ pnpm exec playwright test e2e/sync.spec.ts --grep "sync coordinator"
 
 Expected: FAIL，协调器和页面尚不存在。
 
-- [ ] **Step 2: 实现同步客户端**
+- [x] **Step 2: 实现同步客户端**
 
 `sync.ts` 固定类型：
 
@@ -671,7 +671,7 @@ export interface SyncEvent {
 `sessionStorage["itime-sync-cursor:<account>"]`；每轮最多排空 1000 事件；批量派发
 `itime:sync-events`。写请求成功通过 `api.ts` 注册的 observer 立即触发并广播。
 
-- [ ] **Step 3: 实现状态入口和设置页**
+- [x] **Step 3: 实现状态入口和设置页**
 
 `SyncStatusIndicator.vue` 使用 `CloudCheck / RefreshCw / CloudOff / TriangleAlert`，固定 44px，
 状态数量用徽标；链接 `/account/sync`。
@@ -681,7 +681,7 @@ export interface SyncEvent {
 
 路由正则和账号 section 增加 `sync`；账号概览增加“同步与离线”入口。
 
-- [ ] **Step 4: 构建、验证并提交**
+- [x] **Step 4: 构建、验证并提交**
 
 ```bash
 cd web
@@ -714,7 +714,7 @@ git commit -m "feat: 展示全局同步状态"
 - Modify: `web/src/components/SyncSettings.vue`
 - Test: `web/e2e/sync.spec.ts`
 
-- [ ] **Step 1: 写双会话和离线队列失败 E2E**
+- [x] **Step 1: 写双会话和离线队列失败 E2E**
 
 真实两个浏览器 context 登录同一账号：
 
@@ -735,7 +735,7 @@ pnpm exec playwright test e2e/sync.spec.ts --grep "cross-device|offline queue"
 
 Expected: FAIL，页面适配器和任务队列尚不存在。
 
-- [ ] **Step 2: 实现类型化任务队列**
+- [x] **Step 2: 实现类型化任务队列**
 
 `sync-queue.ts` 使用判别联合：
 
@@ -770,7 +770,7 @@ export type QueuedTaskOperation =
 严格校验 UUID、key、布尔值、未来时钟偏移、7 天和 100 项；按账号一个 key。重放只调用两个
 固定客户端函数，不能从存储读取 URL、method 或任意 body。
 
-- [ ] **Step 3: 接入任务和实例勾选**
+- [x] **Step 3: 接入任务和实例勾选**
 
 在线先调用专用端点；网络错误或超时把完全相同操作加入队列并更新本地投影。离线直接入队。
 恢复后顺序重放：
@@ -782,7 +782,7 @@ export type QueuedTaskOperation =
 
 任务完成、标题/正文、步骤增删改名、实例完成/跳过和新建对象仍要求联网。
 
-- [ ] **Step 4: 接入页面事件刷新**
+- [x] **Step 4: 接入页面事件刷新**
 
 `use-sync-refresh.ts`：
 
@@ -796,7 +796,7 @@ export function useSyncRefresh(
 按设计表接入七个主工作区。任务编辑器 `dirty=true`、日历对话框打开、计划草稿修改或复盘补充
 事实未提交时，只刷新安全列表并显示“其他设备有更新”；不得重置本地表单。
 
-- [ ] **Step 5: 清理账号本地数据**
+- [x] **Step 5: 清理账号本地数据**
 
 `focus-queue.ts` 和 `sync-queue.ts` 增加账号总数与清理函数。所有普通用户显式退出入口：
 
@@ -805,7 +805,7 @@ export function useSyncRefresh(
 3. 服务端退出成功后清理当前账号任务/专注队列、IndexedDB 缓存和游标。
 4. 会话意外失效只停止读取；新账号登录时不能加载旧账号 namespace。
 
-- [ ] **Step 6: 构建、验证并提交**
+- [x] **Step 6: 构建、验证并提交**
 
 ```bash
 cd web
@@ -823,7 +823,7 @@ git commit -m "feat: 同步多端页面与离线步骤"
 - Modify: `server/tests/web_environment.py`
 - Modify: `web/e2e/sync.spec.ts`
 
-- [ ] **Step 1: 接入同步清理 worker**
+- [x] **Step 1: 接入同步清理 worker**
 
 隔离 Web 环境由 `ExitStack` 启动：
 
@@ -839,14 +839,14 @@ sync_cleanup_process = stack.enter_context(
 
 把它加入存活检查；结束时由现有上下文终止，不遗留进程或随机数据库。
 
-- [ ] **Step 2: 补游标过期与本地清理场景**
+- [x] **Step 2: 补游标过期与本地清理场景**
 
 测试环境提供仅挂在 `tests.support_app` 的受控接口，把当前账号旧事件改为超过保留期并执行一次
 清理。浏览器断网保留任务队列，恢复后收到 `cursor_expired`，先刷新当前任务再重放；断言标题不
 回退、步骤目标生效。显式退出有 pending 时取消一次、确认一次，确认后 IndexedDB、任务队列、
 专注队列和 session cursor 均无该账号数据。
 
-- [ ] **Step 3: 完成多视口和人工截图**
+- [x] **Step 3: 完成多视口和人工截图**
 
 每个 desktop/mobile/tablet 项目检查：
 
@@ -864,7 +864,7 @@ sync_cleanup_process = stack.enter_context(
 
 使用图像查看工具逐张确认内容非空、状态可辨、长时间/请求编号/操作按钮不重叠。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add server/tests/web_environment.py web/e2e/sync.spec.ts
@@ -886,7 +886,7 @@ git commit -m "test: 验证通用同步真实链路"
 - Modify: `doc/验收/iTime-产品验收清单.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 执行服务端专项与全量门禁**
+- [x] **Step 1: 执行服务端专项与全量门禁**
 
 ```bash
 cd server
@@ -906,7 +906,7 @@ uv build --no-sources
 
 Expected: 全部通过；迁移 head 为 `0028_sync_feed`，测试库最终清理为 0。
 
-- [ ] **Step 2: 执行 Web 专项与全量门禁**
+- [x] **Step 2: 执行 Web 专项与全量门禁**
 
 ```bash
 cd web
@@ -920,7 +920,7 @@ pnpm test:e2e
 
 Expected: 全部 Chromium projects 通过。
 
-- [ ] **Step 3: 核对约 5 秒目标与运行状态**
+- [x] **Step 3: 核对约 5 秒目标与运行状态**
 
 真实双浏览器 context 记录业务提交完成到另一端 UI 出现结果的耗时，三个视口均小于等于 5 秒。
 重启开发 API 和同步清理 worker 后验证：
@@ -935,7 +935,7 @@ docker --context colima-itime compose --env-file .env.local exec -T postgres \
   "SELECT count(*) FROM pg_database WHERE datname LIKE 'itime_test_%';"
 ```
 
-- [ ] **Step 4: 同步实际实现和证据**
+- [x] **Step 4: 同步实际实现和证据**
 
 - README 增加同步清理 worker 与 `/account/sync`。
 - 追踪矩阵更新 `REQ-SYNC-01`，不得把离线新建、冷启动、Edge/真机或 M8 性能扩写为完成。
@@ -945,7 +945,7 @@ docker --context colima-itime compose --env-file .env.local exec -T postgres \
 - 账号注销、其他对象回收、困难语音、公开链接、正式模型质量、备份恢复和生产部署继续明确为
   未完成。
 
-- [ ] **Step 5: 检查暂存范围并提交证据**
+- [x] **Step 5: 检查暂存范围并提交证据**
 
 ```bash
 git diff --check
@@ -965,3 +965,37 @@ git add README.md doc/README.md designer.md \
   doc/验收/iTime-产品验收清单.md doc/验收/iTime-Web实施与验证.md
 git commit -m "docs: 记录通用同步实施证据"
 ```
+
+## 执行结果
+
+2026-10-04 已按本计划完成实现与验证：
+
+- `1849982`：同步状态、用户触发器、事件约束和迁移 `0028_sync_feed`。
+- `ba19707`：账号绑定 HMAC 游标、增量变更与状态 API。
+- `46ee5b6`：有界事件清理及独立 worker。
+- `0bbeb8f`：普通会话创建、更新、消息和终态聚合事件。
+- `3d7053a`：普通与重复任务步骤安全合并端点。
+- `6f696ba`：当前已认证会话的 AES-GCM IndexedDB 读取缓存。
+- `b19d12f`：全局同步协调器、导航状态和 `/account/sync`。
+- `0c64b11`：主页面刷新适配器、任务步骤队列及账号本地清理。
+- `b2c7946`：双上下文、断网、游标恢复、冲突与多视口真实 E2E。
+- `81ac753`、`5905702`、`53e5ca4`、`191e3f2`：测试数据隔离、本地事件去重、
+  异步刷新失败收敛和统计趋势键盘滚动修复。
+
+实际质量门禁：
+
+| 验证 | 结果 |
+| --- | --- |
+| 同步专项及受影响服务端组合回归 | **56 passed in 63.23s** |
+| `uv run pytest -q` | **412 passed in 350.88s** |
+| Ruff、Alembic head/漂移检查、清理 worker `--once`、`uv build --no-sources` | 通过；head 为 `0028_sync_feed` |
+| `pnpm build` | 通过 |
+| `pnpm exec playwright test e2e/sync.spec.ts` | **18 passed** |
+| 受影响 Chromium 组合回归 | **117 passed in 5.3m** |
+| `pnpm test:e2e` | **207 passed in 10.0m** |
+| 开发 API、OpenAPI、同步 worker、`/account/sync` 与测试库清理 | ready/page 200，同步路由已加载，worker 运行，测试库残留 0 |
+
+真实双浏览器上下文使用 5 秒断言上界验证跨端可见；专项还覆盖缓存密文、HTTP 失败、断网重放、
+普通/重复步骤、字段安全合并、终态冲突、游标过期和退出清理。桌面、手机、平板、320px 深色
+最大字号和冲突截图位于 `/tmp/itime-ui-evidence/*sync-*`，已人工检查。账号注销、其他对象回收、
+困难语音、公开链接、正式模型质量、M8 性能分位数、Edge/真机、备份恢复和生产部署仍未完成。

@@ -1013,7 +1013,7 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 
 浏览器流程覆盖自由/任务专注、步骤与任务完成分离、刷新恢复、补记修订、离线顺序重放、未知响应幂等恢复、开放与终态冲突、账号隔离、100 项/7 天队列边界、困难增删改恢复、任务/计划块入口和 AI 草稿。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-focus-*.png` 及 `desktop-focus-320-large-dark.png`，人工检查未见重叠、裁切、空白画面或动态布局跳动。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆、个人统计和本人数据导出后续分别由 M6-C、M6-D、M6-E 实现；通用跨业务同步、困难语音、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆、个人统计、本人数据导出和通用同步后续分别由 M6-C、M6-D、M6-E、M6-F 实现；困难语音、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
 
 ## M6-C：单日复盘与确认式长期记忆
 
@@ -1046,7 +1046,7 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 浏览器流程覆盖补充事实、短追问、跳过、离页恢复、报告重生成与版本切换、批注、候选确认/拒绝、记忆启停/增改删/恢复、删除后退出检索、普通对话与规划实际收到的记忆上下文，以及取消后恢复可操作状态。每个视口检查 axe、控制台、框架错误层和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-review-desktop-report.png` 与 `mobile-review-320-large-dark.png`，人工检查未见重叠、裁切或空白画面。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计和本人数据导出后续分别由 M6-D、M6-E 实现；通用跨业务同步、困难语音、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计、本人数据导出和通用同步后续分别由 M6-D、M6-E、M6-F 实现；困难语音、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
 
 ## M6-D：个人日周月统计
 
@@ -1079,7 +1079,7 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 统计浏览器流程使用随机 PostgreSQL、真实 API 和生产构建预览，创建真实任务、当前计划版本、任务完成、人工补记及放弃专注后核对响应和页面。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-statistics-populated.png` 与 `/tmp/itime-ui-evidence/mobile-statistics-320-large-dark.png`，已人工检查，无重叠、裁切、空白画面或根级横向溢出。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。本人数据导出后续已由 M6-E 实现；完成本模块不代表通用跨业务同步、困难语音、注销、后台运营指标、长历史性能、真实 Edge/实体设备、正式第三方模型质量或生产部署已完成。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。本人数据导出和通用同步后续分别由 M6-E、M6-F 实现；完成本模块不代表困难语音、注销、后台运营指标、长历史性能、真实 Edge/实体设备、正式第三方模型质量或生产部署已完成。
 
 ## M6-E：本人完整数据导出
 
@@ -1114,4 +1114,68 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 收口时已重启开发 API 并启动 `itime.data_export.worker`；`GET /api/ready` 返回 200，OpenAPI 包含创建/列表、详情和下载路径，`http://localhost:5173/account/data` 返回 200，`itime_test_%` 测试数据库残留为 0。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本模块不代表通用跨业务同步、账号注销、其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥轮换、备份恢复或部署已经完成。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。通用同步随后已由 M6-F 实现；完成本模块不代表账号注销、其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥轮换、备份恢复或部署已经完成。
+
+## M6-F：通用同步与有界离线恢复
+
+对应 Git 提交：`f2795b3`、`97061e2`、`1849982`、`ba19707`、`46ee5b6`、`0bbeb8f`、
+`3d7053a`、`6f696ba`、`b19d12f`、`0c64b11`、`b2c7946`、`81ac753`、`5905702`、
+`53e5ca4`、`191e3f2`。实际代码为迁移 `0028_sync_feed`、`server/src/itime/sync/`、会话事件
+接入、任务步骤合并端点、`web/src/lib/{data-cache,sync,sync-queue,use-sync-refresh}.ts`、
+全局状态入口、`/account/sync`、各主页面刷新适配器及 `web/e2e/sync.spec.ts`；合同见
+[通用同步设计](../设计/iTime-通用同步设计.md)。
+
+已实现：
+
+- 每个账号拥有独立同步状态和 HMAC 签名游标；初始、正常、多页、空页、损坏、跨账号、过期及
+  数据库恢复后超前游标均有明确结果。变更事件只含类型、对象 ID、动作、版本和服务端时间，
+  不含任务、消息、报告、记忆、URL 或凭据正文。
+- 独立清理 worker 默认保留事件 30 天，每批限 1000 条；拉取使用账号状态行共享锁，清理使用
+  排他锁并按账号排序，保证读取者得到完整旧页或明确重建。清理不删除业务对象、幂等结果或墓碑。
+- 普通会话的创建、改名/归档、消息接单和成功/失败/取消终态均发聚合事件；既有任务、日历、
+  计划、执行、困难、复盘、记忆及设置事件继续沿用原事务。
+- 普通任务步骤和重复实例步骤使用专用端点安全收敛独立布尔值。其他字段变化可在当前版本重放，
+  但步骤删除、任务归档/回收、重复模板变化和实例终态返回冲突，不以最后写入覆盖。
+- Web 可见页默认每 2 秒拉取，成功写、联网、聚焦和跨标签广播会立即触发；每个标签保存自己的
+  账号游标。相关页面自动刷新未编辑区域，本标签刚完成的写入不会反向打断当前操作。
+- 当前已认证 SPA 会话把最近成功 GET 结果以临时内存密钥 AES-GCM 加密后写入 IndexedDB；
+  仅真实离线时回退，HTTP 失败不被旧缓存掩盖。刷新后旧密钥不可恢复，登录、切账号和显式退出
+  都清理旧账号数据。
+- 普通/重复任务步骤和已有专注操作分别使用固定 schema 的账号级队列，各最多 100 项、最长
+  7 天；网络未知结果保留原操作 ID，恢复后顺序重放。冲突保留当前及后续项，用户可查看对象或
+  明确丢弃，不会静默丢失。
+- `/account/sync` 与产品导航图标展示在线、同步中、已同步、待传、冲突和失败状态，显示最后
+  成功时间、最近服务端变化、缓存回退、待传数及请求编号；无待传内容时不展示危险清理动作。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn、同步清理 worker、生产构建预览和
+Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 同步专项及受影响服务端组合回归 | **56 passed in 63.23s** | 迁移/回退、ORM、游标、隔离、清理竞争、会话事件、普通/重复步骤合并及相邻领域回归 |
+| `cd server && uv run pytest -q` | **412 passed in 350.88s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic upgrade head && uv run alembic current && uv run alembic check` | `0028_sync_feed (head)`，无模型漂移 | 开发库迁移与 ORM 一致性 |
+| `cd server && uv run python -m itime.sync.cleanup_worker --once` | 通过 | 独立同步事件清理进程受控执行 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/sync.spec.ts` | **18 passed** | 六条真实同步流程 × 电脑、手机、平板 |
+| 账号、任务、日历、规划、专注、复盘、统计及同步受影响 Chromium 回归 | **117 passed in 5.3m** | 同步接入页面和相邻流程 |
+| `cd web && pnpm test:e2e` | **207 passed in 10.0m** | 全部用户端、后台和公开页面 Chromium 全量回归 |
+
+浏览器流程使用两个真实 browser context 登录同一账号，以 5 秒断言上界核对跨端任务出现；
+离线连续勾选后恢复网络，核对服务器最终状态、其他字段未回退及队列归零。另覆盖加密缓存不含
+明文、HTTP 500 不回退缓存、损坏/过期游标重建、普通与重复步骤、终态冲突保留、显式退出取消
+与确认清理、键盘、粗指针、减少动效、axe、控制台和根级横向溢出。截图位于
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-sync-status.png`、
+`/tmp/itime-ui-evidence/mobile-sync-status-320-large-dark.png` 和
+`/tmp/itime-ui-evidence/desktop-sync-conflict.png`，已人工检查，无重叠、裁切、空白画面或
+状态歧义。
+
+收口时已重启开发 API 并启动 `itime.sync.cleanup_worker`；`GET /api/ready` 返回 200，
+OpenAPI 包含同步变更、状态和两类步骤端点，`http://localhost:5173/account/sync` 返回 200，
+未认证同步状态请求返回 401，`itime_test_%` 测试数据库残留为 0。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本
+模块不代表账号注销、其他对象回收、困难语音、公开链接、其他业务对象提案、正式模型质量、
+M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
