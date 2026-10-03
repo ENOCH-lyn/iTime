@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import delete, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import now
 from itime.config import Settings
@@ -38,6 +39,71 @@ def decrypt_export_artifact(settings: Settings, ciphertext: bytes) -> bytes:
             status=503,
             retryable=True,
         ) from exc
+
+
+def effective_export_status(
+    job: DataExportJob,
+    *,
+    current_time=None,
+) -> str:
+    current = current_time or now()
+    if (
+        job.status == "succeeded"
+        and job.expires_at is not None
+        and job.expires_at <= current
+    ):
+        return "expired"
+    return job.status
+
+
+def export_job_result(
+    job: DataExportJob,
+    *,
+    current_time=None,
+) -> dict:
+    status = effective_export_status(job, current_time=current_time)
+    return {
+        "id": job.id,
+        "status": status,
+        "schema_version": job.schema_version,
+        "attempt_count": job.attempt_count,
+        "snapshot_at": job.snapshot_at,
+        "filename": job.filename,
+        "byte_size": job.artifact_byte_size,
+        "sha256": job.artifact_sha256,
+        "expires_at": job.expires_at,
+        "error": (
+            {"code": job.error_code, "message": job.error_message}
+            if job.error_code is not None
+            else None
+        ),
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "finished_at": job.finished_at,
+    }
+
+
+async def require_export_job(
+    session: AsyncSession,
+    owner_id: UUID,
+    job_id: UUID,
+    *,
+    lock: bool = False,
+) -> DataExportJob:
+    statement = select(DataExportJob).where(
+        DataExportJob.id == job_id,
+        DataExportJob.owner_id == owner_id,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    job = await session.scalar(statement)
+    if job is None:
+        raise AppError(
+            "data_export_not_found",
+            "未找到此数据导出。",
+            status=404,
+        )
+    return job
 
 
 async def claim_next_export(

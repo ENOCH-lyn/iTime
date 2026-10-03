@@ -48,19 +48,24 @@ class RequestEnvelope:
             if message["type"] == "http.response.start":
                 started = True
                 status = message["status"]
+                has_cache_control = any(
+                    key.lower() == b"cache-control"
+                    for key, _ in message.get("headers", [])
+                )
                 headers = [
                     (k, v)
                     for k, v in message.get("headers", [])
-                    if k.lower() not in {b"x-request-id", b"cache-control"}
+                    if k.lower() != b"x-request-id"
                 ]
                 headers.extend(
                     [
                         (b"x-request-id", request_id.encode()),
-                        (b"cache-control", b"no-store"),
                         (b"x-content-type-options", b"nosniff"),
                         (b"referrer-policy", b"no-referrer"),
                     ]
                 )
+                if not has_cache_control:
+                    headers.append((b"cache-control", b"no-store"))
                 message["headers"] = headers
             await send(message)
 

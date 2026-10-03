@@ -25,6 +25,7 @@ from itime.calendar.router import router as calendar_router
 from itime.calendar.screenshot_router import router as calendar_screenshot_router
 from itime.calendar.subscription_router import router as calendar_subscription_router
 from itime.config import Settings, get_settings
+from itime.data_export.router import router as data_export_router
 from itime.database import Database
 from itime.errors import AppError, install_handlers
 from itime.execution.router import router as execution_router
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(execution_router)
     app.include_router(review_router)
     app.include_router(statistics_router)
+    app.include_router(data_export_router)
 
     @app.get("/api/health", tags=["运行状态"])
     async def health() -> dict:
