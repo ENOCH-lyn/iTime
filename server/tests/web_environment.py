@@ -120,6 +120,18 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                     self.wfile.write(f"data: {payload}\n\n".encode())
                     self.wfile.flush()
                     time.sleep(pause)
+                usage = json.dumps(
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 100,
+                            "completion_tokens": 20,
+                            "total_tokens": 120,
+                            "prompt_tokens_details": {"cached_tokens": 10},
+                        },
+                    }
+                )
+                self.wfile.write(f"data: {usage}\n\n".encode())
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except OSError:
@@ -145,9 +157,14 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 ensure_ascii=False,
             )
         )
-        encoded = json.dumps(
-            {"choices": [{"message": {"content": content}}]}
-        ).encode()
+        encoded = json.dumps({
+            "choices": [{"message": {"content": content}}],
+            "usage": {
+                "prompt_tokens": 400,
+                "completion_tokens": 120,
+                "total_tokens": 520,
+            },
+        }).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
@@ -394,6 +411,10 @@ async def seed_admins(
                     ),
                     timeout_seconds=10,
                     max_output_tokens=4096,
+                    price_currency="CNY",
+                    input_price_nanos_per_million_tokens=1_000_000_000,
+                    cached_input_price_nanos_per_million_tokens=500_000_000,
+                    output_price_nanos_per_million_tokens=2_000_000_000,
                     status="published",
                     last_test_id=uuid4(),
                     last_test_started_at=current,

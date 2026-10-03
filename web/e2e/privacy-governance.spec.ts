@@ -184,6 +184,20 @@ test('管理员显式读取 AI 正文、提交质检并回查审计', async ({
 
   const data = await bootstrap(info)
   await loginAdmin(page, data.active.governance!, data.password)
+  await page.goto('/admin/costs')
+  await expect(page).toHaveTitle('供应商成本 · iTime 管理后台')
+  await page.getByLabel('用户邮箱', { exact: true }).fill(address)
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  const costRow = page.getByRole('list', { name: 'AI 供应商成本' })
+    .getByRole('listitem').filter({ hasText: address })
+  await expect(costRow).toContainText('供应商上报')
+  await expect(costRow).toContainText('CNY 0.000135')
+  await expect(costRow).toContainText(
+    /输入 100\s*（缓存 10）\s*· 输出 20 Token/,
+  )
+  await expect(page.locator('body')).not.toContainText(prompt)
+  await screenshot(page, info, 'provider-costs')
+
   await page.goto('/admin/logs')
   await expect(page).toHaveTitle('AI 日志 · iTime 管理后台')
   await page.getByLabel('用户邮箱', { exact: true }).fill(address)

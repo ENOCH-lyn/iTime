@@ -23,6 +23,10 @@ def parse_price_per_million(value: str) -> int:
 
 
 def format_price_per_million(nanos: int) -> str:
+    return format_currency_nanos(nanos)
+
+
+def format_currency_nanos(nanos: int) -> str:
     amount = Decimal(nanos) / NANOS_PER_CURRENCY_UNIT
     return format(amount, "f").rstrip("0").rstrip(".") or "0"
 

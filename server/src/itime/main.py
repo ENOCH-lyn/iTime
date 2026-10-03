@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from itime import __version__
 from itime.admin.management import router as admin_management_router
 from itime.admin.router import router as admin_auth_router
+from itime.ai.admin_cost_router import router as admin_ai_cost_router
 from itime.ai.admin_governance_router import router as admin_ai_governance_router
 from itime.ai.admin_router import router as admin_ai_config_router
 from itime.ai.conversation_router import router as ai_conversation_router
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_auth_router)
     app.include_router(admin_management_router)
     app.include_router(admin_ai_config_router)
+    app.include_router(admin_ai_cost_router)
     app.include_router(admin_ai_governance_router)
     app.include_router(ai_conversation_router)
     app.include_router(ai_job_router)
