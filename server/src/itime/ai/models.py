@@ -247,6 +247,10 @@ class AIJob(Base):
             "status IN ('queued', 'running', 'succeeded', 'failed', 'timed_out', 'cancelled')",
             name="status",
         ),
+        CheckConstraint(
+            "quota_mode IN ('platform', 'user')",
+            name="quota_mode",
+        ),
         CheckConstraint("jsonb_typeof(input_summary) = 'object'", name="input_summary"),
         CheckConstraint(
             "output IS NULL OR jsonb_typeof(output) = 'object'",
@@ -333,6 +337,11 @@ class AIJob(Base):
     config_version_id: Mapped[UUID]
     input_media_id: Mapped[UUID | None]
     conversation_id: Mapped[UUID | None]
+    quota_mode: Mapped[str] = mapped_column(
+        String(16),
+        default="platform",
+        server_default="platform",
+    )
     status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued")
     input_summary: Mapped[dict] = mapped_column(JSONB)
     output: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
@@ -485,6 +494,11 @@ class AIProviderCost(Base):
             "attempt_number",
             name="uq_ai_provider_costs_job_attempt",
         ),
+        UniqueConstraint(
+            "id",
+            "job_id",
+            name="uq_ai_provider_costs_id_job",
+        ),
         Index(
             "ix_ai_provider_costs_owner_created",
             "owner_id",
@@ -495,6 +509,12 @@ class AIProviderCost(Base):
             "ix_ai_provider_costs_created",
             "created_at",
             "id",
+        ),
+        Index(
+            "uq_ai_provider_costs_succeeded_job",
+            "job_id",
+            unique=True,
+            postgresql_where=text("attempt_status = 'succeeded'"),
         ),
     )
 
