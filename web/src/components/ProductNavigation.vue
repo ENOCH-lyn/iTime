@@ -10,6 +10,7 @@ import {
   Settings,
   TimerReset,
 } from 'lucide-vue-next'
+import SyncStatusIndicator from './SyncStatusIndicator.vue'
 
 const props = defineProps<{
   current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'focus' | 'reviews' | 'stats' | 'settings'
@@ -65,5 +66,6 @@ watch(() => props.current, revealCurrent)
       <component :is="link.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
       <span class="product-label">{{ link.label }}</span>
     </RouterLink>
+    <SyncStatusIndicator />
   </nav>
 </template>

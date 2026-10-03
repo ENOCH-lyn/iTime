@@ -125,3 +125,37 @@ test('offline cache is encrypted and never hides an HTTP failure', async ({
   await page.getByRole('button', { name: '已归档', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('同步测试服务错误')
 })
+
+test('sync coordinator reports events offline state and cursor recovery', async ({
+  page,
+  request,
+  context,
+}) => {
+  const session = await account(page, request)
+  await page.goto('/account/sync')
+  await expect(page.getByRole('heading', { name: '同步与离线' })).toBeVisible()
+  await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+
+  const marker = `协调器任务 ${randomUUID()}`
+  await createTask(page, session.csrf_token, marker)
+  await expect.poll(async () => (
+    page.getByTestId('sync-latest-change').textContent()
+  ), { timeout: 5_000 }).not.toBe('暂无变更')
+
+  await page.goto('/tasks')
+  await expect(page.getByLabel(/同步状态：已同步/)).toBeVisible()
+  await context.setOffline(true)
+  await expect(page.getByText('当前离线。显示最近同步的数据。')).toBeVisible()
+  await expect(page.getByLabel(/同步状态：离线/)).toBeVisible()
+  await context.setOffline(false)
+  await page.getByLabel(/同步状态：/).click()
+  await expect(page).toHaveURL('/account/sync')
+  await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+
+  await page.evaluate(userId => {
+    sessionStorage.setItem(`itime-sync-cursor:${userId}`, 'invalid.cursor')
+  }, session.user.id)
+  await page.reload()
+  await expect(page.getByText('同步基线已重新建立。')).toBeVisible()
+  await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+})

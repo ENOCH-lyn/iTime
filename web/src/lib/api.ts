@@ -22,8 +22,13 @@ export class ApiError extends Error {
 
 let csrf = ''
 let adminCsrf = ''
+const mutationObservers = new Set<(path: string, method: string) => void>()
 export function setCsrf(value: string) { csrf = value }
 export function setAdminCsrf(value: string) { adminCsrf = value }
+export function observeMutations(observer: (path: string, method: string) => void) {
+  mutationObservers.add(observer)
+  return () => mutationObservers.delete(observer)
+}
 
 // Credentials stay in HttpOnly cookies; CSRF and account data stay in memory.
 export async function api<T>(
@@ -59,6 +64,9 @@ export async function api<T>(
     }
     if (result === null) throw new Error('invalid_response')
     if (method === 'GET') void putCachedResponse(path, result)
+    else {
+      for (const observer of mutationObservers) observer(path, method)
+    }
     return result as T
   } catch (error) {
     if (error instanceof ApiError) throw error
