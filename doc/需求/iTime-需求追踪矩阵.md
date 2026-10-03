@@ -71,7 +71,7 @@
 | REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`server/src/itime/ai/`、迁移 `0011`—`0015`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue` 与 `CalendarSubscriptionManager.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停恢复、字段覆盖、差异与统一日历投影 Web 流程 | 已完成首版可达流程；真实第三方私密订阅源兼容性仍需部署前联调 |
 | REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`server/src/itime/ai/conversation_*.py`、通用 worker/SSE 路由及 `web/src/pages/AIPage.vue` 已实现多普通会话、相关历史快照、消息持久化、文本流、租约续期、重试 reset、取消、离页/断线恢复和三视口 UI；服务端 202 项全量回归通过 | 业务提案、用户额度结算、备用服务路由及正式模型质量评测仍待后续模块 |
 | REQ-PRIV-01 / REQ-PRIV-02 | 迁移 `0018_ai_governance`、逐尝试正文日志、成功终态采样、用户隐私设置、独立 7/30 天清理进程及用户/后台页面已实现；专项覆盖关闭与终态竞态、重试/取消/超时、截图 base64 排除、双清理、显式正文访问和访问审计 | 账号注销优先清理及未来单项彻底删除的跨聚合规则随对应数据模块完成 |
-| REQ-QUOTA-01 | 迁移 `0019`—`0020`、`server/src/itime/ai/{pricing,usage,cost_service}.py` 及 provider/worker 终态事务已实现不可变价格、上报/估算 usage、逐尝试平台成本；`/admin/costs` 可按用户、能力、状态和来源对账 | 用户日额度、预留、成功扣额、活动日归属及提案结算仍待 Q-QUOTA-01 |
+| REQ-QUOTA-01 | 迁移 `0019`—`0020`、`server/src/itime/ai/{pricing,usage,cost_service}.py` 及 provider/worker 终态事务已实现不可变价格、上报/估算 usage、逐尝试平台成本；`/admin/costs` 可按用户、能力、状态和来源对账；用户结算规则已确认 | 用户日额度、预留、成功扣额和管理调整正在实现 |
 | REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`server/src/itime/ai/admin_*.py`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请、普通用户/AI 状态管理、带价格 AI 配置、供应商成本、日志、质检、正文访问和审计查询 | 最终恢复/交接规则及用户额度管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。
