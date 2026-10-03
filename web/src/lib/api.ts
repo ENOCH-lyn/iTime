@@ -1,3 +1,5 @@
+import { getCachedResponse, putCachedResponse } from './data-cache'
+
 export interface Failure {
   code: string
   message: string
@@ -34,6 +36,7 @@ export async function api<T>(
   const csrfToken = path.startsWith('/admin/') ? adminCsrf : csrf
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  let responseReceived = false
   try {
     const response = await fetch(`/api/v1${path}`, {
       method, credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
@@ -44,6 +47,7 @@ export async function api<T>(
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+    responseReceived = true
     const result = await response.json().catch(() => null)
     if (!response.ok) {
       if (result?.error?.message) throw new ApiError(result.error, response.status)
@@ -54,9 +58,19 @@ export async function api<T>(
       }, response.status)
     }
     if (result === null) throw new Error('invalid_response')
+    if (method === 'GET') void putCachedResponse(path, result)
     return result as T
   } catch (error) {
     if (error instanceof ApiError) throw error
+    if (method === 'GET' && !responseReceived) {
+      const cached = await getCachedResponse<T>(path)
+      if (cached !== null) {
+        window.dispatchEvent(new CustomEvent('itime:cache-fallback', {
+          detail: { path, cached_at: cached.cached_at },
+        }))
+        return cached.value
+      }
+    }
     throw new ApiError({
       code: controller.signal.aborted ? 'request_timeout' : 'network_error',
       message: controller.signal.aborted

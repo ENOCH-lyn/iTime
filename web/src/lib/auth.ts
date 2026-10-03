@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { api, setCsrf, type Failure, failure, ApiError } from './api'
+import { setCacheAccount } from './data-cache'
 
 export interface Session {
   user: {
@@ -26,6 +27,7 @@ export function acceptSession(session: Session) {
   revision += 1
   identity.value = session
   setCsrf(session.csrf_token)
+  void setCacheAccount(session.user.id)
   authError.value = null
 }
 
@@ -33,6 +35,7 @@ export function clearSession() {
   revision += 1
   identity.value = null
   setCsrf('')
+  void setCacheAccount(null)
 }
 
 export function notifySessionChange() { channel?.postMessage('changed') }
