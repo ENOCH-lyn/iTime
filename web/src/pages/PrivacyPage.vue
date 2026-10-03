@@ -13,11 +13,11 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
     <main id="main-content" class="public-content legal-content">
       <header class="public-content-heading">
         <h1 tabindex="-1">隐私说明</h1>
-        <p>更新日期：2026 年 10 月 2 日</p>
+        <p>更新日期：2026 年 10 月 3 日</p>
       </header>
 
       <aside class="document-notice">
-        当前版本用于本地开发和隔离测试，尚未部署正式 AI 供应商、质检系统或公众生产环境。正式上线前将补充运营主体、服务器地区、AI 供应商及联系渠道。
+        当前版本用于本地开发和隔离测试，尚未部署正式 AI 供应商或公众生产环境。正式上线前将补充运营主体、服务器地区、AI 供应商及联系渠道。
       </aside>
 
       <section>
@@ -28,8 +28,8 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
 
       <section>
         <h2>2. AI 与外部内容</h2>
-        <p>当前已实现的截图识别会把你主动上传的图片发送到管理员发布的 OpenAI 兼容端点；识别结果先进入候选校对，确认前不会写入正式日历。</p>
-        <p>全局 AI 对话、规划、复盘、公开链接摘要和金额额度仍在开发。正式启用时会说明具体供应商、处理地区、数据用途和可用的控制选项。</p>
+        <p>当前已实现的截图识别会把你主动上传的图片发送到管理员发布的 OpenAI 兼容端点；识别结果先进入候选校对，确认前不会写入正式日历。全局 AI 对话同样由服务端调用管理员发布的端点，并保存可恢复的消息。</p>
+        <p>规划、复盘、公开链接摘要和金额额度仍在开发。正式上线时会说明具体供应商、处理地区、数据用途和可用的控制选项。</p>
       </section>
 
       <section>
@@ -48,8 +48,8 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
             <tbody>
               <tr><th scope="row">任务与日历</th><td data-label="产品规则">账号存续期间保存；删除进入 30 天回收站</td><td data-label="当前状态">任务回收站已实现；日历对象回收站待实现</td></tr>
               <tr><th scope="row">识别原图</th><td data-label="产品规则">确认后删除；未完成最长保留 24 小时</td><td data-label="当前状态">已实现</td></tr>
-              <tr><th scope="row">AI 技术正文日志</th><td data-label="产品规则">默认保留 7 天</td><td data-label="当前状态">待实现</td></tr>
-              <tr><th scope="row">质量改进样本</th><td data-label="产品规则">默认参与，可关闭；最长保留 30 天；不用于训练</td><td data-label="当前状态">待实现</td></tr>
+              <tr><th scope="row">AI 技术正文日志</th><td data-label="产品规则">默认保留 7 天</td><td data-label="当前状态">已实现；管理员读取会审计</td></tr>
+              <tr><th scope="row">质量改进样本</th><td data-label="产品规则">默认参与，可关闭；最长保留 30 天；不用于训练</td><td data-label="当前状态">已实现；可在隐私与质量设置中关闭</td></tr>
               <tr><th scope="row">账号注销</th><td data-label="产品规则">7 天撤销期后清理个人数据</td><td data-label="当前状态">待实现</td></tr>
             </tbody>
           </table>
