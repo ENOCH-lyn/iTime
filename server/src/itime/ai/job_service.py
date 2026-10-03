@@ -20,6 +20,7 @@ class ClaimedJob:
     capability: str
     config_version_id: UUID
     input_media_id: UUID | None
+    conversation_id: UUID | None
     lease_id: UUID
     attempt_number: int
     deadline_at: datetime
@@ -29,6 +30,7 @@ def job_result(job: AIJob) -> dict:
     return {
         "id": job.id,
         "capability": job.capability,
+        "conversation_id": job.conversation_id,
         "status": job.status,
         "input_summary": job.input_summary,
         "output": job.output,
@@ -120,8 +122,8 @@ async def claim_next_job(
     capability: str | None = None,
     lease_seconds: int = 300,
 ) -> ClaimedJob | None:
-    current = now()
     for _ in range(20):
+        current = now()
         async with database.transaction() as session:
             statement = (
                 select(AIJob)
@@ -219,6 +221,7 @@ async def claim_next_job(
                 capability=job.capability,
                 config_version_id=job.config_version_id,
                 input_media_id=job.input_media_id,
+                conversation_id=job.conversation_id,
                 lease_id=lease_id,
                 attempt_number=job.attempt_count,
                 deadline_at=job.deadline_at,
@@ -242,6 +245,7 @@ async def complete_job(
                 AIJob.id == claim.id,
                 AIJob.status == "running",
                 AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
             )
             .with_for_update()
         )
@@ -302,6 +306,7 @@ async def reject_or_retry_job(
                 AIJob.id == claim.id,
                 AIJob.status == "running",
                 AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
             )
             .with_for_update()
         )
@@ -358,6 +363,35 @@ async def reject_or_retry_job(
         job.version += 1
         clear_job_lease(job)
         return status
+
+
+async def renew_job_lease(
+    database: Database,
+    claim: ClaimedJob,
+    *,
+    lease_seconds: int,
+) -> bool:
+    current = now()
+    result = None
+    async with database.transaction() as session:
+        result = await session.execute(
+            update(AIJob)
+            .where(
+                AIJob.id == claim.id,
+                AIJob.status == "running",
+                AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
+                AIJob.deadline_at > current,
+            )
+            .values(
+                lease_until=min(
+                    current + timedelta(seconds=lease_seconds),
+                    claim.deadline_at,
+                ),
+                updated_at=current,
+            )
+        )
+    return result.rowcount == 1
 
 
 def delete_media(

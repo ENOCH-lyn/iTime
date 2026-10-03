@@ -61,6 +61,7 @@ async def load_screenshot_work(
                 AIJob.owner_id == claim.owner_id,
                 AIJob.status == "running",
                 AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > now(),
             )
         )
         if job is None:
@@ -140,6 +141,7 @@ async def apply_screenshot_result(
                 AIJob.owner_id == claim.owner_id,
                 AIJob.status == "running",
                 AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
             )
             .with_for_update()
         )

@@ -218,6 +218,7 @@ async def test_config(config_id: UUID, request: Request) -> dict:
         snapshot,
         request.app.state.settings,
         request.app.state.security.ai_cipher,
+        capability=config.capability,
     )
     completed_at = now()
     async with authorized_admin(request, write=True) as identity:

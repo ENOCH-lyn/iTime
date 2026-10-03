@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import and_, or_, select
 
+from itime.ai.conversation_service import cancel_conversation_projection
 from itime.ai.job_service import cancel_job, job_result, locked_job
 from itime.ai.models import AIJob
 from itime.ai.schemas import AIJobCancelInput, Capability
@@ -88,7 +89,9 @@ async def cancel_ai_job(
         if replay is not None:
             return replay
         job = await locked_job(identity.session, identity.user.id, job_id)
-        await cancel_job(identity.session, job)
+        changed = await cancel_job(identity.session, job)
+        if changed:
+            await cancel_conversation_projection(identity.session, job)
         result = {"operation_id": data.operation_id, "job": job_result(job)}
         save_operation(
             identity.session,

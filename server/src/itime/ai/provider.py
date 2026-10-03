@@ -106,7 +106,7 @@ def _failure(
     )
 
 
-def _valid_chat_response(body: bytes) -> bool:
+def _valid_chat_response(body: bytes, capability: str) -> bool:
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -122,6 +122,8 @@ def _valid_chat_response(body: bytes) -> bool:
     content = message.get("content")
     if not isinstance(content, str):
         return False
+    if capability == "conversation":
+        return content.strip() == "ITIME_CHAT_OK"
     try:
         recognized = json.loads(content)
     except json.JSONDecodeError:
@@ -133,6 +135,7 @@ async def _network_test(
     config: ProviderConfig,
     settings: Settings,
     api_key: str,
+    capability: str,
 ) -> ProviderTestResult:
     endpoint_allowed = await resolved_endpoint_allowed(config.endpoint_url, settings)
     if endpoint_allowed is None:
@@ -151,36 +154,54 @@ async def _network_test(
             status=422,
         )
 
-    request_body = {
-        "model": config.model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "This is a synthetic vision endpoint check. Read the time shown "
-                            "in the image. Return only a JSON object with exactly one string "
-                            'field named \"marker\". The expected visible value is not '
-                            "provided in this text. Do not infer or include user data."
-                        ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": (
-                                "data:image/png;base64,"
-                                + base64.b64encode(SYNTHETIC_PNG).decode()
-                            )
+    if capability == "conversation":
+        request_body = {
+            "model": config.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "This is a synthetic text endpoint check. "
+                        "Return exactly ITIME_CHAT_OK and nothing else. "
+                        "No user data is included."
+                    ),
+                }
+            ],
+            "max_tokens": min(config.max_output_tokens, 32),
+            "temperature": 0,
+        }
+    else:
+        request_body = {
+            "model": config.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "This is a synthetic vision endpoint check. Read the time "
+                                "shown in the image. Return only a JSON object with exactly "
+                                'one string field named "marker". The expected visible '
+                                "value is not provided in this text. Do not infer or include "
+                                "user data."
+                            ),
                         },
-                    },
-                ],
-            }
-        ],
-        "response_format": {"type": "json_object"},
-        "max_tokens": config.max_output_tokens,
-    }
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": (
+                                    "data:image/png;base64,"
+                                    + base64.b64encode(SYNTHETIC_PNG).decode()
+                                )
+                            },
+                        },
+                    ],
+                }
+            ],
+            "response_format": {"type": "json_object"},
+            "max_tokens": config.max_output_tokens,
+        }
     timeout = httpx.Timeout(float(config.timeout_seconds))
     try:
         async with httpx.AsyncClient(
@@ -256,7 +277,7 @@ async def _network_test(
             retryable=True,
         )
 
-    if not _valid_chat_response(b"".join(chunks)):
+    if not _valid_chat_response(b"".join(chunks), capability):
         return _failure(
             "ai_config_test_invalid_response",
             "response",
@@ -270,6 +291,8 @@ async def test_openai_compatible(
     config: ProviderConfig,
     settings: Settings,
     cipher: Fernet,
+    *,
+    capability: str,
 ) -> ProviderTestResult:
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -293,7 +316,7 @@ async def test_openai_compatible(
 
     try:
         async with asyncio.timeout(float(config.timeout_seconds)):
-            return await _network_test(config, settings, api_key)
+            return await _network_test(config, settings, api_key, capability)
     except TimeoutError:
         return _failure(
             "ai_config_test_timeout",

@@ -66,14 +66,24 @@ def upstream_handler(state: UpstreamState, database_url: str):
             if mode == "timeout":
                 time.sleep(1.2)
 
+            request_body = json.loads(body)
+            is_conversation_test = isinstance(
+                request_body["messages"][0]["content"],
+                str,
+            )
+            success_content = (
+                "ITIME_CHAT_OK"
+                if is_conversation_test
+                else '{"marker":"09:00"}'
+            )
             status, response = {
                 "success": (
                     200,
-                    {"choices": [{"message": {"content": '{"marker":"09:00"}'}}]},
+                    {"choices": [{"message": {"content": success_content}}]},
                 ),
                 "blocked": (
                     200,
-                    {"choices": [{"message": {"content": '{"marker":"09:00"}'}}]},
+                    {"choices": [{"message": {"content": success_content}}]},
                 ),
                 "authentication": (401, {"error": UPSTREAM_BODY_SECRET}),
                 "rate_limit": (429, {"error": UPSTREAM_BODY_SECRET}),
@@ -186,11 +196,12 @@ def create_config(
     key: str = "sk-ai-config-private-key",
     model: str = "vision-model-1",
     timeout: int = 2,
+    capability: str = "calendar_screenshot",
 ) -> httpx.Response:
     return client.post(
         AI_CONFIGS,
         json={
-            "capability": "calendar_screenshot",
+            "capability": capability,
             "endpoint_url": endpoint,
             "model": model,
             "api_key": key,
@@ -346,6 +357,38 @@ def test_real_synthetic_http_test_and_atomic_concurrent_publish(
         assert sum(row[0] == "ai_config_test_succeeded" for row in actions) == 3
         assert sum(row[0] == "ai_config_version_published" for row in actions) == 3
         assert sum(row[0] == "ai_config_version_rolled_back" for row in actions) == 1
+
+
+def test_conversation_config_uses_text_only_synthetic_probe(
+    client,
+    database_url,
+    upstream,
+):
+    setup_admin(client, database_url)
+    state, endpoint = upstream
+    config = create_config(
+        client,
+        endpoint,
+        model="chat-model",
+        capability="conversation",
+    ).json()
+    tested = client.post(f"{AI_CONFIGS}/{config['id']}/test")
+    assert tested.status_code == 200, tested.text
+    assert tested.json()["status"] == "tested"
+    request = state.requests[-1]["body"]
+    assert request["model"] == "chat-model"
+    assert request["max_tokens"] == 32
+    assert request["messages"] == [
+        {
+            "role": "user",
+            "content": (
+                "This is a synthetic text endpoint check. "
+                "Return exactly ITIME_CHAT_OK and nothing else. "
+                "No user data is included."
+            ),
+        }
+    ]
+    assert "response_format" not in request
 
 
 @pytest.mark.parametrize(
