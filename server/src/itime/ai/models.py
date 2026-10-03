@@ -27,7 +27,8 @@ class AIConfigCapability(Base):
     __tablename__ = "ai_config_capabilities"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
+            "capability IN "
+            "('calendar_screenshot', 'conversation', 'planning', 'review')",
             name="capability",
         ),
         CheckConstraint("next_version >= 1", name="next_version"),
@@ -52,7 +53,8 @@ class AIConfigVersion(Base):
     __tablename__ = "ai_config_versions"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
+            "capability IN "
+            "('calendar_screenshot', 'conversation', 'planning', 'review')",
             name="capability",
         ),
         CheckConstraint(
@@ -241,7 +243,8 @@ class AIJob(Base):
     __tablename__ = "ai_jobs"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
+            "capability IN "
+            "('calendar_screenshot', 'conversation', 'planning', 'review')",
             name="capability",
         ),
         CheckConstraint(
@@ -263,12 +266,19 @@ class AIJob(Base):
         CheckConstraint(
             "(capability = 'calendar_screenshot' "
             "AND input_media_id IS NOT NULL AND conversation_id IS NULL "
-            "AND planning_snapshot_id IS NULL) "
+            "AND planning_snapshot_id IS NULL AND review_session_id IS NULL "
+            "AND review_snapshot_id IS NULL) "
             "OR (capability = 'conversation' "
             "AND input_media_id IS NULL AND conversation_id IS NOT NULL "
-            "AND planning_snapshot_id IS NULL) "
+            "AND planning_snapshot_id IS NULL AND review_session_id IS NULL "
+            "AND review_snapshot_id IS NULL) "
             "OR (capability = 'planning' "
-            "AND input_media_id IS NULL AND planning_snapshot_id IS NOT NULL)",
+            "AND input_media_id IS NULL AND planning_snapshot_id IS NOT NULL "
+            "AND review_session_id IS NULL AND review_snapshot_id IS NULL) "
+            "OR (capability = 'review' "
+            "AND input_media_id IS NULL AND conversation_id IS NULL "
+            "AND planning_snapshot_id IS NULL AND review_session_id IS NOT NULL "
+            "AND review_snapshot_id IS NOT NULL)",
             name="input_reference",
         ),
         CheckConstraint(
@@ -316,11 +326,27 @@ class AIJob(Base):
             name="fk_ai_jobs_planning_snapshot_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["review_session_id", "owner_id"],
+            ["review_sessions.id", "review_sessions.owner_id"],
+            name="fk_ai_jobs_review_session_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["review_snapshot_id", "owner_id"],
+            ["review_input_snapshots.id", "review_input_snapshots.owner_id"],
+            name="fk_ai_jobs_review_snapshot_owner",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_ai_jobs_id_owner"),
         UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
         UniqueConstraint(
             "planning_snapshot_id",
             name="uq_ai_jobs_planning_snapshot",
+        ),
+        UniqueConstraint(
+            "review_snapshot_id",
+            name="uq_ai_jobs_review_snapshot",
         ),
         Index("ix_ai_jobs_owner_created", "owner_id", "created_at", "id"),
         Index(
@@ -344,6 +370,14 @@ class AIJob(Base):
                 "conversation_id IS NOT NULL AND status IN ('queued', 'running')"
             ),
         ),
+        Index(
+            "uq_ai_jobs_active_review_session",
+            "review_session_id",
+            unique=True,
+            postgresql_where=text(
+                "review_session_id IS NOT NULL AND status IN ('queued', 'running')"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -353,6 +387,8 @@ class AIJob(Base):
     input_media_id: Mapped[UUID | None]
     conversation_id: Mapped[UUID | None]
     planning_snapshot_id: Mapped[UUID | None]
+    review_session_id: Mapped[UUID | None]
+    review_snapshot_id: Mapped[UUID | None]
     quota_mode: Mapped[str] = mapped_column(
         String(16),
         default="platform",

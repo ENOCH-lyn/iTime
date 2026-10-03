@@ -87,7 +87,7 @@
 - Test: `server/tests/test_ai_config.py`
 - Test: `server/tests/test_ai_governance_models.py`
 
-- [ ] **Step 1: 写迁移和约束失败测试**
+- [x] **Step 1: 写迁移和约束失败测试**
 
 在 `test_review_models.py` 断言 8 张新表、ORM metadata、迁移降到 `0025_execution_difficulties` 后表消失、再升级及 `alembic check` 通过；插入并发同日会话、跨账号外键、第四个问题、重复报告版本、重复候选确认来源和非法生命周期时分别触发 `UniqueViolation`、`ForeignKeyViolation` 或 `CheckViolation`。
 
@@ -102,13 +102,13 @@ with pytest.raises(UniqueViolation):
     insert_review_session(connection, owner_id, activity_date=date(2026, 10, 3))
 ```
 
-- [ ] **Step 2: 运行模型测试确认失败**
+- [x] **Step 2: 运行模型测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_review_models.py tests/test_ai_config.py tests/test_ai_governance_models.py`
 
 Expected: FAIL，原因是迁移、模型和 `review` 能力尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 迁移创建设计文档定义的表、所有者复合外键、版本/状态检查、查询索引和记忆到期索引；给 `ai_jobs` 增加 `review_session_id`、`review_snapshot_id`，扩展输入引用检查，并把 AI 配置、作业、正文日志、质量样本能力检查统一扩展为：
 
@@ -118,13 +118,13 @@ capability IN ('calendar_screenshot', 'conversation', 'planning', 'review')
 
 `ReviewReportVersion` 和 `ReviewInputSnapshot` 不提供更新接口；数据库约束保证来源作业和快照唯一。
 
-- [ ] **Step 4: 运行迁移、模型和静态检查**
+- [x] **Step 4: 运行迁移、模型和静态检查**
 
 Run: `cd server && uv run pytest -q tests/test_review_models.py tests/test_ai_config.py tests/test_ai_governance_models.py && uv run alembic upgrade head && uv run alembic current && uv run alembic check && uv run ruff check src/itime/review src/itime/ai tests/test_review_models.py`
 
 Expected: PASS；当前 head 为 `0026_review_memory`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/migrations/versions/0026_review_memory.py \

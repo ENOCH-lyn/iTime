@@ -53,7 +53,8 @@ class AIBodyLog(Base):
     __table_args__ = (
         CheckConstraint("attempt_number BETWEEN 1 AND 5", name="attempt_number"),
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
+            "capability IN "
+            "('calendar_screenshot', 'conversation', 'planning', 'review')",
             name="capability",
         ),
         CheckConstraint(
@@ -122,7 +123,8 @@ class AIQualitySample(Base):
     __tablename__ = "ai_quality_samples"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
+            "capability IN "
+            "('calendar_screenshot', 'conversation', 'planning', 'review')",
             name="capability",
         ),
         CheckConstraint("status IN ('pending', 'reviewed')", name="status"),
