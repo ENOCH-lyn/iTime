@@ -17,7 +17,7 @@ const router = createRouter({
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
-    { path: '/account/:section(password|devices|privacy|appearance)', component: () => import('./pages/AccountPage.vue') },
+    { path: '/account/:section(password|devices|privacy|quota|appearance)', component: () => import('./pages/AccountPage.vue') },
     { path: '/admin', redirect: '/admin/security' },
     ...['login', 'setup'].map(mode => ({
       path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),

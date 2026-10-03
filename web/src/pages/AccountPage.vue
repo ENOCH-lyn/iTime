@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowUpRight, CalendarDays, CirclePause, KeyRound, ListTodo, LogOut, MessageCircleMore, Monitor, Palette, ShieldCheck, UserRound } from 'lucide-vue-next'
+import { ArrowUpRight, CalendarDays, CirclePause, KeyRound, ListTodo, LogOut, MessageCircleMore, Monitor, Palette, ShieldCheck, UserRound, WalletCards } from 'lucide-vue-next'
 import { api, failure, type Failure } from '../lib/api'
 import { authError, authLoading, identity, refreshSession, clearSession, notifySessionChange } from '../lib/auth'
 import AppearanceControls from '../components/AppearanceControls.vue'
@@ -9,6 +9,7 @@ import StatusMessage from '../components/StatusMessage.vue'
 import PasswordSettings from '../components/PasswordSettings.vue'
 import DeviceSettings from '../components/DeviceSettings.vue'
 import PrivacySettings from '../components/PrivacySettings.vue'
+import QuotaOverview from '../components/QuotaOverview.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,7 @@ const titles: Record<string, string> = {
   password: '修改密码',
   devices: '登录设备',
   privacy: '隐私与质量',
+  quota: 'AI 额度',
   appearance: '外观',
 }
 const pending = ref(false)
@@ -51,6 +53,7 @@ const links = [
   { to: '/account/password', title: '修改密码', icon: KeyRound },
   { to: '/account/devices', title: '登录设备', icon: Monitor },
   { to: '/account/privacy', title: '隐私与质量', icon: ShieldCheck },
+  { to: '/account/quota', title: 'AI 额度', icon: WalletCards },
   { to: '/account/appearance', title: '外观', icon: Palette },
 ]
 </script>
@@ -92,11 +95,13 @@ const links = [
             <RouterLink to="/account/password"><div><strong>修改密码</strong><p>更新密码，并选择是否退出其他设备。</p></div><ArrowUpRight :size="20" aria-hidden="true" /></RouterLink>
             <RouterLink to="/account/devices"><div><strong>查看登录设备</strong><p>发现不认识的设备时，可以远程退出。</p></div><ArrowUpRight :size="20" aria-hidden="true" /></RouterLink>
             <RouterLink to="/account/privacy"><div><strong>隐私与质量</strong><p>管理 AI 质量样本参与状态和查看数据期限。</p></div><ArrowUpRight :size="20" aria-hidden="true" /></RouterLink>
+            <RouterLink to="/account/quota"><div><strong>查看 AI 额度</strong><p>核对今日可用、处理中预留和已结算记录。</p></div><ArrowUpRight :size="20" aria-hidden="true" /></RouterLink>
           </div>
         </template>
         <PasswordSettings v-else-if="section === 'password'" />
         <DeviceSettings v-else-if="section === 'devices'" />
         <PrivacySettings v-else-if="section === 'privacy'" />
+        <QuotaOverview v-else-if="section === 'quota'" />
         <template v-else-if="section === 'appearance'"><p class="page-description">选择让你阅读舒适的外观。</p><AppearanceControls /></template>
       </template>
       <RouterLink v-else-if="booted" to="/login" class="button">返回登录</RouterLink>
