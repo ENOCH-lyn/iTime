@@ -1379,14 +1379,34 @@
 }
 
 @media (max-width: 420px) {
+  .task-navigation-top {
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .task-navigation .wordmark {
+    flex: 0 0 auto;
+    font-size: 1.125rem;
+  }
+
+  .product-navigation {
+    gap: 0;
+  }
+
   .product-navigation .nav-link {
-    width: 40px;
+    width: 36px;
+    min-width: 36px;
     justify-content: center;
     padding-inline: 0;
   }
 
   .product-label {
     display: none;
+  }
+
+  .task-account .nav-link {
+    width: 36px;
+    height: 40px;
   }
 
   .task-list-heading {

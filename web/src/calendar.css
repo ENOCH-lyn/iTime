@@ -1625,6 +1625,13 @@
     font-size: .6875rem;
   }
 
+  .agenda-event:hover .agenda-time,
+  .agenda-event:hover .agenda-copy small,
+  .agenda-event.selected .agenda-time,
+  .agenda-event.selected .agenda-copy small {
+    color: var(--text);
+  }
+
   .agenda-empty {
     padding: 12px 0;
   }
@@ -1680,14 +1687,34 @@
     padding: 10px 12px 8px;
   }
 
+  .calendar-navigation-top {
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .calendar-navigation .wordmark {
+    flex: 0 0 auto;
+    font-size: 1.125rem;
+  }
+
+  .calendar-navigation .product-navigation {
+    gap: 0;
+  }
+
   .calendar-navigation .product-navigation .nav-link {
-    width: 40px;
+    width: 36px;
+    min-width: 36px;
     justify-content: center;
     padding-inline: 0;
   }
 
   .calendar-navigation .product-label {
     display: none;
+  }
+
+  .calendar-navigation .task-account .nav-link {
+    width: 36px;
+    height: 40px;
   }
 
   .calendar-title h1 {
