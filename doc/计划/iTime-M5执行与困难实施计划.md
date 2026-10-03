@@ -20,7 +20,7 @@
 - Modify: `server/src/itime/tasks/models.py`
 - Test: `server/tests/test_execution_models.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 在隔离数据库断言表和核心约束：
 
@@ -35,7 +35,7 @@ assert {
 
 分别实现 `test_execution_migration_round_trip_and_orm_consistency`、`test_only_one_open_focus_per_owner`、`test_execution_owner_and_state_constraints`、`test_focus_events_are_immutable` 和 `test_execution_user_cascade_delete`。使用直接 SQL 插入非法行并断言 `psycopg.errors.CheckViolation`、`ForeignKeyViolation` 或 `UniqueViolation`；直接更新/删除 `focus_events` 并断言数据库触发器拒绝。
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run:
 
@@ -46,7 +46,7 @@ uv run pytest -q tests/test_execution_models.py
 
 Expected: FAIL，迁移和 `itime.execution.models` 尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 在 `models.py` 创建 `FocusSession`、`FocusEvent`、`ExecutionRevision` 和 `DifficultyRecord` 四个 ORM 类；字段、枚举、外键、索引和生命周期必须逐项对应设计文档 §3，不增加未定义的状态或客户端权威字段。
 
@@ -59,7 +59,7 @@ Expected: FAIL，迁移和 `itime.execution.models` 尚不存在。
 - 扩展 `change_events` 的 `entity_type` 和 `action` 检查约束。
 - downgrade 先删除执行数据与触发器，再恢复旧变化事件约束。
 
-- [ ] **Step 4: 验证迁移和提交**
+- [x] **Step 4: 验证迁移和提交**
 
 Run:
 

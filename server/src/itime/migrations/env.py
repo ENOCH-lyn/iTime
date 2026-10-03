@@ -11,6 +11,7 @@ from itime.auth import models as auth_models  # noqa: F401
 from itime.calendar import models as calendar_models  # noqa: F401
 from itime.config import get_settings
 from itime.database import Base, Database
+from itime.execution import models as execution_models  # noqa: F401
 from itime.planning import models as planning_models  # noqa: F401
 from itime.quota import models as quota_models  # noqa: F401
 from itime.tasks import models as task_models  # noqa: F401

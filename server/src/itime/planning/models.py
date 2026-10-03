@@ -546,6 +546,11 @@ class ScheduledBlock(Base):
             initially="DEFERRED",
         ),
         UniqueConstraint(
+            "id",
+            "owner_id",
+            name="uq_scheduled_blocks_id_owner",
+        ),
+        UniqueConstraint(
             "plan_version_id",
             "position",
             name="uq_scheduled_blocks_plan_version_position",

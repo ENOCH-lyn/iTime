@@ -503,14 +503,16 @@ class ChangeEvent(Base):
             "entity_type IN "
             "('project', 'task', 'step', 'label', 'time_settings', 'term', "
             "'calendar_series', 'calendar_exception', 'task_occurrence', "
-            "'calendar_addition', 'calendar_source', 'privacy_settings', 'plan')",
+            "'calendar_addition', 'calendar_source', 'privacy_settings', 'plan', "
+            "'focus_session', 'difficulty')",
             name="entity_type",
         ),
         CheckConstraint(
             "action IN "
             "('created', 'updated', 'completed', 'reopened', 'deleted', "
             "'skipped', 'rescheduled', 'archived', 'unarchived', 'restored', "
-            "'purged')",
+            "'purged', 'started', 'paused', 'resumed', 'finished', 'abandoned', "
+            "'revised')",
             name="action",
         ),
         Index("ix_change_events_owner_sequence", "owner_id", "sequence"),
