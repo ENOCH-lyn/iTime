@@ -40,6 +40,8 @@ const dialog = ref<HTMLDialogElement | null>(null)
 const capabilityLabels: Record<AIConfigCapability, string> = {
   calendar_screenshot: '截图识别',
   conversation: '全局对话',
+  planning: '日周规划',
+  review: '每日复盘',
 }
 const purposeLabels: Record<QualityPurpose, string> = {
   manual_quality_review: '人工质检',

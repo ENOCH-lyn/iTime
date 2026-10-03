@@ -106,6 +106,8 @@ const usageLabels = {
 const capabilityLabels = {
   conversation: '全局对话',
   calendar_screenshot: '截图识别',
+  planning: '日周规划',
+  review: '每日复盘',
 } as const
 const tabOrder: Tab[] = ['policies', 'adjustments', 'ledger']
 const tabIds: Record<Tab, string> = {

@@ -10,8 +10,9 @@ export type AIJobStatus =
 
 export interface AIJob {
   id: string
-  capability: 'calendar_screenshot' | 'conversation' | 'planning'
+  capability: 'calendar_screenshot' | 'conversation' | 'planning' | 'review'
   conversation_id: string | null
+  review_session_id: string | null
   status: AIJobStatus
   input_summary: Record<string, unknown>
   output: {
@@ -20,6 +21,9 @@ export interface AIJob {
     candidate_count?: number
     message_id?: string
     proposal_id?: string
+    report_id?: string
+    review_session_id?: string
+    version?: number
   } | null
   error: { code: string; message: string } | null
   attempt_count: number

@@ -50,6 +50,16 @@ const capabilityCopy: Record<AIConfigCapability, {
     heading: '全局对话配置',
     testDescription: '合成文本',
   },
+  planning: {
+    label: '日周规划',
+    heading: '日周规划配置',
+    testDescription: '合成工具',
+  },
+  review: {
+    label: '每日复盘',
+    heading: '每日复盘配置',
+    testDescription: '合成工具',
+  },
 }
 
 const statusLabels: Record<AIConfigStatus, string> = {

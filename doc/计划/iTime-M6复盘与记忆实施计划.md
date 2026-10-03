@@ -465,11 +465,11 @@ git commit -m "feat: 确认记忆并接入 AI 上下文"
 - Modify: `web/src/components/AdminQuotaManagement.vue`
 - Modify: `web/src/components/QuotaOverview.vue`
 
-- [ ] **Step 1: 扩展 TypeScript 合同和配置标签**
+- [x] **Step 1: 扩展 TypeScript 合同和配置标签**
 
 把 `review` 加入 `AIJob`、管理员配置、成本、治理和额度能力联合类型及中文标签；定义与服务端字段一一对应的复盘、报告、批注、候选、记忆和设置类型。
 
-- [ ] **Step 2: 实现复盘工作台**
+- [x] **Step 2: 实现复盘工作台**
 
 `ReviewsPage` 登录后初始化时区，创建或读取查询参数日期对应会话，并并行恢复详情和当前 `review` 作业。作业轮询在成功后按 `resource_type` 打开问题或报告；失败和取消显示保存状态、请求编号和重试动作。
 
@@ -481,21 +481,21 @@ const canAsk = computed(() =>
 const canGenerate = computed(() => !activeJob.value && !!detail.value)
 ```
 
-- [ ] **Step 3: 实现报告、批注和记忆交互**
+- [x] **Step 3: 实现报告、批注和记忆交互**
 
 报告按来源分节渲染，不使用 `v-html`。旧快照显示明确状态；版本切换保持历史只读。候选按钮使用确认/拒绝清晰命令，操作后替换当前候选。记忆视图支持启停、活跃/回收站、编辑、删除和恢复。
 
-- [ ] **Step 4: 实现响应式和无障碍样式**
+- [x] **Step 4: 实现响应式和无障碍样式**
 
 桌面为 264px 导航加主内容；小于 820px 折叠为顶部导航；固定控件尺寸，按钮使用 Lucide 图标，卡片圆角不超过 8px。支持明暗主题、大字号、`prefers-reduced-motion`、焦点可见和 320px 无水平滚动。
 
-- [ ] **Step 5: 构建和类型验证**
+- [x] **Step 5: 构建和类型验证**
 
 Run: `cd web && pnpm build`
 
 Expected: PASS，无 TypeScript 或 Vite 错误。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add web/src

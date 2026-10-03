@@ -1,7 +1,11 @@
 import { api } from './api'
 
 export type AIConfigStatus = 'draft' | 'tested' | 'published' | 'retired'
-export type AIConfigCapability = 'calendar_screenshot' | 'conversation'
+export type AIConfigCapability =
+  | 'calendar_screenshot'
+  | 'conversation'
+  | 'planning'
+  | 'review'
 
 export interface AIConfigPricing {
   currency: string

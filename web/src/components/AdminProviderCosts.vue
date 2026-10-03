@@ -28,6 +28,8 @@ const error = ref<Failure | null>(null)
 const capabilityLabels: Record<AIConfigCapability, string> = {
   calendar_screenshot: '截图识别',
   conversation: '全局对话',
+  planning: '日周规划',
+  review: '每日复盘',
 }
 const statusLabels: Record<ProviderCostStatus, string> = {
   succeeded: '成功',
