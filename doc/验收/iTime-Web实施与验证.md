@@ -981,4 +981,36 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 
 浏览器流程使用随机 PostgreSQL、真实 API、AI worker、本机分块上游和生产构建预览；版本冲突增强后又分别在 desktop、mobile、tablet 定向重跑通过。每个视口检查 axe、控制台、API 500 和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-planning-confirmed-manual-version.png`、`desktop-planning-320-large-dark.png`、`{desktop,mobile,tablet}-planning-calendar-projection.png` 及对应 AI planning card/proposal 文件，已人工检查，无重叠、裁切或空白画面。
 
-Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、正式第三方模型规划质量、执行/困难、复盘和完整首版闭环仍未验证或实现。
+Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。执行/困难后续已由 M5-C 实现；真实 Edge、实体设备、正式第三方模型规划质量、复盘和完整首版闭环仍未验证或实现。
+
+## M5-C：专注执行、困难记录与局部离线恢复
+
+对应 Git 提交：`b251c9e`、`27c2c06`、`d50ca19`、`01119ac`、`0438fce`、`0045f41`、`4dab8bb`、`ae3fd3b`、`e3c7afe`。实际代码为迁移 `0025_execution_difficulties`、`server/src/itime/execution/`、任务步骤扩展、`web/src/pages/FocusPage.vue`、`DifficultyPanel.vue`、`FocusTimer.vue`、`FocusTaskProgress.vue`、`web/src/lib/focus-queue.ts` 及执行专项测试；合同见[执行与困难设计](../设计/iTime-执行与困难设计.md)。
+
+已实现：
+
+- 自由标题、普通任务、重复任务实例和当前计划块均可开始正计时或倒计时；账号级行锁和部分唯一索引保证 `running` 与 `paused` 合计最多一个开放专注。
+- 开始、暂停、恢复、结束和放弃写入不可变事件并更新当前投影；前端按服务端时间锚点显示，刷新、离页和另一在线端可恢复。倒计时归零只进入超时显示，不自动结束专注或完成任务。
+- 任务步骤可在专注内独立勾选；步骤全完成和专注结束都不改变任务终态，结束后仍需用户明确点击完成任务。
+- 终态专注支持手工补记和修订，保存原值、新值、原因和版本；非法区间、超过 24 小时、开放会话修订及并发旧版本均被拒绝。
+- 困难可独立或关联一个任务和一次专注，分类与感受均可空；支持编辑、删除、30 天内恢复和双 worker 到期清理，旧操作不能复活已清理正文。
+- `/focus` 只为当前账号及已加载开放会话排队暂停、恢复、结束、放弃和步骤操作，队列最多 100 项并清理超过 7 天的项；未知响应复用原操作号，联网后顺序重放，冲突不会静默丢弃。
+- 任务详情和当前计划块可携带对象标识进入专注；困难“带到 AI”只填普通对话草稿并移除查询参数，用户明确发送前不创建 AI 作业或额度预留。
+
+2026-10-03 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit/worker、生产构建预览和 Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run pytest -q` | **356 passed in 303.87s** | 服务端真实 PostgreSQL/HTTP 全量回归，含迁移、并发状态机、修订、困难回收和清理 |
+| `cd server && uv run alembic upgrade head` | 通过 | 开发库升级到执行与困难迁移 |
+| `cd server && uv run alembic current` | `0025_execution_difficulties (head)` | 开发库迁移版本 |
+| `cd server && uv run alembic check` | 无新升级操作 | 迁移与 ORM 一致 |
+| `cd server && uv run python -m itime.execution.cleanup_worker --once` | 通过 | 独立困难清理进程可单次运行 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm test:e2e` | **171 passed in 8.2m** | 账号、后台、AI、额度、任务、规划、执行、困难、日历、导入、订阅、治理和公开页面三视口全量回归 |
+
+浏览器流程覆盖自由/任务专注、步骤与任务完成分离、刷新恢复、补记修订、离线顺序重放、未知响应幂等恢复、开放与终态冲突、账号隔离、100 项/7 天队列边界、困难增删改恢复、任务/计划块入口和 AI 草稿。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-focus-*.png` 及 `desktop-focus-320-large-dark.png`，人工检查未见重叠、裁切、空白画面或动态布局跳动。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘、记忆、统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。

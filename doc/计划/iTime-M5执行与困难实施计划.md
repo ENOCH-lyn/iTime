@@ -718,7 +718,7 @@ git commit -m "feat: 联通困难记录与专注入口"
 - Modify: `doc/计划/iTime-开发总计划.md`
 - Modify: `doc/计划/iTime-M5执行与困难实施计划.md`
 
-- [ ] **Step 1: 服务端全量验证**
+- [x] **Step 1: 服务端全量验证**
 
 Run:
 
@@ -734,7 +734,7 @@ uv build --no-sources
 
 记录真实通过数量、耗时、迁移 head、双连接并发和清理 worker 结果。
 
-- [ ] **Step 2: Web 全量验证**
+- [x] **Step 2: Web 全量验证**
 
 Run:
 
@@ -746,11 +746,11 @@ pnpm test:e2e
 
 人工检查 `/tmp/itime-ui-evidence/` 的桌面、平板、手机、320px 大字号和深色截图；确认计时数字、状态动作、离线冲突、长正文和六项导航无重叠、裁切或布局跳动。
 
-- [ ] **Step 3: 同步文档**
+- [x] **Step 3: 同步文档**
 
 只把实际通过的执行与困难行为写为已实现；复盘、统计、通用同步、语音、Edge、实体设备、性能和生产部署未执行时继续明确标注。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add README.md doc designer.md
