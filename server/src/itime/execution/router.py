@@ -7,16 +7,20 @@ from fastapi import APIRouter, Query, Request
 from itime.auth.security import now
 from itime.auth.session import authorized
 from itime.execution.schemas import (
+    FocusManualCreateInput,
     FocusProgressInput,
+    FocusRevisionInput,
     FocusStartInput,
     FocusTaskCompletionInput,
     FocusTransitionInput,
 )
 from itime.execution.service import (
     complete_focus_task,
+    create_manual_focus,
     current_focus,
     focus_detail,
     list_focus_sessions,
+    revise_focus,
     start_focus,
     transition_focus,
     update_focus_progress,
@@ -76,6 +80,21 @@ async def create_focus(data: FocusStartInput, request: Request) -> dict:
         )
 
 
+@router.post("/focus-sessions/manual", status_code=201)
+async def create_manual(
+    data: FocusManualCreateInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await create_manual_focus(
+            identity.session,
+            identity.user.id,
+            data,
+            current_time=current_time,
+        )
+
+
 @router.get("/focus-sessions/{focus_id}")
 async def get_focus(focus_id: UUID, request: Request) -> dict:
     current_time = now()
@@ -84,6 +103,23 @@ async def get_focus(focus_id: UUID, request: Request) -> dict:
             identity.session,
             identity.user.id,
             focus_id,
+            current_time=current_time,
+        )
+
+
+@router.put("/focus-sessions/{focus_id}")
+async def revise(
+    focus_id: UUID,
+    data: FocusRevisionInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await revise_focus(
+            identity.session,
+            identity.user.id,
+            focus_id,
+            data,
             current_time=current_time,
         )
 

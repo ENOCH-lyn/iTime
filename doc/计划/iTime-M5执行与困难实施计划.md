@@ -281,7 +281,7 @@ git commit -m "feat: 联通专注步骤与任务完成"
 - Modify: `server/src/itime/execution/router.py`
 - Test: `server/tests/test_execution_revisions.py`
 
-- [ ] **Step 1: 写时间与修订失败测试**
+- [x] **Step 1: 写时间与修订失败测试**
 
 覆盖：
 
@@ -298,7 +298,7 @@ git commit -m "feat: 联通专注步骤与任务完成"
 相同操作重放和版本冲突
 ```
 
-- [ ] **Step 2: 实现时间函数**
+- [x] **Step 2: 实现时间函数**
 
 提供：
 
@@ -334,7 +334,7 @@ def resolve_manual_interval(
 
 复用 `calendar.time_math` 的 DST 候选解析，不用固定 UTC 减四小时替代活动日。
 
-- [ ] **Step 3: 实现补记和修订**
+- [x] **Step 3: 实现补记和修订**
 
 输入：
 
@@ -364,7 +364,7 @@ PUT  /api/v1/focus-sessions/{id}
 
 补记写两个原始事件；修订写 `ExecutionRevision` 和新的有效值。两者都锁定用户后检查重叠。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd server && uv run pytest -q tests/test_execution_revisions.py tests/test_focus_sessions.py`
 

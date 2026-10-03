@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
-from itime.schemas import OperationInput
+from itime.schemas import Input, OperationInput, clean_required
 
 
 class FocusStartInput(OperationInput):
@@ -81,3 +81,53 @@ class FocusTaskCompletionInput(OperationInput):
     expected_version: int = Field(ge=1)
     expected_task_version: int = Field(ge=1)
     expected_occurrence_version: int | None = Field(default=None, ge=0)
+
+
+class FocusManualFields(Input):
+    title: str = Field(min_length=1, max_length=200)
+    task_id: UUID | None = None
+    occurrence_key: str | None = Field(default=None, max_length=120)
+    local_started_at: datetime
+    local_ended_at: datetime
+    time_zone: str = Field(min_length=1, max_length=64)
+    start_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+    end_utc_offset_minutes: int | None = Field(default=None, ge=-840, le=840)
+    effective_duration_seconds: int = Field(ge=0, le=86_400)
+
+    @field_validator("title", "time_zone")
+    @classmethod
+    def clean_required_text(cls, value: str) -> str:
+        return clean_required(value)
+
+    @field_validator("occurrence_key")
+    @classmethod
+    def clean_manual_occurrence_key(cls, value: str | None) -> str | None:
+        return FocusStartInput.clean_occurrence_key(value)
+
+    @field_validator("local_started_at", "local_ended_at")
+    @classmethod
+    def require_local_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            raise ValueError("补记时间不能包含 UTC 偏移")
+        return value
+
+    @model_validator(mode="after")
+    def occurrence_requires_task(self) -> "FocusManualFields":
+        if self.occurrence_key is not None and self.task_id is None:
+            raise ValueError("任务实例必须同时提供任务")
+        return self
+
+
+class FocusManualCreateInput(FocusManualFields):
+    operation_id: UUID
+
+
+class FocusRevisionInput(FocusManualFields):
+    operation_id: UUID
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def clean_reason(cls, value: str) -> str:
+        return clean_required(value)

@@ -9,11 +9,14 @@ from itime.calendar.models import UserTimeSettings
 from itime.errors import AppError
 from itime.execution.models import ExecutionRevision, FocusEvent, FocusSession
 from itime.execution.schemas import (
+    FocusManualCreateInput,
     FocusProgressInput,
+    FocusRevisionInput,
     FocusStartInput,
     FocusTaskCompletionInput,
     FocusTransitionInput,
 )
+from itime.execution.time_math import activity_day_for, resolve_manual_interval
 from itime.planning.models import Plan, PlanVersion, ScheduledBlock
 from itime.tasks.models import Task, TaskOccurrenceState, TaskSchedule, TaskStep
 from itime.tasks.progress_service import (
@@ -25,6 +28,7 @@ from itime.tasks.schedule_service import find_task_occurrence_date
 from itime.tasks.service import (
     emit_change,
     ensure_task_editable,
+    ensure_task_readable,
     locked_task,
     replay_operation,
     save_operation,
@@ -205,7 +209,11 @@ async def focus_result(
             focus.status in OPEN_FOCUS_STATUSES
             and current_time - focus.started_at >= STALE_FOCUS_AFTER
         ),
-        "revised": focus.version > await _last_event_sequence(session, focus.id),
+        "revised": await _has_revision(session, focus.id),
+        "activity_day": activity_day_for(
+            focus.effective_started_at or focus.started_at,
+            focus.time_zone,
+        ),
         "server_now": current_time,
         **timer,
     }
@@ -222,6 +230,20 @@ async def _last_event_sequence(
             )
         )
         or 0
+    )
+
+
+async def _has_revision(
+    session: AsyncSession,
+    focus_id: UUID,
+) -> bool:
+    return (
+        await session.scalar(
+            select(ExecutionRevision.id)
+            .where(ExecutionRevision.focus_session_id == focus_id)
+            .limit(1)
+        )
+        is not None
     )
 
 
@@ -246,6 +268,57 @@ async def _owned_focus(
             status=404,
         )
     return focus
+
+
+async def _resolve_historical_task(
+    session: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID | None,
+    occurrence_key: str | None,
+) -> Task | None:
+    if task_id is None:
+        if occurrence_key is not None:
+            raise AppError(
+                "task_occurrence_requires_task",
+                "任务实例必须同时关联任务。",
+            )
+        return None
+    task = await session.scalar(
+        select(Task).where(Task.id == task_id, Task.owner_id == owner_id)
+    )
+    if task is None:
+        raise AppError("task_not_found", "未找到此任务。", status=404)
+    ensure_task_readable(task)
+    schedule = await session.get(TaskSchedule, task.id)
+    repeating = schedule is not None and schedule.recurrence_frequency != "none"
+    if repeating and occurrence_key is None:
+        raise AppError(
+            "task_occurrence_required",
+            "重复任务必须关联具体实例。",
+            status=409,
+        )
+    if not repeating and occurrence_key is not None:
+        raise AppError(
+            "task_not_recurring",
+            "非重复任务不能指定任务实例。",
+            status=409,
+        )
+    if occurrence_key is not None and schedule is not None:
+        state = await session.scalar(
+            select(TaskOccurrenceState).where(
+                TaskOccurrenceState.task_id == task.id,
+                TaskOccurrenceState.owner_id == owner_id,
+                TaskOccurrenceState.occurrence_key == occurrence_key,
+            )
+        )
+        if state is None:
+            await find_task_occurrence_date(
+                session,
+                owner_id,
+                schedule,
+                occurrence_key,
+            )
+    return task
 
 
 async def _resolve_task_reference(
@@ -1018,6 +1091,287 @@ async def complete_focus_task(
         "focus": await focus_result(session, focus, current_time),
         "task": task_result,
         "occurrence": occurrence_result,
+        "server_now": current_time,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+async def _ensure_no_focus_overlap(
+    session: AsyncSession,
+    owner_id: UUID,
+    starts_at: datetime,
+    ends_at: datetime,
+    *,
+    exclude_id: UUID | None = None,
+) -> None:
+    statement = select(FocusSession.id).where(
+        FocusSession.owner_id == owner_id,
+        or_(
+            and_(
+                FocusSession.effective_started_at.is_not(None),
+                FocusSession.effective_ended_at.is_not(None),
+                FocusSession.effective_started_at < ends_at,
+                FocusSession.effective_ended_at > starts_at,
+            ),
+            and_(
+                FocusSession.status.in_(OPEN_FOCUS_STATUSES),
+                FocusSession.started_at < ends_at,
+            ),
+        ),
+    )
+    if exclude_id is not None:
+        statement = statement.where(FocusSession.id != exclude_id)
+    conflict_id = await session.scalar(statement.limit(1))
+    if conflict_id is not None:
+        raise AppError(
+            "focus_time_conflict",
+            "这段时间与另一条专注记录重叠，请调整后保存。",
+            status=409,
+            details={"conflict_focus_id": str(conflict_id)},
+        )
+
+
+async def _resolve_manual_values(
+    session: AsyncSession,
+    owner_id: UUID,
+    data: FocusManualCreateInput | FocusRevisionInput,
+    *,
+    current_time: datetime,
+    exclude_id: UUID | None = None,
+) -> tuple[datetime, datetime, Task | None, list[dict]]:
+    starts_at, ends_at = resolve_manual_interval(
+        data.local_started_at,
+        data.local_ended_at,
+        data.time_zone,
+        data.start_utc_offset_minutes,
+        data.end_utc_offset_minutes,
+    )
+    if ends_at > current_time + FUTURE_EVENT_TOLERANCE:
+        raise AppError(
+            "invalid_focus_event_time",
+            "补记结束时间晚于服务端时间过多，请核对后重试。",
+            status=422,
+        )
+    interval_seconds = int((ends_at - starts_at).total_seconds())
+    if data.effective_duration_seconds > interval_seconds:
+        raise AppError(
+            "invalid_focus_duration",
+            "有效专注时长不能超过开始到结束的时间跨度。",
+            status=422,
+        )
+    await _ensure_no_focus_overlap(
+        session,
+        owner_id,
+        starts_at,
+        ends_at,
+        exclude_id=exclude_id,
+    )
+    task = await _resolve_historical_task(
+        session,
+        owner_id,
+        data.task_id,
+        data.occurrence_key,
+    )
+    return starts_at, ends_at, task, await _step_snapshots(session, task)
+
+
+async def create_manual_focus(
+    session: AsyncSession,
+    owner_id: UUID,
+    data: FocusManualCreateInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = "focus.manual"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    starts_at, ends_at, task, steps = await _resolve_manual_values(
+        session,
+        owner_id,
+        data,
+        current_time=current_time,
+    )
+    focus = FocusSession(
+        owner_id=owner_id,
+        source="manual",
+        task_id=task.id if task is not None else None,
+        occurrence_key=data.occurrence_key,
+        scheduled_block_id=None,
+        title_snapshot=data.title,
+        task_title_snapshot=task.title if task is not None else None,
+        step_snapshots=steps,
+        mode="stopwatch",
+        target_seconds=None,
+        status="finished",
+        started_at=starts_at,
+        ended_at=ends_at,
+        active_started_at=None,
+        accumulated_seconds=data.effective_duration_seconds,
+        effective_started_at=starts_at,
+        effective_ended_at=ends_at,
+        effective_duration_seconds=data.effective_duration_seconds,
+        time_zone=data.time_zone,
+    )
+    session.add(focus)
+    await session.flush()
+    session.add_all(
+        [
+            FocusEvent(
+                owner_id=owner_id,
+                focus_session_id=focus.id,
+                sequence=1,
+                kind="start",
+                occurred_at=starts_at,
+                client_recorded_at=None,
+                source="online",
+                details={"manual": True},
+            ),
+            FocusEvent(
+                owner_id=owner_id,
+                focus_session_id=focus.id,
+                sequence=2,
+                kind="finish",
+                occurred_at=ends_at,
+                client_recorded_at=None,
+                source="online",
+                details={
+                    "manual": True,
+                    "effective_duration_seconds": data.effective_duration_seconds,
+                },
+            ),
+        ]
+    )
+    emit_change(
+        session,
+        owner_id,
+        "focus_session",
+        focus.id,
+        "finished",
+        focus.version,
+    )
+    await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "focus": await focus_result(session, focus, current_time),
+        "server_now": current_time,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+def _effective_snapshot(focus: FocusSession) -> dict:
+    return {
+        "title": focus.title_snapshot,
+        "task_id": str(focus.task_id) if focus.task_id is not None else None,
+        "occurrence_key": focus.occurrence_key,
+        "effective_started_at": focus.effective_started_at,
+        "effective_ended_at": focus.effective_ended_at,
+        "effective_duration_seconds": focus.effective_duration_seconds,
+        "time_zone": focus.time_zone,
+    }
+
+
+async def revise_focus(
+    session: AsyncSession,
+    owner_id: UUID,
+    focus_id: UUID,
+    data: FocusRevisionInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"focus.revise:{focus_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    focus = await _owned_focus(session, owner_id, focus_id, lock=True)
+    await _check_focus_version(
+        session,
+        focus,
+        data.expected_version,
+        current_time,
+    )
+    if focus.status not in TERMINAL_FOCUS_STATUSES:
+        raise AppError(
+            "focus_not_terminal",
+            "进行中或暂停的专注不能修改，请先结束或放弃。",
+            status=409,
+        )
+    starts_at, ends_at, task, steps = await _resolve_manual_values(
+        session,
+        owner_id,
+        data,
+        current_time=current_time,
+        exclude_id=focus.id,
+    )
+    before = jsonable_encoder(_effective_snapshot(focus))
+    keep_block = (
+        focus.task_id == data.task_id
+        and focus.occurrence_key == data.occurrence_key
+    )
+    focus.task_id = task.id if task is not None else None
+    focus.occurrence_key = data.occurrence_key
+    if not keep_block:
+        focus.scheduled_block_id = None
+    focus.title_snapshot = data.title
+    focus.task_title_snapshot = task.title if task is not None else None
+    focus.step_snapshots = steps
+    focus.effective_started_at = starts_at
+    focus.effective_ended_at = ends_at
+    focus.effective_duration_seconds = data.effective_duration_seconds
+    focus.time_zone = data.time_zone
+    focus.version += 1
+    focus.updated_at = current_time
+    after = jsonable_encoder(_effective_snapshot(focus))
+    session.add(
+        ExecutionRevision(
+            owner_id=owner_id,
+            focus_session_id=focus.id,
+            session_version=focus.version,
+            before_data=before,
+            after_data=after,
+            reason=data.reason,
+        )
+    )
+    emit_change(
+        session,
+        owner_id,
+        "focus_session",
+        focus.id,
+        "revised",
+        focus.version,
+    )
+    await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "focus": await focus_result(session, focus, current_time),
         "server_now": current_time,
     }
     save_operation(
