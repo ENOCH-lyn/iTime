@@ -203,7 +203,7 @@ git commit -m "feat: 实现可恢复专注状态机"
 - Test: `server/tests/test_tasks.py`
 - Test: `server/tests/test_task_schedules.py`
 
-- [ ] **Step 1: 写任务联动失败测试**
+- [x] **Step 1: 写任务联动失败测试**
 
 覆盖：
 
@@ -218,17 +218,18 @@ git commit -m "feat: 实现可恢复专注状态机"
 操作重放不会重复递增任务或会话版本
 ```
 
-- [ ] **Step 2: 抽取现有任务进度服务**
+- [x] **Step 2: 抽取现有任务进度服务**
 
 从两个 router 中抽出三个可复用事务内函数：
 
-- `set_template_step_progress(session, owner_id, task, completed_step_ids, *, changed_at) -> dict`
-- `set_occurrence_progress(session, owner_id, task, occurrence_key, expected_occurrence_version, completed_step_ids, *, complete, changed_at) -> dict`
-- `set_task_completed(session, owner_id, task, *, completed, changed_at) -> dict`
+- `set_template_step_progress(session, owner_id, task, completed_step_ids, *, changed_at) -> tuple[dict, bool]`
+- `set_occurrence_progress(session, owner_id, task, occurrence_key, expected_occurrence_version, completed_step_ids, *, status, require_current_open, changed_at) -> tuple[dict, dict, bool]`
+- `set_task_completion_state(session, owner_id, task, *, completed, changed_at) -> tuple[dict, bool]`
+- `complete_task(session, owner_id, task, occurrence_key, expected_occurrence_version, *, changed_at) -> tuple[dict, dict | None, bool]`
 
 原任务接口和新执行接口必须调用同一函数，避免两套完成语义。
 
-- [ ] **Step 3: 实现执行进度接口**
+- [x] **Step 3: 实现执行进度接口**
 
 输入：
 
@@ -254,7 +255,7 @@ POST /api/v1/focus-sessions/{id}/complete-task
 
 事务锁顺序固定为用户、会话、任务、实例。进度成功写 `progress` 事件并更新会话版本；明确完成写 `task_completed` 事件，但不改时长。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 

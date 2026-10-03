@@ -61,3 +61,23 @@ class FocusTransitionInput(OperationInput):
         if value is not None and value.tzinfo is None:
             raise ValueError("离线操作时间必须包含 UTC 偏移")
         return value
+
+
+class FocusProgressInput(OperationInput):
+    expected_version: int = Field(ge=1)
+    expected_task_version: int = Field(ge=1)
+    expected_occurrence_version: int | None = Field(default=None, ge=0)
+    completed_step_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+    @field_validator("completed_step_ids")
+    @classmethod
+    def unique_step_ids(cls, values: list[UUID]) -> list[UUID]:
+        if len(values) != len(set(values)):
+            raise ValueError("已完成步骤不能重复")
+        return values
+
+
+class FocusTaskCompletionInput(OperationInput):
+    expected_version: int = Field(ge=1)
+    expected_task_version: int = Field(ge=1)
+    expected_occurrence_version: int | None = Field(default=None, ge=0)

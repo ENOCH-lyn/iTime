@@ -10,12 +10,12 @@ from itime.auth.session import Identity, authorized
 from itime.calendar.recurrence import occurrence_dates
 from itime.errors import AppError
 from itime.tasks.models import Task, TaskOccurrenceState, TaskSchedule, TaskStep
+from itime.tasks.progress_service import set_occurrence_progress
 from itime.tasks.schedule_service import (
     MAX_MAKEUP_OCCURRENCES,
     clone_task_template,
     find_task_occurrence_date,
     occurrence_state_result,
-    project_task_occurrence,
     query_task_occurrences,
     resolve_effective_due,
     resolve_task_schedule,
@@ -23,7 +23,6 @@ from itime.tasks.schedule_service import (
     task_plan,
     task_schedule_result,
     task_schedule_values,
-    validate_completed_steps,
 )
 from itime.tasks.schemas import (
     TaskMakeupCreate,
@@ -93,22 +92,6 @@ async def _base_state(
             TaskOccurrenceState.owner_id == identity.user.id,
             TaskOccurrenceState.kind == "base",
             TaskOccurrenceState.original_date == occurrence_date,
-        )
-        .with_for_update()
-    )
-
-
-async def _state_by_key(
-    identity: Identity,
-    task_id: UUID,
-    occurrence_key: str,
-) -> TaskOccurrenceState | None:
-    return await identity.session.scalar(
-        select(TaskOccurrenceState)
-        .where(
-            TaskOccurrenceState.task_id == task_id,
-            TaskOccurrenceState.owner_id == identity.user.id,
-            TaskOccurrenceState.occurrence_key == occurrence_key,
         )
         .with_for_update()
     )
@@ -352,108 +335,26 @@ async def update_task_occurrence_status(
         )
         if replay is not None:
             return replay
-        _, task, schedule = await _locked_schedule(
+        _, task, _ = await _locked_schedule(
             identity,
             task_id,
             data.expected_task_version,
         )
-        if schedule.recurrence_frequency == "none":
-            raise AppError(
-                "task_not_recurring",
-                "非重复任务请使用任务完成操作。",
-            )
-        state = await _state_by_key(identity, task.id, data.occurrence_key)
-        original_date = (
-            state.original_date
-            if state is not None
-            else await find_task_occurrence_date(
-                identity.session,
-                identity.user.id,
-                schedule,
-                data.occurrence_key,
-            )
-        )
-        if state is None:
-            state = await _base_state(identity, task.id, original_date)
-        _check_occurrence_version(state, data.expected_occurrence_version)
-        completed_step_ids = await validate_completed_steps(
+        task_result, occurrence_result, _ = await set_occurrence_progress(
             identity.session,
-            task.id,
+            identity.user.id,
+            task,
+            data.occurrence_key,
+            data.expected_occurrence_version,
             data.completed_step_ids,
+            status=data.status,
+            require_current_open=False,
+            changed_at=now(),
         )
-        step_count = await identity.session.scalar(
-            select(func.count(TaskStep.id)).where(TaskStep.task_id == task.id)
-        )
-        changed = (
-            state is None
-            or state.status != data.status
-            or state.completed_step_ids != completed_step_ids
-        )
-        if state is None:
-            state = TaskOccurrenceState(
-                task_id=task.id,
-                owner_id=identity.user.id,
-                occurrence_key=data.occurrence_key,
-                original_date=original_date,
-                kind="base",
-                effective_date=original_date,
-                effective_local_time=None,
-                effective_at=None,
-                effective_time_zone=None,
-                ambiguous_offset_minutes=None,
-                rescheduled=False,
-                status=data.status,
-                completed_at=now() if data.status == "completed" else None,
-                completed_step_ids=completed_step_ids,
-                step_count_snapshot=step_count,
-                makeup_for_key=None,
-                makeup_for_date=None,
-            )
-            identity.session.add(state)
-            await identity.session.flush()
-        elif changed:
-            if state.status != data.status:
-                state.completed_at = (
-                    now() if data.status == "completed" else None
-                )
-            state.status = data.status
-            state.completed_step_ids = completed_step_ids
-            state.version += 1
-            state.updated_at = now()
-        if changed:
-            task.version += 1
-            task.updated_at = now()
-            emit_change(
-                identity.session,
-                identity.user.id,
-                "task_occurrence",
-                state.id,
-                {
-                    "completed": "completed",
-                    "open": "reopened",
-                    "skipped": "skipped",
-                }[data.status],
-                state.version,
-            )
-            emit_change(
-                identity.session,
-                identity.user.id,
-                "task",
-                task.id,
-                "updated",
-                task.version,
-            )
-        await identity.session.flush()
         result = {
             "operation_id": data.operation_id,
-            "task": await task_detail(identity.session, task),
-            "occurrence": project_task_occurrence(
-                task,
-                schedule,
-                original_date,
-                state,
-                step_count=step_count,
-            ),
+            "task": task_result,
+            "occurrence": occurrence_result,
         }
         save_operation(
             identity.session,

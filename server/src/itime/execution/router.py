@@ -6,13 +6,20 @@ from fastapi import APIRouter, Query, Request
 
 from itime.auth.security import now
 from itime.auth.session import authorized
-from itime.execution.schemas import FocusStartInput, FocusTransitionInput
+from itime.execution.schemas import (
+    FocusProgressInput,
+    FocusStartInput,
+    FocusTaskCompletionInput,
+    FocusTransitionInput,
+)
 from itime.execution.service import (
+    complete_focus_task,
     current_focus,
     focus_detail,
     list_focus_sessions,
     start_focus,
     transition_focus,
+    update_focus_progress,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["执行与困难"])
@@ -90,6 +97,40 @@ async def transition(
     current_time = now()
     async with authorized(request, write=True) as identity:
         return await transition_focus(
+            identity.session,
+            identity.user.id,
+            focus_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.put("/focus-sessions/{focus_id}/progress")
+async def update_progress(
+    focus_id: UUID,
+    data: FocusProgressInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await update_focus_progress(
+            identity.session,
+            identity.user.id,
+            focus_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.post("/focus-sessions/{focus_id}/complete-task")
+async def complete_linked_task(
+    focus_id: UUID,
+    data: FocusTaskCompletionInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await complete_focus_task(
             identity.session,
             identity.user.id,
             focus_id,

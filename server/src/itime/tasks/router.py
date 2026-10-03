@@ -19,6 +19,7 @@ from itime.tasks.models import (
     TaskSchedule,
     TaskStep,
 )
+from itime.tasks.progress_service import set_task_completion_state
 from itime.tasks.schemas import (
     CompletionInput,
     ProjectCreate,
@@ -736,31 +737,16 @@ async def set_task_completion(
         task = await locked_task(identity.session, identity.user.id, task_id)
         if task.version != data.expected_version:
             raise task_version_conflict(task)
-        schedule = await identity.session.get(TaskSchedule, task.id)
-        if schedule is not None and schedule.recurrence_frequency != "none":
-            raise AppError(
-                "repeating_task_requires_occurrence",
-                "重复任务必须明确完成或重新打开某一次实例。",
-                status=409,
-            )
-        desired = "completed" if data.completed else "open"
-        if task.status != desired:
-            task.status = desired
-            task.completed_at = now() if data.completed else None
-            task.version += 1
-            task.updated_at = now()
-            emit_change(
-                identity.session,
-                identity.user.id,
-                "task",
-                task.id,
-                "completed" if data.completed else "reopened",
-                task.version,
-            )
-        await identity.session.flush()
+        task_result, _ = await set_task_completion_state(
+            identity.session,
+            identity.user.id,
+            task,
+            completed=data.completed,
+            changed_at=now(),
+        )
         result = {
             "operation_id": data.operation_id,
-            "task": await task_detail(identity.session, task),
+            "task": task_result,
         }
         save_operation(
             identity.session,

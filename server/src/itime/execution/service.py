@@ -8,15 +8,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from itime.calendar.models import UserTimeSettings
 from itime.errors import AppError
 from itime.execution.models import ExecutionRevision, FocusEvent, FocusSession
-from itime.execution.schemas import FocusStartInput, FocusTransitionInput
+from itime.execution.schemas import (
+    FocusProgressInput,
+    FocusStartInput,
+    FocusTaskCompletionInput,
+    FocusTransitionInput,
+)
 from itime.planning.models import Plan, PlanVersion, ScheduledBlock
 from itime.tasks.models import Task, TaskOccurrenceState, TaskSchedule, TaskStep
+from itime.tasks.progress_service import (
+    complete_task,
+    set_occurrence_progress,
+    set_template_step_progress,
+)
 from itime.tasks.schedule_service import find_task_occurrence_date
 from itime.tasks.service import (
     emit_change,
     ensure_task_editable,
+    locked_task,
     replay_operation,
     save_operation,
+    task_version_conflict,
     validate_cursor,
 )
 
@@ -768,3 +780,252 @@ async def list_focus_sessions(
         ),
         "server_now": current_time,
     }
+
+
+async def _check_focus_version(
+    session: AsyncSession,
+    focus: FocusSession,
+    expected_version: int,
+    current_time: datetime,
+) -> None:
+    if focus.version == expected_version:
+        return
+    current = await focus_result(session, focus, current_time)
+    raise AppError(
+        "focus_version_conflict",
+        "此专注已在其他页面或设备更新，请比较后再继续。",
+        status=409,
+        details={"current_focus": jsonable_encoder(current)},
+    )
+
+
+async def update_focus_progress(
+    session: AsyncSession,
+    owner_id: UUID,
+    focus_id: UUID,
+    data: FocusProgressInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"focus.progress:{focus_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    focus = await _owned_focus(session, owner_id, focus_id, lock=True)
+    await _check_focus_version(
+        session,
+        focus,
+        data.expected_version,
+        current_time,
+    )
+    if focus.status not in OPEN_FOCUS_STATUSES:
+        raise AppError(
+            "focus_not_open",
+            "只有进行中或暂停的专注可以更新步骤。",
+            status=409,
+        )
+    if focus.task_id is None:
+        raise AppError(
+            "focus_task_required",
+            "此专注未关联任务，不能更新任务步骤。",
+            status=409,
+        )
+    task = await locked_task(session, owner_id, focus.task_id)
+    if task.version != data.expected_task_version:
+        raise task_version_conflict(task)
+    if task.status == "completed":
+        raise AppError(
+            "task_already_completed",
+            "此任务已经完成，不能继续更新步骤。",
+            status=409,
+        )
+    if focus.occurrence_key is None:
+        if data.expected_occurrence_version is not None:
+            raise AppError(
+                "task_not_recurring",
+                "非重复任务不能提交任务实例版本。",
+                status=409,
+            )
+        task_result, changed = await set_template_step_progress(
+            session,
+            owner_id,
+            task,
+            data.completed_step_ids,
+            changed_at=current_time,
+        )
+        occurrence_result = None
+    else:
+        if data.expected_occurrence_version is None:
+            raise AppError(
+                "task_occurrence_version_required",
+                "请提供任务实例版本后重试。",
+                status=409,
+            )
+        task_result, occurrence_result, changed = await set_occurrence_progress(
+            session,
+            owner_id,
+            task,
+            focus.occurrence_key,
+            data.expected_occurrence_version,
+            data.completed_step_ids,
+            status="open",
+            require_current_open=True,
+            changed_at=current_time,
+        )
+    if changed:
+        sequence = await _last_event_sequence(session, focus.id)
+        focus.version += 1
+        focus.updated_at = current_time
+        session.add(
+            FocusEvent(
+                owner_id=owner_id,
+                focus_session_id=focus.id,
+                sequence=sequence + 1,
+                kind="progress",
+                occurred_at=current_time,
+                client_recorded_at=None,
+                source="online",
+                details={
+                    "completed_step_ids": [
+                        str(step_id) for step_id in data.completed_step_ids
+                    ],
+                    "task_version": task.version,
+                    "occurrence_version": (
+                        occurrence_result["occurrence_version"]
+                        if occurrence_result is not None
+                        else None
+                    ),
+                },
+            )
+        )
+        emit_change(
+            session,
+            owner_id,
+            "focus_session",
+            focus.id,
+            "updated",
+            focus.version,
+        )
+        await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "focus": await focus_result(session, focus, current_time),
+        "task": task_result,
+        "occurrence": occurrence_result,
+        "server_now": current_time,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+async def complete_focus_task(
+    session: AsyncSession,
+    owner_id: UUID,
+    focus_id: UUID,
+    data: FocusTaskCompletionInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"focus.complete_task:{focus_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    focus = await _owned_focus(session, owner_id, focus_id, lock=True)
+    await _check_focus_version(
+        session,
+        focus,
+        data.expected_version,
+        current_time,
+    )
+    if focus.status not in TERMINAL_FOCUS_STATUSES:
+        raise AppError(
+            "focus_not_terminal",
+            "请先结束或放弃当前专注，再确认任务完成。",
+            status=409,
+        )
+    if focus.task_id is None:
+        raise AppError(
+            "focus_task_required",
+            "此专注未关联任务。",
+            status=409,
+        )
+    task = await locked_task(session, owner_id, focus.task_id)
+    if task.version != data.expected_task_version:
+        raise task_version_conflict(task)
+    task_result, occurrence_result, changed = await complete_task(
+        session,
+        owner_id,
+        task,
+        focus.occurrence_key,
+        data.expected_occurrence_version,
+        changed_at=current_time,
+    )
+    if changed:
+        sequence = await _last_event_sequence(session, focus.id)
+        focus.version += 1
+        focus.updated_at = current_time
+        session.add(
+            FocusEvent(
+                owner_id=owner_id,
+                focus_session_id=focus.id,
+                sequence=sequence + 1,
+                kind="task_completed",
+                occurred_at=current_time,
+                client_recorded_at=None,
+                source="online",
+                details={
+                    "task_id": str(task.id),
+                    "occurrence_key": focus.occurrence_key,
+                    "task_version": task.version,
+                    "occurrence_version": (
+                        occurrence_result["occurrence_version"]
+                        if occurrence_result is not None
+                        else None
+                    ),
+                },
+            )
+        )
+        emit_change(
+            session,
+            owner_id,
+            "focus_session",
+            focus.id,
+            "updated",
+            focus.version,
+        )
+        await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "focus": await focus_result(session, focus, current_time),
+        "task": task_result,
+        "occurrence": occurrence_result,
+        "server_now": current_time,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
