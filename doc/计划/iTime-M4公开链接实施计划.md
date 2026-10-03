@@ -285,7 +285,7 @@ git commit -m "feat: 建立公开链接读取状态"
 - Create: `server/src/itime/public_links/parser.py`
 - Create: `server/tests/test_public_link_parser.py`
 
-- [ ] **Step 1: 写解析失败测试**
+- [x] **Step 1: 写解析失败测试**
 
 覆盖 HTML 标题和描述优先级、正文段落、实体解码、UTF-8/GB18030、纯文本、隐藏元素、控制字符、
 空正文和长度边界：
@@ -310,7 +310,7 @@ def test_html_prompt_text_is_data_and_scripts_are_excluded():
 `page_title <= 300`、`summary <= 2000`、`extracted_text <= 24000`；无可见文本抛出
 `PublicLinkParseError("public_link_content_empty", ...)`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -319,7 +319,7 @@ uv run pytest -q tests/test_public_link_parser.py
 
 Expected: FAIL，解析器不存在。
 
-- [ ] **Step 3: 实现结构化解析器**
+- [x] **Step 3: 实现结构化解析器**
 
 使用标准库 `HTMLParser(convert_charrefs=True)`：
 
@@ -346,7 +346,7 @@ collector 跳过 `script/style/noscript/template/svg/iframe` 深度，读取 `og
 `og:description`、`meta[name=description]`、`title` 和可见文本块。统一调用
 `unicodedata.normalize("NFKC", text)`，移除 C0/C1 控制字符并折叠空白。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
