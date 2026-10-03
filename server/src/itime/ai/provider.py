@@ -13,6 +13,7 @@ from itime.config import Settings
 
 MAX_TEST_RESPONSE_BYTES = 1024 * 1024
 PLANNING_TEST_TOOL = "submit_itime_planning_test"
+REVIEW_TEST_TOOL = "submit_itime_review_test"
 SYNTHETIC_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAASsAAABACAIAAADNgsbOAAABR0lEQVR42u3cwQ2DMAxA"
     "0czADlzZfztYgUiO41jvq9emisnjUCHGK2lfwwgkAiUCJREoESiJQIlASQRKBEoiUCJQ"
@@ -120,7 +121,12 @@ def _valid_chat_response(body: bytes, capability: str) -> bool:
     message = choices[0].get("message")
     if not isinstance(message, dict):
         return False
-    if capability == "planning":
+    if capability in {"planning", "review"}:
+        expected_tool = (
+            PLANNING_TEST_TOOL
+            if capability == "planning"
+            else REVIEW_TEST_TOOL
+        )
         tool_calls = message.get("tool_calls")
         if (
             not isinstance(tool_calls, list)
@@ -132,7 +138,7 @@ def _valid_chat_response(body: bytes, capability: str) -> bool:
         function = tool_calls[0].get("function")
         if (
             not isinstance(function, dict)
-            or function.get("name") != PLANNING_TEST_TOOL
+            or function.get("name") != expected_tool
             or not isinstance(function.get("arguments"), str)
         ):
             return False
@@ -192,7 +198,12 @@ async def _network_test(
             "max_tokens": min(config.max_output_tokens, 32),
             "temperature": 0,
         }
-    elif capability == "planning":
+    elif capability in {"planning", "review"}:
+        test_tool = (
+            PLANNING_TEST_TOOL
+            if capability == "planning"
+            else REVIEW_TEST_TOOL
+        )
         request_body = {
             "model": config.model,
             "messages": [
@@ -200,7 +211,7 @@ async def _network_test(
                     "role": "user",
                     "content": (
                         "This is a synthetic planning tool check with no user data. "
-                        f"Call {PLANNING_TEST_TOOL} exactly once with marker 09:00. "
+                        f"Call {test_tool} exactly once with marker 09:00. "
                         "Do not call any other tool."
                     ),
                 }
@@ -209,8 +220,8 @@ async def _network_test(
                 {
                     "type": "function",
                     "function": {
-                        "name": PLANNING_TEST_TOOL,
-                        "description": "Return the synthetic planning marker.",
+                        "name": test_tool,
+                        "description": "Return the synthetic iTime capability marker.",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -227,7 +238,7 @@ async def _network_test(
             ],
             "tool_choice": {
                 "type": "function",
-                "function": {"name": PLANNING_TEST_TOOL},
+                "function": {"name": test_tool},
             },
             "parallel_tool_calls": False,
             "max_tokens": min(config.max_output_tokens, 64),

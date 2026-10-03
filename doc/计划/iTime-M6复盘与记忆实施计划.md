@@ -266,7 +266,7 @@ git commit -m "feat: 提供单日复盘事实与会话"
 - Test: `server/tests/test_review_provider.py`
 - Test: `server/tests/test_ai_config.py`
 
-- [ ] **Step 1: 写供应商解析失败测试**
+- [x] **Step 1: 写供应商解析失败测试**
 
 覆盖流式和非流式问题/报告、分片工具参数、usage、非法 JSON、错工具、多工具、超大响应、未授权事实来源、推测候选被移除、鉴权/限流/5xx 分类和取消回调。
 
@@ -276,13 +276,13 @@ assert result.output.facts[0].source_key == "focus:<id>"
 assert result.output.memory_candidates == []
 ```
 
-- [ ] **Step 2: 运行供应商测试确认失败**
+- [x] **Step 2: 运行供应商测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_review_provider.py tests/test_ai_config.py`
 
 Expected: FAIL，`review` 请求构造和解析器尚不存在。
 
-- [ ] **Step 3: 实现双工具协议**
+- [x] **Step 3: 实现双工具协议**
 
 定义 `submit_itime_review_question` 和 `submit_itime_review_report`，使用单工具、`parallel_tool_calls=false`、温度 0、1 MiB 响应上限。复用端点策略但保留复盘专属错误码和用户文案。
 
@@ -304,13 +304,13 @@ def review_request_body(config, messages, purpose):
 
 扩展管理端合成配置测试，让 `review` 只使用无用户数据的固定工具调用。
 
-- [ ] **Step 4: 运行供应商与 AI 配置测试**
+- [x] **Step 4: 运行供应商与 AI 配置测试**
 
 Run: `cd server && uv run pytest -q tests/test_review_provider.py tests/test_ai_config.py`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/review/provider.py server/src/itime/review/schemas.py \
