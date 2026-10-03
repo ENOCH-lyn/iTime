@@ -31,6 +31,7 @@ REVISION_TRIGGER_TABLES = {
     "task_steps",
     "task_schedules",
     "task_occurrence_states",
+    "task_links",
     "calendar_series",
     "calendar_exceptions",
     "calendar_additions",
@@ -229,7 +230,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             ).fetchone() == ("planning", 1, None)
             assert (
                 connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0029_account_deletions"
+                == "0030_public_task_links"
             )
 
         from itime.ai.models import AIJob

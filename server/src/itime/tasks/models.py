@@ -456,6 +456,67 @@ class TaskLink(Base):
     __table_args__ = (
         CheckConstraint("position >= 0", name="position"),
         CheckConstraint("url ~ '^https?://'", name="http_url"),
+        CheckConstraint(
+            "fetch_status IN ('queued', 'running', 'ready', 'failed')",
+            name="fetch_status",
+        ),
+        CheckConstraint("fetch_revision >= 1", name="fetch_revision"),
+        CheckConstraint("attempt_count >= 0", name="attempt_count"),
+        CheckConstraint(
+            "(fetch_status = 'running') = "
+            "(lease_id IS NOT NULL AND lease_until IS NOT NULL)",
+            name="fetch_lease_state",
+        ),
+        CheckConstraint(
+            "(last_error_code IS NULL) = (last_error_message IS NULL)",
+            name="fetch_error_pair",
+        ),
+        CheckConstraint(
+            "fetch_status != 'failed' OR last_error_code IS NOT NULL",
+            name="failed_error",
+        ),
+        CheckConstraint(
+            "fetch_status != 'ready' OR last_error_code IS NULL",
+            name="ready_without_error",
+        ),
+        CheckConstraint(
+            "fetch_status != 'ready' OR last_success_at IS NOT NULL",
+            name="ready_snapshot",
+        ),
+        CheckConstraint(
+            "(last_success_at IS NULL "
+            "AND final_host IS NULL "
+            "AND media_type IS NULL "
+            "AND page_title IS NULL "
+            "AND summary IS NULL "
+            "AND extracted_text IS NULL "
+            "AND content_sha256 IS NULL) "
+            "OR (last_success_at IS NOT NULL "
+            "AND final_host IS NOT NULL "
+            "AND media_type IS NOT NULL "
+            "AND summary IS NOT NULL "
+            "AND length(summary) > 0 "
+            "AND extracted_text IS NOT NULL "
+            "AND length(extracted_text) > 0 "
+            "AND content_sha256 IS NOT NULL)",
+            name="fetch_snapshot",
+        ),
+        CheckConstraint(
+            "content_sha256 IS NULL OR content_sha256 ~ '^[0-9a-f]{64}$'",
+            name="content_sha256",
+        ),
+        CheckConstraint(
+            "page_title IS NULL OR char_length(page_title) <= 300",
+            name="page_title_length",
+        ),
+        CheckConstraint(
+            "summary IS NULL OR char_length(summary) <= 2000",
+            name="summary_length",
+        ),
+        CheckConstraint(
+            "extracted_text IS NULL OR char_length(extracted_text) <= 24000",
+            name="extracted_text_length",
+        ),
         ForeignKeyConstraint(
             ["task_id", "owner_id"],
             ["tasks.id", "tasks.owner_id"],
@@ -470,6 +531,20 @@ class TaskLink(Base):
             initially="DEFERRED",
         ),
         Index("ix_task_links_owner_task", "owner_id", "task_id", "position"),
+        Index(
+            "ix_task_links_due",
+            "available_at",
+            "lease_until",
+            "owner_id",
+            "id",
+            postgresql_where=text("fetch_status IN ('queued', 'running')"),
+        ),
+        Index(
+            "ix_task_links_owner_attempt",
+            "owner_id",
+            "last_attempt_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -478,6 +553,42 @@ class TaskLink(Base):
     title: Mapped[str] = mapped_column(String(120), default="", server_default="")
     url: Mapped[str] = mapped_column(String(2048))
     position: Mapped[int] = mapped_column(Integer)
+    fetch_status: Mapped[str] = mapped_column(
+        String(12),
+        default="queued",
+        server_default="queued",
+    )
+    fetch_revision: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default="1",
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    lease_id: Mapped[UUID | None]
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    final_host: Mapped[str | None] = mapped_column(String(255))
+    media_type: Mapped[str | None] = mapped_column(String(100))
+    page_title: Mapped[str | None] = mapped_column(String(300))
+    summary: Mapped[str | None] = mapped_column(Text)
+    extracted_text: Mapped[str | None] = mapped_column(Text)
+    content_sha256: Mapped[str | None] = mapped_column(String(64))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_message: Mapped[str | None] = mapped_column(String(500))
+    last_http_status: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -505,7 +616,8 @@ class ChangeEvent(Base):
             "'calendar_series', 'calendar_exception', 'task_occurrence', "
             "'calendar_addition', 'calendar_source', 'privacy_settings', 'plan', "
             "'focus_session', 'difficulty', 'review_session', 'review_report', "
-            "'review_annotation', 'memory', 'memory_settings', 'conversation')",
+            "'review_annotation', 'memory', 'memory_settings', 'conversation', "
+            "'task_link')",
             name="entity_type",
         ),
         CheckConstraint(

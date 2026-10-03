@@ -149,6 +149,11 @@ class ChatGeneration(Base):
             name="context_message_ids",
         ),
         CheckConstraint(
+            "jsonb_typeof(public_source_context) = 'array' "
+            "AND jsonb_array_length(public_source_context) <= 3",
+            name="public_source_context",
+        ),
+        CheckConstraint(
             "stream_generation BETWEEN 0 AND 5",
             name="stream_generation",
         ),
@@ -211,6 +216,11 @@ class ChatGeneration(Base):
     response_message_id: Mapped[UUID]
     history_through_sequence: Mapped[int] = mapped_column(Integer)
     context_message_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    public_source_context: Mapped[list[dict]] = mapped_column(
         JSONB,
         default=list,
         server_default=text("'[]'::jsonb"),

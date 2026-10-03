@@ -203,7 +203,7 @@ Expected: 共享安全测试和全部日历抓取回归通过。
 - Create: `server/tests/test_public_link_models.py`
 - Modify: `server/tests/test_planning_models.py`
 
-- [ ] **Step 1: 写迁移和约束失败测试**
+- [x] **Step 1: 写迁移和约束失败测试**
 
 在独立 PostgreSQL 中升级到 head 后断言 `task_links` 新字段、due 索引和
 `ai_chat_generations.public_source_context` 存在，并覆盖：
@@ -225,7 +225,7 @@ with pytest.raises(CheckViolation):
 `task_link` 可写入 `change_events`；`task_links` 已加入规划 revision trigger；空表可降到
 `0029_account_deletions` 再升级且 ORM 无漂移。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -234,7 +234,7 @@ uv run pytest -q tests/test_public_link_models.py tests/test_planning_models.py
 
 Expected: FAIL，迁移和 ORM 字段不存在。
 
-- [ ] **Step 3: 扩展 ORM 和配置**
+- [x] **Step 3: 扩展 ORM 和配置**
 
 `TaskLink` 增加设计文档第 2 节字段及一致性约束，默认
 `fetch_status="queued" / fetch_revision=1 / attempt_count=0 / available_at=now()`。
@@ -251,7 +251,7 @@ public_source_context: Mapped[list[dict]] = mapped_column(
 并检查它是数组且最多 3 项。`Settings` 增加
 `public_link_lease_seconds: int = Field(default=30, ge=20, le=120)`。
 
-- [ ] **Step 4: 实现迁移**
+- [x] **Step 4: 实现迁移**
 
 迁移 revision 为 `0030_public_task_links`，down revision 为 `0029_account_deletions`。除字段、
 约束和 due/owner 索引外：
@@ -261,7 +261,7 @@ public_source_context: Mapped[list[dict]] = mapped_column(
 3. 既有链接以 `queued`、revision 1、attempt 0、`available_at=now()` 回填。
 4. downgrade 先删除 trigger 和索引，再删除新增列并恢复 change-event 约束。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
