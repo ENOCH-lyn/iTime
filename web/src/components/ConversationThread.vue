@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import type { Conversation, ConversationMessage } from '../lib/conversations'
+import ProposalMessageCard from './ProposalMessageCard.vue'
 
 defineProps<{
   conversation: Conversation | null
@@ -96,8 +97,14 @@ function stateLabel(message: ConversationMessage) {
             <div v-else-if="['queued', 'running'].includes(message.status)"
               class="message-progress" role="status" aria-live="polite">
               <LoaderCircle :size="16" class="spin" aria-hidden="true" />
-              {{ message.status === 'queued' ? '正在排队' : '正在生成' }}
+              {{ message.job?.capability === 'planning'
+                ? message.status === 'queued' ? '计划正在排队' : '正在生成并校验计划'
+                : message.status === 'queued' ? '正在排队' : '正在生成' }}
             </div>
+            <ProposalMessageCard
+              v-if="message.role === 'assistant' && message.job?.output?.proposal_id"
+              :proposal-id="message.job.output.proposal_id"
+            />
             <div v-if="stateLabel(message)" class="message-state"
               :class="{ failed: ['failed', 'timed_out'].includes(message.status) }"
               role="status">

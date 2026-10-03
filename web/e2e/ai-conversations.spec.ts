@@ -53,6 +53,46 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page).toHaveTitle('AI 对话 · iTime')
 }
 
+async function planningSetup(page: Page) {
+  const sessionResponse = await page.request.get('/api/v1/auth/me')
+  expect(sessionResponse.ok()).toBeTruthy()
+  const session = await sessionResponse.json()
+  const settingsResponse = await page.request.get('/api/v1/time-settings')
+  const settings = (await settingsResponse.json()).settings
+  const saved = await page.request.put('/api/v1/time-settings', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      expected_version: settings.version,
+      time_zone: 'Asia/Shanghai',
+      week_starts_on: 1,
+      activity_day_start_minute: 240,
+    },
+  })
+  expect(saved.ok()).toBeTruthy()
+  const task = await page.request.post('/api/v1/tasks', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      title: '完成对话规划任务',
+      description: '从 AI 对话生成结构化规划提案。',
+      project_id: null,
+      estimated_minutes: 60,
+      priority: 2,
+      labels: ['规划'],
+      links: [],
+      steps: [{ title: '整理范围' }, { title: '确认输出' }],
+    },
+  })
+  expect(task.ok()).toBeTruthy()
+}
+
+function futureDate(days: number) {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -170,6 +210,42 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, '320-large-dark')
   }
+})
+
+test('对话显式生成结构化计划并通过提案卡进入确认页', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  await planningSetup(page)
+  await newConversation(page)
+
+  await page.locator('.composer-mode label').filter({ hasText: '生成计划' }).click()
+  await page.getByLabel('计划日期', { exact: true }).fill(futureDate(14))
+  await page.getByLabel('消息', { exact: true }).fill('请安排这项任务，并保留清晰的检查步骤。')
+  await page.getByRole('button', { name: '生成计划', exact: true }).click()
+
+  const messageList = page.getByRole('list', { name: '会话消息' })
+  await expect(messageList.getByText('计划草案已生成。', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
+  const proposal = messageList.getByRole('region', { name: '规划提案' })
+  await expect(proposal.getByText('尚未写入计划', { exact: true })).toBeVisible()
+  await expect(proposal.getByText('完成对话规划任务', { exact: false })).toBeVisible()
+  await expect(messageList).not.toContainText('submit_itime_plan')
+  await screenshot(page, info, 'planning-card')
+
+  const destination = await proposal.getByRole('link', { name: '查看并确认' }).getAttribute('href')
+  expect(destination).toContain('/plans')
+  expect(destination).toContain('proposal=')
+  await proposal.getByRole('link', { name: '查看并确认' }).click()
+  await expect(page).toHaveURL(/\/plans\?.*proposal=/)
+  await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible()
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'planning-proposal')
 })
 
 test('离开页面后作业继续并从服务端恢复完整回复', async ({

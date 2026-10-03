@@ -1,5 +1,8 @@
 import { api } from './api'
 import type { AIJob } from './ai-jobs'
+import type { PlanningFields } from './plans'
+
+export type ConversationResponseMode = 'text' | 'planning'
 
 export interface Conversation {
   id: string
@@ -48,6 +51,7 @@ export interface AIJobEvent {
     text?: string
     attempt?: number
     retrying?: boolean
+    proposal_id?: string
     error_code?: string
     error_message?: string
   }
@@ -114,6 +118,8 @@ export async function sendConversationMessage(
   conversation: Conversation,
   operationId: string,
   content: string,
+  responseMode: ConversationResponseMode = 'text',
+  planning?: PlanningFields,
 ) {
   return api<{
     operation_id: string
@@ -126,6 +132,8 @@ export async function sendConversationMessage(
       operation_id: operationId,
       expected_conversation_version: conversation.version,
       content,
+      response_mode: responseMode,
+      ...(responseMode === 'planning' ? { planning } : {}),
     },
   )
 }

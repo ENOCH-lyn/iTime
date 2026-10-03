@@ -27,7 +27,9 @@ import {
   type Conversation,
   type ConversationMessage,
   type ConversationPage,
+  type ConversationResponseMode,
 } from '../lib/conversations'
+import type { PlanningFields } from '../lib/plans'
 import '../ai-workspace.css'
 
 const route = useRoute()
@@ -39,6 +41,17 @@ const selected = ref<Conversation | null>(null)
 const messages = ref<ConversationMessage[]>([])
 const olderCursor = ref<number | null>(null)
 const composer = ref('')
+const responseMode = ref<ConversationResponseMode>('text')
+const planning = ref<PlanningFields>({
+  scope: 'day',
+  target_date: localDate(new Date()),
+  density: 'balanced',
+  buffer_minutes: 15,
+  availability_start: '08:00',
+  availability_end: '22:00',
+  task_ids: [],
+  instruction: '',
+})
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const loadingOlder = ref(false)
@@ -71,6 +84,11 @@ const composerDisabled = computed(() => (
   || identity.value?.user.ai_access === 'frozen'
   || !!activeJob.value
 ))
+
+function localDate(value: Date) {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+}
 
 watch(authError, value => {
   if (value?.code === 'unauthenticated') void router.replace('/login')
@@ -417,7 +435,26 @@ async function send() {
   if (!selected.value || sending.value || composerDisabled.value) return
   const content = composer.value.trim()
   if (!content) return
-  const fingerprint = `${selected.value.id}:${selected.value.version}:${content}`
+  const planningRequest = responseMode.value === 'planning'
+    ? { ...planning.value, instruction: content }
+    : undefined
+  if (
+    planningRequest
+    && (
+      !planningRequest.target_date
+      || planningRequest.availability_start >= planningRequest.availability_end
+    )
+  ) {
+    error.value = localFailure('请检查计划日期和可规划时段。')
+    return
+  }
+  const fingerprint = JSON.stringify({
+    conversation: selected.value.id,
+    version: selected.value.version,
+    content,
+    response_mode: responseMode.value,
+    planning: planningRequest,
+  })
   sendOperation = sendOperation?.fingerprint === fingerprint
     ? sendOperation
     : { id: crypto.randomUUID(), fingerprint }
@@ -429,9 +466,12 @@ async function send() {
       selected.value,
       sendOperation.id,
       content,
+      responseMode.value,
+      planningRequest,
     )
     sendOperation = null
     composer.value = ''
+    responseMode.value = 'text'
     selected.value = result.conversation
     mergeConversation(result.conversation)
     const known = new Set(messages.value.map(message => message.id))
@@ -456,6 +496,7 @@ async function send() {
       if (latestUser?.content === content) {
         sendOperation = null
         composer.value = ''
+        responseMode.value = 'text'
       }
     }
   } finally {
@@ -470,7 +511,9 @@ async function cancelGeneration() {
   error.value = null
   try {
     await cancelAIJob(job.id, crypto.randomUUID())
-    success.value = '生成已取消，已收到的内容仍保留。'
+    success.value = job.capability === 'planning'
+      ? '计划生成已取消，尚未创建提案。'
+      : '生成已取消，已收到的内容仍保留。'
     await syncCurrent(true)
   } catch (reason) {
     error.value = failure(reason)
@@ -485,6 +528,18 @@ async function retryMessage(message: ConversationMessage) {
   )
   if (!previous) return
   composer.value = previous.content
+  if (message.job?.capability === 'planning') {
+    responseMode.value = 'planning'
+    planning.value = {
+      ...planning.value,
+      scope: message.job.input_summary.scope === 'week' ? 'week' : 'day',
+      target_date: typeof message.job.input_summary.target_date === 'string'
+        ? message.job.input_summary.target_date
+        : planning.value.target_date,
+    }
+  } else {
+    responseMode.value = 'text'
+  }
   await nextTick()
   document.getElementById('conversation-message')?.focus()
 }
@@ -581,6 +636,8 @@ async function logout() {
       <ConversationComposer
         v-if="selected"
         v-model="composer"
+        v-model:mode="responseMode"
+        v-model:planning="planning"
         :pending="sending"
         :disabled="composerDisabled"
         :archived="selected.archived"
