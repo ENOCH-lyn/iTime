@@ -23,7 +23,7 @@ const router = createRouter({
       path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),
       props: { mode },
     })),
-    { path: '/admin/:section(users|registration|ai|security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
+    { path: '/admin/:section(users|registration|ai|logs|quality|audit|security|password|recovery|appearance)', component: () => import('./pages/AdminPage.vue') },
     { path: '/help', component: () => import('./pages/HelpPage.vue') },
     { path: '/terms', component: () => import('./pages/TermsPage.vue') },
     { path: '/privacy', component: () => import('./pages/PrivacyPage.vue') },

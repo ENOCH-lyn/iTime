@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bot, ExternalLink, FileKey2, KeyRound, LogOut, MailPlus, Palette, ShieldCheck, Users } from 'lucide-vue-next'
+import { Bot, ClipboardCheck, ExternalLink, FileKey2, FileSearch, KeyRound, LogOut, MailPlus, Palette, ScrollText, ShieldCheck, Users } from 'lucide-vue-next'
+import AdminAuditEvents from '../components/AdminAuditEvents.vue'
 import AdminAISettings from '../components/AdminAISettings.vue'
+import AdminBodyLogs from '../components/AdminBodyLogs.vue'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import AdminPasswordSettings from '../components/AdminPasswordSettings.vue'
+import AdminQualitySamples from '../components/AdminQualitySamples.vue'
 import AdminRecoverySettings from '../components/AdminRecoverySettings.vue'
 import AdminRegistrationSettings from '../components/AdminRegistrationSettings.vue'
 import AdminUserManagement from '../components/AdminUserManagement.vue'
@@ -17,7 +20,8 @@ const router = useRouter()
 const section = computed(() => String(route.params.section ?? 'security'))
 const titles: Record<string, string> = {
   users: '用户管理', registration: '注册与邀请', security: '账号安全',
-  ai: 'AI 配置', password: '修改密码', recovery: '恢复码', appearance: '外观',
+  ai: 'AI 配置', logs: 'AI 日志', quality: '质量样本', audit: '审计记录',
+  password: '修改密码', recovery: '恢复码', appearance: '外观',
 }
 const pending = ref(false)
 const booted = ref(false)
@@ -47,6 +51,9 @@ const links = [
   { to: '/admin/users', title: '用户管理', icon: Users },
   { to: '/admin/registration', title: '注册与邀请', icon: MailPlus },
   { to: '/admin/ai', title: 'AI 配置', icon: Bot },
+  { to: '/admin/logs', title: 'AI 日志', icon: FileSearch },
+  { to: '/admin/quality', title: '质量样本', icon: ClipboardCheck },
+  { to: '/admin/audit', title: '审计记录', icon: ScrollText },
   { to: '/admin/security', title: '账号安全', icon: ShieldCheck },
   { to: '/admin/password', title: '修改密码', icon: KeyRound },
   { to: '/admin/recovery', title: '恢复码', icon: FileKey2 },
@@ -81,6 +88,9 @@ const links = [
         <AdminUserManagement v-if="section === 'users'" />
         <AdminRegistrationSettings v-else-if="section === 'registration'" />
         <AdminAISettings v-else-if="section === 'ai'" />
+        <AdminBodyLogs v-else-if="section === 'logs'" />
+        <AdminQualitySamples v-else-if="section === 'quality'" />
+        <AdminAuditEvents v-else-if="section === 'audit'" />
         <template v-else-if="section === 'security'">
           <p class="page-description">管理会话与普通用户登录相互独立。</p>
           <dl class="account-details">
