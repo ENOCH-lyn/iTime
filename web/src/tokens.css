@@ -14,6 +14,7 @@
   --input-border: #a8b6ad;
   --focus: #438664;
   --error: #9e3d36;
+  --on-error: #ffffff;
   --error-bg: #fff4f1;
   --error-border: #e9c6c0;
   --notice-bg: #f3ead5;
@@ -35,6 +36,7 @@
   --input-border: #647c6c;
   --focus: #a2d6b5;
   --error: #f5b6ab;
+  --on-error: #2a0d0a;
   --error-bg: #422f2a;
   --error-border: #745248;
   --notice-bg: #403c2d;

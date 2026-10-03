@@ -670,6 +670,7 @@ async def seed_admins(
                 "layout",
                 "registration",
                 "users",
+                "account-deletion",
                 "management-errors",
                 "ai-config",
                 "governance",

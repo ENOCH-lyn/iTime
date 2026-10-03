@@ -1,13 +1,26 @@
+import AxeBuilder from '@axe-core/playwright'
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import {
   expect,
   test,
   type APIRequestContext,
   type Page,
+  type TestInfo,
 } from '@playwright/test'
 
 const password = 'Valid-account-deletion-password-123'
 const runtimeErrors = new WeakMap<Page, string[]>()
+const evidence = '/tmp/itime-ui-evidence'
+
+async function screenshot(page: Page, info: TestInfo, name: string) {
+  await mkdir(evidence, { recursive: true })
+  await page.screenshot({
+    path: `${evidence}/${info.project.name}-account-deletion-${name}.png`,
+    fullPage: name !== 'dialog',
+    animations: 'disabled',
+  })
+}
 
 async function mailLink(request: APIRequestContext, address: string) {
   let id = ''
@@ -245,6 +258,145 @@ test('restore pending deletion and clear local data across tabs', async ({
       .toBeVisible()
     await page.getByRole('button', { name: '进入 iTime', exact: true }).click()
     await expect(page).toHaveURL('/ai')
+  } finally {
+    await secondContext.close()
+  }
+})
+
+test('request deletion from data settings with guarded confirmation', async ({
+  page,
+  browser,
+  request,
+}, info) => {
+  const account = await registerAndLogin(page, request)
+  const secondContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+  })
+  try {
+    const secondDevice = await secondContext.newPage()
+    await login(secondDevice, account.email)
+    await page.goto('/account/data')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    if (info.project.name === 'mobile') {
+      await page.evaluate(() => localStorage.setItem(
+        'itime-appearance',
+        JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+      ))
+      await page.setViewportSize({ width: 320, height: 700 })
+      await page.reload()
+    }
+    await expect(page).toHaveTitle('数据管理 · iTime')
+    await expect(page.getByRole('heading', { name: '最近的数据包' }))
+      .toHaveCount(0)
+    await expect(page.getByText('还没有生成过数据包。')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '注销账号' })).toBeVisible()
+    const order = await page.locator(
+      '.data-export-settings, .account-deletion-settings',
+    ).evaluateAll(elements => elements.map(element =>
+      element.classList.contains('data-export-settings')
+        ? 'export'
+        : 'deletion'))
+    expect(order).toEqual(['export', 'deletion'])
+
+    await page.getByRole('button', { name: '注销账号', exact: true }).click()
+    let dialog = page.getByRole('dialog', { name: '注销账号？' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel('完整注册邮箱')).toBeFocused()
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    )).toBe(true)
+    expect(
+      (await new AxeBuilder({ page })
+        .include('.account-deletion-dialog')
+        .analyze()).violations,
+    ).toEqual([])
+    await screenshot(page, info, 'dialog')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+
+    await page.getByRole('button', { name: '注销账号', exact: true }).click()
+    dialog = page.getByRole('dialog', { name: '注销账号？' })
+    await dialog.getByLabel('完整注册邮箱').fill('wrong@example.com')
+    await dialog.getByRole('textbox', { name: '当前密码', exact: true })
+      .fill(password)
+    await dialog.getByRole('button', { name: '确认申请注销' }).click()
+    await expect(dialog.getByText('邮箱与当前账号不一致。')).toBeVisible()
+
+    await dialog.getByLabel('完整注册邮箱').fill(account.email)
+    await dialog.getByRole('textbox', { name: '当前密码', exact: true })
+      .fill('Wrong-password-456')
+    await dialog.getByRole('button', { name: '确认申请注销' }).click()
+    await expect(dialog.getByRole('alert')).toContainText('邮箱或密码不正确')
+
+    await seedLocalData(page, account.userId, 'pending-before-deletion')
+    let confirmationCount = 0
+    page.once('dialog', async confirmation => {
+      confirmationCount += 1
+      expect(confirmation.message()).toContain('2 项操作未同步')
+      expect(confirmation.message()).toContain('不会保存')
+      await confirmation.dismiss()
+    })
+    await dialog.getByRole('textbox', { name: '当前密码', exact: true })
+      .fill(password)
+    await dialog.getByRole('button', { name: '确认申请注销' }).click()
+    await expect(dialog).toBeVisible()
+    expect(confirmationCount).toBe(1)
+    expect((await secondDevice.request.get('/api/v1/auth/me')).status())
+      .toBe(200)
+
+    let releaseRequest!: () => void
+    let requestStarted!: () => void
+    const heldRequest = new Promise<void>(resolve => {
+      releaseRequest = resolve
+    })
+    const requestSeen = new Promise<void>(resolve => {
+      requestStarted = resolve
+    })
+    await page.route('**/api/v1/account-deletion', async route => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      requestStarted()
+      await heldRequest
+      await route.continue()
+    })
+    page.once('dialog', confirmation => confirmation.accept())
+    const submitButton = dialog.getByRole(
+      'button',
+      { name: '确认申请注销' },
+    )
+    const submission = submitButton.click()
+    await requestSeen
+    await expect(dialog.getByRole('button', { name: '正在提交…' }))
+      .toBeDisabled()
+    await expect(dialog.getByRole('button', { name: '取消' })).toBeDisabled()
+    releaseRequest()
+    await submission
+    await page.unroute('**/api/v1/account-deletion')
+    await expect(page).toHaveURL('/login')
+    await expect(page.getByText('注销申请已提交')).toBeVisible()
+    await expect(page.getByText(/7 天内/)).toBeVisible()
+    expect((await secondDevice.request.get('/api/v1/auth/me')).status())
+      .toBe(401)
+    await expect.poll(
+      async () => localDataState(page, account.userId),
+    ).toEqual({ localKeys: [], cursor: null, cacheRows: 0 })
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    )).toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'requested')
+
+    await page.getByLabel('邮箱', { exact: true }).fill(account.email)
+    await page.getByLabel('密码', { exact: true }).fill(password)
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole(
+      'button',
+      { name: '撤销注销并登录', exact: true },
+    ).click()
+    await expect(page.getByRole('heading', { name: '账号已恢复' }))
+      .toBeVisible()
   } finally {
     await secondContext.close()
   }

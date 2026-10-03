@@ -11,6 +11,7 @@ import DeviceSettings from '../components/DeviceSettings.vue'
 import PrivacySettings from '../components/PrivacySettings.vue'
 import QuotaOverview from '../components/QuotaOverview.vue'
 import DataExportSettings from '../components/DataExportSettings.vue'
+import AccountDeletionSettings from '../components/AccountDeletionSettings.vue'
 import SyncSettings from '../components/SyncSettings.vue'
 
 const route = useRoute()
@@ -113,7 +114,10 @@ const links = [
         <PrivacySettings v-else-if="section === 'privacy'" />
         <QuotaOverview v-else-if="section === 'quota'" />
         <SyncSettings v-else-if="section === 'sync'" />
-        <DataExportSettings v-else-if="section === 'data'" />
+        <div v-else-if="section === 'data'" class="account-data-settings">
+          <DataExportSettings />
+          <AccountDeletionSettings />
+        </div>
         <template v-else-if="section === 'appearance'"><p class="page-description">选择让你阅读舒适的外观。</p><AppearanceControls /></template>
       </template>
       <RouterLink v-else-if="booted" to="/login" class="button">返回登录</RouterLink>

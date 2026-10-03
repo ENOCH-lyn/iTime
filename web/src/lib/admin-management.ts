@@ -1,6 +1,6 @@
 export type RegistrationMode = 'open' | 'invite'
 export type InvitationStatus = 'pending' | 'consumed' | 'expired' | 'revoked'
-export type AccountStatus = 'active' | 'suspended'
+export type AccountStatus = 'active' | 'suspended' | 'pending_deletion'
 export type AIAccess = 'allowed' | 'frozen'
 
 export interface RegistrationPolicy {

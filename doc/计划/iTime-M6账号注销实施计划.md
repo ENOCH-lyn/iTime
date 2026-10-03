@@ -911,7 +911,7 @@ git commit -m "feat: 恢复待注销账号"
 - Test: `web/e2e/admin-management.spec.ts`
 - Test: `web/e2e/public.spec.ts`
 
-- [ ] **Step 1: 写危险操作和响应式失败 E2E**
+- [x] **Step 1: 写危险操作和响应式失败 E2E**
 
 覆盖：
 
@@ -923,7 +923,7 @@ git commit -m "feat: 恢复待注销账号"
 - 隐私页把账号注销改为“已实现”，协议不再声称删除/导出全部待实现。
 - desktop/mobile/tablet、320×700 最大字号深色、键盘、axe、控制台和横向溢出。
 
-- [ ] **Step 2: 实现注销危险区**
+- [x] **Step 2: 实现注销危险区**
 
 组件状态：
 
@@ -960,13 +960,13 @@ await router.replace({
 
 未知保存状态保留原 `operation_id`，提示重新登录核对，不重复宣称账号仍活动。
 
-- [ ] **Step 3: 接入数据页和样式**
+- [x] **Step 3: 接入数据页和样式**
 
 `AccountPage.vue` 的 data 分支渲染一个无外层卡片的容器，依次包含
 `DataExportSettings` 和 `AccountDeletionSettings`。危险区以分隔线、错误色图标和明确按钮表达，
 不使用整页红色背景；对话框在窄屏自然换行。
 
-- [ ] **Step 4: 更新后台与公开文案**
+- [x] **Step 4: 更新后台与公开文案**
 
 `AdminUserManagement.vue`：
 
@@ -978,7 +978,7 @@ await router.replace({
 “已实现：申请后锁定，7 天内可撤销，到期清理”。`TermsPage.vue` 改为按当前实际页面执行，
 不再把已实现的导出和注销写成未来能力。
 
-- [ ] **Step 5: 构建、验证并提交**
+- [x] **Step 5: 构建、验证并提交**
 
 ```bash
 cd web

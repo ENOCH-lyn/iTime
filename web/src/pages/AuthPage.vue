@@ -49,6 +49,7 @@ const pendingDeletion = ref<{
   can_cancel: boolean
 } | null>(null)
 const restored = ref(false)
+const deletionRequestNotice = ref<{ purge_after: string } | null>(null)
 let cooldownUntil = 0
 let timer: number | undefined
 const passwordHint = computed(() => policy.value
@@ -79,6 +80,14 @@ async function loadPolicy() {
 }
 onMounted(() => {
   document.title = `${info.value.title} · iTime`
+  const state = window.history.state as Record<string, unknown> | null
+  if (
+    props.mode === 'login'
+    && state?.deletionRequested === true
+    && typeof state.purgeAfter === 'string'
+  ) {
+    deletionRequestNotice.value = { purge_after: state.purgeAfter }
+  }
   void loadPolicy()
   timer = window.setInterval(() => { cooldown.value = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) }, 500)
 })
@@ -174,6 +183,7 @@ async function submit() {
         purge_after: details.purge_after,
         can_cancel: details.can_cancel,
       }
+      deletionRequestNotice.value = null
       error.value = null
       await nextTick()
       document.querySelector<HTMLElement>('[data-deletion-title]')?.focus()
@@ -204,6 +214,7 @@ async function restoreAccount() {
     values.password = ''
     pendingDeletion.value = null
     restored.value = true
+    deletionRequestNotice.value = null
     success.value = '账号已恢复。此前终止的临时任务不会自动重新开始。'
     await nextTick()
     document.querySelector<HTMLElement>('[data-restored-title]')?.focus()
@@ -309,6 +320,18 @@ async function resend() {
             <RouterLink v-if="!['login', 'register'].includes(mode)" class="back-link" to="/login"><ArrowLeft :size="16" aria-hidden="true" />返回登录</RouterLink>
             <h1 tabindex="-1">{{ info.title }}</h1>
             <p class="page-description">{{ info.description }}</p>
+            <div
+              v-if="deletionRequestNotice"
+              class="status restriction-status"
+              role="status"
+            >
+              <Clock3 :size="20" aria-hidden="true" />
+              <p>
+                <strong>注销申请已提交。</strong>
+                账号已退出所有设备；可在 7 天内登录并撤销，截止
+                {{ localTime(deletionRequestNotice.purge_after) }}。
+              </p>
+            </div>
             <p v-if="needsToken && !token" class="status error-status" role="alert">链接不完整或已从地址栏清除。请重新打开邮件中的链接。</p>
             <StatusMessage :error="error" :retry-label="!policy && !loadingPolicy ? '重新连接' : undefined" @retry="loadPolicy" />
             <p v-if="loadingPolicy" role="status" class="muted">正在连接账号服务…</p>

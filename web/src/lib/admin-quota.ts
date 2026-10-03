@@ -29,7 +29,7 @@ export interface AdminQuotaUserSummary {
   user: {
     id: string
     email: string
-    status: 'active' | 'suspended'
+    status: 'active' | 'suspended' | 'pending_deletion'
     ai_access: 'allowed' | 'frozen'
   }
   configured: boolean

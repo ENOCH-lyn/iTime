@@ -32,6 +32,11 @@ const error = ref<Failure | null>(null)
 const success = ref('')
 const selected = ref<ManagedAction | null>(null)
 const dialog = ref<HTMLDialogElement | null>(null)
+const statusLabels: Record<AccountStatus, string> = {
+  active: '启用',
+  suspended: '已停用',
+  pending_deletion: '注销中',
+}
 
 async function handleAdminError(reason: unknown) {
   const result = failure(reason)
@@ -156,6 +161,7 @@ onMounted(() => load())
         <option value="all">全部</option>
         <option value="active">启用</option>
         <option value="suspended">已停用</option>
+        <option value="pending_deletion">注销中</option>
       </select>
     </div>
     <div class="field">
@@ -185,12 +191,12 @@ onMounted(() => load())
         <div class="identity-line">
           <strong class="wrap-anywhere">{{ user.email }}</strong>
           <span v-if="user.is_admin" class="state-label" data-state="admin">管理员</span>
-          <span class="state-label" :data-state="user.status">{{ user.status === 'active' ? '启用' : '已停用' }}</span>
+          <span class="state-label" :data-state="user.status">{{ statusLabels[user.status] }}</span>
           <span class="state-label" :data-state="user.ai_access">{{ user.ai_access === 'allowed' ? 'AI 可用' : 'AI 已冻结' }}</span>
         </div>
         <p>{{ user.email_verified ? '邮箱已验证' : '等待邮箱验证' }} · 注册于 {{ localDate(user.created_at) }}</p>
       </div>
-      <div v-if="!user.is_admin" class="row-actions">
+      <div v-if="!user.is_admin && user.status !== 'pending_deletion'" class="row-actions">
         <button class="button secondary compact-button" :disabled="!!pendingUserId"
           @click="choose(user, 'ai')">
           <ShieldAlert :size="16" aria-hidden="true" />
@@ -202,6 +208,9 @@ onMounted(() => load())
           {{ user.status === 'active' ? '停用账号' : '恢复账号' }}
         </button>
       </div>
+      <p v-else-if="user.status === 'pending_deletion'" class="field-hint protected-admin">
+        用户可在 7 天期限内自行撤销
+      </p>
       <p v-else class="field-hint protected-admin">通过服务器交接流程管理</p>
     </li>
   </ul>

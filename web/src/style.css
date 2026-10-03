@@ -36,7 +36,7 @@ svg { flex-shrink: 0; }
 .button:active:not(:disabled) { transform: translateY(1px); }
 .button.secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
 .button.secondary:hover:not(:disabled) { background: var(--selected); }
-.button.danger { background: var(--error); color: #fff; }
+.button.danger { background: var(--error); color: var(--on-error); }
 .button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 86%, #000); }
 .text-button { padding: 10px 0; min-height: 44px; color: var(--accent); background: transparent; text-align: left; font-size: .875rem; text-decoration: underline; text-underline-offset: 4px; }
 .public-layout { min-height: 100dvh; display: flex; flex-direction: column; }
@@ -149,6 +149,7 @@ dd small { display: block; color: var(--muted); font-size: .8125rem; margin-top:
 .switch-control input:disabled + span { opacity: .55; }
 .privacy-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
 .privacy-settings .section-intro > div { flex: 1 1 320px; }
+.account-data-settings { max-width: 900px; }
 .data-export-settings { max-width: 900px; }
 .data-export-intro > div { flex: 1 1 360px; }
 .data-export-intro .field-hint { margin-top: 6px; }
@@ -171,6 +172,16 @@ dd small { display: block; color: var(--muted); font-size: .8125rem; margin-top:
 .data-export-details dl > div { display: grid; gap: 2px; padding: 5px 0; }
 .data-export-details dd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
 .data-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.account-deletion-settings { margin-top: 56px; padding-top: 32px; border-top: 1px solid var(--error-border); }
+.account-deletion-heading { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; align-items: start; }
+.account-deletion-heading > svg { margin-top: 3px; color: var(--error); }
+.account-deletion-heading h2 { font-size: 1.0625rem; }
+.account-deletion-heading p { max-width: 720px; margin-top: 6px; color: var(--muted); font-size: .875rem; }
+.account-deletion-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.account-deletion-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; border-radius: 8px; }
+.account-deletion-dialog .dialog-heading > svg { color: var(--error); }
+.account-deletion-dialog form { margin-top: 24px; }
+.pending-operations-warning { margin-top: 20px; padding: 12px 14px; border-left: 3px solid var(--notice-border); background: var(--notice-bg); color: var(--notice-text); }
 .state-label[data-state="queued"], .state-label[data-state="running"] { color: var(--notice-text); border-color: var(--notice-border); }
 .state-label[data-state="succeeded"] { color: var(--accent); border-color: var(--accent); }
 .state-label[data-state="failed"] { color: var(--error); border-color: var(--error-border); }
@@ -279,6 +290,7 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .state-label { display: inline-block; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); font-size: .75rem; line-height: 1.5; white-space: nowrap; }
 .state-label[data-state="active"], .state-label[data-state="allowed"], .state-label[data-state="consumed"] { color: var(--accent); border-color: var(--accent); }
 .state-label[data-state="suspended"], .state-label[data-state="frozen"], .state-label[data-state="revoked"] { color: var(--error); border-color: var(--error-border); }
+.state-label[data-state="pending_deletion"] { color: var(--notice-text); border-color: var(--notice-border); }
 .state-label[data-state="admin"], .state-label[data-state="pending"] { color: var(--notice-text); border-color: var(--notice-border); }
 .compact-button { min-height: 40px; padding: 8px 12px; font-size: .8125rem; }
 .empty-state { margin: 8px 0 24px; padding: 24px 0; color: var(--muted); border-bottom: 1px solid var(--border); }
@@ -391,6 +403,9 @@ dialog p { font-size: .9375rem; color: var(--muted); }
   .data-export-intro .button { width: 100%; }
   .data-export-row { grid-template-columns: 20px minmax(0, 1fr); gap: 12px; }
   .data-export-actions { grid-column: 2; justify-content: flex-start; }
+  .account-deletion-actions .button { width: 100%; }
+  .account-deletion-dialog { padding: 24px; }
+  .account-deletion-dialog .dialog-actions .button { width: 100%; }
   .sync-intro .button { width: 100%; }
   .sync-metrics { grid-template-columns: 1fr; }
 }

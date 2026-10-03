@@ -13,7 +13,7 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
     <main id="main-content" class="public-content legal-content">
       <header class="public-content-heading">
         <h1 tabindex="-1">隐私说明</h1>
-        <p>更新日期：2026 年 10 月 3 日</p>
+        <p>更新日期：2026 年 10 月 4 日</p>
       </header>
 
       <aside class="document-notice">
@@ -29,7 +29,7 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
       <section>
         <h2>2. AI 与外部内容</h2>
         <p>当前已实现的截图识别会把你主动上传的图片发送到管理员发布的 OpenAI 兼容端点；识别结果先进入候选校对，确认前不会写入正式日历。全局 AI 对话同样由服务端调用管理员发布的端点，并保存可恢复的消息。</p>
-        <p>规划、复盘、公开链接摘要和金额额度仍在开发。正式上线时会说明具体供应商、处理地区、数据用途和可用的控制选项。</p>
+        <p>日周规划、单日复盘、确认式长期记忆、每日金额额度、技术正文日志和可关闭的质量改进样本已经接入同一服务端权限与审计边界。公开链接摘要尚未提供；正式上线时会说明具体供应商、处理地区和数据用途。</p>
       </section>
 
       <section>
@@ -50,7 +50,8 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
               <tr><th scope="row">识别原图</th><td data-label="产品规则">确认后删除；未完成最长保留 24 小时</td><td data-label="当前状态">已实现</td></tr>
               <tr><th scope="row">AI 技术正文日志</th><td data-label="产品规则">默认保留 7 天</td><td data-label="当前状态">已实现；管理员读取会审计</td></tr>
               <tr><th scope="row">质量改进样本</th><td data-label="产品规则">默认参与，可关闭；最长保留 30 天；不用于训练</td><td data-label="当前状态">已实现；可在隐私与质量设置中关闭</td></tr>
-              <tr><th scope="row">账号注销</th><td data-label="产品规则">7 天撤销期后清理个人数据</td><td data-label="当前状态">待实现</td></tr>
+              <tr><th scope="row">同步与数据导出</th><td data-label="产品规则">按账号同步；导出文件生成后保留 24 小时</td><td data-label="当前状态">已实现；可在数据管理页生成完整数据包</td></tr>
+              <tr><th scope="row">账号注销</th><td data-label="产品规则">申请后立即锁定，7 天内可撤销，到期清理个人数据</td><td data-label="当前状态">已实现；撤销不会复活已停止的临时工作</td></tr>
             </tbody>
           </table>
         </div>
@@ -59,7 +60,7 @@ onMounted(() => { document.title = '隐私说明 · iTime' })
       <section>
         <h2>5. 安全与恢复</h2>
         <p>服务使用账号所有权校验、可撤销会话、操作去重、敏感配置加密和请求编号。订阅 URL 及平台 AI Key 不在普通界面或日志中回显。</p>
-        <p>任何页面标记为“待实现”的隐私能力都不能视为已经生效，也不构成当前开发环境的删除或导出承诺。</p>
+        <p>账号注销到期清理已经覆盖当前业务数据库；生产备份中的删除台账重放仍需在部署恢复演练中完成。页面标记为“待实现”的其他隐私能力不能视为已经生效。</p>
       </section>
     </main>
     <PublicSiteFooter />

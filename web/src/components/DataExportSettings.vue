@@ -207,7 +207,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="data-export-settings">
+  <div id="data-export-settings" ref="root" class="data-export-settings">
     <div class="section-intro data-export-intro">
       <div>
         <p class="page-description">

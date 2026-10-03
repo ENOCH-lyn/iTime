@@ -251,6 +251,60 @@ test('AI 冻结保留手动账号访问，停用账号立即撤销会话', async
   }
 })
 
+test('注销中账号只读显示且不能由管理员恢复', async ({
+  page,
+  browser,
+  request,
+}, info) => {
+  const data = await bootstrap(info)
+  await loginAdmin(page, data.active['account-deletion']!, data.password)
+  await setRegistrationMode(page, 'open')
+
+  const email = `deleting-ui-${randomUUID()}@example.com`
+  const userContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+  })
+  try {
+    const userPage = await userContext.newPage()
+    await registerAndLogin(userPage, request, email)
+    const session = await (
+      await userPage.request.get('/api/v1/auth/me')
+    ).json()
+    const requested = await userPage.request.post(
+      '/api/v1/account-deletion',
+      {
+        headers: { 'X-CSRF-Token': session.csrf_token },
+        data: {
+          operation_id: randomUUID(),
+          email_confirmation: email,
+          current_password: userPassword,
+        },
+      },
+    )
+    expect(requested.status()).toBe(202)
+
+    await page.goto('/admin/users')
+    await page.getByLabel('账号状态', { exact: true })
+      .selectOption('pending_deletion')
+    await page.getByRole('button', { name: '筛选', exact: true }).click()
+    const row = page.locator('.user-management-list li').filter({
+      hasText: email,
+    })
+    await expect(row).toHaveCount(1)
+    await expect(row.getByText('注销中', { exact: true })).toBeVisible()
+    await expect(row.getByText('用户可在 7 天期限内自行撤销'))
+      .toBeVisible()
+    await expect(row.getByRole('button')).toHaveCount(0)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    )).toBe(true)
+    await screenshot(page, info, 'account-deletion')
+  } finally {
+    await userContext.close()
+  }
+})
+
 test('管理列表可从网络失败和版本冲突恢复并适配窄屏', async ({
   page,
   context,
