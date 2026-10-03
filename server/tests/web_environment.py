@@ -67,6 +67,70 @@ def recognized_calendar_draft() -> dict:
     }
 
 
+def planning_tool_arguments(request_body: dict) -> dict:
+    snapshot = json.loads(request_body["messages"][-1]["content"])[
+        "planning_snapshot"
+    ]
+    candidates = snapshot["task_candidates"]
+    estimates = []
+    adopted_estimates = {}
+    for candidate in candidates:
+        estimate = candidate["estimated_minutes"] or max(
+            45,
+            candidate["minimum_block_minutes"],
+        )
+        adopted_estimates[candidate["candidate_key"]] = estimate
+        if candidate["estimated_minutes"] is None:
+            estimates.append(
+                {
+                    "candidate_key": candidate["candidate_key"],
+                    "estimated_minutes": estimate,
+                    "reason": "按测试任务规模给出可复核估时。",
+                }
+            )
+    unscheduled = []
+    start_hour, start_minute = map(
+        int,
+        snapshot["availability_start"].split(":")[:2],
+    )
+    cursor = start_hour * 60 + start_minute
+    blocks = []
+    for index, candidate in enumerate(candidates):
+        estimate = adopted_estimates[candidate["candidate_key"]]
+        if index < 2 and estimate <= 180:
+            end_total = cursor + estimate
+            blocks.append(
+                {
+                    "candidate_key": candidate["candidate_key"],
+                    "local_date": snapshot["target_date"],
+                    "starts_at": f"{cursor // 60:02d}:{cursor % 60:02d}:00",
+                    "ends_at": f"{end_total // 60:02d}:{end_total % 60:02d}:00",
+                    "step_ids": [
+                        step["id"]
+                        for step in candidate["steps"]
+                        if not step["completed"]
+                    ][:1],
+                }
+            )
+            cursor = end_total + snapshot["buffer_minutes"]
+            continue
+        unscheduled.append(
+            {
+                "candidate_key": candidate["candidate_key"],
+                "remaining_minutes": estimate,
+                "reason": "no_capacity",
+                "explanation": "当前提案先保留这一项，确认后可手工调整。",
+            }
+        )
+    return {
+        "summary": "先完成最重要的一项，其余任务保留为待安排。",
+        "assumptions": ["按当前可规划时段和已有估时安排。"],
+        "estimates": estimates,
+        "blocks": blocks,
+        "unscheduled_items": unscheduled,
+    }
+
+
 class FakeAIHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
@@ -81,6 +145,99 @@ class FakeAIHandler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length))
         prompt = json.dumps(body.get("messages", []), ensure_ascii=False)
         if body.get("stream") is True:
+            tool_name = (
+                body.get("tool_choice", {})
+                .get("function", {})
+                .get("name")
+            )
+            if tool_name == "submit_itime_plan":
+                planning_snapshot = json.loads(body["messages"][-1]["content"])[
+                    "planning_snapshot"
+                ]
+                if any(
+                    marker in planning_snapshot["instruction"]
+                    for marker in ("取消测试", "离页恢复测试")
+                ):
+                    time.sleep(1.5)
+                arguments = json.dumps(
+                    planning_tool_arguments(body),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                argument_parts = [
+                    arguments[: len(arguments) // 2],
+                    arguments[len(arguments) // 2 :],
+                ]
+                events = [
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": "计划草案已生成。"},
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "playwright-planning-call",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "submit_itime_plan",
+                                                "arguments": argument_parts[0],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {
+                                                "arguments": argument_parts[1],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 180,
+                            "completion_tokens": 90,
+                            "total_tokens": 270,
+                            "prompt_tokens_details": {"cached_tokens": 0},
+                        },
+                    },
+                ]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.send_header("x-request-id", "playwright-fake-planning")
+                self.end_headers()
+                for event in events:
+                    self.wfile.write(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+                    )
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
             user_messages = [
                 message.get("content", "")
                 for message in body.get("messages", [])
@@ -397,6 +554,7 @@ async def seed_admins(
             for capability, model in (
                 ("calendar_screenshot", "vision-test-model"),
                 ("conversation", "chat-test-model"),
+                ("planning", "planning-test-model"),
             ):
                 current = now()
                 state = await session.get(

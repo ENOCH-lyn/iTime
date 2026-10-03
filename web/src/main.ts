@@ -15,6 +15,7 @@ const router = createRouter({
     })),
     { path: '/ai', component: () => import('./pages/AIPage.vue') },
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
+    { path: '/plans', component: () => import('./pages/PlansPage.vue') },
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
     { path: '/account/:section(password|devices|privacy|quota|appearance)', component: () => import('./pages/AccountPage.vue') },

@@ -24,11 +24,6 @@
   padding: 4px 12px 24px;
 }
 
-.product-navigation {
-  display: grid;
-  gap: 4px;
-}
-
 .task-navigation .nav-link {
   width: 100%;
   border: 0;
