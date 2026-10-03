@@ -19,7 +19,9 @@ import {
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import TaskScheduleEditor from './TaskScheduleEditor.vue'
-import { failure, localFailure, type Failure } from '../lib/api'
+import { ApiError, failure, localFailure, type Failure } from '../lib/api'
+import { identity } from '../lib/auth'
+import { appendTaskOperation } from '../lib/sync-queue'
 import {
   createTask,
   createTaskStep,
@@ -30,6 +32,7 @@ import {
   restoreTask,
   setTaskCompletion,
   setTaskArchived,
+  syncTaskStepCompletion,
   updateTask,
   updateTaskStep,
   type Project,
@@ -370,26 +373,87 @@ async function saveStep(step: TaskStep, completed = step.completed) {
   clearMessages()
   delete fieldErrors[`step-${step.id}`]
   pendingAction.value = `step-${step.id}`
+  const completionOnly = (
+    completed !== step.completed
+    && title === step.title
+    && working.value.schedule.recurrence.frequency === 'none'
+  )
+  const body = {
+    expected_task_version: working.value.version,
+    title,
+    completed,
+  }
+  const operation = operationId(`step-${step.id}`, body)
   try {
-    const body = {
-      expected_task_version: working.value.version,
-      title,
-      completed,
-    }
-    const task = await updateTaskStep(
-      working.value,
-      step.id,
-      operationId(`step-${step.id}`, body),
-      title,
-      completed,
-    )
+    const task = completionOnly
+      ? (
+          await syncTaskStepCompletion(
+            working.value,
+            step,
+            operation,
+            completed,
+          )
+        ).task
+      : await updateTaskStep(
+          working.value,
+          step.id,
+          operation,
+          title,
+          completed,
+        )
     operations.delete(`step-${step.id}`)
     applyTask(task)
     success.value = completed
       ? '步骤已勾选；任务不会自动完成。'
       : (step.completed ? '步骤已重新打开。' : '步骤已保存。')
   } catch (reason) {
-    await handleError(reason)
+    if (
+      completionOnly
+      && identity.value
+      && (
+        !navigator.onLine
+        || (
+          reason instanceof ApiError
+          && ['network_error', 'request_timeout'].includes(reason.info.code)
+        )
+      )
+    ) {
+      try {
+        appendTaskOperation(identity.value.user.id, {
+          schema_version: 1,
+          kind: 'task_step_completion',
+          operation_id: operation,
+          task_id: working.value.id,
+          step_id: step.id,
+          expected_task_version: working.value.version,
+          base_completed: step.completed,
+          completed,
+          created_at: new Date().toISOString(),
+        })
+        const projected: TaskDetail = {
+          ...working.value,
+          version: working.value.version + 1,
+          steps: working.value.steps.map(item => item.id === step.id
+            ? {
+                ...item,
+                completed,
+                completed_at: completed ? new Date().toISOString() : null,
+              }
+            : item),
+          step_progress: {
+            total: working.value.step_progress.total,
+            completed: working.value.steps.filter(item =>
+              item.id === step.id ? completed : item.completed).length,
+          },
+        }
+        applyTask(projected)
+        success.value = '步骤操作已保存在本设备，联网后同步。'
+      } catch (queueError) {
+        await handleError(queueError)
+      }
+    } else {
+      await handleError(reason)
+    }
   } finally {
     pendingAction.value = ''
   }

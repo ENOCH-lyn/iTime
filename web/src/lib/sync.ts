@@ -1,6 +1,13 @@
 import { reactive, watch } from 'vue'
 import { api, ApiError, failure, observeMutations, type Failure } from './api'
 import { identity } from './auth'
+import { focusQueueCount } from './focus-queue'
+import {
+  discardTaskOperation,
+  loadTaskQueue,
+  replayTaskQueue,
+  type QueuedTaskOperation,
+} from './sync-queue'
 
 const POLL_INTERVAL_MS = 2_000
 const MAX_EVENTS_PER_PULL = 1_000
@@ -42,6 +49,10 @@ export interface SyncStatus {
   reset_message: string
   pending_count: number
   conflict_count: number
+  task_conflict: {
+    operation: QueuedTaskOperation
+    error: Failure | null
+  } | null
   error: Failure | null
 }
 
@@ -55,6 +66,7 @@ export const syncStatus = reactive<SyncStatus>({
   reset_message: '',
   pending_count: 0,
   conflict_count: 0,
+  task_conflict: null,
   error: null,
 })
 
@@ -62,6 +74,7 @@ let started = false
 let inFlight: Promise<void> | null = null
 let timer = 0
 let failureCount = 0
+let taskConflict = false
 let stopIdentityWatch: (() => void) | null = null
 let stopMutationObserver: (() => void) | null = null
 const channel = typeof BroadcastChannel === 'undefined'
@@ -115,6 +128,12 @@ function resetState(accountId: string | null) {
   syncStatus.cache_fallback_at = null
   syncStatus.reset_message = ''
   syncStatus.error = null
+  taskConflict = false
+  syncStatus.pending_count = accountId === null
+    ? 0
+    : loadTaskQueue(accountId).length + focusQueueCount(accountId)
+  syncStatus.conflict_count = 0
+  syncStatus.task_conflict = null
   failureCount = 0
   syncStatus.phase = navigator.onLine ? 'connecting' : 'offline'
 }
@@ -131,6 +150,16 @@ async function pullChanges() {
   const collected: SyncEvent[] = []
   let resetRequired = false
   try {
+    const replay = await replayTaskQueue(accountId)
+    taskConflict = replay.conflict !== null
+    syncStatus.task_conflict = replay.conflict === null
+      ? null
+      : {
+          operation: replay.conflict,
+          error: replay.conflict_error,
+        }
+    syncStatus.pending_count = replay.pending.length + focusQueueCount(accountId)
+    syncStatus.conflict_count = taskConflict ? 1 : 0
     while (collected.length < MAX_EVENTS_PER_PULL) {
       const query = new URLSearchParams({ limit: '100' })
       if (cursor !== null) query.set('cursor', cursor)
@@ -209,6 +238,17 @@ export function requestSync() {
   })
 }
 
+export function discardTaskConflict() {
+  const accountId = syncStatus.account_id
+  const conflict = syncStatus.task_conflict
+  if (accountId === null || conflict === null) return
+  discardTaskOperation(accountId, conflict.operation.operation_id)
+  taskConflict = false
+  syncStatus.task_conflict = null
+  syncStatus.conflict_count = 0
+  requestSync()
+}
+
 function handleOnline() {
   syncStatus.phase = 'connecting'
   requestSync()
@@ -233,6 +273,22 @@ function handleBroadcast() {
   requestSync()
 }
 
+function handleQueueChanged() {
+  const accountId = syncStatus.account_id
+  if (accountId === null) return
+  syncStatus.pending_count = loadTaskQueue(accountId).length
+    + focusQueueCount(accountId)
+  syncStatus.conflict_count = taskConflict ? 1 : 0
+  if (syncStatus.phase !== 'offline' && syncStatus.phase !== 'connecting') {
+    syncStatus.phase = syncStatus.conflict_count
+      ? 'conflict'
+      : syncStatus.pending_count
+        ? 'pending'
+        : 'synced'
+  }
+  if (navigator.onLine) requestSync()
+}
+
 export function startSyncCoordinator() {
   if (started) return
   started = true
@@ -248,6 +304,7 @@ export function startSyncCoordinator() {
   window.addEventListener('offline', handleOffline)
   window.addEventListener('focus', handleOnline)
   window.addEventListener('itime:cache-fallback', handleCacheFallback)
+  window.addEventListener('itime:sync-queue-changed', handleQueueChanged)
   document.addEventListener('visibilitychange', handleVisible)
   channel?.addEventListener('message', handleBroadcast)
 }
@@ -264,6 +321,7 @@ export function stopSyncCoordinator() {
   window.removeEventListener('offline', handleOffline)
   window.removeEventListener('focus', handleOnline)
   window.removeEventListener('itime:cache-fallback', handleCacheFallback)
+  window.removeEventListener('itime:sync-queue-changed', handleQueueChanged)
   document.removeEventListener('visibilitychange', handleVisible)
   channel?.removeEventListener('message', handleBroadcast)
 }

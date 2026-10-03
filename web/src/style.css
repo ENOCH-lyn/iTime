@@ -36,6 +36,8 @@ svg { flex-shrink: 0; }
 .button:active:not(:disabled) { transform: translateY(1px); }
 .button.secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
 .button.secondary:hover:not(:disabled) { background: var(--selected); }
+.button.danger { background: var(--error); color: #fff; }
+.button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 86%, #000); }
 .text-button { padding: 10px 0; min-height: 44px; color: var(--accent); background: transparent; text-align: left; font-size: .875rem; text-decoration: underline; text-underline-offset: 4px; }
 .public-layout { min-height: 100dvh; display: flex; flex-direction: column; }
 .public-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 28px clamp(24px, 5vw, 80px); }
@@ -187,6 +189,9 @@ dd small { display: block; color: var(--muted); font-size: .8125rem; margin-top:
 .sync-local-details { margin-top: 12px; }
 .sync-local-details > div { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .sync-local-details dd { overflow-wrap: anywhere; text-align: right; font-size: .875rem; }
+.sync-conflict > p { margin-top: 8px; color: var(--muted); }
+.sync-conflict .request-id { font-size: .8125rem; }
+.sync-conflict-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 .quota-overview { max-width: 920px; }
 .quota-metrics { display: grid; grid-template-columns: 1fr; margin: 8px 0 0; border-top: 1px solid var(--border); }
 .quota-metrics > div { min-width: 0; padding: 18px 0; border-bottom: 1px solid var(--border); }

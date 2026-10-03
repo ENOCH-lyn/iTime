@@ -14,7 +14,8 @@ import {
   Timer,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
-import { failure, localFailure, type Failure } from '../lib/api'
+import { ApiError, failure, localFailure, type Failure } from '../lib/api'
+import { identity } from '../lib/auth'
 import {
   createCalendarAddition,
   saveOccurrenceException,
@@ -24,8 +25,11 @@ import {
 } from '../lib/calendar'
 import {
   rescheduleTaskOccurrence,
+  syncTaskOccurrenceStepCompletion,
   updateTaskOccurrenceStatus,
 } from '../lib/task-schedules'
+import { appendTaskOperation } from '../lib/sync-queue'
+import { getTask, type TaskDetail, type TaskStep } from '../lib/tasks'
 
 const props = defineProps<{
   item: CalendarDisplayItem | null
@@ -55,6 +59,9 @@ const move = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0
 const override = reactive({ name: '', description: '', location: '', busy: true })
 const makeup = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0 | 1 })
 const taskMove = reactive({ date: '', time: '' })
+const taskDetail = ref<TaskDetail | null>(null)
+const localCompletedStepIds = ref<string[]>([])
+let taskDetailRevision = 0
 
 const occurrence = computed(() => props.item?.calendar ?? null)
 const task = computed(() => props.item?.task ?? null)
@@ -71,7 +78,20 @@ watch(() => props.item?.id, () => {
   operation.value = null
   candidateOffsets.value = []
   selectedOffset.value = null
-})
+  localCompletedStepIds.value = [...(task.value?.completed_step_ids ?? [])]
+  const revision = ++taskDetailRevision
+  if (!task.value) {
+    taskDetail.value = null
+    return
+  }
+  void getTask(task.value.task_id)
+    .then(detail => {
+      if (revision === taskDetailRevision) taskDetail.value = detail
+    })
+    .catch(reason => {
+      if (revision === taskDetailRevision) error.value = failure(reason)
+    })
+}, { immediate: true })
 
 function dateTime(value: string | null) {
   if (!value) return '时间无效'
@@ -355,6 +375,68 @@ async function setTaskStatus(status: 'open' | 'completed' | 'skipped') {
   }
 }
 
+async function setOccurrenceStep(step: TaskStep, completed: boolean) {
+  if (!task.value || pending.value || !identity.value) return
+  const current = task.value
+  const fingerprint = JSON.stringify({
+    occurrence: current.occurrence_key,
+    step: step.id,
+    base: localCompletedStepIds.value.includes(step.id),
+    completed,
+    taskVersion: current.task_version,
+    occurrenceVersion: current.occurrence_version,
+  })
+  const id = operationId(fingerprint)
+  const baseCompleted = localCompletedStepIds.value.includes(step.id)
+  pending.value = true
+  error.value = null
+  try {
+    const result = await syncTaskOccurrenceStepCompletion(
+      current,
+      step.id,
+      id,
+      baseCompleted,
+      completed,
+    )
+    operation.value = null
+    localCompletedStepIds.value = [...result.occurrence.completed_step_ids]
+    emit('changed', '步骤进度已同步；任务仍需明确完成。', 0)
+  } catch (reason) {
+    if (
+      !navigator.onLine
+      || (
+        reason instanceof ApiError
+        && ['network_error', 'request_timeout'].includes(reason.info.code)
+      )
+    ) {
+      try {
+        appendTaskOperation(identity.value.user.id, {
+          schema_version: 1,
+          kind: 'task_occurrence_step_completion',
+          operation_id: id,
+          task_id: current.task_id,
+          occurrence_key: current.occurrence_key,
+          step_id: step.id,
+          expected_task_version: current.task_version,
+          expected_occurrence_version: current.occurrence_version,
+          base_completed: baseCompleted,
+          completed,
+          created_at: new Date().toISOString(),
+        })
+        localCompletedStepIds.value = completed
+          ? [...localCompletedStepIds.value, step.id]
+          : localCompletedStepIds.value.filter(item => item !== step.id)
+      } catch (queueError) {
+        error.value = failure(queueError)
+      }
+    } else {
+      error.value = failure(reason)
+    }
+  } finally {
+    pending.value = false
+  }
+}
+
 async function saveTaskMove() {
   if (!task.value || pending.value || !taskMove.date) return
   const fingerprint = JSON.stringify({
@@ -533,6 +615,21 @@ async function saveTaskMove() {
         </template>
 
         <template v-if="task">
+          <div
+            v-if="taskDetail?.steps.length && task.status === 'open'"
+            class="occurrence-step-list"
+          >
+            <h3>本次步骤</h3>
+            <label v-for="step in taskDetail.steps" :key="step.id">
+              <input
+                type="checkbox"
+                :checked="localCompletedStepIds.includes(step.id)"
+                :disabled="pending"
+                @change="setOccurrenceStep(step, ($event.target as HTMLInputElement).checked)"
+              />
+              <span>{{ step.title }}</span>
+            </label>
+          </div>
           <div class="occurrence-actions">
             <button v-if="task.status !== 'completed'" type="button" class="button" :disabled="pending"
               @click="setTaskStatus('completed')">

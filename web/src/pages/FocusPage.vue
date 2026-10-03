@@ -17,10 +17,11 @@ import FocusTaskProgress from '../components/FocusTaskProgress.vue'
 import FocusTimer from '../components/FocusTimer.vue'
 import ProductNavigation from '../components/ProductNavigation.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { failure, localFailure, type Failure } from '../lib/api'
+import { api, failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -53,6 +54,7 @@ import {
   type QueuedFocusOperation,
 } from '../lib/focus-queue'
 import { getTask, listTasks, type TaskSummary } from '../lib/tasks'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../focus.css'
 
 const route = useRoute()
@@ -173,6 +175,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('offline', handleOffline)
   window.removeEventListener('focus', handleWindowFocus)
 })
+
+useSyncRefresh(
+  ['focus_session', 'difficulty', 'task', 'step', 'task_occurrence', 'plan'],
+  async () => {
+    if (syncing.value || pending.value) return
+    await Promise.all([loadTasks(), loadCurrent(), loadHistory()])
+  },
+)
 
 async function initialize() {
   loading.value = true
@@ -781,10 +791,11 @@ async function saveManual() {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   try {
-    await clearSession()
+    await api('/auth/logout', {})
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } finally {

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowUpRight, CalendarDays, CirclePause, DatabaseBackup, KeyRound, ListChecks, ListTodo, LogOut, MessageCircleMore, Monitor, Palette, RefreshCw, ShieldCheck, UserRound, WalletCards } from 'lucide-vue-next'
 import { api, failure, type Failure } from '../lib/api'
-import { authError, authLoading, identity, refreshSession, clearSession, notifySessionChange } from '../lib/auth'
+import { authError, authLoading, identity, refreshSession, clearSession, confirmDiscardPendingOperations, notifySessionChange } from '../lib/auth'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import PasswordSettings from '../components/PasswordSettings.vue'
@@ -41,10 +41,11 @@ onMounted(async () => {
 function refresh() { void refreshSession() }
 onUnmounted(() => window.removeEventListener('focus', refresh))
 async function logout() {
+  if (!confirmDiscardPendingOperations()) return
   pending.value = true; logoutError.value = null
   try {
     await api('/auth/logout', {})
-    clearSession(); notifySessionChange()
+    clearSession({ discardLocal: true }); notifySessionChange()
     await router.replace('/login')
   } catch (err) { logoutError.value = failure(err) }
   finally { pending.value = false }

@@ -130,6 +130,7 @@ function writeQueue(
     const key = queueKey(userId, sessionId)
     if (items.length) localStorage.setItem(key, JSON.stringify(items))
     else localStorage.removeItem(key)
+    window.dispatchEvent(new CustomEvent('itime:sync-queue-changed'))
   } catch {
     throw new FocusQueueError(
       'focus_queue_unavailable',
@@ -199,6 +200,19 @@ export function listFocusQueueSessions(userId: string) {
   return sessions
     .sort((left, right) => right.createdAt - left.createdAt)
     .map(item => item.sessionId)
+}
+
+export function focusQueueCount(userId: string) {
+  return listFocusQueueSessions(userId).reduce(
+    (count, sessionId) => count + loadFocusQueue(userId, sessionId).length,
+    0,
+  )
+}
+
+export function clearFocusQueues(userId: string) {
+  for (const sessionId of listFocusQueueSessions(userId)) {
+    clearFocusQueue(userId, sessionId)
+  }
 }
 
 export function appendFocusOperation(

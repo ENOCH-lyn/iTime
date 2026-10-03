@@ -483,6 +483,33 @@
   white-space: pre-wrap;
 }
 
+.occurrence-step-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.occurrence-step-list h3 {
+  font-size: .875rem;
+}
+
+.occurrence-step-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  font-size: .875rem;
+}
+
+.occurrence-step-list input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .occurrence-actions {
   display: grid;
   gap: 8px;

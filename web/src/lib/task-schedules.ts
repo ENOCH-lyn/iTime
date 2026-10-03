@@ -141,6 +141,34 @@ export async function updateTaskOccurrenceStatus(
   )
 }
 
+export function syncTaskOccurrenceStepCompletion(
+  occurrence: TaskOccurrence,
+  stepId: string,
+  operationId: string,
+  baseCompleted: boolean,
+  completed: boolean,
+) {
+  return api<{
+    operation_id: string
+    merge: 'applied' | 'rebased' | 'converged'
+    task: TaskDetail
+    occurrence: TaskOccurrence
+  }>(
+    '/sync/task-occurrences/steps/completion',
+    {
+      operation_id: operationId,
+      task_id: occurrence.task_id,
+      occurrence_key: occurrence.occurrence_key,
+      step_id: stepId,
+      expected_task_version: occurrence.task_version,
+      expected_occurrence_version: occurrence.occurrence_version,
+      base_completed: baseCompleted,
+      completed,
+    },
+    'PUT',
+  )
+}
+
 export async function rescheduleTaskOccurrence(
   occurrence: TaskOccurrence,
   operationId: string,

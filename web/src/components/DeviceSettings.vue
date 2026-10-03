@@ -45,7 +45,7 @@ async function revoke() {
     await api(`/auth/sessions/${selected.value.id}`, undefined, 'DELETE')
     notifySessionChange()
     if (selected.value.current) {
-      clearSession(); await router.replace('/login')
+      clearSession({ discardLocal: true }); await router.replace('/login')
     } else {
       success.value = '该设备已退出，不能继续访问你的账号。'
       await load()

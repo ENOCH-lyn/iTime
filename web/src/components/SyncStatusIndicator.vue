@@ -9,7 +9,11 @@ import {
 import { syncStatus } from '../lib/sync'
 
 const label = computed(() => {
-  if (syncStatus.phase === 'offline') return '同步状态：离线'
+  if (syncStatus.phase === 'offline') {
+    return syncStatus.pending_count
+      ? `同步状态：离线，${syncStatus.pending_count} 项待同步`
+      : '同步状态：离线'
+  }
   if (syncStatus.phase === 'connecting') return '同步状态：正在同步'
   if (syncStatus.phase === 'conflict') {
     return `同步状态：${syncStatus.conflict_count} 项冲突`

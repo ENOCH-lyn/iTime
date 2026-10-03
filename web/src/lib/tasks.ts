@@ -180,6 +180,30 @@ export async function listTasks(filters: TaskFilters, cursor?: Cursor | null) {
   return api<Page<TaskSummary>>(`/tasks?${params}`)
 }
 
+export interface SyncedTaskCompletion {
+  operation_id: string
+  merge: 'applied' | 'rebased' | 'converged'
+  task: TaskDetail
+}
+
+export function syncTaskStepCompletion(
+  task: TaskDetail,
+  step: TaskStep,
+  operationId: string,
+  completed: boolean,
+) {
+  return api<SyncedTaskCompletion>(
+    `/sync/tasks/${task.id}/steps/${step.id}/completion`,
+    {
+      operation_id: operationId,
+      expected_task_version: task.version,
+      base_completed: step.completed,
+      completed,
+    },
+    'PUT',
+  )
+}
+
 export async function getTask(id: string) {
   return (await api<{ task: TaskDetail }>(`/tasks/${id}`)).task
 }

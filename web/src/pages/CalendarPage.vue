@@ -33,12 +33,14 @@ import {
 import {
   authError,
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import { listTaskOccurrences } from '../lib/task-schedules'
 import { listPlanningBlocks, type PlanningBlockProjection } from '../lib/plans'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../calendar.css'
 
 const router = useRouter()
@@ -208,6 +210,26 @@ onMounted(async () => {
   }
   await initialize()
 })
+
+useSyncRefresh(
+  [
+    'time_settings',
+    'term',
+    'calendar_series',
+    'calendar_exception',
+    'calendar_addition',
+    'calendar_source',
+    'task',
+    'task_occurrence',
+    'plan',
+  ],
+  async () => {
+    await Promise.all([refreshMetadata(), loadOccurrences()])
+    if (settingsOpen.value || seriesOpen.value || importOpen.value) {
+      pageSuccess.value = '其他设备有更新；当前编辑内容已保留。'
+    }
+  },
+)
 
 async function initialize() {
   loading.value = true
@@ -477,12 +499,12 @@ async function onSeriesSaved(message: string, conflictCount: number) {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   pageError.value = null
   try {
     await api('/auth/logout', {})
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } catch (reason) {

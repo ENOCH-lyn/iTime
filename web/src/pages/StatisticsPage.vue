@@ -9,6 +9,7 @@ import StatusMessage from '../components/StatusMessage.vue'
 import { api, failure, type Failure } from '../lib/api'
 import {
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -19,6 +20,7 @@ import {
   type StatisticsResult,
   type StatisticsScope,
 } from '../lib/statistics'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../statistics.css'
 
 const route = useRoute()
@@ -246,12 +248,12 @@ async function moveCurrent() {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   try {
     await api('/auth/logout', {})
   } finally {
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     pendingLogout.value = false
     await router.replace('/login')
@@ -286,6 +288,13 @@ onMounted(async () => {
     setError(reason)
   }
 })
+
+useSyncRefresh(
+  ['task', 'task_occurrence', 'plan', 'focus_session'],
+  async () => {
+    if (ready) await loadStatistics()
+  },
+)
 </script>
 
 <template>

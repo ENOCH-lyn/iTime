@@ -11,6 +11,7 @@ import StatusMessage from '../components/StatusMessage.vue'
 import { api, failure, type Failure } from '../lib/api'
 import {
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -36,6 +37,7 @@ import {
   type ReviewReportDetail,
   type ReviewSummary,
 } from '../lib/reviews'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../reviews.css'
 
 const route = useRoute()
@@ -54,6 +56,7 @@ const pendingLogout = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const activeJob = ref<AIJob | null>(null)
+const memorySyncRevision = ref(0)
 let pollTimer: number | null = null
 let disposed = false
 let pendingOperation: { fingerprint: string; id: string } | null = null
@@ -205,6 +208,28 @@ onBeforeUnmount(() => {
   if (pollTimer !== null) window.clearTimeout(pollTimer)
   window.removeEventListener('focus', refreshOnFocus)
 })
+
+useSyncRefresh(
+  [
+    'review_session',
+    'review_report',
+    'review_annotation',
+    'memory',
+    'memory_settings',
+    'task',
+    'task_occurrence',
+    'plan',
+    'focus_session',
+    'difficulty',
+  ],
+  async events => {
+    if (events.some(event => ['memory', 'memory_settings'].includes(event.entity_type))) {
+      memorySyncRevision.value += 1
+    }
+    await loadHistory()
+    if (!pending.value && detail.value) await refreshOnFocus()
+  },
+)
 
 async function refreshOnFocus() {
   if (view.value !== 'review' || !detail.value || pending.value) return
@@ -449,11 +474,11 @@ async function setView(next: 'review' | 'memories') {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   try {
     await api('/auth/logout', {})
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } catch (reason) {
@@ -492,7 +517,7 @@ async function logout() {
         />
       </div>
 
-      <MemoryManager v-if="view === 'memories'" />
+      <MemoryManager v-if="view === 'memories'" :key="memorySyncRevision" />
 
       <template v-else>
         <p v-if="loading && !detail" class="review-loading" role="status">

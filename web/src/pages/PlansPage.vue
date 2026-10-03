@@ -21,6 +21,7 @@ import { api, failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -48,6 +49,7 @@ import {
   type PlanningFields,
   type ProposalChange,
 } from '../lib/plans'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../planning.css'
 
 const route = useRoute()
@@ -198,6 +200,30 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', recoverOnFocus)
   document.removeEventListener('visibilitychange', recoverOnFocus)
 })
+
+useSyncRefresh(
+  [
+    'task',
+    'step',
+    'task_occurrence',
+    'time_settings',
+    'term',
+    'calendar_series',
+    'calendar_exception',
+    'calendar_addition',
+    'calendar_source',
+    'memory',
+    'memory_settings',
+    'plan',
+  ],
+  async () => {
+    if (editing.value && dirty.value) {
+      pageSuccess.value = '其他设备有更新；当前计划草稿已保留，请保存时比较最新版。'
+      return
+    }
+    await refreshWorkspace()
+  },
+)
 
 function pad(value: number) {
   return String(value).padStart(2, '0')
@@ -850,12 +876,12 @@ function selectHistory(value: string) {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   pageError.value = null
   try {
     await api('/auth/logout', {})
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } catch (reason) {

@@ -10,6 +10,7 @@ import { api, failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -29,6 +30,7 @@ import {
   type ConversationPage,
   type ConversationResponseMode,
 } from '../lib/conversations'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import { getDifficulty } from '../lib/execution'
 import type { PlanningFields } from '../lib/plans'
 import '../ai-workspace.css'
@@ -120,6 +122,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', recoverOnFocus)
   document.removeEventListener('visibilitychange', recoverOnFocus)
 })
+
+useSyncRefresh(
+  ['conversation', 'memory', 'memory_settings'],
+  async () => {
+    await loadConversationList()
+    if (selected.value) await syncCurrent(true)
+  },
+)
 
 function mergeConversation(conversation: Conversation) {
   const existing = conversations.value.findIndex(item => item.id === conversation.id)
@@ -604,12 +614,12 @@ function recoverOnFocus() {
 }
 
 async function logout() {
-  if (pendingLogout.value) return
+  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
   error.value = null
   try {
     await api('/auth/logout', {})
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } catch (reason) {

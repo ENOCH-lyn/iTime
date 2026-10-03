@@ -9,6 +9,7 @@ import {
   updatePrivacySettings,
   type PrivacySettings,
 } from '../lib/privacy-settings'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 
 const settings = ref<PrivacySettings | null>(null)
 const qualityEnabled = ref(true)
@@ -101,6 +102,12 @@ async function save() {
 }
 
 onMounted(() => void load())
+useSyncRefresh(
+  ['privacy_settings'],
+  async () => {
+    await load({ preserveChoice: saving.value })
+  },
+)
 </script>
 
 <template>

@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import { api, setCsrf, type Failure, failure, ApiError } from './api'
-import { setCacheAccount } from './data-cache'
+import { clearAccountCache, setCacheAccount } from './data-cache'
+import { clearFocusQueues, focusQueueCount } from './focus-queue'
+import { clearTaskQueue, loadTaskQueue } from './sync-queue'
 
 export interface Session {
   user: {
@@ -31,10 +33,31 @@ export function acceptSession(session: Session) {
   authError.value = null
 }
 
-export function clearSession() {
+export function pendingLocalOperationCount() {
+  const userId = identity.value?.user.id
+  return userId
+    ? loadTaskQueue(userId).length + focusQueueCount(userId)
+    : 0
+}
+
+export function confirmDiscardPendingOperations() {
+  const count = pendingLocalOperationCount()
+  return count === 0 || window.confirm(
+    `本设备还有 ${count} 项操作未同步。退出后这些操作将被清除，确定继续吗？`,
+  )
+}
+
+export function clearSession(options: { discardLocal?: boolean } = {}) {
   revision += 1
+  const userId = identity.value?.user.id ?? null
   identity.value = null
   setCsrf('')
+  if (options.discardLocal && userId) {
+    clearTaskQueue(userId)
+    clearFocusQueues(userId)
+    sessionStorage.removeItem(`itime-sync-cursor:${userId}`)
+    void clearAccountCache(userId)
+  }
   void setCacheAccount(null)
 }
 

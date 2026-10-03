@@ -11,6 +11,7 @@ import { api, failure, type Failure } from '../lib/api'
 import {
   authError,
   clearSession,
+  confirmDiscardPendingOperations,
   identity,
   notifySessionChange,
   refreshSession,
@@ -30,6 +31,7 @@ import {
   type TaskLifecycle,
   type TaskSummary,
 } from '../lib/tasks'
+import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../task-workspace.css'
 
 const router = useRouter()
@@ -79,6 +81,25 @@ onMounted(async () => {
   }
   await Promise.all([refreshProjectsAndLabels(), loadTasks()])
 })
+
+useSyncRefresh(
+  ['project', 'task', 'step', 'label', 'task_occurrence'],
+  async () => {
+    await Promise.all([
+      refreshProjectsAndLabels(),
+      loadTasks(false, true),
+    ])
+    if (selectedTask.value && !editorDirty.value) {
+      try {
+        selectedTask.value = await getTask(selectedTask.value.id)
+      } catch {
+        selectedTask.value = null
+      }
+    } else if (selectedTask.value && editorDirty.value) {
+      pageSuccess.value = '其他设备有更新；当前填写已保留，请保存时比较最新版。'
+    }
+  },
+)
 
 function canLeaveEditor() {
   return !editorDirty.value || window.confirm('当前修改尚未保存，确定离开吗？')
@@ -315,12 +336,16 @@ async function recoverList() {
 }
 
 async function logout() {
-  if (pendingLogout.value || !canLeaveEditor()) return
+  if (
+    pendingLogout.value
+    || !canLeaveEditor()
+    || !confirmDiscardPendingOperations()
+  ) return
   pendingLogout.value = true
   pageError.value = null
   try {
     await api('/auth/logout', {})
-    clearSession()
+    clearSession({ discardLocal: true })
     notifySessionChange()
     await router.replace('/login')
   } catch (reason) {

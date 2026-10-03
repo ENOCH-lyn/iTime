@@ -37,7 +37,16 @@ async function account(page: Page, request: APIRequestContext) {
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL('/ai')
-  return await (await page.request.get('/api/v1/auth/me')).json()
+  const session = await (await page.request.get('/api/v1/auth/me')).json()
+  return { ...session, email: address }
+}
+
+async function login(page: Page, email: string) {
+  await page.goto('/login')
+  await page.getByLabel('邮箱', { exact: true }).fill(email)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL('/ai')
 }
 
 async function createTask(page: Page, csrf: string, title: string) {
@@ -158,4 +167,91 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   await page.reload()
   await expect(page.getByText('同步基线已重新建立。')).toBeVisible()
   await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+})
+
+test('cross-device task refresh and offline step queue converge', async ({
+  page,
+  request,
+  browser,
+}) => {
+  const session = await account(page, request)
+  const secondContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  try {
+    await login(second, session.email)
+    await second.goto('/tasks')
+    const marker = `跨设备任务 ${randomUUID()}`
+    const task = await createTask(page, session.csrf_token, marker)
+    await expect(
+      second.getByText(marker, { exact: true }),
+    ).toBeVisible({ timeout: 5_000 })
+
+    await second.getByText(marker, { exact: true }).click()
+    await expect(
+      second.getByLabel('完成步骤 离线可见步骤'),
+    ).toBeVisible()
+    await secondContext.setOffline(true)
+    await second.getByLabel('完成步骤 离线可见步骤').click()
+    await expect(second.getByLabel(/1 项待同步/)).toBeVisible()
+    await expect(
+      second.getByLabel('重新打开步骤 离线可见步骤'),
+    ).toBeChecked()
+
+    await secondContext.setOffline(false)
+    await expect(second.getByLabel(/同步状态：已同步/)).toBeVisible({
+      timeout: 8_000,
+    })
+    await expect.poll(async () => {
+      const response = await second.request.get(`/api/v1/tasks/${task.id}`)
+      const current = (await response.json()).task
+      return current.steps[0].completed
+    }).toBe(true)
+  } finally {
+    await secondContext.close()
+  }
+})
+
+test('offline step conflict stays visible until explicitly discarded', async ({
+  page,
+  request,
+  browser,
+}) => {
+  const session = await account(page, request)
+  const marker = `冲突任务 ${randomUUID()}`
+  const task = await createTask(page, session.csrf_token, marker)
+  const secondContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  try {
+    await login(second, session.email)
+    await second.goto('/tasks')
+    await second.getByText(marker, { exact: true }).click()
+    await secondContext.setOffline(true)
+    await second.getByLabel('完成步骤 离线可见步骤').click()
+    await expect(second.getByLabel(/1 项待同步/)).toBeVisible()
+
+    const removed = await page.request.delete(
+      `/api/v1/tasks/${task.id}/steps/${task.steps[0].id}`,
+      {
+        headers: { 'X-CSRF-Token': session.csrf_token },
+        data: {
+          operation_id: randomUUID(),
+          expected_task_version: task.version,
+        },
+      },
+    )
+    expect(removed.ok()).toBeTruthy()
+
+    await secondContext.setOffline(false)
+    await expect(second.getByLabel(/1 项冲突/)).toBeVisible({
+      timeout: 8_000,
+    })
+    await second.getByLabel(/1 项冲突/).click()
+    await expect(
+      second.getByRole('heading', { name: '同步冲突' }),
+    ).toBeVisible()
+    await second.getByRole('button', { name: '丢弃此操作' }).click()
+    await expect(second.getByText('已同步', { exact: true })).toBeVisible()
+  } finally {
+    await secondContext.close()
+  }
 })
