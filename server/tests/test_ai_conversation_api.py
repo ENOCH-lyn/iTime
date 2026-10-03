@@ -11,6 +11,38 @@ from tests.test_calendar_series import create_account
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def reset_conversation_api_data(database_url):
+    def cleanup() -> None:
+        with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+            connection.execute(
+                """
+                UPDATE ai_config_capabilities
+                SET current_version_id=NULL, next_version=1, updated_at=now()
+                WHERE capability='conversation'
+                """
+            )
+            connection.execute(
+                "DELETE FROM ai_jobs WHERE capability='conversation'"
+            )
+            connection.execute("DELETE FROM ai_conversations")
+            connection.execute(
+                """
+                DELETE FROM user_operations
+                WHERE scope LIKE 'ai_conversation.%'
+                   OR scope LIKE 'ai_message.%'
+                   OR scope LIKE 'ai_job.cancel:%'
+                """
+            )
+            connection.execute(
+                "DELETE FROM ai_config_versions WHERE capability='conversation'"
+            )
+
+    cleanup()
+    yield
+    cleanup()
+
+
 @contextmanager
 def browser(live_server):
     with httpx.Client(base_url=live_server.origin, timeout=10, trust_env=False) as client:

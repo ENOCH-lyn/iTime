@@ -18,6 +18,7 @@ import pytest
 from cryptography.fernet import Fernet
 from psycopg.rows import dict_row
 
+from itime.ai.conversation_service import cleanup_expired_job_events
 from itime.ai.worker import process_one
 from itime.config import Settings
 from itime.database import Database
@@ -538,6 +539,20 @@ def assert_success(
     assert events[-1]["payload"]["message_id"] == str(message["id"])
 
 
+def parse_sse(body: str) -> list[dict]:
+    events = []
+    for block in body.strip().split("\n\n"):
+        if not block or block.startswith(":"):
+            continue
+        fields = {
+            line.split(":", 1)[0]: line.split(":", 1)[1].strip()
+            for line in block.splitlines()
+            if ":" in line
+        }
+        events.append(json.loads(fields["data"]))
+    return events
+
+
 @pytest.mark.parametrize(
     ("mode", "expected_content"),
     [
@@ -803,3 +818,95 @@ def test_non_retryable_responses_finish_message_attempt_job_and_event(
     assert events[-1]["payload"]["error_code"] == job["error_code"]
     assert events[-1]["payload"]["message_id"] == str(message["id"])
     assert len(state.request_snapshot()) == 1
+
+
+def test_committed_sse_events_resume_and_expired_events_fall_back_to_snapshot(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_live_server: LiveServer,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("split_sse")
+    submitted = enqueue_conversation_job(
+        conversation_worker_client,
+        conversation_worker_database_url,
+        endpoint,
+        prompt="验证断线续读",
+    )
+    job_id = submitted["job"]["id"]
+    assert run_process_once(conversation_worker_database_url)
+
+    response = conversation_worker_client.get(
+        f"/api/v1/ai/jobs/{job_id}/events"
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse(response.text)
+    assert [event["sequence"] for event in events] == list(
+        range(1, len(events) + 1)
+    )
+    assert events[-1]["payload"]["status"] == "succeeded"
+
+    resumed = conversation_worker_client.get(
+        f"/api/v1/ai/jobs/{job_id}/events",
+        headers={"Last-Event-ID": str(events[-2]["sequence"])},
+    )
+    resumed_events = parse_sse(resumed.text)
+    assert [event["sequence"] for event in resumed_events] == [
+        events[-1]["sequence"]
+    ]
+    assert (
+        conversation_worker_client.get(
+            f"/api/v1/ai/jobs/{job_id}/events",
+            headers={"Last-Event-ID": "invalid"},
+        ).json()["error"]["code"]
+        == "invalid_event_cursor"
+    )
+
+    with httpx.Client(
+        base_url=conversation_worker_live_server.origin,
+        timeout=10,
+        trust_env=False,
+    ) as other:
+        create_account(other, conversation_worker_database_url)
+        assert other.get(
+            f"/api/v1/ai/jobs/{job_id}/events"
+        ).status_code == 404
+
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE ai_job_events
+            SET created_at=now() - interval '8 days',
+                expires_at=now() - interval '1 second'
+            WHERE job_id=%s
+            """,
+            (job_id,),
+        )
+
+    async def cleanup() -> int:
+        database = Database(
+            Settings(
+                database_url=conversation_worker_database_url,
+                environment="test",
+            )
+        )
+        try:
+            return await cleanup_expired_job_events(database)
+        finally:
+            await database.close()
+
+    assert asyncio.run(cleanup()) == len(events)
+    assert conversation_worker_client.get(
+        f"/api/v1/ai/jobs/{job_id}/events"
+    ).text == ""
+    message = conversation_worker_client.get(
+        f"/api/v1/ai/conversations/"
+        f"{submitted['conversation']['id']}/messages"
+    ).json()["items"][-1]
+    assert message["status"] == "complete"
+    assert message["content"] == "前半段，后半段"
