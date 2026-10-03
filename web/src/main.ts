@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
     { path: '/focus', component: () => import('./pages/FocusPage.vue') },
     { path: '/reviews', component: () => import('./pages/ReviewsPage.vue') },
+    { path: '/stats', component: () => import('./pages/StatisticsPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
     { path: '/account/:section(password|devices|privacy|quota|appearance)', component: () => import('./pages/AccountPage.vue') },
     { path: '/admin', redirect: '/admin/security' },

@@ -1348,6 +1348,8 @@
 
   .calendar-navigation .product-navigation {
     display: flex;
+    min-width: 0;
+    overflow-x: auto;
   }
 
   .calendar-navigation .product-navigation .nav-link {

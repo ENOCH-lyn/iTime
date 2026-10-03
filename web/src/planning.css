@@ -837,6 +837,8 @@
 
   .plan-navigation .product-navigation {
     display: flex;
+    min-width: 0;
+    overflow-x: auto;
   }
 
   .plan-navigation .product-navigation .nav-link {

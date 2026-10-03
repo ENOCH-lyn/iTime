@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   CalendarDays,
+  ChartNoAxesCombined,
   CheckSquare2,
   ListChecks,
   MessageCircleMore,
@@ -10,7 +11,7 @@ import {
 } from 'lucide-vue-next'
 
 defineProps<{
-  current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'focus' | 'reviews' | 'settings'
+  current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'focus' | 'reviews' | 'stats' | 'settings'
 }>()
 
 const links = [
@@ -20,6 +21,7 @@ const links = [
   { key: 'calendar', to: '/calendar', label: '日历', icon: CalendarDays },
   { key: 'focus', to: '/focus', label: '专注', icon: TimerReset },
   { key: 'reviews', to: '/reviews', label: '复盘', icon: NotebookPen },
+  { key: 'stats', to: '/stats', label: '统计', icon: ChartNoAxesCombined },
   { key: 'settings', to: '/account', label: '设置', icon: Settings },
 ] as const
 </script>

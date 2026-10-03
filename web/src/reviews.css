@@ -641,11 +641,14 @@
   .review-sidebar .product-navigation {
     grid-column: 2;
     grid-row: 1;
-    grid-template-columns: repeat(7, minmax(44px, 1fr));
+    display: flex;
+    min-width: 0;
     margin: 0;
+    overflow-x: auto;
   }
 
   .review-sidebar .nav-link {
+    flex: 0 0 44px;
     justify-content: center;
     min-width: 44px;
     padding-inline: 8px;
@@ -706,11 +709,11 @@
 
   .review-sidebar .product-navigation {
     grid-column: 1;
-    grid-template-columns: repeat(7, minmax(38px, 1fr));
   }
 
   .review-sidebar .nav-link {
-    min-width: 38px;
+    flex-basis: 40px;
+    min-width: 40px;
     min-height: 40px;
     padding: 7px 4px;
   }
