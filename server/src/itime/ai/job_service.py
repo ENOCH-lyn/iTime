@@ -19,7 +19,7 @@ class ClaimedJob:
     owner_id: UUID
     capability: str
     config_version_id: UUID
-    input_media_id: UUID
+    input_media_id: UUID | None
     lease_id: UUID
     attempt_number: int
     deadline_at: datetime

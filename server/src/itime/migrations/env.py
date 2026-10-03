@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy.engine import Connection
 
 from itime.admin import models as admin_models  # noqa: F401
+from itime.ai import conversation_models as ai_conversation_models  # noqa: F401
 from itime.ai import models as ai_models  # noqa: F401
 from itime.auth import models as auth_models  # noqa: F401
 from itime.calendar import models as calendar_models  # noqa: F401

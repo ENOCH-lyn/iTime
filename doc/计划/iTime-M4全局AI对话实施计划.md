@@ -132,7 +132,7 @@ class AIJobEvent(Base):
 Capability = Literal["calendar_screenshot", "conversation"]
 ```
 
-迁移从 `0016_task_lifecycle` 升到 `0017_ai_conversations`，扩展三个 capability CHECK，将 `ai_jobs.input_media_id` 改为可空，新增 `last_event_sequence`，并建立 owner、cursor、due、active-job 和 expiry 索引。
+迁移从 `0016_task_lifecycle` 升到 `0017_ai_conversations`，扩展三个 capability CHECK，将 `ai_jobs.input_media_id` 改为可空，新增 `conversation_id` 和 `last_event_sequence`。同会话活动作业由 `ai_jobs.conversation_id` 部分唯一索引约束；延迟触发器保证每个 conversation 作业恰有一个角色正确的生成映射，并拒绝其他能力挂载映射。
 
 - [ ] **Step 4：验证迁移和 ORM**
 

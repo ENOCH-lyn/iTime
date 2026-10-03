@@ -25,7 +25,7 @@ class AIConfigCapability(Base):
     __tablename__ = "ai_config_capabilities"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot')",
+            "capability IN ('calendar_screenshot', 'conversation')",
             name="capability",
         ),
         CheckConstraint("next_version >= 1", name="next_version"),
@@ -50,7 +50,7 @@ class AIConfigVersion(Base):
     __tablename__ = "ai_config_versions"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot')",
+            "capability IN ('calendar_screenshot', 'conversation')",
             name="capability",
         ),
         CheckConstraint(
@@ -212,7 +212,7 @@ class AIJob(Base):
     __tablename__ = "ai_jobs"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot')",
+            "capability IN ('calendar_screenshot', 'conversation')",
             name="capability",
         ),
         CheckConstraint(
@@ -226,6 +226,14 @@ class AIJob(Base):
         ),
         CheckConstraint("attempt_count BETWEEN 0 AND max_attempts", name="attempt_count"),
         CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts"),
+        CheckConstraint("last_event_sequence >= 0", name="last_event_sequence"),
+        CheckConstraint(
+            "(capability = 'calendar_screenshot' "
+            "AND input_media_id IS NOT NULL AND conversation_id IS NULL) "
+            "OR (capability = 'conversation' "
+            "AND input_media_id IS NULL AND conversation_id IS NOT NULL)",
+            name="input_reference",
+        ),
         CheckConstraint(
             "(status = 'running') = (lease_id IS NOT NULL AND lease_until IS NOT NULL)",
             name="lease_state",
@@ -259,6 +267,12 @@ class AIJob(Base):
             name="fk_ai_jobs_input_media_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["conversation_id", "owner_id"],
+            ["ai_conversations.id", "ai_conversations.owner_id"],
+            name="fk_ai_jobs_conversation_owner",
+            ondelete="CASCADE",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_ai_jobs_id_owner"),
         UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
         Index("ix_ai_jobs_owner_created", "owner_id", "created_at", "id"),
@@ -268,13 +282,29 @@ class AIJob(Base):
             "deadline_at",
             postgresql_where=text("status IN ('queued', 'running')"),
         ),
+        Index(
+            "ix_ai_jobs_capability_due",
+            "capability",
+            "available_at",
+            "deadline_at",
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+        Index(
+            "uq_ai_jobs_active_conversation",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text(
+                "conversation_id IS NOT NULL AND status IN ('queued', 'running')"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     capability: Mapped[str] = mapped_column(String(50))
     config_version_id: Mapped[UUID]
-    input_media_id: Mapped[UUID]
+    input_media_id: Mapped[UUID | None]
+    conversation_id: Mapped[UUID | None]
     status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued")
     input_summary: Mapped[dict] = mapped_column(JSONB)
     output: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
@@ -282,6 +312,11 @@ class AIJob(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    last_event_sequence: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+    )
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lease_id: Mapped[UUID | None]

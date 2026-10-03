@@ -54,7 +54,7 @@
 - `history_through_sequence`、`context_message_ids`。
 - `stream_generation`，每次实际供应商尝试开始时递增。
 
-映射使通用 `AIJob` 不承担对话领域字段。`context_message_ids` 在接单时冻结，worker 不因稍后新增消息而扩大输入。
+`context_message_ids` 在接单时冻结，worker 不因稍后新增消息而扩大输入。数据库延迟约束触发器保证每个 `conversation` 作业在事务提交时恰有一个有效映射，截图等其他能力不能挂载对话映射；消息身份字段创建后不可变。
 
 ### 2.4 AIJobEvent
 
@@ -69,14 +69,14 @@
 
 ## 3. 通用 AI 作业扩展
 
-配置和作业能力新增 `conversation`。`AIJob.input_media_id` 改为可空，并增加按能力约束：
+配置和作业能力新增 `conversation`。`AIJob` 增加可空的 `conversation_id`，`input_media_id` 改为可空，并增加按能力约束：
 
-- `calendar_screenshot` 必须关联一份临时媒体。
-- `conversation` 不得关联临时媒体，必须存在一条 `ChatGeneration`。
+- `calendar_screenshot` 必须关联一份临时媒体，且不得关联会话。
+- `conversation` 必须关联本人会话、不得关联临时媒体，并且必须存在一条 `ChatGeneration`。
 
 作业继续使用 `queued → running → succeeded | failed | timed_out | cancelled`。文本流中的 `queued/running` 只表示生成状态，不等于业务提案可应用。
 
-账号内最多同时存在 3 个普通对话作业；同一会话最多一个排队或执行中的作业。不同会话可以并行。限制由会话行锁、账号活动作业计数和数据库部分唯一索引共同保证。
+账号内最多同时存在 3 个普通对话作业；同一会话最多一个排队或执行中的作业。不同会话可以并行。限制由会话行锁、账号活动作业计数和 `AIJob.conversation_id` 上的数据库部分唯一索引共同保证，不镜像第二份活动状态。
 
 ## 4. 接单与上下文
 

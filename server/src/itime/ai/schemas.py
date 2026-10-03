@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from itime.schemas import Input
 
-Capability = Literal["calendar_screenshot"]
+Capability = Literal["calendar_screenshot", "conversation"]
 ConfigStatus = Literal["draft", "tested", "published", "retired"]
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$")
 
