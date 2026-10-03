@@ -140,6 +140,32 @@ dd small { display: block; color: var(--muted); font-size: .8125rem; margin-top:
 .switch-control input:disabled + span { opacity: .55; }
 .privacy-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
 .privacy-settings .section-intro > div { flex: 1 1 320px; }
+.data-export-settings { max-width: 900px; }
+.data-export-intro > div { flex: 1 1 360px; }
+.data-export-intro .field-hint { margin-top: 6px; }
+.data-export-history { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--border); }
+.data-export-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.data-export-heading h2 { font-size: 1.0625rem; }
+.data-export-heading p { margin-top: 5px; color: var(--muted); font-size: .8125rem; }
+.data-export-list { margin: 12px 0 0; padding: 0; list-style: none; }
+.data-export-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 16px; align-items: start; padding: 20px 0; border-bottom: 1px solid var(--border); }
+.data-export-icon { margin-top: 2px; color: var(--muted); }
+.data-export-icon[data-state="succeeded"] { color: var(--accent); }
+.data-export-icon[data-state="failed"] { color: var(--error); }
+.data-export-details { min-width: 0; }
+.data-export-details strong { font-size: .9375rem; font-weight: 600; }
+.data-export-details > p { margin-top: 5px; color: var(--muted); font-size: .8125rem; overflow-wrap: anywhere; }
+.data-export-details > .error-text { color: var(--error); }
+.data-export-details details { margin-top: 10px; color: var(--muted); font-size: .8125rem; }
+.data-export-details summary { width: fit-content; min-height: 36px; }
+.data-export-details dl { margin: 4px 0 0; }
+.data-export-details dl > div { display: grid; gap: 2px; padding: 5px 0; }
+.data-export-details dd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
+.data-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.state-label[data-state="queued"], .state-label[data-state="running"] { color: var(--notice-text); border-color: var(--notice-border); }
+.state-label[data-state="succeeded"] { color: var(--accent); border-color: var(--accent); }
+.state-label[data-state="failed"] { color: var(--error); border-color: var(--error-border); }
+.state-label[data-state="expired"] { color: var(--muted); border-color: var(--border); }
 .quota-overview { max-width: 920px; }
 .quota-metrics { display: grid; grid-template-columns: 1fr; margin: 8px 0 0; border-top: 1px solid var(--border); }
 .quota-metrics > div { min-width: 0; padding: 18px 0; border-bottom: 1px solid var(--border); }
@@ -336,6 +362,9 @@ dialog p { font-size: .9375rem; color: var(--muted); }
   .admin-quota-tabs { width: 100%; }
   .admin-quota-tabs button { flex: 1 1 88px; }
   .quota-policy-form .button, .quota-user-search .button { width: 100%; }
+  .data-export-intro .button { width: 100%; }
+  .data-export-row { grid-template-columns: 20px minmax(0, 1fr); gap: 12px; }
+  .data-export-actions { grid-column: 2; justify-content: flex-start; }
 }
 @media (min-width: 1280px) {
   .quota-ledger-filters { grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(120px, .7fr)) auto; }

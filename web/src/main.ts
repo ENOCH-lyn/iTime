@@ -21,7 +21,7 @@ const router = createRouter({
     { path: '/reviews', component: () => import('./pages/ReviewsPage.vue') },
     { path: '/stats', component: () => import('./pages/StatisticsPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },
-    { path: '/account/:section(password|devices|privacy|quota|appearance)', component: () => import('./pages/AccountPage.vue') },
+    { path: '/account/:section(password|devices|privacy|quota|data|appearance)', component: () => import('./pages/AccountPage.vue') },
     { path: '/admin', redirect: '/admin/security' },
     ...['login', 'setup'].map(mode => ({
       path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),

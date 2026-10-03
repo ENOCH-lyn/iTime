@@ -119,6 +119,57 @@ export async function uploadApi<T>(
   }
 }
 
+export async function downloadApi(
+  path: string,
+  timeoutMs = 30_000,
+): Promise<{ blob: Blob; filename: string }> {
+  const requestId = crypto.randomUUID()
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(`/api/v1${path}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'X-CSRF-Token': csrf,
+        'X-Request-ID': requestId,
+      },
+    })
+    if (!response.ok) {
+      const result = await response.json().catch(() => null)
+      if (result?.error?.message) throw new ApiError(result.error, response.status)
+      throw new ApiError({
+        code: 'service_unavailable',
+        message: '文件暂时无法下载，请稍后重试。',
+        request_id: response.headers.get('X-Request-ID') ?? requestId,
+        saved: 'not_saved',
+        retryable: true,
+      }, response.status)
+    }
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const matched = disposition.match(/filename="([^"]+)"/i)
+    return {
+      blob: await response.blob(),
+      filename: matched?.[1] ?? 'itime-export.zip',
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError({
+      code: controller.signal.aborted ? 'request_timeout' : 'network_error',
+      message: controller.signal.aborted
+        ? '下载等待超时，请检查导出状态后重试。'
+        : '无法下载文件，请检查网络后重试。',
+      request_id: requestId,
+      saved: 'not_saved',
+      retryable: true,
+    })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 export function failure(error: unknown): Failure {
   return error instanceof ApiError ? error.info : {
     code: 'unexpected_error', message: '操作未能完成，请稍后重试。',
