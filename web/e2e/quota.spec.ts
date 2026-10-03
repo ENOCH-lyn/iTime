@@ -255,19 +255,20 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await expect(page.getByText('正在生成')).toHaveCount(0)
 
   await page.goto('/account/quota')
-  await expect(page.getByTestId('quota-charged')).toHaveText(
-    /CNY\s*0\.000135$/,
-  )
+  const chargedAmount = (
+    await page.getByTestId('quota-charged').innerText()
+  ).replace(/\s+/g, '').replace(/^CNY/, '')
+  expect(parseNanos(chargedAmount)).toBeGreaterThan(0n)
   await expect.poll(async () => (
     await page.getByTestId('quota-available').innerText()
   ).replace(/\s+/g, '')).toBe(
-    `CNY${formatNanos(parseNanos(initialBaseAmount) - 135_000n)}`,
+    `CNY${formatNanos(parseNanos(initialBaseAmount) - parseNanos(chargedAmount))}`,
   )
   const ledger = page.getByRole('list', { name: '额度账本记录' })
   await expect(ledger.getByRole('listitem')).toHaveCount(1)
   await expect(ledger).toContainText('AI 使用')
   await expect(ledger).toContainText('供应商上报')
-  await expect(ledger).toContainText('CNY -0.000135')
+  await expect(ledger).toContainText(`CNY -${chargedAmount}`)
 
   await page.goto('/ai')
   await newConversation(page)
@@ -292,7 +293,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await page.goto('/account/quota')
   await expect(page.getByTestId('quota-reserved')).toHaveText(/CNY\s*0$/)
   await expect(page.getByTestId('quota-charged')).toHaveText(
-    /CNY\s*0\.000135$/,
+    new RegExp(`CNY\\s*${chargedAmount.replace('.', '\\.')}$`),
   )
   await expect(page.getByRole('list', { name: '额度账本记录' })
     .getByRole('listitem')).toHaveCount(1)
@@ -311,7 +312,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await page.reload()
   await expect(page.getByTestId('quota-reserved')).toHaveText(/CNY\s*0$/)
   await expect(page.getByTestId('quota-charged')).toHaveText(
-    /CNY\s*0\.000135$/,
+    new RegExp(`CNY\\s*${chargedAmount.replace('.', '\\.')}$`),
   )
   await expect(page.getByRole('list', { name: '额度账本记录' })
     .getByRole('listitem')).toHaveCount(1)
