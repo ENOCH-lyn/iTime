@@ -88,7 +88,7 @@ git commit -m "feat: 建立执行与困难数据模型"
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_focus_sessions.py`
 
-- [ ] **Step 1: 写状态机失败测试**
+- [x] **Step 1: 写状态机失败测试**
 
 覆盖：
 
@@ -106,13 +106,13 @@ running|paused → abandoned
 跨账号统一 404
 ```
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run: `cd server && uv run pytest -q tests/test_focus_sessions.py`
 
 Expected: FAIL，专注路由不存在。
 
-- [ ] **Step 3: 实现输入类型与纯计时函数**
+- [x] **Step 3: 实现输入类型与纯计时函数**
 
 提供：
 
@@ -156,9 +156,9 @@ def countdown_state(
     }
 ```
 
-另实现 `apply_transition(session, action, occurred_at) -> FocusEvent`。该函数不访问数据库，只按设计状态表校验转换、累计当前运行段、设置终态字段并返回下一条事件；所有时间先规范化为 UTC。
+另实现 `apply_transition(session, action, occurred_at) -> str`。该函数不访问数据库，只按设计状态表校验转换、累计当前运行段、设置终态字段并返回变化动作；所有时间先规范化为 UTC，事件由事务服务在取得序号后创建。
 
-- [ ] **Step 4: 实现服务和路由**
+- [x] **Step 4: 实现服务和路由**
 
 在 `service.py` 提供 `start_focus(session, owner_id, data, *, current_time)`、`transition_focus(session, owner_id, focus_id, data, *, current_time)`、`current_focus(session, owner_id, *, current_time)`、`focus_detail(session, owner_id, focus_id, *, current_time)` 和 `list_focus_sessions(session, owner_id, query, *, current_time)`；返回值均为可直接交给 FastAPI 编码的字典，当前查询在无开放会话时返回 `None`。
 
@@ -174,7 +174,7 @@ GET  /api/v1/focus-sessions/{id}
 POST /api/v1/focus-sessions/{id}/transitions
 ```
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run:
 
