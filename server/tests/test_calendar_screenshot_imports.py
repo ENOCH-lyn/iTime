@@ -24,6 +24,7 @@ from itime.ai.worker import process_one
 from itime.config import Settings
 from itime.database import Database
 from tests.conftest import SERVER, LiveServer, isolated_database, psycopg_url
+from tests.quota_helpers import ensure_quota_policy
 from tests.test_calendar_imports import confirm_payload
 from tests.test_calendar_series import create_account
 
@@ -341,6 +342,7 @@ def publish_config(database_url: str, settings: Settings, endpoint: str) -> str:
             """,
             (config_id,),
         )
+    ensure_quota_policy(database_url)
     return str(config_id)
 
 

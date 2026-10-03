@@ -320,6 +320,7 @@ async def reserve_job_budget(
     job: AIJob,
     accepted_at: datetime,
     estimate: BudgetEstimate,
+    daily: AIDailyAllowance | None = None,
 ) -> AIQuotaReservation:
     if job.owner_id != owner_id or job.quota_mode != "user":
         raise AppError(
@@ -328,11 +329,22 @@ async def reserve_job_budget(
             status=503,
             saved="unknown",
         )
-    daily = await get_or_create_daily_allowance(
-        session,
-        owner_id,
-        accepted_at=accepted_at,
-    )
+    if daily is None:
+        daily = await get_or_create_daily_allowance(
+            session,
+            owner_id,
+            accepted_at=accepted_at,
+        )
+    elif (
+        daily.owner_id != owner_id
+        or not daily.window_start_at <= accepted_at < daily.window_end_at
+    ):
+        raise AppError(
+            "ai_quota_state_invalid",
+            "额度活动日状态不一致，请保留请求编号并联系管理员。",
+            status=503,
+            saved="unknown",
+        )
     config = await session.get(AIConfigVersion, job.config_version_id)
     if (
         config is None

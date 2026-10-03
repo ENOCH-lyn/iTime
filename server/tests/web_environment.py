@@ -30,6 +30,8 @@ from itime.auth.models import User
 from itime.auth.security import Security, now
 from itime.config import Settings
 from itime.database import Database
+from itime.quota.models import AIQuotaPolicyState, AIQuotaPolicyVersion
+from itime.quota.service import RESERVATION_ESTIMATOR_VERSION
 from tests.conftest import SERVER, isolated_database
 
 WEB = SERVER.parent / "web"
@@ -425,6 +427,23 @@ async def seed_admins(
                 session.add(config)
                 await session.flush()
                 state.current_version_id = config.id
+            quota_state = await session.get(
+                AIQuotaPolicyState,
+                1,
+                with_for_update=True,
+            )
+            policy = AIQuotaPolicyVersion(
+                version=quota_state.next_version,
+                currency="CNY",
+                daily_allowance_nanos=1_000_000_000,
+                reservation_estimator_version=RESERVATION_ESTIMATOR_VERSION,
+                status="published",
+                published_at=now(),
+            )
+            quota_state.next_version += 1
+            session.add(policy)
+            await session.flush()
+            quota_state.current_version_id = policy.id
         return result
     finally:
         await database.close()

@@ -23,6 +23,7 @@ from itime.ai.worker import process_one
 from itime.config import Settings
 from itime.database import Database
 from tests.conftest import SERVER, LiveServer, isolated_database, psycopg_url
+from tests.quota_helpers import ensure_quota_policy
 from tests.test_calendar_series import create_account
 
 pytestmark = pytest.mark.integration
@@ -373,6 +374,7 @@ def publish_conversation_config(
             """,
             (config_id, version + 1),
         )
+    ensure_quota_policy(database_url)
     return str(config_id)
 
 

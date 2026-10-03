@@ -6,6 +6,7 @@ import psycopg
 import pytest
 
 from tests.conftest import psycopg_url
+from tests.quota_helpers import ensure_quota_policy
 from tests.test_calendar_series import create_account
 
 pytestmark = pytest.mark.integration
@@ -83,11 +84,16 @@ def publish_conversation_config(database_url: str) -> str:
             """
             INSERT INTO ai_config_versions (
                 id, capability, version, endpoint_url, model, api_key_ciphertext,
-                timeout_seconds, max_output_tokens, status, last_test_id,
+                timeout_seconds, max_output_tokens, price_currency,
+                input_price_nanos_per_million_tokens,
+                cached_input_price_nanos_per_million_tokens,
+                output_price_nanos_per_million_tokens, status, last_test_id,
                 last_test_started_at, last_test_completed_at, published_at
             ) VALUES (
                 %s, 'conversation', %s, 'https://ai.example.com/v1',
-                'chat-model', %s, 60, 4096, 'published', %s, now(), now(), now()
+                'chat-model', %s, 60, 4096, 'CNY',
+                1000000000, 500000000, 2000000000,
+                'published', %s, now(), now(), now()
             )
             """,
             (config_id, version, b"encrypted-key", test_id),
@@ -100,6 +106,7 @@ def publish_conversation_config(database_url: str) -> str:
             """,
             (config_id, version + 1),
         )
+    ensure_quota_policy(database_url)
     return str(config_id)
 
 
@@ -230,6 +237,95 @@ def test_conversation_crud_pagination_replay_and_owner_isolation(
         ).status_code == 404
 
 
+def test_message_admission_requires_policy_time_zone_and_pricing(
+    client,
+    database_url,
+):
+    _, owner_id = create_account(client, database_url)
+    config_id = publish_conversation_config(database_url)
+
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute(
+            """
+            UPDATE ai_quota_policy_state
+            SET current_version_id=NULL, updated_at=now()
+            WHERE id=1
+            """
+        )
+        connection.execute("DELETE FROM ai_quota_policy_versions")
+    no_policy_conversation = create_conversation(client).json()["conversation"]
+    no_policy = send_message(client, no_policy_conversation, "没有额度策略")
+    assert no_policy.status_code == 503
+    assert no_policy.json()["error"]["code"] == "ai_quota_policy_unavailable"
+
+    ensure_quota_policy(database_url)
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute(
+            "DELETE FROM user_time_settings WHERE owner_id=%s",
+            (owner_id,),
+        )
+    no_time_conversation = create_conversation(client).json()["conversation"]
+    no_time = send_message(client, no_time_conversation, "没有时区")
+    assert no_time.status_code == 409
+    assert no_time.json()["error"]["code"] == "time_settings_required"
+
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute(
+            """
+            INSERT INTO user_time_settings (owner_id, time_zone)
+            VALUES (%s, 'Asia/Shanghai')
+            """,
+            (owner_id,),
+        )
+        connection.execute(
+            """
+            UPDATE ai_config_versions
+            SET status='retired', retired_at=now(), updated_at=now()
+            WHERE id=%s
+            """,
+            (config_id,),
+        )
+        unpriced_id = uuid4()
+        connection.execute(
+            """
+            INSERT INTO ai_config_versions (
+                id, capability, version, endpoint_url, model,
+                api_key_ciphertext, timeout_seconds, max_output_tokens,
+                status, last_test_id, last_test_started_at,
+                last_test_completed_at, published_at
+            ) VALUES (
+                %s, 'conversation', 2, 'https://ai.example.com/v1',
+                'unpriced-model', %s, 60, 4096, 'published',
+                %s, now(), now(), now()
+            )
+            """,
+            (unpriced_id, b"encrypted-key", uuid4()),
+        )
+        connection.execute(
+            """
+            UPDATE ai_config_capabilities
+            SET current_version_id=%s, next_version=3, updated_at=now()
+            WHERE capability='conversation'
+            """,
+            (unpriced_id,),
+        )
+    unpriced_conversation = create_conversation(client).json()["conversation"]
+    unpriced = send_message(client, unpriced_conversation, "没有价格")
+    assert unpriced.status_code == 503
+    assert unpriced.json()["error"]["code"] == "ai_quota_pricing_unavailable"
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM ai_jobs WHERE owner_id=%s),
+                (SELECT count(*) FROM ai_quota_reservations WHERE owner_id=%s),
+                (SELECT count(*) FROM ai_conversation_messages WHERE owner_id=%s)
+            """,
+            (owner_id, owner_id, owner_id),
+        ).fetchone() == (0, 0, 0)
+
+
 def test_message_submission_is_atomic_relevant_and_bounded(
     client,
     database_url,
@@ -336,16 +432,20 @@ def test_message_submission_is_atomic_relevant_and_bounded(
                  WHERE conversation_id=%s),
                 (SELECT count(*) FROM ai_jobs WHERE id=%s),
                 (SELECT count(*) FROM ai_chat_generations WHERE job_id=%s),
-                (SELECT count(*) FROM ai_job_events WHERE job_id=%s)
+                (SELECT count(*) FROM ai_job_events WHERE job_id=%s),
+                (SELECT count(*) FROM ai_quota_reservations WHERE job_id=%s),
+                (SELECT quota_mode FROM ai_jobs WHERE id=%s)
             """,
             (
                 conversation["id"],
                 body["job"]["id"],
                 body["job"]["id"],
                 body["job"]["id"],
+                body["job"]["id"],
+                body["job"]["id"],
             ),
         ).fetchone()
-        assert stored == (2, 1, 1, 1)
+        assert stored == (2, 1, 1, 1, 1, "user")
         assert connection.execute(
             "SELECT input_summary::text FROM ai_jobs WHERE id=%s",
             (body["job"]["id"],),
