@@ -67,28 +67,59 @@ def upstream_handler(state: UpstreamState, database_url: str):
                 time.sleep(1.2)
 
             request_body = json.loads(body)
+            is_planning_test = bool(request_body.get("tools"))
             is_conversation_test = isinstance(
                 request_body["messages"][0]["content"],
                 str,
-            )
-            success_content = (
-                "ITIME_CHAT_OK"
-                if is_conversation_test
-                else '{"marker":"09:00"}'
+            ) and not is_planning_test
+            success_message = (
+                {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "planning-test-call",
+                            "type": "function",
+                            "function": {
+                                "name": "submit_itime_planning_test",
+                                "arguments": '{"marker":"09:00"}',
+                            },
+                        }
+                    ],
+                }
+                if is_planning_test
+                else {
+                    "content": (
+                        "ITIME_CHAT_OK"
+                        if is_conversation_test
+                        else '{"marker":"09:00"}'
+                    )
+                }
             )
             status, response = {
                 "success": (
                     200,
-                    {"choices": [{"message": {"content": success_content}}]},
+                    {"choices": [{"message": success_message}]},
                 ),
                 "blocked": (
                     200,
-                    {"choices": [{"message": {"content": success_content}}]},
+                    {"choices": [{"message": success_message}]},
                 ),
                 "authentication": (401, {"error": UPSTREAM_BODY_SECRET}),
                 "rate_limit": (429, {"error": UPSTREAM_BODY_SECRET}),
                 "server_error": (503, {"error": UPSTREAM_BODY_SECRET}),
                 "invalid": (200, {"private": UPSTREAM_BODY_SECRET}),
+                "planning_content": (
+                    200,
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": '{"marker":"09:00"}',
+                                }
+                            }
+                        ]
+                    },
+                ),
                 "timeout": (
                     200,
                     {"choices": [{"message": {"content": "too late"}}]},
@@ -443,6 +474,62 @@ def test_conversation_config_uses_text_only_synthetic_probe(
         }
     ]
     assert "response_format" not in request
+
+
+def test_planning_config_requires_synthetic_tool_call(
+    client,
+    database_url,
+    upstream,
+):
+    setup_admin(client, database_url)
+    state, endpoint = upstream
+    config = create_config(
+        client,
+        endpoint,
+        model="planning-model",
+        capability="planning",
+    ).json()
+    tested = client.post(f"{AI_CONFIGS}/{config['id']}/test")
+    assert tested.status_code == 200, tested.text
+    assert tested.json()["status"] == "tested"
+    request = state.requests[-1]["body"]
+    assert request["model"] == "planning-model"
+    assert request["max_tokens"] == 64
+    assert request["parallel_tool_calls"] is False
+    assert request["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "submit_itime_planning_test"},
+    }
+    assert request["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "properties": {
+            "marker": {
+                "type": "string",
+                "const": "09:00",
+            }
+        },
+        "required": ["marker"],
+        "additionalProperties": False,
+    }
+    assert "image_url" not in json.dumps(request)
+
+
+def test_planning_config_rejects_marker_in_plain_content(
+    client,
+    database_url,
+    upstream,
+):
+    setup_admin(client, database_url)
+    state, endpoint = upstream
+    state.mode = "planning_content"
+    config = create_config(
+        client,
+        endpoint,
+        capability="planning",
+    ).json()
+    tested = client.post(f"{AI_CONFIGS}/{config['id']}/test")
+    assert tested.status_code == 502
+    assert tested.json()["error"]["code"] == "ai_config_test_invalid_response"
 
 
 @pytest.mark.parametrize(

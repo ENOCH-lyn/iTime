@@ -12,6 +12,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from itime.config import Settings
 
 MAX_TEST_RESPONSE_BYTES = 1024 * 1024
+PLANNING_TEST_TOOL = "submit_itime_planning_test"
 SYNTHETIC_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAASsAAABACAIAAADNgsbOAAABR0lEQVR42u3cwQ2DMAxA"
     "0czADlzZfztYgUiO41jvq9emisnjUCHGK2lfwwgkAiUCJREoESiJQIlASQRKBEoiUCJQ"
@@ -119,6 +120,27 @@ def _valid_chat_response(body: bytes, capability: str) -> bool:
     message = choices[0].get("message")
     if not isinstance(message, dict):
         return False
+    if capability == "planning":
+        tool_calls = message.get("tool_calls")
+        if (
+            not isinstance(tool_calls, list)
+            or len(tool_calls) != 1
+            or not isinstance(tool_calls[0], dict)
+            or tool_calls[0].get("type") != "function"
+        ):
+            return False
+        function = tool_calls[0].get("function")
+        if (
+            not isinstance(function, dict)
+            or function.get("name") != PLANNING_TEST_TOOL
+            or not isinstance(function.get("arguments"), str)
+        ):
+            return False
+        try:
+            arguments = json.loads(function["arguments"])
+        except json.JSONDecodeError:
+            return False
+        return arguments == {"marker": "09:00"}
     content = message.get("content")
     if not isinstance(content, str):
         return False
@@ -168,6 +190,47 @@ async def _network_test(
                 }
             ],
             "max_tokens": min(config.max_output_tokens, 32),
+            "temperature": 0,
+        }
+    elif capability == "planning":
+        request_body = {
+            "model": config.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "This is a synthetic planning tool check with no user data. "
+                        f"Call {PLANNING_TEST_TOOL} exactly once with marker 09:00. "
+                        "Do not call any other tool."
+                    ),
+                }
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": PLANNING_TEST_TOOL,
+                        "description": "Return the synthetic planning marker.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "marker": {
+                                    "type": "string",
+                                    "const": "09:00",
+                                }
+                            },
+                            "required": ["marker"],
+                            "additionalProperties": False,
+                        },
+                    },
+                }
+            ],
+            "tool_choice": {
+                "type": "function",
+                "function": {"name": PLANNING_TEST_TOOL},
+            },
+            "parallel_tool_calls": False,
+            "max_tokens": min(config.max_output_tokens, 64),
             "temperature": 0,
         }
     else:

@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.ai.conversation_models import AIJobEvent
 from itime.ai.cost_service import add_provider_cost
 from itime.ai.governance_service import (
     add_attempt_body_log,
@@ -17,6 +18,7 @@ from itime.errors import AppError
 from itime.quota.service import release_reservation, settle_success
 
 TERMINAL_JOB_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
+JOB_EVENT_RETENTION = timedelta(days=7)
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class ClaimedJob:
     config_version_id: UUID
     input_media_id: UUID | None
     conversation_id: UUID | None
+    planning_snapshot_id: UUID | None
     lease_id: UUID
     attempt_number: int
     deadline_at: datetime
@@ -47,7 +50,11 @@ def job_result(job: AIJob) -> dict:
         "capability": job.capability,
         "conversation_id": job.conversation_id,
         "status": job.status,
-        "input_summary": job.input_summary,
+        "input_summary": {
+            key: value
+            for key, value in job.input_summary.items()
+            if not key.startswith("_")
+        },
         "output": job.output,
         "error": (
             {"code": job.error_code, "message": job.error_message}
@@ -92,6 +99,14 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     job.finished_at = current
     job.updated_at = current
     job.version += 1
+    append_planning_job_event(
+        session,
+        job,
+        payload={
+            "status": "cancelled",
+            "attempt": job.attempt_count,
+        },
+    )
     clear_job_lease(job)
     return True
 
@@ -252,6 +267,7 @@ async def claim_next_job(
                     config_version_id=job.config_version_id,
                     input_media_id=job.input_media_id,
                     conversation_id=job.conversation_id,
+                    planning_snapshot_id=job.planning_snapshot_id,
                     lease_id=lease_id,
                     attempt_number=job.attempt_count,
                     deadline_at=job.deadline_at,
@@ -279,6 +295,14 @@ async def claim_next_job(
                 started_at=current,
                 retention_days=body_log_retention_days,
             )
+            append_planning_job_event(
+                session,
+                job,
+                payload={
+                    "status": "running",
+                    "attempt": job.attempt_count,
+                },
+            )
             await session.flush()
             return ClaimedJob(
                 id=job.id,
@@ -287,6 +311,7 @@ async def claim_next_job(
                 config_version_id=job.config_version_id,
                 input_media_id=job.input_media_id,
                 conversation_id=job.conversation_id,
+                planning_snapshot_id=job.planning_snapshot_id,
                 lease_id=lease_id,
                 attempt_number=job.attempt_count,
                 deadline_at=job.deadline_at,
@@ -422,6 +447,16 @@ async def reject_or_retry_job(
             job.error_message = error_message
             job.updated_at = current
             job.version += 1
+            append_planning_job_event(
+                session,
+                job,
+                payload={
+                    "status": "queued",
+                    "attempt": claim.attempt_number,
+                    "retrying": True,
+                    "error_code": error_code,
+                },
+            )
             clear_job_lease(job)
             return "queued"
 
@@ -449,6 +484,16 @@ async def reject_or_retry_job(
         job.finished_at = current
         job.updated_at = current
         job.version += 1
+        append_planning_job_event(
+            session,
+            job,
+            payload={
+                "status": status,
+                "attempt": claim.attempt_number,
+                "error_code": final_code,
+                "error_message": final_message,
+            },
+        )
         await release_reservation(
             session,
             job=job,
@@ -456,6 +501,28 @@ async def reject_or_retry_job(
         )
         clear_job_lease(job)
         return status
+
+
+def append_planning_job_event(
+    session: AsyncSession,
+    job: AIJob,
+    *,
+    payload: dict,
+) -> AIJobEvent | None:
+    if job.capability != "planning":
+        return None
+    job.last_event_sequence += 1
+    event = AIJobEvent(
+        job_id=job.id,
+        owner_id=job.owner_id,
+        sequence=job.last_event_sequence,
+        generation=job.attempt_count,
+        kind="job_state",
+        payload=payload,
+        expires_at=now() + JOB_EVENT_RETENTION,
+    )
+    session.add(event)
+    return event
 
 
 async def renew_job_lease(

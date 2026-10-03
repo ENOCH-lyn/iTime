@@ -117,3 +117,49 @@ def test_estimator_marks_text_and_screenshot_inputs():
     assert screenshot.input_tokens > conversation.input_tokens
     assert screenshot.details["vision_tokens"] > 0
     assert screenshot.output_tokens > 0
+
+
+def test_planning_estimator_counts_tool_schema_and_arguments():
+    messages = [{"role": "user", "content": "安排任务"}]
+    plain = estimate_usage(
+        {"messages": messages},
+        "计划完成",
+        capability="conversation",
+        input_summary={},
+    )
+    planning = estimate_usage(
+        {
+            "messages": messages,
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "submit_itime_plan",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "summary": {"type": "string"},
+                                "blocks": {"type": "array"},
+                            },
+                            "required": ["summary", "blocks"],
+                        },
+                    },
+                }
+            ],
+            "tool_choice": {
+                "type": "function",
+                "function": {"name": "submit_itime_plan"},
+            },
+            "parallel_tool_calls": False,
+        },
+        (
+            '{"content":"计划完成","tool_call":{"name":"submit_itime_plan",'
+            '"arguments":{"summary":"完成","blocks":[]}}}'
+        ),
+        capability="planning",
+        input_summary={},
+    )
+    assert planning.input_tokens > plain.input_tokens
+    assert planning.output_tokens > plain.output_tokens
+    assert planning.details["tool_schema_utf8_bytes"] > 0
+    assert planning.details["tool_arguments_utf8_bytes"] > 0

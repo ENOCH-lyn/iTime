@@ -9,6 +9,7 @@ from itime.ai.job_service import claim_next_job, reject_or_retry_job
 from itime.config import Settings, get_settings
 from itime.database import Database
 from itime.observability import configure_logging
+from itime.planning.job_service import reject_or_retry_planning_job
 
 logger = logging.getLogger("itime.quota")
 
@@ -32,6 +33,16 @@ async def reconcile_one(database: Database, settings: Settings) -> bool:
             error_code=claim.terminal_error_code,
             error_message=claim.terminal_error_message
             or "AI 作业未能完成，请重新提交。",
+            error_stage=claim.terminal_error_stage or "worker",
+            retryable=False,
+        )
+    elif claim.capability == "planning":
+        await reject_or_retry_planning_job(
+            database,
+            claim,
+            error_code=claim.terminal_error_code,
+            error_message=claim.terminal_error_message
+            or "AI 作业未能完成，请重新生成。",
             error_stage=claim.terminal_error_stage or "worker",
             retryable=False,
         )

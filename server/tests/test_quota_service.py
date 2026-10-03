@@ -10,6 +10,7 @@ from itime.ai.models import AIJob
 from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
+from itime.planning import models as _planning_models  # noqa: F401
 from itime.quota.service import (
     BudgetEstimate,
     activity_window,

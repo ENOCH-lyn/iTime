@@ -43,7 +43,11 @@ from itime.tasks.service import (
 )
 
 router = APIRouter(prefix="/api/v1/admin/quota", tags=["后台 AI 额度"])
-REQUIRED_AI_CAPABILITIES = ("calendar_screenshot", "conversation")
+REQUIRED_AI_CAPABILITIES = (
+    "calendar_screenshot",
+    "conversation",
+    "planning",
+)
 LedgerKind = Literal["usage_charge", "admin_credit", "admin_debit"]
 
 
@@ -394,6 +398,10 @@ async def validate_pricing_currency(session, currency: str) -> None:
             if state is not None and state.current_version_id is not None
             else None
         )
+        if capability == "planning" and config is None:
+            # A quota policy may predate the first rollout of a new capability.
+            # Once planning is published, every later policy must price it.
+            continue
         if (
             config is None
             or config.status != "published"

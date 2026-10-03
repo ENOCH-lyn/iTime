@@ -43,6 +43,17 @@ from itime.calendar.screenshot_service import (
 from itime.config import Settings, get_settings
 from itime.database import Database
 from itime.observability import configure_logging
+from itime.planning.job_service import (
+    PlanningWorkUnavailable,
+    complete_planning_job,
+    load_planning_work,
+    reject_or_retry_planning_job,
+)
+from itime.planning.provider import (
+    PlanningGenerationSuperseded,
+    PlanningProviderError,
+    stream_planning_reply,
+)
 
 logger = logging.getLogger("itime.ai")
 
@@ -244,6 +255,84 @@ async def _process_conversation(
     )
 
 
+async def _process_planning(
+    database: Database,
+    settings: Settings,
+    cipher: Fernet,
+    claim: ClaimedJob,
+) -> None:
+    try:
+        work = await load_planning_work(database, claim)
+    except PlanningWorkUnavailable as exc:
+        await reject_or_retry_planning_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=False,
+        )
+        return
+    if not await prepare_attempt_body_log(database, claim, work.request_body):
+        return
+
+    remaining = (claim.deadline_at - now()).total_seconds()
+    if remaining <= 0:
+        await reject_or_retry_planning_job(
+            database,
+            claim,
+            error_code="ai_job_deadline_exceeded",
+            error_message="AI 作业已超过总等待时间，请重新生成。",
+            error_stage="deadline",
+            retryable=False,
+        )
+        return
+
+    async def accept_delta(_: str) -> bool:
+        return True
+
+    async def mark_started() -> bool:
+        return await mark_provider_request_started(database, claim)
+
+    try:
+        provider_result = await _with_lease_heartbeat(
+            database,
+            claim,
+            settings,
+            stream_planning_reply(
+                work.config,
+                settings,
+                cipher,
+                messages=work.messages,
+                timeout_seconds=remaining,
+                on_delta=accept_delta,
+                on_request_started=mark_started,
+            ),
+        )
+    except (JobLeaseLost, PlanningGenerationSuperseded):
+        return
+    except PlanningProviderError as exc:
+        await reject_or_retry_planning_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=exc.retryable,
+            provider_request_id=exc.provider_request_id,
+            http_status=exc.http_status,
+            provider_usage=exc.usage,
+        )
+        return
+    await complete_planning_job(
+        database,
+        claim,
+        work.snapshot,
+        provider_result,
+        quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+    )
+
+
 async def process_one(database: Database, settings: Settings) -> bool:
     claim = await claim_next_job(
         database,
@@ -261,6 +350,16 @@ async def process_one(database: Database, settings: Settings) -> bool:
                 error_code=claim.terminal_error_code,
                 error_message=claim.terminal_error_message
                 or "AI 作业未能完成，请重新提交。",
+                error_stage=claim.terminal_error_stage or "worker",
+                retryable=False,
+            )
+        elif claim.capability == "planning":
+            await reject_or_retry_planning_job(
+                database,
+                claim,
+                error_code=claim.terminal_error_code,
+                error_message=claim.terminal_error_message
+                or "AI 作业未能完成，请重新生成。",
                 error_stage=claim.terminal_error_stage or "worker",
                 retryable=False,
             )
@@ -282,6 +381,8 @@ async def process_one(database: Database, settings: Settings) -> bool:
         await _process_screenshot(database, settings, cipher, claim)
     elif claim.capability == "conversation":
         await _process_conversation(database, settings, cipher, claim)
+    elif claim.capability == "planning":
+        await _process_planning(database, settings, cipher, claim)
     else:
         await reject_or_retry_job(
             database,

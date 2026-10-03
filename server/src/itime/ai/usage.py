@@ -1,9 +1,10 @@
+import json
 import math
 from dataclasses import dataclass
 
 MAX_USAGE_TOKENS = 1_000_000_000
 MAX_TOTAL_USAGE_TOKENS = MAX_USAGE_TOKENS * 2
-ESTIMATOR_VERSION = "utf8-vision-v1"
+ESTIMATOR_VERSION = "utf8-vision-tools-v2"
 ALLOWED_DETAIL_KEYS = {
     "accepted_prediction_tokens",
     "audio_tokens",
@@ -139,6 +140,55 @@ def _message_text(request_body: dict) -> tuple[str, int]:
     return "\n".join(parts), message_count
 
 
+def _tool_schema_text(request_body: dict) -> str:
+    tool_fields = {
+        key: request_body[key]
+        for key in ("tools", "tool_choice", "parallel_tool_calls")
+        if key in request_body
+    }
+    if not tool_fields:
+        return ""
+    return json.dumps(
+        tool_fields,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _tool_argument_bytes(response_body: str) -> int:
+    try:
+        payload = json.loads(response_body)
+    except (TypeError, json.JSONDecodeError):
+        return 0
+    total = 0
+
+    def visit(value: object) -> None:
+        nonlocal total
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "arguments":
+                    serialized = (
+                        item
+                        if isinstance(item, str)
+                        else json.dumps(
+                            item,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    )
+                    total += len(serialized.encode("utf-8"))
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(payload)
+    return total
+
+
 def _vision_tokens(input_summary: dict) -> int:
     width = input_summary.get("width")
     height = input_summary.get("height")
@@ -169,7 +219,13 @@ def estimate_usage(
     input_summary: dict,
 ) -> NormalizedUsage:
     request_text, message_count = _message_text(request_body)
-    input_tokens = _estimated_text_tokens(request_text) + message_count * 4 + 2
+    tool_schema_text = _tool_schema_text(request_body)
+    input_tokens = (
+        _estimated_text_tokens(request_text)
+        + _estimated_text_tokens(tool_schema_text)
+        + message_count * 4
+        + 2
+    )
     if capability == "calendar_screenshot":
         input_tokens += _vision_tokens(input_summary)
     output_tokens = _estimated_text_tokens(response_body)
@@ -185,6 +241,8 @@ def estimate_usage(
             "request_utf8_bytes": len(request_text.encode("utf-8")),
             "response_utf8_bytes": len(response_body.encode("utf-8")),
             "message_count": message_count,
+            "tool_schema_utf8_bytes": len(tool_schema_text.encode("utf-8")),
+            "tool_arguments_utf8_bytes": _tool_argument_bytes(response_body),
             "vision_tokens": (
                 _vision_tokens(input_summary)
                 if capability == "calendar_screenshot"
