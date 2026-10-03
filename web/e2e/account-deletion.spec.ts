@@ -22,15 +22,31 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
   })
 }
 
-async function mailLink(request: APIRequestContext, address: string) {
+async function mailMessageIds(
+  request: APIRequestContext,
+  address: string,
+) {
+  const response = await request.get(
+    `http://127.0.0.1:58025/api/v1/search?query=${encodeURIComponent(`to:${address}`)}`,
+  )
+  const result = await response.json()
+  return result.messages.map((message: { ID: string }) => message.ID) as string[]
+}
+
+async function mailLink(
+  request: APIRequestContext,
+  address: string,
+  excludedIds: string[] = [],
+) {
   let id = ''
   await expect.poll(async () => {
     const response = await request.get(
       `http://127.0.0.1:58025/api/v1/search?query=${encodeURIComponent(`to:${address}`)}`,
     )
     const result = await response.json()
-    id = result.messages.find((message: { Subject: string }) =>
-      message.Subject.includes('验证邮箱'))?.ID ?? ''
+    id = result.messages.find((message: { ID: string; Subject: string }) =>
+      message.Subject.includes('验证邮箱')
+      && !excludedIds.includes(message.ID))?.ID ?? ''
     return id
   }, { timeout: 12_000 }).not.toBe('')
   const message = await (
@@ -44,14 +60,17 @@ async function mailLink(request: APIRequestContext, address: string) {
 async function registerAndLogin(
   page: Page,
   request: APIRequestContext,
+  requestedEmail?: string,
+  excludedMailIds: string[] = [],
 ) {
-  const email = `account-deletion-${randomUUID()}@example.com`
+  const email = requestedEmail
+    ?? `account-deletion-${randomUUID()}@example.com`
   await page.goto('/register')
   await page.getByLabel('邮箱', { exact: true }).fill(email)
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByLabel('确认密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
-  await page.goto(await mailLink(request, email))
+  await page.goto(await mailLink(request, email, excludedMailIds))
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '验证邮箱', exact: true }).click()
   await page.goto('/login')
@@ -65,6 +84,46 @@ async function registerAndLogin(
     userId: session.user.id as string,
     csrf: session.csrf_token as string,
   }
+}
+
+async function createTask(page: Page, csrf: string, marker: string) {
+  const response = await page.request.post('/api/v1/tasks', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: {
+      operation_id: randomUUID(),
+      title: marker,
+      description: '用于验证注销撤销与最终清理的持久任务。',
+      project_id: null,
+      estimated_minutes: 45,
+      priority: 2,
+      labels: ['注销验证'],
+      links: [],
+      steps: [{ title: '核对恢复和清理结果' }],
+    },
+  })
+  expect(response.status()).toBe(201)
+  return (await response.json()).task.id as string
+}
+
+async function createReadyExport(page: Page, csrf: string) {
+  const created = await page.request.post('/api/v1/data-exports', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: { operation_id: randomUUID() },
+  })
+  expect(created.status()).toBe(202)
+  const jobId = (await created.json()).job.id as string
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `/api/v1/data-exports/${jobId}`,
+    )
+    return response.ok() ? (await response.json()).job.status : response.status()
+  }, { timeout: 20_000 }).toBe('succeeded')
+  const download = await page.request.get(
+    `/api/v1/data-exports/${jobId}/download`,
+    { headers: { 'X-CSRF-Token': csrf } },
+  )
+  expect(download.status()).toBe(200)
+  return jobId
 }
 
 async function login(page: Page, email: string) {
@@ -186,13 +245,17 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('restore pending deletion and clear local data across tabs', async ({
+test('restore once, then let the real worker permanently purge the account', async ({
   page,
   context,
   browser,
   request,
-}) => {
+}, info) => {
+  test.setTimeout(90_000)
   const account = await registerAndLogin(page, request)
+  const marker = `注销保留与清理任务 ${randomUUID()}`
+  const taskId = await createTask(page, account.csrf, marker)
+  const exportId = await createReadyExport(page, account.csrf)
   const tab = await context.newPage()
   await tab.goto('/account/sync')
   await expect(tab.getByRole('heading', { name: '同步与离线' }))
@@ -250,6 +313,7 @@ test('restore pending deletion and clear local data across tabs', async ({
     await expect(page.getByRole('heading', { name: '账号正在注销' }))
       .toBeVisible()
     await expect(page.getByText('7 天')).toBeVisible()
+    await screenshot(page, info, 'pending')
     await page.getByRole(
       'button',
       { name: '撤销注销并登录', exact: true },
@@ -258,6 +322,112 @@ test('restore pending deletion and clear local data across tabs', async ({
       .toBeVisible()
     await page.getByRole('button', { name: '进入 iTime', exact: true }).click()
     await expect(page).toHaveURL('/ai')
+
+    const restoredSession = await (
+      await page.request.get('/api/v1/auth/me')
+    ).json()
+    const restoredCsrf = restoredSession.csrf_token as string
+    const restoredTask = await page.request.get(`/api/v1/tasks/${taskId}`)
+    expect(restoredTask.status()).toBe(200)
+    expect((await restoredTask.json()).task.title).toBe(marker)
+    const expiredExport = await page.request.get(
+      `/api/v1/data-exports/${exportId}/download`,
+      { headers: { 'X-CSRF-Token': restoredCsrf } },
+    )
+    expect(expiredExport.status()).toBe(410)
+    expect((await expiredExport.json()).error.code)
+      .toBe('data_export_expired')
+
+    const controlResponse = await page.request.post(
+      '/api/__test/account-deletion-expiry-ticket',
+      { headers: { 'X-CSRF-Token': restoredCsrf } },
+    )
+    expect(controlResponse.status()).toBe(200)
+    const ticket = (await controlResponse.json()).ticket as string
+
+    const secondDeletion = await page.request.post(
+      '/api/v1/account-deletion',
+      {
+        headers: { 'X-CSRF-Token': restoredCsrf },
+        data: {
+          operation_id: randomUUID(),
+          email_confirmation: account.email,
+          current_password: password,
+        },
+      },
+    )
+    expect(secondDeletion.status()).toBe(202)
+    const arbitraryOwner = await page.request.post(
+      '/api/__test/account-deletion-expire',
+      {
+        headers: { 'X-CSRF-Token': restoredCsrf },
+        data: { ticket, user_id: randomUUID() },
+      },
+    )
+    expect(arbitraryOwner.status()).toBe(422)
+    const wrongCsrf = await page.request.post(
+      '/api/__test/account-deletion-expire',
+      {
+        headers: { 'X-CSRF-Token': 'wrong-csrf-token' },
+        data: { ticket },
+      },
+    )
+    expect(wrongCsrf.status()).toBe(403)
+    const expired = await page.request.post(
+      '/api/__test/account-deletion-expire',
+      {
+        headers: { 'X-CSRF-Token': restoredCsrf },
+        data: { ticket },
+      },
+    )
+    expect(expired.status()).toBe(200)
+
+    await expect.poll(async () => {
+      const response = await page.request.post('/api/v1/auth/login', {
+        data: {
+          email: account.email,
+          password,
+          device_name: '清理后凭据验证',
+        },
+      })
+      const body = await response.json()
+      return [response.status(), body.error?.code]
+    }, { timeout: 20_000 }).toEqual([401, 'invalid_credentials'])
+
+    await expect.poll(async () => {
+      const response = await page.request.post(
+        '/api/__test/account-deletion-proof',
+        { data: { ticket } },
+      )
+      return response.ok() ? response.json() : { status: response.status() }
+    }, { timeout: 20_000 }).toEqual({
+      user_count: 0,
+      email_count: 0,
+      owner_row_count: 0,
+      owner_tables: {},
+      completed_receipt_count: 1,
+    })
+
+    await page.goto('/login')
+    await page.getByLabel('邮箱', { exact: true }).fill(account.email)
+    await page.getByLabel('密码', { exact: true }).fill(password)
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确')
+    await expect(page.getByText('账号正在注销')).toHaveCount(0)
+
+    const oldMailIds = await mailMessageIds(request, account.email)
+    const replacement = await registerAndLogin(
+      page,
+      request,
+      account.email,
+      oldMailIds,
+    )
+    expect(replacement.userId).not.toBe(account.userId)
+    expect((await page.request.get(`/api/v1/tasks/${taskId}`)).status())
+      .toBe(404)
+    const replacementTasks = await page.request.get('/api/v1/tasks?limit=100')
+    expect(replacementTasks.status()).toBe(200)
+    expect(JSON.stringify(await replacementTasks.json())).not.toContain(marker)
   } finally {
     await secondContext.close()
   }
@@ -387,6 +557,9 @@ test('request deletion from data settings with guarded confirmation', async ({
     )).toBe(true)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, 'requested')
+    if (info.project.name === 'mobile') {
+      await screenshot(page, info, '320-large-dark')
+    }
 
     await page.getByLabel('邮箱', { exact: true }).fill(account.email)
     await page.getByLabel('密码', { exact: true }).fill(password)

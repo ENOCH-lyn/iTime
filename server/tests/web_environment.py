@@ -1,4 +1,4 @@
-"""Run the built Vue app, real API and mail worker against a disposable local database."""
+"""Run the built Vue app, real API and workers against a disposable local database."""
 
 import asyncio
 import json
@@ -817,8 +817,18 @@ def main():
             "ITIME_MAIL_COOLDOWN_SECONDS": "1",
         }
         api_process = stack.enter_context(process(
-            [sys.executable, "-m", "uvicorn", "itime.main:create_app", "--factory",
-             "--host", "127.0.0.1", "--port", str(api_port), "--no-access-log"],
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "tests.support_app:create_test_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(api_port),
+                "--no-access-log",
+            ],
             SERVER, env, logs / "api.log",
         ))
         ready(f"http://127.0.0.1:{api_port}/api/ready", api_process, logs / "api.log")
@@ -846,6 +856,12 @@ def main():
             env,
             logs / "sync-cleanup.log",
         ))
+        account_deletion_process = stack.enter_context(process(
+            [sys.executable, "-m", "itime.account_deletion.worker"],
+            SERVER,
+            env,
+            logs / "account-deletion.log",
+        ))
         web_process = stack.enter_context(process(
             [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
              "--port", "4173"],
@@ -862,6 +878,7 @@ def main():
                 subscription_process,
                 export_process,
                 sync_cleanup_process,
+                account_deletion_process,
                 web_process,
             )
         ):

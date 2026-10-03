@@ -999,7 +999,7 @@ git commit -m "feat: 构建账号注销与恢复界面"
 - Modify: `server/tests/web_environment.py`
 - Modify: `web/e2e/account-deletion.spec.ts`
 
-- [ ] **Step 1: 在隔离环境启动清理 worker**
+- [x] **Step 1: 在隔离环境启动清理 worker**
 
 ```python
 account_deletion_process = stack.enter_context(process(
@@ -1012,12 +1012,12 @@ account_deletion_process = stack.enter_context(process(
 
 加入总存活检查，结束时由 `ExitStack` 终止。不得复用开发数据库。
 
-- [ ] **Step 2: 增加测试专用到期控制**
+- [x] **Step 2: 增加测试专用到期控制**
 
 只在 `tests.support_app` 注册受控端点：当前已验证测试账号携带 CSRF 后，可把自己的 pending
 作业 `purge_after/available_at` 调到过去。端点不接受任意 user ID，不进入生产 `main.py`。
 
-- [ ] **Step 3: 完成真实 E2E**
+- [x] **Step 3: 完成真实 E2E**
 
 主流程：
 
@@ -1038,7 +1038,7 @@ account_deletion_process = stack.enter_context(process(
 /tmp/itime-ui-evidence/desktop-admin-account-deletion.png
 ```
 
-- [ ] **Step 4: 人工检查并提交**
+- [x] **Step 4: 人工检查并提交**
 
 逐张确认非空、截止时间/邮箱/按钮不重叠、危险操作层级清楚、320px 无横向溢出。
 
