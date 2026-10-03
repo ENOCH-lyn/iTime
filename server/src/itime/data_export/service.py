@@ -6,6 +6,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.auth.models import User
 from itime.auth.security import now
 from itime.config import Settings
 from itime.data_export.archive import ExportArchive
@@ -116,7 +117,9 @@ async def claim_next_export(
         for _ in range(EXPORT_CLEANUP_BATCH_SIZE):
             job = await session.scalar(
                 select(DataExportJob)
+                .join(User, User.id == DataExportJob.owner_id)
                 .where(
+                    User.status == "active",
                     or_(
                         (
                             (DataExportJob.status == "queued")
@@ -134,7 +137,7 @@ async def claim_next_export(
                     DataExportJob.id,
                 )
                 .limit(1)
-                .with_for_update(skip_locked=True)
+                .with_for_update(skip_locked=True, of=DataExportJob)
             )
             if job is None:
                 return None
@@ -161,6 +164,37 @@ async def claim_next_export(
                 attempt_number=job.attempt_count,
             )
     return None
+
+
+async def expire_exports_for_account_deletion(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> int:
+    jobs = list(
+        await session.scalars(
+            select(DataExportJob)
+            .where(
+                DataExportJob.owner_id == owner_id,
+                DataExportJob.status.in_(("queued", "running", "succeeded")),
+            )
+            .order_by(DataExportJob.created_at, DataExportJob.id)
+            .with_for_update()
+        )
+    )
+    for job in jobs:
+        if job.status == "succeeded":
+            job.status = "expired"
+            job.artifact_ciphertext = None
+        else:
+            job.status = "failed"
+            job.lease_id = None
+            job.lease_until = None
+            job.error_code = "data_export_account_deletion"
+            job.error_message = "账号已申请注销，数据导出已停止。"
+            job.finished_at = at
+        job.updated_at = at
+    return len(jobs)
 
 
 async def renew_export_lease(

@@ -196,7 +196,7 @@ Expected: PASS；head 为 `0029_account_deletions`，ORM 无漂移。
 - Test: `server/tests/test_calendar_subscriptions.py`
 - Test: `server/tests/test_data_export_worker.py`
 
-- [ ] **Step 1: 写账号冻结和晚到结果失败测试**
+- [x] **Step 1: 写账号冻结和晚到结果失败测试**
 
 构造同一账号的：
 
@@ -227,7 +227,7 @@ assert outbox.encrypted_message is None
 保存旧 AI/export/subscription claim，事务提交后调用各完成函数，断言返回 `False/None` 且不产生
 回复、提案、报告、样本、扣额、导出密文或订阅投影。
 
-- [ ] **Step 2: 为三类 worker 增加 active 用户门禁**
+- [x] **Step 2: 为三类 worker 增加 active 用户门禁**
 
 `claim_next_job`、`claim_next_export` 和 `claim_next_subscription` 查询分别连接 `User` 并增加：
 
@@ -250,7 +250,7 @@ select(CalendarSubscription).join(
 只锁作业/订阅行，不锁用户行，避免与注销事务的 `user → work` 顺序形成死锁。现有 lease 和状态
 二次校验保持不变。
 
-- [ ] **Step 3: 增加领域终止 helper**
+- [x] **Step 3: 增加领域终止 helper**
 
 在既有服务文件提供以下事务内 helper：
 
@@ -284,7 +284,7 @@ AI helper逐个复用 `cancel_job`、`cancel_conversation_projection` 和 `relea
 最多三个 user-quota 活动作业，平台截图作业也按查询结果有界处理。专注 helper 调用
 `apply_transition(focus, "abandon", at)`，追加 `FocusEvent` 与 `ChangeEvent`。
 
-- [ ] **Step 4: 编排 quiesce**
+- [x] **Step 4: 编排 quiesce**
 
 ```python
 @dataclass(frozen=True)
@@ -328,7 +328,7 @@ async def quiesce_account(
 固定调用顺序为 AI → export → subscription → focus → mail → media，所有数据库变化使用调用方
 事务。返回值只含数量，用于用户确认，不写普通日志。
 
-- [ ] **Step 5: 回归并提交**
+- [x] **Step 5: 回归并提交**
 
 ```bash
 cd server

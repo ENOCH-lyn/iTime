@@ -617,6 +617,50 @@ def apply_transition(
     return "finished" if action == "finish" else "abandoned"
 
 
+async def abandon_open_focus_for_account_deletion(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> int:
+    focuses = list(
+        await session.scalars(
+            select(FocusSession)
+            .where(
+                FocusSession.owner_id == owner_id,
+                FocusSession.status.in_(OPEN_FOCUS_STATUSES),
+            )
+            .order_by(FocusSession.started_at, FocusSession.id)
+            .with_for_update()
+        )
+    )
+    for focus in focuses:
+        sequence = await _last_event_sequence(session, focus.id)
+        apply_transition(focus, "abandon", at)
+        focus.version += 1
+        focus.updated_at = at
+        session.add(
+            FocusEvent(
+                owner_id=owner_id,
+                focus_session_id=focus.id,
+                sequence=sequence + 1,
+                kind="abandon",
+                occurred_at=at,
+                client_recorded_at=None,
+                source="online",
+                details={"reason": "account_deletion"},
+            )
+        )
+        emit_change(
+            session,
+            owner_id,
+            "focus_session",
+            focus.id,
+            "abandoned",
+            focus.version,
+        )
+    return len(focuses)
+
+
 async def _transition_time(
     session: AsyncSession,
     focus: FocusSession,

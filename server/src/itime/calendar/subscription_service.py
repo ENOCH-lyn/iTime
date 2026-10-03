@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.auth.models import User
 from itime.auth.security import now
 from itime.calendar.models import (
     CalendarSource,
@@ -236,7 +237,9 @@ async def claim_next_subscription(
     async with database.transaction() as session:
         subscription = await session.scalar(
             select(CalendarSubscription)
+            .join(User, User.id == CalendarSubscription.owner_id)
             .where(
+                User.status == "active",
                 CalendarSubscription.lifecycle_status == "active",
                 or_(
                     CalendarSubscription.refresh_status == "queued",
@@ -255,7 +258,7 @@ async def claim_next_subscription(
                 CalendarSubscription.source_id,
             )
             .limit(1)
-            .with_for_update(skip_locked=True)
+            .with_for_update(skip_locked=True, of=CalendarSubscription)
         )
         if subscription is None:
             return None
@@ -320,6 +323,52 @@ async def claim_next_subscription(
             lease_id=lease_id,
             refresh_id=refresh.id,
         )
+
+
+async def invalidate_subscription_refreshes_for_account_deletion(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> int:
+    subscriptions = list(
+        await session.scalars(
+            select(CalendarSubscription)
+            .where(
+                CalendarSubscription.owner_id == owner_id,
+                CalendarSubscription.refresh_status == "running",
+            )
+            .order_by(CalendarSubscription.source_id)
+            .with_for_update()
+        )
+    )
+    for subscription in subscriptions:
+        if subscription.lease_id is not None:
+            refresh = await session.scalar(
+                select(CalendarSubscriptionRefresh)
+                .where(
+                    CalendarSubscriptionRefresh.source_id
+                    == subscription.source_id,
+                    CalendarSubscriptionRefresh.lease_id
+                    == subscription.lease_id,
+                    CalendarSubscriptionRefresh.status == "running",
+                )
+                .with_for_update()
+            )
+            if refresh is not None:
+                refresh.status = "stale"
+                refresh.error_code = (
+                    "calendar_subscription_account_deletion"
+                )
+                refresh.error_message = (
+                    "账号已申请注销，订阅刷新结果不会应用。"
+                )
+                refresh.finished_at = at
+        subscription.refresh_status = "idle"
+        subscription.lease_id = None
+        subscription.lease_until = None
+        subscription.updated_at = at
+        subscription.version += 1
+    return len(subscriptions)
 
 
 async def complete_not_modified(

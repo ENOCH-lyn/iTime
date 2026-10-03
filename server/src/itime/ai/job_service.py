@@ -12,6 +12,7 @@ from itime.ai.governance_service import (
     finish_attempt_body_log,
 )
 from itime.ai.models import AIJob, AIJobAttempt, AIProviderCost, TemporaryMedia
+from itime.auth.models import User
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
@@ -124,6 +125,37 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     return True
 
 
+async def cancel_active_ai_jobs_for_owner(
+    session: AsyncSession,
+    owner_id: UUID,
+) -> int:
+    from itime.ai.conversation_service import cancel_conversation_projection
+
+    jobs = list(
+        await session.scalars(
+            select(AIJob)
+            .where(
+                AIJob.owner_id == owner_id,
+                AIJob.status.in_(("queued", "running")),
+            )
+            .order_by(AIJob.created_at, AIJob.id)
+            .with_for_update()
+        )
+    )
+    cancelled = 0
+    for job in jobs:
+        if not await cancel_job(session, job):
+            continue
+        await cancel_conversation_projection(session, job)
+        await release_reservation(
+            session,
+            job=job,
+            reason="cancelled",
+        )
+        cancelled += 1
+    return cancelled
+
+
 async def finish_running_attempt(
     session: AsyncSession,
     job: AIJob,
@@ -192,7 +224,9 @@ async def claim_next_job(
         async with database.transaction() as session:
             statement = (
                 select(AIJob)
+                .join(User, User.id == AIJob.owner_id)
                 .where(
+                    User.status == "active",
                     or_(
                         and_(
                             AIJob.status == "queued",
@@ -206,7 +240,7 @@ async def claim_next_job(
                 )
                 .order_by(AIJob.available_at, AIJob.created_at, AIJob.id)
                 .limit(1)
-                .with_for_update(skip_locked=True)
+                .with_for_update(skip_locked=True, of=AIJob)
             )
             if capability is not None:
                 statement = statement.where(AIJob.capability == capability)
@@ -584,6 +618,29 @@ def delete_media(
     media.deleted_at = now()
     media.deletion_reason = reason
     return True
+
+
+async def clear_temporary_media_for_account_deletion(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> int:
+    media_rows = list(
+        await session.scalars(
+            select(TemporaryMedia)
+            .where(
+                TemporaryMedia.owner_id == owner_id,
+                TemporaryMedia.encrypted_content.is_not(None),
+            )
+            .order_by(TemporaryMedia.created_at, TemporaryMedia.id)
+            .with_for_update()
+        )
+    )
+    for media in media_rows:
+        media.encrypted_content = None
+        media.deleted_at = at
+        media.deletion_reason = "account_deletion"
+    return len(media_rows)
 
 
 async def cleanup_expired_media(database: Database) -> int:

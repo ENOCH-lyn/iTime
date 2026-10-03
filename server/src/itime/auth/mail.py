@@ -1,5 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from email.message import EmailMessage
+from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import select, update
@@ -68,3 +69,38 @@ async def queue_email(request: Request, session: AsyncSession, user: User, purpo
         )
     )
     return True
+
+
+async def invalidate_account_mail(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> int:
+    outbox_rows = list(
+        await session.scalars(
+            select(MailOutbox)
+            .join(EmailToken, EmailToken.id == MailOutbox.token_id)
+            .where(
+                EmailToken.user_id == owner_id,
+                MailOutbox.finished_at.is_(None),
+                MailOutbox.encrypted_message.is_not(None),
+            )
+            .order_by(MailOutbox.available_at, MailOutbox.id)
+            .with_for_update(of=MailOutbox)
+        )
+    )
+    await session.execute(
+        update(EmailToken)
+        .where(
+            EmailToken.user_id == owner_id,
+            EmailToken.used_at.is_(None),
+        )
+        .values(used_at=at)
+    )
+    for mail in outbox_rows:
+        mail.encrypted_message = None
+        mail.lease_id = None
+        mail.lease_until = None
+        mail.finished_at = at
+        mail.error_code = "account_deletion"
+    return len(outbox_rows)
