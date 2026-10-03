@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_va
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from itime.account_deletion.service import (
+    account_deletion_pending,
+    active_deletion_for_user,
+)
 from itime.admin.models import AdminSession, RegistrationInvitation, RegistrationPolicy
 from itime.ai.governance_models import UserPrivacySetting
 from itime.auth.mail import queue_email
@@ -285,6 +289,17 @@ async def login(data: LoginInput, request: Request, response: Response) -> dict:
         user = await session.scalar(select(User).where(User.email == data.email).with_for_update())
         if user is None or user.password_hash != encoded:
             raise invalid_credentials()
+        if user.status == "pending_deletion":
+            deletion = await active_deletion_for_user(session, user.id)
+            if deletion is None:
+                raise AppError(
+                    "account_deletion_state_invalid",
+                    "账号注销状态不完整，请保留请求编号并联系管理员。",
+                    status=503,
+                    retryable=True,
+                    saved="unknown",
+                )
+            raise account_deletion_pending(deletion)
         check_user(user)
         if user.is_admin:
             raise AppError("admin_login_required", "请使用管理入口完成双重验证。", status=403)
@@ -325,7 +340,7 @@ async def forgot(data: EmailInput, request: Request) -> dict:
     await rate_limit(request, "reset-mail", data.email)
     async with request.app.state.database.transaction() as session:
         user = await session.scalar(select(User).where(User.email == data.email).with_for_update())
-        if user and user.status == "active":
+        if user and user.status in {"active", "pending_deletion"}:
             await queue_email(request, session, user, "reset")
     return EMAIL_RESULT
 
@@ -341,8 +356,9 @@ async def reset(data: ResetInput, request: Request) -> dict:
         if user is None or user.password_hash != old_hash:
             raise invalid_token()
         await consume_token(session, raw, "reset", user_id)
-        if user.status != "active":
+        if user.status not in {"active", "pending_deletion"}:
             raise AppError("account_suspended", "账号已停用，请联系管理员。", status=403)
+        pending_deletion = user.status == "pending_deletion"
         user.password_hash = encoded
         user.email_verified_at = user.email_verified_at or now()
         user.auth_epoch += 1
@@ -362,7 +378,14 @@ async def reset(data: ResetInput, request: Request) -> dict:
             .values(used_at=now())
         )
         audit(request, session, user, "password_reset")
-    return {"status": "password_reset", "message": "密码已重设，所有设备已退出，请重新登录。"}
+    return {
+        "status": "password_reset",
+        "message": (
+            "密码已重设；账号仍在注销期，请登录并明确撤销。"
+            if pending_deletion
+            else "密码已重设，所有设备已退出，请重新登录。"
+        ),
+    }
 
 
 @router.post("/change-password")

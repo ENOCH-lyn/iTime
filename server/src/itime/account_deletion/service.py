@@ -9,10 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.account_deletion.models import AccountDeletion
 from itime.account_deletion.quiesce import QuiesceSummary, quiesce_account
-from itime.account_deletion.schemas import AccountDeletionRequest
+from itime.account_deletion.schemas import (
+    AccountDeletionCancel,
+    AccountDeletionRequest,
+)
 from itime.auth.models import DeviceSession, User
 from itime.auth.security import now
-from itime.auth.session import audit, check_user, invalid_credentials
+from itime.auth.session import (
+    audit,
+    check_user,
+    create_session,
+    invalid_credentials,
+    session_result,
+)
 from itime.errors import AppError
 
 ACCOUNT_DELETION_GRACE = timedelta(days=7)
@@ -241,3 +250,97 @@ async def request_account_deletion(
             "此操作编号已经使用，请刷新后重试。",
             status=409,
         ) from None
+
+
+async def cancel_account_deletion(
+    request: Request,
+    data: AccountDeletionCancel,
+) -> tuple[dict, str]:
+    async with request.app.state.database.transaction() as session:
+        snapshot = (
+            await session.execute(
+                select(User.id, User.password_hash).where(
+                    User.email == data.email
+                )
+            )
+        ).one_or_none()
+    user_id = snapshot[0] if snapshot is not None else None
+    password_hash = snapshot[1] if snapshot is not None else None
+    if not await request.app.state.security.verify_password(
+        data.password.get_secret_value(),
+        password_hash,
+    ):
+        raise invalid_credentials()
+
+    async with request.app.state.database.transaction() as session:
+        user = await session.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+        )
+        if user is None or user.password_hash != password_hash:
+            raise invalid_credentials()
+        if user.status != "pending_deletion":
+            if user.status == "suspended":
+                check_user(user)
+            raise AppError(
+                "account_deletion_not_pending",
+                "此账号没有可撤销的注销申请。",
+                status=409,
+            )
+        deletion = await active_deletion_for_user(
+            session,
+            user.id,
+            lock=True,
+        )
+        if deletion is None:
+            raise AppError(
+                "account_deletion_state_invalid",
+                "账号注销状态不完整，请保留请求编号并联系管理员。",
+                status=503,
+                retryable=True,
+                saved="unknown",
+            )
+        current = now()
+        if deletion.status != "pending" or current >= deletion.purge_after:
+            raise AppError(
+                "account_deletion_expired",
+                "账号注销撤销期已经结束，无法恢复。",
+                status=410,
+                saved="saved",
+            )
+
+        deletion.status = "cancelled"
+        deletion.cancelled_at = current
+        deletion.lease_id = None
+        deletion.lease_until = None
+        deletion.updated_at = current
+        user.status = "active"
+        user.management_version += 1
+        device, raw = await create_session(
+            request,
+            session,
+            user,
+            data.device_name,
+        )
+        audit(
+            request,
+            session,
+            user,
+            "account_deletion_cancelled",
+            deletion.id,
+        )
+        await session.flush()
+        return (
+            {
+                "status": "cancelled",
+                "deletion": deletion_result(deletion),
+                "session": session_result(
+                    request,
+                    user,
+                    device,
+                    raw,
+                ),
+            },
+            raw,
+        )

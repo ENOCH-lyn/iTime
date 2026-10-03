@@ -9,6 +9,7 @@ import pytest
 
 from itime.ai.conversation_service import append_conversation_delta
 from itime.ai.job_service import ClaimedJob, claim_next_job, complete_job
+from itime.auth.security import COOKIE_NAME
 from itime.calendar.subscription_fetcher import CalendarFetchResult
 from itime.calendar.subscription_service import (
     ClaimedSubscription,
@@ -25,6 +26,7 @@ from itime.data_export.service import (
 from itime.database import Database
 from itime.errors import AppError
 from tests.conftest import isolated_database, psycopg_url
+from tests.test_auth import NEW_PASSWORD, email_token
 from tests.test_tasks import PASSWORD, browser, create_account, task_payload
 
 pytestmark = pytest.mark.integration
@@ -1098,3 +1100,263 @@ def test_concurrent_request_account_deletion_creates_one_job(
             """,
             (owner_id,),
         ).fetchone() == (1,)
+
+
+def request_deletion(client, email: str) -> dict:
+    response = client.post(
+        "/api/v1/account-deletion",
+        json=request_payload(email),
+    )
+    assert response.status_code == 202, response.text
+    return response.json()
+
+
+def test_pending_login_does_not_leak_and_cancel_restores_one_session(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    task = client.post("/api/v1/tasks", json=task_payload()).json()["task"]
+    export = client.post(
+        "/api/v1/data-exports",
+        json={"operation_id": str(uuid4())},
+    )
+    assert export.status_code == 202, export.text
+    deletion = request_deletion(client, email)["deletion"]
+
+    wrong = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": "Wrong-password-456",
+            "device_name": "错误凭据",
+        },
+    )
+    assert wrong.status_code == 401
+    assert wrong.json()["error"]["code"] == "invalid_credentials"
+    assert "purge_after" not in wrong.text
+
+    pending = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "恢复入口",
+        },
+    )
+    assert pending.status_code == 409
+    assert pending.json()["error"]["code"] == "account_deletion_pending"
+    details = pending.json()["error"]["details"]
+    assert datetime.fromisoformat(
+        details["requested_at"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(
+        deletion["requested_at"].replace("Z", "+00:00")
+    )
+    assert datetime.fromisoformat(
+        details["purge_after"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(
+        deletion["purge_after"].replace("Z", "+00:00")
+    )
+    assert details["can_cancel"] is True
+    assert COOKIE_NAME not in pending.cookies
+
+    wrong_email = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": "missing@example.com",
+            "password": PASSWORD,
+            "device_name": "恢复设备",
+        },
+    )
+    assert wrong_email.status_code == 401
+    assert wrong_email.json()["error"]["code"] == "invalid_credentials"
+    assert email not in wrong_email.text
+
+    wrong_password = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": email,
+            "password": "Wrong-password-456",
+            "device_name": "恢复设备",
+        },
+    )
+    assert wrong_password.status_code == 401
+    assert wrong_password.json()["error"]["code"] == "invalid_credentials"
+    assert "purge_after" not in wrong_password.text
+
+    restored = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": email.upper(),
+            "password": PASSWORD,
+            "device_name": "恢复设备",
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["status"] == "cancelled"
+    assert body["deletion"]["status"] == "cancelled"
+    assert not body["deletion"]["can_cancel"]
+    assert body["session"]["user"]["id"] == owner_id
+    assert body["session"]["csrf_token"]
+    assert COOKIE_NAME in restored.cookies
+
+    client.headers["x-csrf-token"] = body["session"]["csrf_token"]
+    assert client.get("/api/v1/auth/me").status_code == 200
+    assert client.get(f"/api/v1/tasks/{task['id']}").status_code == 200
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT status FROM users WHERE id=%s",
+            (owner_id,),
+        ).fetchone() == ("active",)
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM device_sessions
+            WHERE user_id=%s AND revoked_at IS NULL
+            """,
+            (owner_id,),
+        ).fetchone() == (1,)
+        assert connection.execute(
+            """
+            SELECT status FROM data_export_jobs
+            WHERE owner_id=%s ORDER BY created_at DESC LIMIT 1
+            """,
+            (owner_id,),
+        ).fetchone() == ("failed",)
+
+
+def test_expired_account_deletion_cannot_be_cancelled(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    request_deletion(client, email)
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE account_deletions
+            SET requested_at=now()-interval '8 days',
+                purge_after=now()-interval '1 second',
+                available_at=now()-interval '1 second',
+                updated_at=now()
+            WHERE user_id=%s AND status='pending'
+            """,
+            (owner_id,),
+        )
+
+    pending = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "到期恢复",
+        },
+    )
+    assert pending.status_code == 409
+    assert pending.json()["error"]["code"] == "account_deletion_pending"
+    assert pending.json()["error"]["details"]["can_cancel"] is False
+
+    expired = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "到期恢复",
+        },
+    )
+    assert expired.status_code == 410
+    assert expired.json()["error"]["code"] == "account_deletion_expired"
+    assert expired.json()["error"]["saved"] == "saved"
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT status FROM users WHERE id=%s",
+            (owner_id,),
+        ).fetchone() == ("pending_deletion",)
+
+
+def test_pending_account_can_reset_password_without_implicit_restore(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    request_deletion(client, email)
+
+    forgot = client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": email},
+    )
+    assert forgot.status_code == 202
+    token = email_token(database_url, email, purpose="reset")
+    reset = client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": token, "new_password": NEW_PASSWORD},
+    )
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["status"] == "password_reset"
+    assert "仍在注销期" in reset.json()["message"]
+
+    old_password = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "旧密码",
+        },
+    )
+    assert old_password.status_code == 401
+    pending = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": NEW_PASSWORD,
+            "device_name": "新密码",
+        },
+    )
+    assert pending.status_code == 409
+    assert pending.json()["error"]["code"] == "account_deletion_pending"
+
+    restored = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": email,
+            "password": NEW_PASSWORD,
+            "device_name": "找回后恢复",
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT status FROM users WHERE id=%s",
+            (owner_id,),
+        ).fetchone() == ("active",)
+
+
+def test_suspended_login_remains_distinct_from_pending_deletion(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "UPDATE users SET status='suspended' WHERE id=%s",
+            (owner_id,),
+        )
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "停用账号",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "account_suspended"
+    assert "purge_after" not in response.text

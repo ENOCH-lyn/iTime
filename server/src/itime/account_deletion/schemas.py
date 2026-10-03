@@ -26,3 +26,18 @@ class AccountDeletionRequest(Input):
     @classmethod
     def normalize_email(cls, value):
         return value.strip().lower() if isinstance(value, str) else value
+
+
+class AccountDeletionCancel(Input):
+    email: EmailStr
+    password: Password
+    device_name: str = Field(
+        default="网页浏览器",
+        min_length=1,
+        max_length=100,
+    )
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value

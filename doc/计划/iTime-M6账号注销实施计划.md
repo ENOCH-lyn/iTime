@@ -495,7 +495,7 @@ git commit -m "feat: 提供本人账号注销申请"
 - Test: `server/tests/test_account_deletion_api.py`
 - Test: `server/tests/test_auth.py`
 
-- [ ] **Step 1: 写恢复路径失败测试**
+- [x] **Step 1: 写恢复路径失败测试**
 
 覆盖：
 
@@ -507,7 +507,7 @@ git commit -m "feat: 提供本人账号注销申请"
 - pending 账号能收到重设邮件并改密，但重设后仍需明确撤销；旧设备保持失效。
 - suspended 与 pending 状态错误不混淆。
 
-- [ ] **Step 2: 实现待注销登录结果**
+- [x] **Step 2: 实现待注销登录结果**
 
 在密码正确并锁定用户后，`login` 在 `check_user` 前调用：
 
@@ -533,7 +533,7 @@ AppError(
 
 状态与作业不一致返回 503 `account_deletion_state_invalid`，不静默恢复账号。
 
-- [ ] **Step 3: 实现凭据撤销**
+- [x] **Step 3: 实现凭据撤销**
 
 ```python
 class AccountDeletionCancel(Input):
@@ -559,13 +559,13 @@ audit(request, session, user, "account_deletion_cancelled", deletion.id)
 
 路由设置新 cookie 并返回 `{status: "cancelled", deletion, session}`。
 
-- [ ] **Step 4: 允许 pending 账号找回密码**
+- [x] **Step 4: 允许 pending 账号找回密码**
 
 `forgot-password` 对 `active/pending_deletion` 发 reset 邮件；`reset-password` 对
 `pending_deletion` 允许更新密码、递增 auth epoch 和失效 token，但不改变用户状态。成功响应
 根据状态返回“密码已重设；账号仍在注销期，请登录并明确撤销”。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
