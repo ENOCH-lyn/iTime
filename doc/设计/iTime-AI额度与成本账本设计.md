@@ -1,6 +1,6 @@
 # iTime AI 额度与成本账本设计
 
-版本：0.2；更新：2026-10-03。本文定义 AI 供应商用量、不可变价格快照、逐尝试平台成本和用户额度账本。价格版本、用量捕获、逐尝试平台成本及管理查询已实现；用户已授权 goal 模式下由代理自行决定并持续开发，额度采用“结果校验可查看即结算”的完整方案。
+版本：0.2；更新：2026-10-03。本文定义 AI 供应商用量、不可变价格快照、逐尝试平台成本和用户额度账本。价格版本、用量捕获、逐尝试平台成本、用户额度及管理查询均已实现；用户已授权 goal 模式下由代理自行决定并持续开发，额度采用“结果校验可查看即结算”的完整方案。
 
 ## 1. 范围与分账原则
 
@@ -20,10 +20,10 @@
 3. 每个实际 worker attempt 的平台成本事实。
 4. 真实 PostgreSQL、HTTP、重试、取消和租约竞态测试。
 
-下一阶段交付：
+用户额度阶段已交付：
 
-- 后台版本化每日额度策略、用户单日调整与审计。
-- 接单活动日冻结、原子预留、成功结算和失败/取消释放。
+- 后台版本化每日额度策略、用户单日调整与同事务安全审计。
+- 接单活动日冻结、原子预留、成功结算、失败/取消释放及过期作业恢复。
 - 用户余额、活动预留和结算账本页面。
 - 后台额度策略、用户调整和用户账本页面。
 
@@ -164,8 +164,9 @@ worker 在端点策略、DNS 和密钥解密完成后、真正开始 HTTP 请求
 - `AIQuotaLedgerEntry` 保存成功扣额和管理员增减，金额为带方向整数；成功作业每个 reservation 至多一条扣额。
 - 可用额度由基础额度、管理员调整、成功扣额和活动预留推导。客户端不能提交余额或扣额。
 - `AIJob.quota_mode` 区分迁移前由平台承担的历史作业与启用后的用户额度作业；只有用户额度作业必须在同一事务创建 reservation。
+- 摘要中的账本合计与活动预留通过同一条 SQL 读取同一语句快照，避免结算事务恰好在两次聚合之间提交时返回互相矛盾的余额分量。
 
-接单按 `User → Conversation/TimeSettings → DailyAllowance → 新建 Job/Reservation`，终态按 `AIJob → 业务投影/Attempt/ProviderCost → Reservation → DailyAllowance → Ledger`，管理调整按 `管理员 → 目标 User → DailyAllowance → Adjustment/Ledger` 加锁。任何路径都不得先锁额度再回头锁既有作业。接单、作业创建和预留同一事务；成功结果、provider cost、结算账本和业务结果同一事务；失败/取消终态与释放同一事务。
+接单按 `User → Conversation/TimeSettings → DailyAllowance → 新建 Job/Reservation`，终态按 `AIJob → 业务投影/Attempt/ProviderCost → Reservation → DailyAllowance → Ledger`，管理调整按 `管理员 → operation advisory lock → 普通目标 User → DailyAllowance → Adjustment/Ledger` 加锁。管理员账号不参与用户额度调整，避免两个管理员互为目标时形成锁环。任何路径都不得先锁额度再回头锁既有作业。接单、作业创建和预留同一事务；成功结果、provider cost、结算账本和业务结果同一事务；失败/取消终态与释放同一事务。
 
 预留估算使用独立版本：冻结完整 provider 请求，输入按保守 UTF-8/图像规则估算，输出按配置 `max_output_tokens` 计价。现有终态 usage 估算器不能直接当作最大预算。未发布额度策略、AI 配置未定价或币种不一致时拒绝新接单，不创建消息、媒体、作业或预留。
 
@@ -213,4 +214,4 @@ Key 仍只返回已配置状态。价格字段属于不可变版本；修改价�
 - 后台用户调整必须带 operation ID、目标活动日、原因和带方向金额；重复请求返回原结果，不允许把已用加预留后的可用金额调成负数。
 - 后台账本可按用户、活动日、类型和币种筛选；普通用户不可读取平台失败尝试成本。
 
-当前实现由迁移 `0019_ai_provider_costs`、`0020_ai_provider_cost_lifecycle`，`server/src/itime/ai/{pricing,usage,cost_service}.py`、两类 provider/worker 终态接入，以及后台 `GET /api/v1/admin/provider-costs` 和 Web `/admin/costs` 构成。供应商 usage 详情只保留白名单计数，不永久复制未知键名或正文。
+当前实现由迁移 `0019_ai_provider_costs`、`0020_ai_provider_cost_lifecycle`、`0021_ai_user_quota`，`server/src/itime/ai/{pricing,usage,cost_service}.py`、`server/src/itime/quota/`、两类 provider/worker 接单与终态接入，以及用户 `/account/quota`、后台 `/admin/costs` 和 `/admin/quota` 构成。供应商 usage 详情只保留白名单计数，不永久复制未知键名或正文。

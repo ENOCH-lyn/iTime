@@ -33,7 +33,7 @@
 - Modify: `server/src/itime/migrations/env.py`
 - Test: `server/tests/test_quota_models.py`
 
-- [ ] **Step 1: 先写迁移约束测试**
+- [x] **Step 1: 先写迁移约束测试**
 
 覆盖：
 
@@ -45,13 +45,13 @@ def test_quota_schema_enforces_single_reservation_and_immutable_ledger(...):
     # ledger 和 adjustment UPDATE 触发 CheckViolation。
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_quota_models.py`
 
 Expected: `ai_quota_policy_versions` 等表不存在。
 
-- [ ] **Step 3: 建立模型**
+- [x] **Step 3: 建立模型**
 
 核心状态：
 
@@ -71,7 +71,7 @@ QuotaMode = Literal["platform", "user"]
 - `AIQuotaLedgerEntry` 与 `AIQuotaAdminAdjustment` 只插入不更新。
 - `AIJob.quota_mode='user'` 由延迟约束触发器要求同事务存在 reservation；历史作业默认 `platform`。
 
-- [ ] **Step 4: 执行迁移和模型检查**
+- [x] **Step 4: 执行迁移和模型检查**
 
 Run:
 
@@ -84,7 +84,7 @@ uv run pytest -q tests/test_quota_models.py
 
 Expected: 迁移头为 `0021_ai_user_quota`，无模型漂移，专项通过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/quota server/src/itime/ai/models.py \
@@ -100,7 +100,7 @@ git commit -m "feat: 建立 AI 用户额度账本模型"
 - Modify: `server/src/itime/ai/pricing.py`
 - Test: `server/tests/test_quota_service.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 覆盖：
 
@@ -112,7 +112,7 @@ def test_reservation_estimate_uses_full_input_and_max_output(...): ...
 def test_concurrent_reservations_cannot_overdraw(...): ...
 ```
 
-- [ ] **Step 2: 实现纯函数和事务服务**
+- [x] **Step 2: 实现纯函数和事务服务**
 
 接口：
 
@@ -141,7 +141,7 @@ AppError(
 )
 ```
 
-- [ ] **Step 3: 动态验证并提交**
+- [x] **Step 3: 动态验证并提交**
 
 Run: `cd server && uv run pytest -q tests/test_quota_service.py`
 
@@ -156,7 +156,7 @@ Commit: `feat: 实现 AI 额度活动日与原子预留服务`
 - Modify: `server/src/itime/ai/admin_router.py`
 - Test: `server/tests/test_admin_quota_policy.py`
 
-- [ ] **Step 1: 写策略 API 失败测试**
+- [x] **Step 1: 写策略 API 失败测试**
 
 路由：
 
@@ -173,7 +173,7 @@ POST /api/v1/admin/quota/policies/{id}/publish
 - 旧策略原子退役，新策略成为唯一发布版本。
 - 响应丢失后原 operation ID 返回原结果。
 
-- [ ] **Step 2: 实现并验证**
+- [x] **Step 2: 实现并验证**
 
 Run:
 
@@ -184,7 +184,7 @@ uv run pytest -q tests/test_admin_quota_policy.py tests/test_ai_config.py
 
 Expected: 权限、CSRF、并发发布、币种错配、幂等和 Key 不回显全部通过。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 Commit: `feat: 实现 AI 每日额度策略后台`
 
@@ -198,7 +198,7 @@ Commit: `feat: 实现 AI 每日额度策略后台`
 - Test: `server/tests/test_ai_conversation_api.py`
 - Test: `server/tests/test_calendar_screenshot_imports.py`
 
-- [ ] **Step 1: 冻结完整请求估算**
+- [x] **Step 1: 冻结完整请求估算**
 
 抽取对话消息构造函数，使接单估算与 worker 使用同一冻结消息集合：
 
@@ -214,7 +214,7 @@ async def conversation_provider_messages(
     ...
 ```
 
-- [ ] **Step 2: 接入两个接单事务**
+- [x] **Step 2: 接入两个接单事务**
 
 顺序：
 
@@ -230,7 +230,7 @@ operation replay
 
 错误 `time_settings_required`、`ai_quota_policy_unavailable`、`ai_quota_pricing_unavailable`、`ai_quota_exhausted` 均不得留下消息、媒体、job 或 reservation。
 
-- [ ] **Step 3: 并发与幂等验证**
+- [x] **Step 3: 并发与幂等验证**
 
 Run:
 
@@ -242,7 +242,7 @@ uv run pytest -q tests/test_quota_admission.py \
 
 覆盖两个会话和截图并发竞争、差 1 nanos、相同 operation 重放及不同正文复用。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 Commit: `feat: 接入 AI 作业额度预留`
 
@@ -257,7 +257,7 @@ Commit: `feat: 接入 AI 作业额度预留`
 - Test: `server/tests/test_quota_settlement.py`
 - Test: `server/tests/test_ai_conversation_worker.py`
 
-- [ ] **Step 1: 让 attempt 完成返回成本事实**
+- [x] **Step 1: 让 attempt 完成返回成本事实**
 
 ```python
 @dataclass(frozen=True)
@@ -270,7 +270,7 @@ async def finish_running_attempt(...) -> FinalizedAttempt | None: ...
 
 成功路径若缺少 finalized cost，抛 `ai_quota_state_invalid` 并回滚，不允许“结果成功但无账本”。
 
-- [ ] **Step 2: 实现结算和释放**
+- [x] **Step 2: 实现结算和释放**
 
 ```python
 async def settle_success(session, *, job, provider_cost) -> AIQuotaLedgerEntry:
@@ -284,7 +284,7 @@ async def release_reservation(session, *, job, reason) -> AIQuotaReservation:
 
 可重试失败和 `abandoned` 保留预留；最终失败、超时、取消释放；成功只引用最终成功 attempt。
 
-- [ ] **Step 3: 覆盖竞态**
+- [x] **Step 3: 覆盖竞态**
 
 Run:
 
@@ -296,7 +296,7 @@ uv run pytest -q tests/test_quota_settlement.py \
 
 断言：取消/成功只能一个终态、429 后只扣成功 attempt、超预留不成负数、迟到 usage 不追扣、事务故障整体回滚。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 Commit: `feat: 实现 AI 额度成功结算与失败释放`
 
@@ -307,15 +307,15 @@ Commit: `feat: 实现 AI 额度成功结算与失败释放`
 - Modify: `server/src/itime/ai/worker.py`
 - Test: `server/tests/test_quota_reconciliation.py`
 
-- [ ] **Step 1: 实现限批恢复**
+- [x] **Step 1: 实现限批恢复**
 
 worker 每轮先按现有 job 顺序领取到期 queued/running 作业；沿既有对话/截图终态投影结束作业并释放预留。使用 `FOR UPDATE SKIP LOCKED`，不得绕开消息状态和 SSE 终态事件。
 
-- [ ] **Step 2: 验证 worker 停机恢复**
+- [x] **Step 2: 验证 worker 停机恢复**
 
 覆盖 queued 超时、running 租约失效后最终超时、双进程 sweep、重复运行和无孤儿 active reservation。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 Commit: `feat: 恢复 AI 过期作业额度预留`
 
@@ -326,7 +326,7 @@ Commit: `feat: 恢复 AI 过期作业额度预留`
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_quota_api.py`
 
-- [ ] **Step 1: 实现本人查询**
+- [x] **Step 1: 实现本人查询**
 
 ```text
 GET /api/v1/quota
@@ -335,11 +335,11 @@ GET /api/v1/quota/ledger?activity_date=&kind=&before_time=&before_id=
 
 摘要返回活动日、冻结时区、刷新时间、基础、调整、已扣、预留、可用和币种；账本只返回本人数据，usage debit 标明 provider/estimated。
 
-- [ ] **Step 2: 验证权限、分页和时区**
+- [x] **Step 2: 验证权限、分页和时区**
 
 Run: `cd server && uv run pytest -q tests/test_quota_api.py`
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 Commit: `feat: 提供用户 AI 额度与账本接口`
 
@@ -349,7 +349,7 @@ Commit: `feat: 提供用户 AI 额度与账本接口`
 - Modify: `server/src/itime/quota/admin_router.py`
 - Test: `server/tests/test_admin_quota.py`
 
-- [ ] **Step 1: 实现路由**
+- [x] **Step 1: 实现路由**
 
 ```text
 GET  /api/v1/admin/quota/users/{user_id}?activity_date=
@@ -372,7 +372,7 @@ GET  /api/v1/admin/quota/ledger
 
 同 operation ID 同内容返回原结果，不同内容拒绝。debit 不能使 `base + ledger - active reservations` 为负；调整与安全审计同事务。
 
-- [ ] **Step 2: 动态验证并提交**
+- [x] **Step 2: 动态验证并提交**
 
 Run: `cd server && uv run pytest -q tests/test_admin_quota.py`
 
@@ -387,7 +387,7 @@ Commit: `feat: 实现用户额度调整与后台账本`
 - Modify: `web/src/main.ts`
 - Test: `web/e2e/quota.spec.ts`
 
-- [ ] **Step 1: 实现 `/account/quota`**
+- [x] **Step 1: 实现 `/account/quota`**
 
 展示稳定四项：
 
@@ -397,7 +397,7 @@ Commit: `feat: 实现用户额度调整与后台账本`
 
 同时显示活动日、IANA 时区、当地 04:00、下次刷新；活动预留和账本分开列表。估算使用文字标签“平台估算”，错误显示是否保存、恢复动作和请求编号。
 
-- [ ] **Step 2: 三视口验证**
+- [x] **Step 2: 三视口验证**
 
 Run:
 
@@ -409,7 +409,7 @@ pnpm exec playwright test e2e/quota.spec.ts --grep "用户额度"
 
 覆盖成功转扣额、失败/取消释放、余额不足、刷新恢复、axe、控制台、横向溢出和 320×700 大字号深色。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 Commit: `feat: 增加用户 AI 额度页面`
 
@@ -423,11 +423,11 @@ Commit: `feat: 增加用户 AI 额度页面`
 - Modify: `server/tests/web_environment.py`
 - Test: `web/e2e/quota.spec.ts`
 
-- [ ] **Step 1: 实现 `/admin/quota`**
+- [x] **Step 1: 实现 `/admin/quota`**
 
 一个侧栏入口，页内使用“策略 / 用户调整 / 账本”标签。策略创建发布、用户搜索和增减、账本筛选均保留输入与明确错误；调整确认对话框展示调整前后金额。
 
-- [ ] **Step 2: 真浏览器验证**
+- [x] **Step 2: 真浏览器验证**
 
 Run:
 
@@ -439,7 +439,7 @@ pnpm exec playwright test e2e/quota.spec.ts --grep "后台额度"
 
 覆盖策略版本、新活动日生效、调整未知保存状态同 operation 对账、版本冲突、三视口和无障碍。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 Commit: `feat: 增加 AI 额度管理后台`
 
@@ -453,7 +453,7 @@ Commit: `feat: 增加 AI 额度管理后台`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/验收/iTime-产品验收清单.md`
 
-- [ ] **Step 1: 服务全量**
+- [x] **Step 1: 服务全量**
 
 ```bash
 cd server
@@ -464,7 +464,7 @@ uv run alembic check
 uv build --no-sources
 ```
 
-- [ ] **Step 2: Web 全量**
+- [x] **Step 2: Web 全量**
 
 ```bash
 cd web
@@ -472,11 +472,11 @@ pnpm build
 pnpm test:e2e
 ```
 
-- [ ] **Step 3: 人工检查截图**
+- [x] **Step 3: 人工检查截图**
 
 检查桌面、手机、平板、320×700 大字号深色下金额、长邮箱、UUID、错误和确认对话框无重叠或横向滚动。
 
-- [ ] **Step 4: 同步证据并提交**
+- [x] **Step 4: 同步证据并提交**
 
 只记录实际命令和结果，保留“支付/充值不属于首版”和“业务提案尚待实现”边界。
 

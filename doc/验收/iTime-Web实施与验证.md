@@ -161,7 +161,7 @@
 
 视觉检查使用 1440×1000、390×844 和 768×1024 的真实页面截图，核对导航、标题、二维码、恢复码列表、表单密度、深色和窄屏布局。首次实测发现错误提示消失会让按钮在按下/释放间位移并取消提交，已通过稳定反馈区修复；另修正恢复码独立结果页的一级标题和焦点。图片概念服务仍只返回生成中占位图，未用于产品或作为验收参考；页面与现有账号设计系统一致。
 
-仍未验证真实 Edge 与实体设备。本节完成时后台业务页面尚未实现；用户/邀请、AI 配置和日志/质检/审计的后续证据分别见 M2-F、M3-G/M4-B 与 M4-C，额度页面仍待实现。
+仍未验证真实 Edge 与实体设备。本节完成时后台业务页面尚未实现；用户/邀请、AI 配置、日志/质检/审计和额度页面的后续证据分别见 M2-F、M3-G/M4-B、M4-C 与 M4-E。
 
 ## M2-E：注册策略、邀请与用户状态服务
 
@@ -602,7 +602,7 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 
 新增流程以真实 PNG 上传到隔离 API，由独立 AI worker 调用真实本地 OpenAI 兼容 HTTP 服务；浏览器在提交后关闭导入对话框，等待后台完成，再重新进入恢复作业、打开候选、确认并从日历读取 occurrence。三个视口均验证 axe、控制台、API 500、错误覆盖层和横向溢出；桌面项目另在 320×700 最大字号检查截图作业列表。截图位于 `/tmp/itime-ui-evidence/*-calendar-import-screenshot-*.png`，已人工检查。
 
-截图识别至此完成服务、管理配置和用户校对闭环；正文日志与质检后续已由 M4-C 接入，每日额度仍未接入。M3 后续 ICS URL 订阅证据见 M3-J。
+截图识别至此完成服务、管理配置和用户校对闭环；正文日志与质检、每日额度后续已分别由 M4-C、M4-E 接入。M3 后续 ICS URL 订阅证据见 M3-J。
 
 ## M3-O：ICS URL 订阅服务
 
@@ -804,7 +804,7 @@ Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓
 
 迁移专项还验证了复合所有者外键、截图/对话输入引用约束、同会话单活动作业、对话作业与生成映射延迟一致性、消息身份不可变及有数据时禁止降级。
 
-当前限制：普通回复尚未接入每日金额额度；正文日志和质检样本已在 M4-C 接入。业务对象变更仍只会作为文字回复，不会写入任务、日历或计划。额度成功边界已定稿，预留/结算和提案应用将在后续提交完成。
+当前限制：普通回复的每日金额额度后续已在 M4-E 接入；正文日志和质检样本已在 M4-C 接入。业务对象变更仍只会作为文字回复，不会写入任务、日历或计划；提案应用仍待后续提交。
 
 ## M4-B：全局 AI 对话 Web 界面
 
@@ -831,7 +831,7 @@ Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓
 
 浏览器环境启动随机 PostgreSQL、真实 API、邮件 worker、AI worker、本机分块 SSE 上游、订阅 worker 和生产构建预览。专项覆盖多会话、流式增量、离页恢复、单次尝试、取消晚到结果、重试失败、改名、归档/恢复、AI 冻结、键盘提交、axe、控制台和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-ai-conversation-*.png` 与 `desktop-ai-conversation-320-large-dark.png`，已人工检查。
 
-Browser 运行工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、额度显示、业务提案预览和正式第三方模型质量仍未验证。
+Browser 运行工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。用户与后台额度显示后续已在 M4-E 验证；真实 Edge、实体设备、业务提案预览和正式第三方模型质量仍未验证。
 
 ## M4-C：AI 正文日志、质量样本与访问审计
 
@@ -863,7 +863,7 @@ Browser 运行工具未在当前执行环境暴露，因此按前端测试规范
 
 专项浏览器流程在每个视口真实注册用户、验证邮件、切换质检参与、模拟未知保存状态后对账恢复、生成 AI 回复，再由 TOTP 管理员显式读取正文、提交质检结论并从审计页回查。每个视口检查 axe、控制台、Vite 错误层和根级横向溢出；另验证桌面切换到 320×700 最大字号深色。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-*.png` 和 `desktop-privacy-governance-quality-320-large-dark.png`，已人工检查；敏感弹窗、长邮箱、UUID、请求 JSON 和操作按钮无重叠或横向溢出。
 
-Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、金额额度、业务提案及正式第三方模型质量仍未验证或实现。
+Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。金额额度后续已在 M4-E 验证；真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、业务提案及正式第三方模型质量仍未验证或实现。
 
 ## M4-D：AI 价格、供应商用量与平台成本
 
@@ -895,4 +895,36 @@ Browser 插件工具未在当前执行环境暴露，因此按前端测试规范
 
 成本页面在 1440×1000、390×844、768×1024 三个视口检查标题、数据、筛选、axe、控制台和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-provider-costs.png`，已人工检查。
 
-当前限制：这里记录的是平台供应商成本，不是用户消费。用户结算规则已经定稿；每日额度策略、预留、成功扣额、失败释放及用户/后台额度页面仍待后续提交。
+本节只记录平台供应商成本。用户额度预留、结算、释放及双端账本的后续实现与证据见 M4-E。
+
+## M4-E：AI 用户每日额度与管理账本
+
+对应 Git 提交：`b519640`、`49b3ceb`、`ba112db`、`aca522c`、`929a4f3`、`9dbea0a`、`8fd8add`、`4925107`、`8ac7475`、`27b9418`、`0663969`、`bc0c1a2`、`fd7a169`。实际代码为迁移 `0021_ai_user_quota`、`server/src/itime/quota/`、对话/截图接单与终态事务接入、用户 `/account/quota`、后台 `/admin/quota` 及 `web/e2e/quota.spec.ts`；合同见[AI 额度与成本账本设计](../设计/iTime-AI额度与成本账本设计.md)。
+
+已实现：
+
+- 每日策略采用不可变草稿/发布/退役版本。发布前检查对话与截图两类当前 AI 配置均有完整价格且币种一致；新策略只影响之后首次创建的活动日，不改写既有额度。
+- 用户首次接单按服务端时间、用户 IANA 时区和当地 04:00 冻结 UTC 半开窗口。对话和截图均在创建作业的同一事务预留最大预算；操作重放不重复占用，并发接单不能透支。
+- 最终成功 attempt 的成本事实与业务结果、预留结算和唯一 `usage_charge` 账本同事务提交。实际成本低于预留时释放余量，高于预留时用户最多承担预留额；失败、超时和取消释放全部预留，失败重试只计平台成本。
+- worker 使用现有作业终态投影恢复到期 queued/running 作业，双进程 `SKIP LOCKED` 扫描不会遗留活动预留，也不会绕过对话消息或截图导入状态。
+- 用户额度 API 及 `/account/quota` 展示当前活动日、冻结时区、当地 04:00、下次刷新、基础额度、调整、已扣、处理中与可用金额；缺少时间设置时使用浏览器 IANA 时区通过版本化接口初始化后重试。
+- 后台额度 API 及 `/admin/quota` 提供策略历史、用户搜索、增减确认和账本筛选。调整使用 9 位小数定点金额、目标活动日版本、全局 operation ID、不可变调整/账本和同事务安全审计；扣减不能侵占已扣或活动预留。
+- 管理写入响应丢失时前端按原 operation ID 查询账本确认，不生成重复调整；版本冲突和余额不足保留输入并刷新服务端状态。管理账号不参与用户额度调整，避免交叉管理员锁顺序。
+
+2026-10-03 在本地 PostgreSQL 18.6、真实 Uvicorn、本机 OpenAI 兼容 HTTP 服务、AI worker 及生产构建 Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q tests/test_admin_quota.py tests/test_admin_quota_policy.py tests/test_quota_api.py tests/test_quota_service.py tests/test_quota_models.py` | **13 passed in 19.33s** | 策略、04:00/DST、原子预留、调整幂等/并发、负余额保护、审计回滚、权限与账本 |
+| `cd server && uv run pytest -q tests/test_admin_quota.py tests/test_admin_quota_policy.py tests/test_quota_api.py tests/test_quota_service.py tests/test_quota_models.py tests/test_ai_conversation_api.py tests/test_ai_conversation_worker.py tests/test_calendar_screenshot_imports.py` | **34 passed in 42.64s** | 额度与两类 AI 接单、重试、取消、终态结算的联合回归 |
+| `cd server && uv run pytest -q` | **218 passed in 193.42s** | 服务端真实 HTTP/PostgreSQL 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic current && uv run alembic check` | `0021_ai_user_quota (head)`，无模型漂移 | 开发库与 ORM 一致 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/quota.spec.ts` | **6 passed in 59.6s** | 用户与后台额度流程 × 1440×1000、390×844、768×1024，另含 320×700 大字号深色 |
+| `cd web && pnpm test:e2e` | **132 passed in 6.5m** | 账号、后台、AI、额度、任务、日历、导入、订阅、治理与公开页面全量 Chromium 回归 |
+
+专项浏览器流程真实完成普通用户注册、邮件验证、成功 AI 结算、取消/最终失败释放、时区初始化恢复、管理员 9 位小数调整、响应丢失后账本对账、策略发布、既有活动日保持旧策略、新用户使用新策略及余额耗尽拒绝。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-quota-{user-ledger,admin-ledger}.png`、`desktop-quota-user-320-large-dark.png` 和 `desktop-quota-admin-320-large-dark.png`，已人工检查金额、长邮箱、UUID、确认对话框和深色大字号无重叠或裁切。
+
+Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、正式第三方模型账单对账、业务提案、支付/充值和现金钱包仍未验证或不属于本阶段。
