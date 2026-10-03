@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from urllib.parse import urlsplit
+from math import ceil
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, or_, select, text
@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 from itime.auth.models import User
 from itime.auth.security import now
 from itime.database import Database
+from itime.errors import AppError
 from itime.public_links.fetcher import PublicLinkFetchResult
 from itime.tasks.models import Task, TaskLink
 from itime.tasks.service import emit_change
@@ -20,6 +21,7 @@ OWNER_RATE_WINDOW = timedelta(minutes=10)
 RETRY_DELAYS = (timedelta(minutes=1), timedelta(minutes=5))
 OWNER_ADVISORY_LOCK_SEED = 731_924
 CLAIM_SCAN_LIMIT = 100
+MANUAL_REFRESH_COOLDOWN = timedelta(seconds=30)
 
 
 @dataclass(frozen=True)
@@ -31,40 +33,6 @@ class ClaimedPublicLink:
     fetch_revision: int
     attempt_number: int
     lease_id: UUID
-
-
-def public_link_result(link: TaskLink) -> dict:
-    source_host = urlsplit(link.url).hostname or ""
-    return {
-        "id": link.id,
-        "title": link.title,
-        "url": link.url,
-        "position": link.position,
-        "fetch": {
-            "status": link.fetch_status,
-            "source_host": source_host,
-            "final_host": link.final_host,
-            "page_title": link.page_title,
-            "summary": link.summary,
-            "fetched_at": link.last_success_at,
-            "content_sha256": link.content_sha256,
-            "last_attempt_at": link.last_attempt_at,
-            "next_attempt_at": (
-                link.available_at if link.fetch_status == "queued" else None
-            ),
-            "using_previous_snapshot": (
-                link.last_success_at is not None and link.fetch_status != "ready"
-            ),
-            "error": (
-                {
-                    "code": link.last_error_code,
-                    "message": link.last_error_message,
-                }
-                if link.last_error_code is not None
-                else None
-            ),
-        },
-    }
 
 
 async def claim_next_public_link(
@@ -186,6 +154,61 @@ async def claim_next_public_link(
                 lease_id=lease_id,
             )
     return None
+
+
+async def queue_public_link_refresh(
+    session: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID,
+    link_id: UUID,
+) -> TaskLink:
+    link = await session.scalar(
+        select(TaskLink)
+        .where(
+            TaskLink.id == link_id,
+            TaskLink.task_id == task_id,
+            TaskLink.owner_id == owner_id,
+        )
+        .with_for_update()
+    )
+    if link is None:
+        raise AppError(
+            "task_link_not_found",
+            "未找到此任务链接。",
+            status=404,
+        )
+    if link.fetch_status in {"queued", "running"}:
+        return link
+    current = now()
+    if (
+        link.last_attempt_at is not None
+        and current - link.last_attempt_at < MANUAL_REFRESH_COOLDOWN
+    ):
+        retry_after = ceil(
+            (
+                MANUAL_REFRESH_COOLDOWN
+                - (current - link.last_attempt_at)
+            ).total_seconds()
+        )
+        raise AppError(
+            "public_link_refresh_too_frequent",
+            "此链接刚刚读取过，请稍后再试。",
+            status=429,
+            retryable=True,
+            details={"retry_after_seconds": max(1, retry_after)},
+        )
+    link.fetch_revision += 1
+    link.fetch_status = "queued"
+    link.attempt_count = 0
+    link.available_at = current
+    link.lease_id = None
+    link.lease_until = None
+    link.last_error_code = None
+    link.last_error_message = None
+    link.last_http_status = None
+    link.updated_at = current
+    _emit_link_change(session, link)
+    return link
 
 
 async def renew_public_link_lease(

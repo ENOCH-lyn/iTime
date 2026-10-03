@@ -33,6 +33,7 @@ from itime.execution.router import router as execution_router
 from itime.middleware import RequestEnvelope
 from itime.observability import configure_logging
 from itime.planning.router import router as planning_router
+from itime.public_links.router import router as public_links_router
 from itime.quota.admin_router import router as admin_quota_router
 from itime.quota.router import router as quota_router
 from itime.review.router import router as review_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(privacy_settings_router)
     app.include_router(quota_router)
     app.include_router(tasks_router)
+    app.include_router(public_links_router)
     app.include_router(task_schedule_router)
     app.include_router(calendar_router)
     app.include_router(calendar_screenshot_router)

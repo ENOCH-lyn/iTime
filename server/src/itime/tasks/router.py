@@ -8,6 +8,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from itime.auth.security import now
 from itime.auth.session import authorized
 from itime.errors import AppError
+from itime.public_links.service import stop_public_link_fetches_for_task
 from itime.tasks.lifecycle_service import expire_task_operation_responses
 from itime.tasks.models import (
     Label,
@@ -512,6 +513,12 @@ async def set_task_archive(
                 identity.user.id,
                 task.id,
             )
+            if data.archived:
+                await stop_public_link_fetches_for_task(
+                    identity.session,
+                    task,
+                    at=now(),
+                )
             task.archived_at = now() if data.archived else None
             task.version += 1
             task.updated_at = now()
@@ -572,6 +579,11 @@ async def trash_task(
                 task.id,
             )
             deleted_at = now()
+            await stop_public_link_fetches_for_task(
+                identity.session,
+                task,
+                at=deleted_at,
+            )
             task.deleted_at = deleted_at
             task.purge_after = deleted_at + TASK_TRASH_RETENTION
             task.version += 1

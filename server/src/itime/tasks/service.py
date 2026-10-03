@@ -1,8 +1,9 @@
 import hashlib
 import json
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 from math import ceil
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi.encoders import jsonable_encoder
@@ -289,18 +290,118 @@ async def replace_task_links(
     existing = [(link.title, link.url) for link in current]
     if desired == existing:
         return False
-    await session.execute(delete(TaskLink).where(TaskLink.task_id == task.id))
-    session.add_all(
-        TaskLink(
-            task_id=task.id,
-            owner_id=task.owner_id,
-            title=link.title,
-            url=str(link.url),
-            position=position,
+    current_time = now()
+    by_url: defaultdict[str, deque[TaskLink]] = defaultdict(deque)
+    for link in current:
+        by_url[link.url].append(link)
+    assignments: list[TaskLink | None] = []
+    used_ids: set[UUID] = set()
+    for _, url in desired:
+        candidates = by_url[url]
+        saved = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.id not in used_ids
+            ),
+            None,
         )
-        for position, link in enumerate(links)
-    )
+        assignments.append(saved)
+        if saved is not None:
+            used_ids.add(saved.id)
+    remaining_by_position = {
+        link.position: link
+        for link in current
+        if link.id not in used_ids
+    }
+    for position, incoming in enumerate(links):
+        saved = assignments[position]
+        url = str(incoming.url)
+        if saved is None:
+            saved = remaining_by_position.pop(position, None)
+            if saved is None:
+                saved = TaskLink(
+                    task_id=task.id,
+                    owner_id=task.owner_id,
+                    title=incoming.title,
+                    url=url,
+                    position=position,
+                    fetch_status="queued",
+                    fetch_revision=1,
+                    attempt_count=0,
+                    available_at=current_time,
+                    updated_at=current_time,
+                )
+                session.add(saved)
+                assignments[position] = saved
+                continue
+            used_ids.add(saved.id)
+            _reset_task_link(saved, url, current_time)
+        saved.title = incoming.title
+        saved.position = position
+        saved.updated_at = current_time
+    for removed in current:
+        if removed.id not in used_ids:
+            await session.delete(removed)
     return True
+
+
+def _reset_task_link(
+    link: TaskLink,
+    url: str,
+    current_time: datetime,
+) -> None:
+    link.url = url
+    link.fetch_status = "queued"
+    link.fetch_revision += 1
+    link.attempt_count = 0
+    link.available_at = current_time
+    link.lease_id = None
+    link.lease_until = None
+    link.last_attempt_at = None
+    link.last_success_at = None
+    link.final_host = None
+    link.media_type = None
+    link.page_title = None
+    link.summary = None
+    link.extracted_text = None
+    link.content_sha256 = None
+    link.last_error_code = None
+    link.last_error_message = None
+    link.last_http_status = None
+
+
+def task_link_result(link: TaskLink) -> dict:
+    return {
+        "id": link.id,
+        "title": link.title,
+        "url": link.url,
+        "position": link.position,
+        "fetch": {
+            "status": link.fetch_status,
+            "source_host": urlsplit(link.url).hostname or "",
+            "final_host": link.final_host,
+            "page_title": link.page_title,
+            "summary": link.summary,
+            "fetched_at": link.last_success_at,
+            "content_sha256": link.content_sha256,
+            "last_attempt_at": link.last_attempt_at,
+            "next_attempt_at": (
+                link.available_at if link.fetch_status == "queued" else None
+            ),
+            "using_previous_snapshot": (
+                link.last_success_at is not None and link.fetch_status != "ready"
+            ),
+            "error": (
+                {
+                    "code": link.last_error_code,
+                    "message": link.last_error_message,
+                }
+                if link.last_error_code is not None
+                else None
+            ),
+        },
+    }
 
 
 async def task_context(session: AsyncSession, tasks: list[Task]) -> dict:
@@ -442,13 +543,5 @@ async def task_detail(session: AsyncSession, task: Task) -> dict:
         }
         for step in steps
     ]
-    summary["links"] = [
-        {
-            "id": link.id,
-            "title": link.title,
-            "url": link.url,
-            "position": link.position,
-        }
-        for link in links
-    ]
+    summary["links"] = [task_link_result(link) for link in links]
     return summary

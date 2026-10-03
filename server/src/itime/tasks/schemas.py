@@ -92,6 +92,10 @@ class TaskLifecycleInput(OperationInput):
     expected_version: int = Field(ge=1)
 
 
+class TaskLinkRefreshInput(OperationInput):
+    pass
+
+
 class TaskArchiveInput(TaskLifecycleInput):
     archived: bool
 

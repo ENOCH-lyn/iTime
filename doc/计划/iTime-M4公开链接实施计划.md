@@ -516,7 +516,7 @@ git commit -m "feat: 处理公开链接读取作业"
 - Create: `server/tests/test_public_link_api.py`
 - Modify: `server/tests/test_tasks.py`
 
-- [ ] **Step 1: 写任务 API 失败测试**
+- [x] **Step 1: 写任务 API 失败测试**
 
 使用真实 Uvicorn/PostgreSQL：
 
@@ -537,7 +537,7 @@ assert link["fetch"]["summary"] is None
 - queued/running 刷新幂等；相同 operation 重放一致；30 秒限频为 429。
 - worker 写回后 `GET /tasks/{id}` 返回 ready/failed 及旧摘要标记。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -546,7 +546,7 @@ uv run pytest -q tests/test_public_link_api.py tests/test_tasks.py
 
 Expected: FAIL，响应字段和刷新路由不存在。
 
-- [ ] **Step 3: 协调链接而非整表删除**
+- [x] **Step 3: 协调链接而非整表删除**
 
 `replace_task_links()` 使用按 URL 排列的现有行队列：
 
@@ -569,7 +569,7 @@ for removed in chain.from_iterable(existing_by_url.values()):
 为 deferrable position 约束使用负临时位置或延迟约束，避免交换顺序时唯一冲突。返回值仍表示是否
 发生用户可见链接变化。
 
-- [ ] **Step 4: 扩展详情和刷新路由**
+- [x] **Step 4: 扩展详情和刷新路由**
 
 `task_link_result()` 输出设计文档第 6 节字段；`source_host` 从用户原始 URL 解析，
 `using_previous_snapshot = last_success_at is not None and fetch_status != "ready"`。
@@ -578,7 +578,7 @@ for removed in chain.from_iterable(existing_by_url.values()):
 执行 30 秒限频、递增 revision、清 lease/错误、重置 attempt 并立即 queued；保存操作重放结果。
 注册 `public_links.router`。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
