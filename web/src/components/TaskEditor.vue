@@ -8,13 +8,17 @@ import {
   ArrowUp,
   Check,
   CheckCircle2,
+  CircleCheck,
   ExternalLink,
   Link2,
+  LoaderCircle,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   Timer,
   Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
@@ -28,6 +32,7 @@ import {
   deleteTask as deleteTaskRequest,
   deleteTaskStep,
   getTask,
+  refreshTaskLink,
   reorderTaskSteps,
   restoreTask,
   setTaskCompletion,
@@ -38,6 +43,7 @@ import {
   type Project,
   type TaskDetail,
   type TaskDraft,
+  type TaskLinkFetch,
   type TaskStep,
 } from '../lib/tasks'
 
@@ -58,8 +64,11 @@ const emit = defineEmits<{
 }>()
 
 interface LinkDraft {
+  id: string | null
   title: string
   url: string
+  savedUrl: string | null
+  fetch: TaskLinkFetch | null
 }
 
 const working = ref<TaskDetail | null>(null)
@@ -110,7 +119,10 @@ const dirty = computed(() => {
     || String(values.estimated_minutes) !== (working.value.estimated_minutes?.toString() ?? '')
     || values.priority !== working.value.priority
     || values.labels !== working.value.labels.map(label => label.name).join(', ')
-    || JSON.stringify(links.value) !== JSON.stringify(
+    || JSON.stringify(links.value.map(link => ({
+      title: link.title,
+      url: link.url,
+    }))) !== JSON.stringify(
       working.value.links.map(link => ({ title: link.title, url: link.url })),
     )
     || !!newStep.value
@@ -126,6 +138,20 @@ watch([() => props.task?.id, () => props.creating, () => props.initialProjectId]
   latest.value = null
   operations.clear()
 }, { immediate: true })
+watch(
+  () => props.task?.links.map(link => [
+    link.id,
+    link.fetch.status,
+    link.fetch.fetched_at,
+    link.fetch.last_attempt_at,
+    link.fetch.error?.code ?? '',
+  ].join(':')).join('|'),
+  () => {
+    if (!props.task || props.task.id !== working.value?.id) return
+    working.value = props.task
+    mergeLinkStates(props.task)
+  },
+)
 
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!dirty.value) return
@@ -145,12 +171,28 @@ function resetFields(task: TaskDetail | null) {
   values.estimated_minutes = task?.estimated_minutes?.toString() ?? ''
   values.priority = task?.priority ?? 0
   values.labels = task?.labels.map(label => label.name).join(', ') ?? ''
-  links.value = task?.links.map(link => ({ title: link.title, url: link.url })) ?? []
+  links.value = task?.links.map(link => ({
+    id: link.id,
+    title: link.title,
+    url: link.url,
+    savedUrl: link.url,
+    fetch: link.fetch,
+  })) ?? []
   initialSteps.value = []
   for (const key of Object.keys(stepTitles)) delete stepTitles[key]
   for (const step of task?.steps ?? []) stepTitles[step.id] = step.title
   newStep.value = ''
   for (const key of Object.keys(fieldErrors)) delete fieldErrors[key]
+}
+
+function mergeLinkStates(task: TaskDetail) {
+  const serverLinks = new Map(task.links.map(link => [link.id, link]))
+  for (const draft of links.value) {
+    if (!draft.id || draft.url !== draft.savedUrl) continue
+    const saved = serverLinks.get(draft.id)
+    if (!saved || saved.url !== draft.savedUrl) continue
+    draft.fetch = saved.fetch
+  }
 }
 
 function operationId(scope: string, body: unknown) {
@@ -195,7 +237,7 @@ function draft(): TaskDraft | null {
   }
   const labels = parsedLabels()
   if (labels.length > 10) fieldErrors.labels = '每个任务最多 10 个标签。'
-  const cleanedLinks: LinkDraft[] = []
+  const cleanedLinks: TaskDraft['links'] = []
   for (const [index, link] of links.value.entries()) {
     const titleValue = link.title.trim()
     const urlValue = link.url.trim()
@@ -241,6 +283,7 @@ function applyTask(task: TaskDetail, reset = false) {
       : step.title
   }
   if (reset) resetFields(task)
+  else mergeLinkStates(task)
   latest.value = null
   emit('updated', task)
 }
@@ -507,7 +550,15 @@ async function moveStep(step: TaskStep, direction: -1 | 1) {
 }
 
 function addLink() {
-  if (links.value.length < 20) links.value.push({ title: '', url: '' })
+  if (links.value.length < 20) {
+    links.value.push({
+      id: null,
+      title: '',
+      url: '',
+      savedUrl: null,
+      fetch: null,
+    })
+  }
 }
 
 function addInitialStep() {
@@ -516,6 +567,43 @@ function addInitialStep() {
 
 function isHttpUrl(value: string) {
   return value.startsWith('http://') || value.startsWith('https://')
+}
+
+function linkStatusLabel(fetch: TaskLinkFetch) {
+  if (fetch.status === 'queued') return '等待读取'
+  if (fetch.status === 'running') return '正在读取'
+  if (fetch.status === 'ready') return '已读取'
+  return '读取失败'
+}
+
+async function refreshLink(link: LinkDraft) {
+  if (
+    !working.value
+    || !link.id
+    || link.url !== link.savedUrl
+    || pendingAction.value
+    || !editable.value
+  ) return
+  clearMessages()
+  const scope = `link-refresh-${link.id}`
+  pendingAction.value = scope
+  try {
+    const task = await refreshTaskLink(
+      working.value.id,
+      link.id,
+      operationId(scope, { link_id: link.id }),
+    )
+    operations.delete(scope)
+    applyTask(task)
+    const refreshed = task.links.find(item => item.id === link.id)
+    success.value = refreshed?.fetch.using_previous_snapshot
+      ? '已重新排队，读取期间继续使用上次摘要。'
+      : '链接已排队读取。'
+  } catch (reason) {
+    await handleError(reason)
+  } finally {
+    pendingAction.value = ''
+  }
 }
 
 function formatDateTime(value: string | null) {
@@ -842,6 +930,60 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
                 <p v-if="fieldErrors[`link-${index}`]" :id="`link-error-${index}`" class="field-error">
                   {{ fieldErrors[`link-${index}`] }}
                 </p>
+                <div
+                  v-if="link.fetch && link.id && link.url === link.savedUrl"
+                  class="link-source-state"
+                  :data-state="link.fetch.status"
+                  role="status"
+                >
+                  <div class="link-source-heading">
+                    <LoaderCircle
+                      v-if="link.fetch.status === 'queued' || link.fetch.status === 'running'"
+                      :size="16"
+                      class="link-source-spinner"
+                      aria-hidden="true"
+                    />
+                    <CircleCheck
+                      v-else-if="link.fetch.status === 'ready'"
+                      :size="16"
+                      aria-hidden="true"
+                    />
+                    <TriangleAlert v-else :size="16" aria-hidden="true" />
+                    <strong>{{ linkStatusLabel(link.fetch) }}</strong>
+                    <span v-if="link.fetch.fetched_at">
+                      {{ formatDateTime(link.fetch.fetched_at) }}
+                    </span>
+                    <button
+                      v-if="editable && ['ready', 'failed'].includes(link.fetch.status)"
+                      type="button"
+                      class="small-icon-button link-refresh-button"
+                      title="重新读取"
+                      :aria-label="`重新读取链接 ${link.title || index + 1}`"
+                      :disabled="!!pendingAction"
+                      @click="refreshLink(link)"
+                    >
+                      <RefreshCw :size="15" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <p v-if="link.fetch.using_previous_snapshot" class="link-source-note">
+                    本次读取未完成，仍使用上次成功摘要。
+                  </p>
+                  <p v-if="link.fetch.page_title" class="link-source-title">
+                    {{ link.fetch.page_title }}
+                  </p>
+                  <p v-if="link.fetch.summary" class="link-source-summary">
+                    {{ link.fetch.summary }}
+                  </p>
+                  <p v-if="link.fetch.error" class="link-source-error">
+                    {{ link.fetch.error.message }}
+                  </p>
+                  <p class="link-source-meta">
+                    来源 {{ link.fetch.final_host || link.fetch.source_host }}
+                    <template v-if="link.fetch.content_sha256">
+                      · {{ link.fetch.content_sha256.slice(0, 12) }}
+                    </template>
+                  </p>
+                </div>
               </div>
               <a v-if="working && link.url && isHttpUrl(link.url)" :href="link.url"
                 target="_blank" rel="noopener noreferrer" class="small-icon-button"

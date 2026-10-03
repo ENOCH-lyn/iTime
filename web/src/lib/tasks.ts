@@ -57,11 +57,26 @@ export interface TaskStep {
   updated_at: string
 }
 
+export interface TaskLinkFetch {
+  status: 'queued' | 'running' | 'ready' | 'failed'
+  source_host: string
+  final_host: string | null
+  page_title: string | null
+  summary: string | null
+  fetched_at: string | null
+  content_sha256: string | null
+  last_attempt_at: string | null
+  next_attempt_at: string | null
+  using_previous_snapshot: boolean
+  error: { code: string; message: string } | null
+}
+
 export interface TaskLink {
   id: string
   title: string
   url: string
   position: number
+  fetch: TaskLinkFetch
 }
 
 export interface TaskSummary {
@@ -228,6 +243,17 @@ export async function updateTask(
     `/tasks/${id}`,
     mutationBody(operationId, { ...fields, expected_version: expectedVersion }),
     'PUT',
+  )).task
+}
+
+export async function refreshTaskLink(
+  taskId: string,
+  linkId: string,
+  operationId: string,
+) {
+  return (await api<{ operation_id: string; task: TaskDetail }>(
+    `/tasks/${taskId}/links/${linkId}/refresh`,
+    { operation_id: operationId },
   )).task
 }
 

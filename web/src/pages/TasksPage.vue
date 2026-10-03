@@ -83,19 +83,33 @@ onMounted(async () => {
 })
 
 useSyncRefresh(
-  ['project', 'task', 'step', 'label', 'task_occurrence'],
-  async () => {
+  ['project', 'task', 'step', 'label', 'task_occurrence', 'task_link'],
+  async (events) => {
+    const linkOnly = (
+      events.length > 0
+      && events.every(event => event.entity_type === 'task_link')
+    )
+    const selectedLinkChanged = (
+      !!selectedTask.value
+      && events.some(event => (
+        event.entity_type === 'task_link'
+        && selectedTask.value?.links.some(link => link.id === event.entity_id)
+      ))
+    )
     await Promise.all([
       refreshProjectsAndLabels(),
       loadTasks(false, true),
     ])
-    if (selectedTask.value && !editorDirty.value) {
+    if (
+      selectedTask.value
+      && (!editorDirty.value || (linkOnly && selectedLinkChanged))
+    ) {
       try {
         selectedTask.value = await getTask(selectedTask.value.id)
       } catch {
         selectedTask.value = null
       }
-    } else if (selectedTask.value && editorDirty.value) {
+    } else if (selectedTask.value && editorDirty.value && !linkOnly) {
       pageSuccess.value = '其他设备有更新；当前填写已保留，请保存时比较最新版。'
     }
   },

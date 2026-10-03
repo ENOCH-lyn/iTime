@@ -754,7 +754,7 @@ git commit -m "feat: 将公开资料用于对话"
 - Modify: `web/src/task-workspace.css`
 - Modify: `web/e2e/tasks.spec.ts`
 
-- [ ] **Step 1: 写组件链路失败测试**
+- [x] **Step 1: 写组件链路失败测试**
 
 在既有任务 E2E 中把链接断言扩展为：
 
@@ -768,7 +768,7 @@ await expect(page.getByRole('button', {
 用 route fulfillment 分别验证 ready/failed/旧摘要刷新中响应；断言点击刷新只发送一次
 `POST /tasks/{task}/links/{link}/refresh`，API 500 时保留摘要和任务编辑输入。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
@@ -777,7 +777,7 @@ pnpm test:e2e -- e2e/tasks.spec.ts --project=desktop
 
 Expected: FAIL，链接读取状态尚未渲染。
 
-- [ ] **Step 3: 扩展 TypeScript 合同**
+- [x] **Step 3: 扩展 TypeScript 合同**
 
 ```typescript
 export interface TaskLinkFetch {
@@ -805,7 +805,7 @@ export interface TaskLink {
 
 增加 `refreshTaskLink(taskId, linkId, operationId)`，返回 `TaskDetail`。
 
-- [ ] **Step 4: 实现状态块与同步**
+- [x] **Step 4: 实现状态块与同步**
 
 `TaskEditor` 的 draft 保存 `id/sourceUrl/fetch`，dirty 比较仍只比较 title/url。只有已保存且 URL
 未修改的行显示状态；使用 `LoaderCircle`、`CircleCheck`、`TriangleAlert` 和 `RefreshCw` 图标，
@@ -815,7 +815,7 @@ export interface TaskLink {
 `TasksPage.useSyncRefresh()` 加入 `task_link`。详情无未保存输入时自动重读；有草稿时只更新匹配
 link ID 的 fetch 字段，不显示“其他设备修改任务”的误导提示。
 
-- [ ] **Step 5: 样式、构建并提交**
+- [x] **Step 5: 样式、构建并提交**
 
 ```bash
 cd web

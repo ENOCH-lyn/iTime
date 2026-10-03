@@ -136,6 +136,10 @@ test('项目、任务、步骤、链接、明确完成、搜索和持久化形�
   await expect(page.getByText('任务已创建并保存到服务端。')).toBeVisible()
   await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue('完成论文提纲')
   await expect(page.getByText('0/2 已完成')).toBeVisible()
+  await expect(page.getByText('等待读取')).toBeVisible()
+  await expect(page.getByRole('button', {
+    name: '重新读取链接 写作规范',
+  })).toHaveCount(0)
 
   await page.getByLabel('步骤 2', { exact: true }).fill('整理章节结构与图表')
   await page.getByRole('checkbox', { name: '完成步骤 列出研究问题', exact: true }).check()
