@@ -86,7 +86,7 @@ Web：
 - Create: `server/tests/test_restricted_http.py`
 - Modify: `server/tests/test_calendar_subscription_fetcher.py`
 
-- [ ] **Step 1: 写共享传输失败测试**
+- [x] **Step 1: 写共享传输失败测试**
 
 `test_restricted_http.py` 使用 fake resolver/transport 和真实回环 HTTP server，覆盖：
 
@@ -116,7 +116,7 @@ async def test_restricted_client_rejects_unsafe_url(url: str, reason: str):
 - `trust_env=False`、空 Cookie jar，真实请求不含 Cookie、Authorization 或代理转发。
 - 压缩体、解压体、压缩比、编码层数和总超时均由传入 `FetchLimits` 控制。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -125,7 +125,7 @@ uv run pytest -q tests/test_restricted_http.py
 
 Expected: FAIL，`itime.network.restricted_http` 尚不存在。
 
-- [ ] **Step 3: 实现共享传输**
+- [x] **Step 3: 实现共享传输**
 
 核心公开类型固定为：
 
@@ -162,7 +162,7 @@ class RestrictedHttpError(Exception):
 使用 `aiohttp.DummyCookieJar()`、`trust_env=False`、`auto_decompress=False` 和连接关闭，
 由流式 decoder 在读取时执行体积及压缩比限制。
 
-- [ ] **Step 4: 把日历抓取器改为共享传输包装**
+- [x] **Step 4: 把日历抓取器改为共享传输包装**
 
 `RestrictedCalendarFetcher.fetch()` 保持公开返回类型、校验头、304、媒体类型和所有
 `calendar_subscription_*` 错误码不变。包装层把共享 reason 映射为既有错误：
@@ -178,7 +178,7 @@ raise SubscriptionFetchError(
 
 日历限制仍为 2 MiB 压缩体、4 MiB 解压体、压缩比 20、3 次跳转和 15 秒总时限。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
