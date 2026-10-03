@@ -24,6 +24,7 @@ from itime.auth.session import (
 from itime.calendar.models import UserTimeSettings
 from itime.calendar.service import validate_time_zone
 from itime.errors import AppError
+from itime.review.models import MemorySettings
 from itime.tasks.models import ChangeEvent
 
 router = APIRouter(prefix="/api/v1/auth", tags=["账号"])
@@ -180,6 +181,7 @@ async def register(data: RegisterInput, request: Request) -> dict:
                 )
         if new_id:
             session.add(UserPrivacySetting(owner_id=user.id))
+            session.add(MemorySettings(owner_id=user.id))
             if time_zone is not None:
                 time_settings = UserTimeSettings(
                     owner_id=user.id,

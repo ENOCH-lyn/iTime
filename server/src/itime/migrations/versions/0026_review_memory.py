@@ -92,6 +92,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("owner_id", name=op.f("pk_memory_settings")),
     )
+    op.execute(
+        """
+        INSERT INTO memory_settings (owner_id)
+        SELECT id FROM users
+        ON CONFLICT (owner_id) DO NOTHING
+        """
+    )
     op.create_table(
         "review_sessions",
         sa.Column("id", sa.Uuid(), nullable=False),

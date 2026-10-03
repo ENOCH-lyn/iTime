@@ -146,7 +146,7 @@ git commit -m "feat: 建立复盘与记忆数据模型"
 - Test: `server/tests/test_memories.py`
 - Test: `server/tests/test_review_cleanup.py`
 
-- [ ] **Step 1: 写记忆 API 失败测试**
+- [x] **Step 1: 写记忆 API 失败测试**
 
 覆盖默认启用、设置版本冲突、人工创建、操作重放、同操作 ID 异内容、编辑、跨账号隐藏、移入回收站、删除后查询排除、恢复、到期清理和已清理不可恢复。
 
@@ -161,13 +161,13 @@ assert created.status_code == 201
 assert client.post("/api/v1/memories", json=created_request).json() == created.json()
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_memories.py tests/test_review_cleanup.py`
 
 Expected: FAIL，路由不存在。
 
-- [ ] **Step 3: 实现记忆服务、路由与清理进程**
+- [x] **Step 3: 实现记忆服务、路由与清理进程**
 
 实现 `memory_result`、`memory_settings_result`、`list_memories`、`create_memory`、`update_memory`、`trash_memory`、`restore_memory`、`update_memory_settings` 和 `cleanup_expired_memories`。所有写入使用 `replay_operation`、`save_operation`、`emit_change` 和 `expected_version`。
 
@@ -183,13 +183,13 @@ record.version += 1
 
 清理使用 `FOR UPDATE SKIP LOCKED`，清空标题、正文和来源候选外键，保留 ID、所有者、版本和 `purged_at`。
 
-- [ ] **Step 4: 运行记忆测试与一次清理命令**
+- [x] **Step 4: 运行记忆测试与一次清理命令**
 
 Run: `cd server && uv run pytest -q tests/test_memories.py tests/test_review_cleanup.py && uv run python -m itime.review.cleanup_worker --once`
 
 Expected: PASS；无到期数据时命令正常退出且处理数为 0。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/review server/src/itime/main.py \
