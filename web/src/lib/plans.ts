@@ -130,6 +130,14 @@ export interface Plan {
   updated_at: string
 }
 
+export interface PlanningBlockProjection extends PlanBlock {
+  source: 'plan'
+  plan_id: string
+  plan_version_id: string
+  plan_version: number
+  plan_source: 'ai' | 'manual'
+}
+
 interface ContextBlock {
   id: string
   position: number
@@ -448,12 +456,6 @@ export async function listPlanningBlocks(start: string, end: string) {
     start: string
     end: string
     time_zone: string
-    items: Array<PlanBlock & {
-      source: 'plan'
-      plan_id: string
-      plan_version_id: string
-      plan_version: number
-      plan_source: 'ai' | 'manual'
-    }>
+    items: PlanningBlockProjection[]
   }>(`/planning/blocks?${params}`)
 }

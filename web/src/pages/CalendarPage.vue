@@ -38,6 +38,7 @@ import {
   refreshSession,
 } from '../lib/auth'
 import { listTaskOccurrences } from '../lib/task-schedules'
+import { listPlanningBlocks, type PlanningBlockProjection } from '../lib/plans'
 import '../calendar.css'
 
 const router = useRouter()
@@ -63,6 +64,7 @@ const editingSeries = ref<CalendarSeries | null>(null)
 const splittingOccurrence = ref<CalendarOccurrence | null>(null)
 const filtersOpen = ref(false)
 const showTasks = ref(true)
+const showPlans = ref(true)
 const showCourses = ref(true)
 const showFixed = ref(true)
 const showSubscriptions = ref(true)
@@ -172,6 +174,8 @@ const visibleItems = computed(() => calendarItems.value.filter(item => (
   (
     item.kind === 'task'
       ? showTasks.value
+      : item.kind === 'plan'
+        ? showPlans.value
       : item.calendar?.source_type === 'subscription'
         ? showSubscriptions.value
         : item.kind === 'course'
@@ -231,6 +235,7 @@ async function initialize() {
 function mergeOccurrences(
   calendar: Awaited<ReturnType<typeof listCalendarOccurrences>>['items'],
   tasks: Awaited<ReturnType<typeof listTaskOccurrences>>['items'],
+  plans: PlanningBlockProjection[],
 ) {
   const displayTimeZone = settings.value?.time_zone ?? browserTimeZone
   const merged: CalendarDisplayItem[] = [
@@ -275,6 +280,22 @@ function mergeOccurrences(
         task: item,
       }
     }),
+    ...plans.map(item => ({
+      id: `plan:${item.id}`,
+      source: 'plan' as const,
+      date: item.local_date,
+      end_date: item.local_date,
+      time: item.local_starts_at,
+      end_time: item.local_ends_at,
+      title: item.task_title_snapshot,
+      subtitle: item.step_titles_snapshot.length
+        ? item.step_titles_snapshot.join('、')
+        : `计划第 ${item.plan_version} 版`,
+      state: 'scheduled' as const,
+      kind: 'plan' as const,
+      conflict: false,
+      plan: item,
+    })),
   ]
   return merged.sort((left, right) => (
     left.date.localeCompare(right.date)
@@ -289,12 +310,17 @@ async function loadOccurrences() {
   loading.value = true
   pageError.value = null
   try {
-    const [calendarResult, taskResult] = await Promise.all([
+    const [calendarResult, taskResult, planResult] = await Promise.all([
       listCalendarOccurrences(range.value),
       listTaskOccurrences(range.value.start, range.value.end),
+      listPlanningBlocks(range.value.start, range.value.end),
     ])
     if (revision !== loadRevision) return
-    calendarItems.value = mergeOccurrences(calendarResult.items, taskResult.items)
+    calendarItems.value = mergeOccurrences(
+      calendarResult.items,
+      taskResult.items,
+      planResult.items,
+    )
     settings.value = {
       ...settings.value,
       time_zone: calendarResult.time_zone,
@@ -535,6 +561,7 @@ watch(pageError, value => {
           <label class="checkbox-label"><input v-model="showFixed" type="checkbox" />固定安排</label>
           <label class="checkbox-label"><input v-model="showSubscriptions" type="checkbox" />订阅</label>
           <label class="checkbox-label"><input v-model="showTasks" type="checkbox" />任务截止</label>
+          <label class="checkbox-label"><input v-model="showPlans" type="checkbox" />计划块</label>
           <label class="checkbox-label"><input v-model="showCancelled" type="checkbox" />已取消/跳过</label>
         </div>
 

@@ -1,5 +1,6 @@
 import { api } from './api'
 import type { Recurrence, TaskOccurrence } from './task-schedules'
+import type { PlanningBlockProjection } from './plans'
 
 export interface TimeSettings {
   initialized: boolean
@@ -194,7 +195,7 @@ export interface UnifiedCalendarData {
 
 export interface CalendarDisplayItem {
   id: string
-  source: 'calendar' | 'task'
+  source: 'calendar' | 'task' | 'plan'
   date: string
   end_date: string
   time: string | null
@@ -202,10 +203,11 @@ export interface CalendarDisplayItem {
   title: string
   subtitle: string
   state: 'scheduled' | 'cancelled' | 'source_cancelled' | 'open' | 'completed' | 'skipped'
-  kind: 'course' | 'fixed' | 'task'
+  kind: 'course' | 'fixed' | 'task' | 'plan'
   conflict: boolean
   calendar?: CalendarOccurrence
   task?: TaskOccurrence
+  plan?: PlanningBlockProjection
 }
 
 export async function getTimeSettings() {

@@ -290,6 +290,13 @@
   color: #6f531f;
 }
 
+.calendar-event.event-plan {
+  border-color: #b4ced0;
+  border-left-color: #39777c;
+  background: #eaf4f4;
+  color: #28575b;
+}
+
 .calendar-event.cancelled {
   border-color: var(--border);
   border-left-color: var(--muted);
@@ -1585,6 +1592,20 @@
     text-align: left;
   }
 
+  .agenda-event.event-course {
+    border-left-color: #426b9c;
+  }
+
+  .agenda-event.event-fixed {
+    border-left-color: #98732e;
+  }
+
+  .agenda-event.event-plan {
+    border-left-color: #39777c;
+    background: #eaf4f4;
+    color: #28575b;
+  }
+
   .agenda-event:hover,
   .agenda-event.selected {
     background: var(--selected);
@@ -1826,6 +1847,14 @@
     border-left-color: #d0aa61;
     background: #3a3428;
     color: #e7cd98;
+  }
+
+  :root:not([data-theme="light"]) .calendar-event.event-plan,
+  :root:not([data-theme="light"]) .agenda-event.event-plan {
+    border-color: #496b6d;
+    border-left-color: #85c3c7;
+    background: #263c3d;
+    color: #b9dedf;
   }
 }
 

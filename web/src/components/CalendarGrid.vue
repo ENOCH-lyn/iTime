@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, CheckCircle2, Clock3, MapPin } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, Clock3, ListChecks, MapPin } from 'lucide-vue-next'
 import { computed } from 'vue'
 import type { CalendarDisplayItem } from '../lib/calendar'
 
@@ -96,7 +96,9 @@ const visibleDays = computed(() => props.days.filter(day => (
             <span class="event-time">{{ timeLabel(item) }}</span>
             <strong>{{ item.title }}</strong>
             <span v-if="view === 'week' && item.subtitle" class="event-subtitle">
-              <MapPin v-if="item.kind !== 'task'" :size="12" aria-hidden="true" />{{ item.subtitle }}
+              <ListChecks v-if="item.kind === 'plan'" :size="12" aria-hidden="true" />
+              <MapPin v-else-if="item.kind !== 'task'" :size="12" aria-hidden="true" />
+              {{ item.subtitle }}
             </span>
             <AlertTriangle v-if="item.conflict" class="event-alert" :size="14" aria-label="存在时间冲突" />
             <CheckCircle2 v-else-if="item.state === 'completed'" class="event-complete" :size="14" aria-label="已完成" />
@@ -119,10 +121,13 @@ const visibleDays = computed(() => props.days.filter(day => (
             type="button"
             :data-event-id="item.id"
             class="agenda-event"
-            :class="{
-              selected: selectedId === item.id,
-              cancelled: ['cancelled', 'source_cancelled', 'skipped'].includes(item.state),
-            }"
+            :class="[
+              `event-${item.kind}`,
+              {
+                selected: selectedId === item.id,
+                cancelled: ['cancelled', 'source_cancelled', 'skipped'].includes(item.state),
+              },
+            ]"
             @click="emit('select', item)"
           >
             <span class="agenda-time"><Clock3 :size="15" aria-hidden="true" />{{ timeLabel(item) }}</span>

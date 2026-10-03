@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleSlash2,
+  ListChecks,
   MapPin,
   Pencil,
   RotateCcw,
@@ -56,6 +57,7 @@ const taskMove = reactive({ date: '', time: '' })
 
 const occurrence = computed(() => props.item?.calendar ?? null)
 const task = computed(() => props.item?.task ?? null)
+const plan = computed(() => props.item?.plan ?? null)
 const canSplit = computed(() => (
   occurrence.value?.occurrence_type === 'base'
   && occurrence.value.source_type !== 'subscription'
@@ -398,6 +400,8 @@ async function saveTaskMove() {
                 ? '课程'
                 : item.kind === 'fixed'
                   ? '固定安排'
+                  : item.kind === 'plan'
+                    ? '计划块'
                   : '任务截止' }}
           </p>
           <h1 tabindex="-1">{{ item.title }}</h1>
@@ -418,10 +422,17 @@ async function saveTaskMove() {
               {{ allDayLabel(occurrence) }}
             </dd>
             <dd v-else-if="occurrence">{{ dateTime(occurrence.start_at) }} 至 {{ dateTime(occurrence.end_at) }}</dd>
+            <dd v-else-if="plan">
+              {{ item.date }} {{ item.time?.slice(0, 5) }} 至 {{ item.end_time?.slice(0, 5) }}
+            </dd>
             <dd v-else>{{ item.date }} {{ item.time?.slice(0, 5) || '全天' }}</dd>
           </div>
           <div v-if="item.subtitle">
-            <dt><MapPin :size="17" aria-hidden="true" />{{ item.kind === 'task' ? '说明' : '地点' }}</dt>
+            <dt>
+              <ListChecks v-if="plan" :size="17" aria-hidden="true" />
+              <MapPin v-else :size="17" aria-hidden="true" />
+              {{ plan ? '步骤' : item.kind === 'task' ? '说明' : '地点' }}
+            </dt>
             <dd>{{ item.subtitle }}</dd>
           </div>
           <div>
@@ -440,10 +451,29 @@ async function saveTaskMove() {
             <dt>来源</dt>
             <dd>只读 ICS 订阅</dd>
           </div>
+          <div v-if="plan">
+            <dt>计划来源</dt>
+            <dd>{{ plan.plan_source === 'ai' ? 'AI 提案确认' : '手工调整' }}</dd>
+          </div>
+          <div v-if="plan">
+            <dt>计划版本</dt>
+            <dd>第 {{ plan.plan_version }} 版</dd>
+          </div>
         </dl>
 
         <p v-if="occurrence?.description" class="occurrence-description">{{ occurrence.description }}</p>
         <p v-if="task?.description" class="occurrence-description">{{ task.description }}</p>
+
+        <template v-if="plan">
+          <div class="occurrence-actions">
+            <RouterLink
+              :to="{ path: '/plans', query: { scope: 'week', date: plan.local_date } }"
+              class="button secondary"
+            >
+              <CalendarClock :size="17" aria-hidden="true" />前往规划页
+            </RouterLink>
+          </div>
+        </template>
 
         <template v-if="occurrence">
           <div v-if="occurrence.source_type === 'subscription'" class="occurrence-actions">

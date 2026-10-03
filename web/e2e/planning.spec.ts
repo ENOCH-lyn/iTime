@@ -298,6 +298,25 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, '320-large-dark')
   }
+
+  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await expect(page).toHaveURL('/calendar')
+  await page.getByLabel('跳转日期').fill(targetDate)
+  await expect(page.getByText('正在读取日历…')).toHaveCount(0)
+  const planEvent = page.locator('.event-plan:visible').first()
+  await expect(planEvent).toBeVisible()
+  const projectedTitle = await planEvent.locator('strong').innerText()
+  await planEvent.click()
+  const detail = page.locator('.occurrence-panel')
+  await expect(detail.getByText('计划块', { exact: true })).toBeVisible()
+  await expect(detail.getByRole('heading', { name: projectedTitle, exact: true })).toBeVisible()
+  await expect(detail.getByText('手工调整', { exact: true })).toBeVisible()
+  await expect(detail.getByText('第 2 版', { exact: true })).toBeVisible()
+  await expect(detail.getByRole('button', { name: '标为完成', exact: true })).toHaveCount(0)
+  await expect(detail.getByRole('link', { name: '前往规划页', exact: true })).toBeVisible()
+  expect(await viewportOverflow(page)).toEqual([])
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'calendar-projection')
 })
 
 test('生成可以取消且提案可以明确拒绝', async ({ page, request }, info) => {
