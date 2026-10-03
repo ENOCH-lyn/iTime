@@ -51,6 +51,7 @@
 `focus_sessions` 保存当前状态和历史展示快照：
 
 - `id`、`owner_id`
+- `source=timer|manual`
 - 可选 `task_id`、`occurrence_key`、`scheduled_block_id`
 - `title_snapshot`、`task_title_snapshot`、`step_snapshots`
 - `mode=stopwatch|countdown`
