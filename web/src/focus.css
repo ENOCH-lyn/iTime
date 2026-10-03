@@ -178,6 +178,10 @@
   padding-top: 28px;
 }
 
+.focus-content.has-focus {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+}
+
 .focus-setup {
   grid-column: 1;
   padding-right: 40px;
@@ -247,6 +251,53 @@
   min-width: 0;
   padding: 26px 0 36px;
   text-align: center;
+}
+
+.focus-content.has-focus .focus-timer,
+.focus-content.has-focus .focus-record-actions {
+  grid-column: 1;
+}
+
+.focus-support {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  padding-left: 36px;
+  border-left: 1px solid var(--border);
+}
+
+.focus-support-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.focus-support-tabs button {
+  min-height: 38px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.focus-support-tabs button[aria-selected="true"] {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.focus-support-tabs button:only-child {
+  grid-column: 1 / -1;
+}
+
+.focus-support .focus-progress,
+.focus-support .difficulty-panel {
+  grid-column: auto;
+  margin-top: 22px;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .focus-timer-heading {
@@ -343,6 +394,120 @@
   margin-top: 10px;
   padding-top: 28px;
   border-top: 1px solid var(--border);
+}
+
+.difficulty-panel {
+  grid-column: 2;
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+
+.difficulty-panel > .status {
+  margin: 16px 0 0;
+}
+
+.difficulty-scope {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.difficulty-scope button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.difficulty-scope button.selected {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.difficulty-form {
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.difficulty-form textarea,
+.difficulty-form input,
+.difficulty-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.difficulty-form textarea {
+  resize: vertical;
+}
+
+.difficulty-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.difficulty-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.difficulty-form-actions .button {
+  min-height: 42px;
+  padding: 8px 14px;
+}
+
+.difficulty-list {
+  padding: 0;
+  margin: 22px 0 0;
+  list-style: none;
+}
+
+.difficulty-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 15px 0;
+  border-top: 1px solid var(--border);
+}
+
+.difficulty-copy {
+  min-width: 0;
+}
+
+.difficulty-copy p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.difficulty-copy small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: .75rem;
+  overflow-wrap: anywhere;
+}
+
+.difficulty-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.difficulty-actions .small-icon-button {
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
 }
 
 .focus-record-actions {
@@ -522,6 +687,20 @@
   margin-top: 26px;
 }
 
+@media (max-width: 1150px) {
+  .focus-content.has-focus {
+    display: block;
+  }
+
+  .focus-support {
+    margin-top: 12px;
+    padding-top: 28px;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
+
 @media (max-width: 900px) {
   .focus-workspace {
     grid-template-columns: 1fr;
@@ -658,6 +837,19 @@
 
   .focus-record-actions {
     margin-top: 0;
+  }
+
+  .difficulty-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .difficulty-form-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .difficulty-form-actions .button {
+    width: 100%;
   }
 
   .focus-timer-heading h1 {

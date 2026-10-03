@@ -357,3 +357,16 @@ test('列表失败可恢复，离线创建保留输入并在恢复后只创建�
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, '320-large-font-list')
 })
+
+test('任务详情可携带任务标识进入专注', async ({ page, request }) => {
+  await account(page, request)
+  await createSimpleTask(page, '从任务详情开始专注')
+  await openTask(page, '从任务详情开始专注')
+  await page.getByRole('link', { name: '开始专注', exact: true }).click()
+  await expect(page).toHaveURL(/\/focus\?task=/)
+  await expect(page.getByLabel('关联任务 可选')).toHaveValue(/.+/)
+  await page.getByRole('button', { name: '开始专注', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: '从任务详情开始专注', exact: true }),
+  ).toBeVisible()
+})

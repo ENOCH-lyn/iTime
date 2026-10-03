@@ -13,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Timer,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -516,6 +517,14 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
           <h1>{{ creating ? '记下一件要做的事' : '任务详情' }}</h1>
         </div>
         <div class="task-editor-actions">
+          <RouterLink
+            v-if="working && editable && working.status === 'open'"
+            :to="{ path: '/focus', query: { task: working.id } }"
+            class="button secondary"
+          >
+            <Timer :size="17" aria-hidden="true" />
+            开始专注
+          </RouterLink>
           <button v-if="working && editable && working.schedule.recurrence.frequency === 'none'"
             type="button" class="button secondary"
             :disabled="!!pendingAction" @click="toggleCompletion">

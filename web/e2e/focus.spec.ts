@@ -457,3 +457,55 @@ test('队列按账号隔离并执行 100 项与 7 天边界', async ({
   await expect(page.getByRole('alert')).toContainText('最多保留 100 项')
   await expect(page.getByText('100 项待同步')).toBeVisible()
 })
+
+test('困难可独立或关联专注记录并完成编辑删除恢复', async ({
+  page,
+  request,
+}, info) => {
+  const csrf = await account(page, request)
+  const task = await createTask(page, csrf)
+  await page.goto('/focus')
+  await page.getByLabel('遇到了什么困难？').fill('还没有确定从哪一章开始')
+  await page.getByRole('button', { name: '记录困难', exact: true }).click()
+  await expect(page.getByText('困难已记录。')).toBeVisible()
+  await expect(page.getByText('还没有确定从哪一章开始', { exact: true })).toBeVisible()
+
+  await page.getByLabel('关联任务 可选').selectOption(task.id)
+  await page.getByRole('button', { name: '开始专注', exact: true }).click()
+  await expect(page.getByRole('heading', { name: task.title, exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '困难', exact: true }).click()
+  await page.getByLabel('遇到了什么困难？').fill('例题的条件很多，需要重新拆分推导步骤。')
+  await page.getByRole('button', { name: '记录困难', exact: true }).click()
+  await expect(page.getByText('困难已记录。')).toBeVisible()
+
+  await page.getByRole('button', {
+    name: '编辑困难 例题的条件很多，需要重新拆分推导步骤。',
+  }).click()
+  await page.getByRole('textbox', { name: '编辑困难', exact: true })
+    .fill('例题条件之间的关系还不清楚。')
+  await page.getByLabel('分类 可选').fill('理解')
+  await page.getByLabel('感受 可选').fill('困惑')
+  await page.getByRole('button', { name: '保存困难', exact: true }).click()
+  await expect(page.getByText('困难记录已保存。')).toBeVisible()
+  await expect(page.getByText('例题条件之间的关系还不清楚。', { exact: true })).toBeVisible()
+
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', {
+    name: '删除困难 例题条件之间的关系还不清楚。',
+  }).click()
+  await expect(page.getByText('困难已移到回收站，将保留 30 天。')).toBeVisible()
+  await page.getByRole('button', { name: '回收站', exact: true }).click()
+  await expect(page.getByText('例题条件之间的关系还不清楚。', { exact: true })).toBeVisible()
+  await expect(page.getByText(/将于 .* 清理/)).toBeVisible()
+  await page.getByRole('button', {
+    name: '恢复困难 例题条件之间的关系还不清楚。',
+  }).click()
+  await expect(page.getByText('困难记录已恢复。')).toBeVisible()
+  await page.getByRole('button', { name: '记录', exact: true }).click()
+  const aiLink = page.getByRole('link', {
+    name: '带到 AI 对话 例题条件之间的关系还不清楚。',
+  })
+  await expect(aiLink).toHaveAttribute('href', /^\/ai\?difficulty=/)
+  await screenshot(page, info, 'difficulties')
+  await assertQuality(page)
+})

@@ -381,10 +381,16 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   await expect(detail.getByText('手工调整', { exact: true })).toBeVisible()
   await expect(detail.getByText('第 3 版', { exact: true })).toBeVisible()
   await expect(detail.getByRole('button', { name: '标为完成', exact: true })).toHaveCount(0)
+  const focusLink = detail.getByRole('link', { name: '开始专注', exact: true })
+  await expect(focusLink).toHaveAttribute('href', /^\/focus\?block=/)
   await expect(detail.getByRole('link', { name: '前往规划页', exact: true })).toBeVisible()
   expect(await viewportOverflow(page)).toEqual([])
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, 'calendar-projection')
+  await focusLink.click()
+  await expect(page).toHaveURL(/\/focus\?block=/)
+  await page.getByRole('button', { name: '开始专注', exact: true }).click()
+  await expect(page.getByRole('heading', { name: projectedTitle, exact: true })).toBeVisible()
 })
 
 test('生成可以取消且提案可以明确拒绝', async ({ page, request }, info) => {

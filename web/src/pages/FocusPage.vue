@@ -10,6 +10,7 @@ import {
   RefreshCcw,
   X,
 } from 'lucide-vue-next'
+import DifficultyPanel from '../components/DifficultyPanel.vue'
 import FocusHistory from '../components/FocusHistory.vue'
 import FocusSetup from '../components/FocusSetup.vue'
 import FocusTaskProgress from '../components/FocusTaskProgress.vue'
@@ -92,6 +93,7 @@ const conflictOperation = ref<QueuedFocusOperation | null>(null)
 const conflictFocus = ref<FocusSession | null>(null)
 const conflictError = ref<Failure | null>(null)
 const revisionFromConflict = ref(false)
+const supportTab = ref<'steps' | 'difficulties'>('difficulties')
 let elapsedAnchor = 0
 let monotonicAnchor = performance.now()
 let timer: number | null = null
@@ -146,6 +148,9 @@ const elapsedSeconds = computed(() => {
 
 watch(authError, value => {
   if (value?.code === 'unauthenticated') void router.replace('/login')
+})
+watch(() => shownFocus.value?.id, () => {
+  supportTab.value = shownFocus.value?.task_id ? 'steps' : 'difficulties'
 })
 
 onMounted(async () => {
@@ -902,7 +907,7 @@ async function logout() {
       </div>
 
       <div v-if="loading" class="focus-loading" role="status">正在读取专注状态...</div>
-      <div v-else class="focus-content">
+      <div v-else class="focus-content" :class="{ 'has-focus': !!shownFocus }">
         <FocusSetup
           v-if="!current"
           v-model:selected-task-id="selectedTaskId"
@@ -934,17 +939,37 @@ async function logout() {
             修订记录
           </button>
         </div>
-        <FocusTaskProgress
-          v-if="shownFocus"
-          :focus="shownFocus"
-          :pending="actionPending"
-          :completion-blocked="pendingOperations.length > 0"
-          @progress="saveProgress"
-          @complete="completeTask"
-        />
-        <p v-if="!shownFocus && !current" class="focus-empty focus-main-empty">
-          选择任务或输入内容后开始。
-        </p>
+        <section v-if="shownFocus" class="focus-support" aria-label="专注辅助信息">
+          <div class="focus-support-tabs" role="tablist" aria-label="专注详情">
+            <button
+              v-if="shownFocus.task_id"
+              type="button"
+              role="tab"
+              :aria-selected="supportTab === 'steps'"
+              @click="supportTab = 'steps'"
+            >步骤</button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="supportTab === 'difficulties'"
+              @click="supportTab = 'difficulties'"
+            >困难</button>
+          </div>
+          <FocusTaskProgress
+            v-if="supportTab === 'steps' && shownFocus.task_id"
+            :focus="shownFocus"
+            :pending="actionPending"
+            :completion-blocked="pendingOperations.length > 0"
+            @progress="saveProgress"
+            @complete="completeTask"
+          />
+          <DifficultyPanel
+            v-else
+            :focus="shownFocus"
+            :tasks="tasks"
+          />
+        </section>
+        <DifficultyPanel v-else :focus="null" :tasks="tasks" />
       </div>
     </main>
 

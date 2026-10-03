@@ -658,14 +658,12 @@ git commit -m "feat: 支持专注离线恢复"
 - Modify: `web/src/components/CalendarOccurrencePanel.vue`
 - Modify: `web/src/pages/AIPage.vue`
 - Modify: `web/src/focus.css`
-- Modify: `web/src/task-workspace.css`
-- Modify: `web/src/calendar.css`
 - Test: `web/e2e/focus.spec.ts`
 - Test: `web/e2e/ai-conversations.spec.ts`
 - Test: `web/e2e/tasks.spec.ts`
-- Test: `web/e2e/calendar.spec.ts`
+- Test: `web/e2e/planning.spec.ts`
 
-- [ ] **Step 1: 写跨页面浏览器失败测试**
+- [x] **Step 1: 写跨页面浏览器失败测试**
 
 覆盖：
 
@@ -679,18 +677,18 @@ git commit -m "feat: 支持专注离线恢复"
 长困难、长任务名、请求编号和回收时间响应式显示
 ```
 
-- [ ] **Step 2: 实现困难面板**
+- [x] **Step 2: 实现困难面板**
 
 困难面板使用活动/回收站分段控件、一个主要文本框、可选短标签输入和明确保存。列表操作使用编辑、删除、恢复和消息图标；图标按钮提供 tooltip 和可访问名称。
 
-- [ ] **Step 3: 实现任务、日历和 AI 联通**
+- [x] **Step 3: 实现任务、日历和 AI 联通**
 
 - 任务详情入口路由到 `/focus?task=<id>`。
 - 计划块详情路由到 `/focus?block=<id>`。
 - `/ai?difficulty=<id>` 鉴权读取困难并填入普通回复草稿；加载完成后移除 query，避免重复填入。
 - 不把困难正文写入 URL、localStorage 或普通控制台。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 
@@ -698,7 +696,7 @@ Run:
 cd web
 pnpm build
 pnpm exec playwright test e2e/focus.spec.ts e2e/ai-conversations.spec.ts \
-  e2e/tasks.spec.ts e2e/calendar.spec.ts
+  e2e/tasks.spec.ts e2e/planning.spec.ts e2e/calendar.spec.ts
 ```
 
 ```bash

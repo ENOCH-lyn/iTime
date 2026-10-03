@@ -11,6 +11,7 @@ import {
   Pencil,
   RotateCcw,
   SlidersHorizontal,
+  Timer,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
@@ -466,6 +467,13 @@ async function saveTaskMove() {
 
         <template v-if="plan">
           <div class="occurrence-actions">
+            <RouterLink
+              v-if="plan.id"
+              :to="{ path: '/focus', query: { block: plan.id } }"
+              class="button"
+            >
+              <Timer :size="17" aria-hidden="true" />开始专注
+            </RouterLink>
             <RouterLink
               :to="{ path: '/plans', query: { scope: 'week', date: plan.local_date } }"
               class="button secondary"

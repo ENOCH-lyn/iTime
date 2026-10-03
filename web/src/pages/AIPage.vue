@@ -29,6 +29,7 @@ import {
   type ConversationPage,
   type ConversationResponseMode,
 } from '../lib/conversations'
+import { getDifficulty } from '../lib/execution'
 import type { PlanningFields } from '../lib/plans'
 import '../ai-workspace.css'
 
@@ -106,6 +107,10 @@ onMounted(async () => {
     ? conversations.value.find(item => item.id === route.query.conversation)
     : null
   if (requested) await selectConversation(requested)
+  const difficultyId = typeof route.query.difficulty === 'string'
+    ? route.query.difficulty
+    : null
+  if (difficultyId) await prepareDifficultyDraft(difficultyId)
   window.addEventListener('focus', recoverOnFocus)
   document.addEventListener('visibilitychange', recoverOnFocus)
 })
@@ -306,6 +311,36 @@ async function createNewConversation() {
     error.value = failure(reason)
   } finally {
     creating.value = false
+  }
+}
+
+async function prepareDifficultyDraft(difficultyId: string) {
+  try {
+    const difficulty = await getDifficulty(difficultyId)
+    if (difficulty.lifecycle !== 'active') {
+      error.value = localFailure('这条困难记录已不在活动列表中。')
+      return
+    }
+    if (!selected.value) await createNewConversation()
+    if (!selected.value) return
+    responseMode.value = 'text'
+    composer.value = [
+      '我遇到了这个困难：',
+      difficulty.content,
+      difficulty.category ? `分类：${difficulty.category}` : '',
+      difficulty.emotion ? `感受：${difficulty.emotion}` : '',
+      difficulty.task_title ? `关联任务：${difficulty.task_title}` : '',
+    ].filter(Boolean).join('\n')
+    success.value = '困难已放入草稿，发送前可以继续修改。'
+    await nextTick()
+    document.getElementById('conversation-message')?.focus()
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    await router.replace({
+      path: '/ai',
+      query: selected.value ? { conversation: selected.value.id } : {},
+    })
   }
 }
 

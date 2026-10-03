@@ -121,6 +121,21 @@ export interface DifficultyRecord {
   updated_at: string
 }
 
+export interface DifficultyDraft {
+  task_id: string | null
+  focus_session_id: string | null
+  occurrence_key: string | null
+  content: string
+  category: string | null
+  emotion: string | null
+  occurred_at: string | null
+}
+
+export interface DifficultyPage {
+  items: DifficultyRecord[]
+  next_cursor: Cursor | null
+}
+
 export async function getCurrentFocus() {
   return api<{ focus: FocusSession | null; server_now: string }>(
     '/focus-sessions/current',
@@ -244,4 +259,75 @@ export async function reviseFocus(
     },
     'PUT',
   )
+}
+
+export async function listDifficulties(
+  scope: 'active' | 'trashed',
+  cursor?: Cursor | null,
+) {
+  const params = new URLSearchParams({ scope, limit: '30' })
+  if (cursor) {
+    params.set('before_time', cursor.before_time)
+    params.set('before_id', cursor.before_id)
+  }
+  return api<DifficultyPage>(`/difficulties?${params}`)
+}
+
+export async function getDifficulty(id: string) {
+  return (await api<{ difficulty: DifficultyRecord }>(
+    `/difficulties/${id}`,
+  )).difficulty
+}
+
+export async function createDifficulty(
+  operationId: string,
+  draft: DifficultyDraft,
+) {
+  return (await api<{ operation_id: string; difficulty: DifficultyRecord }>(
+    '/difficulties',
+    { operation_id: operationId, ...draft },
+  )).difficulty
+}
+
+export async function updateDifficulty(
+  difficulty: Pick<DifficultyRecord, 'id' | 'version'>,
+  operationId: string,
+  draft: DifficultyDraft,
+) {
+  return (await api<{ operation_id: string; difficulty: DifficultyRecord }>(
+    `/difficulties/${difficulty.id}`,
+    {
+      operation_id: operationId,
+      expected_version: difficulty.version,
+      ...draft,
+    },
+    'PUT',
+  )).difficulty
+}
+
+export async function deleteDifficulty(
+  difficulty: Pick<DifficultyRecord, 'id' | 'version'>,
+  operationId: string,
+) {
+  return (await api<{ operation_id: string; difficulty: DifficultyRecord }>(
+    `/difficulties/${difficulty.id}`,
+    {
+      operation_id: operationId,
+      expected_version: difficulty.version,
+    },
+    'DELETE',
+  )).difficulty
+}
+
+export async function restoreDifficulty(
+  difficulty: Pick<DifficultyRecord, 'id' | 'version'>,
+  operationId: string,
+) {
+  return (await api<{ operation_id: string; difficulty: DifficultyRecord }>(
+    `/difficulties/${difficulty.id}/restore`,
+    {
+      operation_id: operationId,
+      expected_version: difficulty.version,
+    },
+  )).difficulty
 }

@@ -311,3 +311,74 @@ test('取消保留已生成片段，失败状态可重新发送', async ({
     .toBe(true)
   await screenshot(page, info, 'cancel-and-failure')
 })
+
+test('困难链接只填普通对话草稿，用户发送后才创建作业', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  const session = await (await page.request.get('/api/v1/auth/me')).json()
+  const currentSettings = (await (
+    await page.request.get('/api/v1/time-settings')
+  ).json()).settings
+  const settings = await page.request.put('/api/v1/time-settings', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      expected_version: currentSettings.version,
+      time_zone: 'Asia/Shanghai',
+      week_starts_on: 1,
+      activity_day_start_minute: 240,
+    },
+  })
+  expect(settings.ok()).toBeTruthy()
+  const created = await page.request.post('/api/v1/difficulties', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      task_id: null,
+      focus_session_id: null,
+      occurrence_key: null,
+      content: '公式推导到第三步时无法理解变量替换。',
+      category: '理解',
+      emotion: '困惑',
+      occurred_at: null,
+    },
+  })
+  expect(created.ok()).toBeTruthy()
+  const difficulty = (await created.json()).difficulty
+  let messageRequests = 0
+  page.on('request', current => {
+    if (
+      current.method() === 'POST'
+      && /\/api\/v1\/ai\/conversations\/[^/]+\/messages$/.test(current.url())
+    ) messageRequests += 1
+  })
+
+  await page.goto(`/ai?difficulty=${difficulty.id}`)
+  await expect(page).toHaveURL(/\/ai\?conversation=/)
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue(
+    '我遇到了这个困难：\n公式推导到第三步时无法理解变量替换。\n分类：理解\n感受：困惑',
+  )
+  await expect(
+    page.locator('.ai-main').getByText('困难已放入草稿，发送前可以继续修改。'),
+  ).toBeVisible()
+  expect(messageRequests).toBe(0)
+  const before = await page.request.get('/api/v1/ai/jobs?capability=conversation&limit=20')
+  expect((await before.json()).items).toHaveLength(0)
+
+  await page.getByRole('button', { name: '发送消息', exact: true }).click()
+  await expect.poll(() => messageRequests).toBe(1)
+  await expect.poll(async () => {
+    const after = await page.request.get(
+      '/api/v1/ai/jobs?capability=conversation&limit=20',
+    )
+    return (await after.json()).items.length
+  }).toBe(1)
+  await expect(
+    page.getByRole('list', { name: '会话消息' })
+      .getByText(/公式推导到第三步时无法理解变量替换。/),
+  ).toBeVisible()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'difficulty-draft-sent')
+})
