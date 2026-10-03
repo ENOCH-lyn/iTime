@@ -22,6 +22,7 @@ from itime.ai.conversation_service import cleanup_expired_job_events
 from itime.ai.worker import process_one
 from itime.config import Settings
 from itime.database import Database
+from itime.quota.reconciliation import reconcile_one
 from tests.conftest import SERVER, LiveServer, isolated_database, psycopg_url
 from tests.quota_helpers import ensure_quota_policy
 from tests.test_calendar_series import create_account
@@ -440,6 +441,18 @@ def run_process_once(
     )
 
 
+def run_reconcile_once(database_url: str) -> bool:
+    async def execute() -> bool:
+        settings = Settings(database_url=database_url, environment="test")
+        database = Database(settings)
+        try:
+            return await reconcile_one(database, settings)
+        finally:
+            await database.close()
+
+    return asyncio.run(execute())
+
+
 def make_job_due(database_url: str, job_id: str) -> None:
     with psycopg.connect(
         psycopg_url(database_url),
@@ -825,7 +838,7 @@ def test_queued_deadline_uses_conversation_terminal_projection(
             (job_id,),
         )
 
-    assert run_process_once(conversation_worker_database_url)
+    assert run_reconcile_once(conversation_worker_database_url)
     snapshot = job_snapshot(conversation_worker_database_url, job_id)
     assert_event_consistency(snapshot)
     assert snapshot["job"]["status"] == "timed_out"

@@ -157,6 +157,7 @@ async def claim_next_job(
     capability: str | None = None,
     lease_seconds: int = 300,
     body_log_retention_days: int = 7,
+    terminal_only: bool = False,
 ) -> ClaimedJob | None:
     for _ in range(20):
         current = now()
@@ -181,6 +182,13 @@ async def claim_next_job(
             )
             if capability is not None:
                 statement = statement.where(AIJob.capability == capability)
+            if terminal_only:
+                statement = statement.where(
+                    or_(
+                        AIJob.deadline_at <= current,
+                        AIJob.attempt_count >= AIJob.max_attempts,
+                    )
+                )
             job = await session.scalar(statement)
             if job is None:
                 return None
