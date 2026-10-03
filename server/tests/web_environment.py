@@ -335,6 +335,7 @@ async def seed_admins(
                 "users",
                 "management-errors",
                 "ai-config",
+                "governance",
             ):
                 email = f"ui-admin-{project}-{role}@example.com"
                 await create_admin(database, security, settings, email, ADMIN_PASSWORD)
