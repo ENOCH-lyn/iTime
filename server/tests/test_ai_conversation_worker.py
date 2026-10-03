@@ -552,6 +552,19 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
             """,
             (job_id,),
         ).fetchall()
+        sync_events = connection.execute(
+            """
+            SELECT event.action, event.entity_version
+            FROM change_events AS event
+            JOIN ai_jobs AS job
+              ON job.owner_id=event.owner_id
+             AND job.conversation_id=event.entity_id
+            WHERE job.id=%s
+              AND event.entity_type='conversation'
+            ORDER BY event.sequence
+            """,
+            (job_id,),
+        ).fetchall()
     assert job is not None
     assert generation is not None
     assert message is not None
@@ -564,6 +577,7 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
         "costs": costs,
         "reservation": reservation,
         "ledger": ledger,
+        "sync_events": sync_events,
     }
 
 
@@ -653,6 +667,11 @@ def assert_success(
             "currency": "CNY",
             "usage_source": expected_usage_source,
         }
+    ]
+    assert snapshot["sync_events"] == [
+        {"action": "created", "entity_version": 1},
+        {"action": "updated", "entity_version": 2},
+        {"action": "updated", "entity_version": 3},
     ]
 
     assert_event_consistency(snapshot)
@@ -851,6 +870,11 @@ def test_queued_deadline_uses_conversation_terminal_projection(
     assert snapshot["reservation"]["status"] == "released"
     assert snapshot["reservation"]["release_reason"] == "timed_out"
     assert snapshot["ledger"] == []
+    assert snapshot["sync_events"] == [
+        {"action": "created", "entity_version": 1},
+        {"action": "updated", "entity_version": 2},
+        {"action": "updated", "entity_version": 3},
+    ]
     with psycopg.connect(
         psycopg_url(conversation_worker_database_url)
     ) as connection:
@@ -970,6 +994,11 @@ def test_cancel_wins_against_late_delta_and_completion(
     assert snapshot["reservation"]["status"] == "released"
     assert snapshot["reservation"]["release_reason"] == "cancelled"
     assert snapshot["ledger"] == []
+    assert snapshot["sync_events"] == [
+        {"action": "created", "entity_version": 1},
+        {"action": "updated", "entity_version": 2},
+        {"action": "updated", "entity_version": 3},
+    ]
     assert snapshot["events"][-1]["kind"] == "job_state"
     assert snapshot["events"][-1]["generation"] == 1
     assert snapshot["events"][-1]["payload"]["status"] == "cancelled"
@@ -1064,6 +1093,11 @@ def test_non_retryable_responses_finish_message_attempt_job_and_event(
     assert snapshot["reservation"]["status"] == "released"
     assert snapshot["reservation"]["release_reason"] == "failed"
     assert snapshot["ledger"] == []
+    assert snapshot["sync_events"] == [
+        {"action": "created", "entity_version": 1},
+        {"action": "updated", "entity_version": 2},
+        {"action": "updated", "entity_version": 3},
+    ]
 
 
 def test_committed_sse_events_resume_and_expired_events_fall_back_to_snapshot(

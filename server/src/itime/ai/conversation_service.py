@@ -56,7 +56,7 @@ from itime.review.memory_service import (
     memory_references,
     memory_system_message,
 )
-from itime.tasks.service import save_operation
+from itime.tasks.service import emit_change, save_operation
 
 ACTIVE_JOB_STATES = {"queued", "running"}
 EVENT_RETENTION = timedelta(days=7)
@@ -544,6 +544,14 @@ async def enqueue_message(
         conversation.title = _automatic_title(content)
     conversation.version += 1
     conversation.updated_at = current
+    emit_change(
+        session,
+        owner_id,
+        "conversation",
+        conversation.id,
+        "updated",
+        conversation.version,
+    )
     await session.flush()
     result = {
         "operation_id": operation_id,
@@ -990,6 +998,14 @@ async def complete_conversation_job(
         clear_job_lease(job)
         conversation.version += 1
         conversation.updated_at = current
+        emit_change(
+            session,
+            job.owner_id,
+            "conversation",
+            conversation.id,
+            "updated",
+            conversation.version,
+        )
         await create_quality_sample_if_enabled(
             session,
             job,
@@ -1139,6 +1155,14 @@ async def reject_or_retry_conversation_job(
         if conversation is not None:
             conversation.version += 1
             conversation.updated_at = current
+            emit_change(
+                session,
+                job.owner_id,
+                "conversation",
+                conversation.id,
+                "updated",
+                conversation.version,
+            )
         await release_reservation(
             session,
             job=job,
@@ -1204,6 +1228,14 @@ async def cancel_conversation_projection(
     if conversation is not None:
         conversation.version += 1
         conversation.updated_at = current
+        emit_change(
+            session,
+            job.owner_id,
+            "conversation",
+            conversation.id,
+            "updated",
+            conversation.version,
+        )
 
 
 async def cleanup_expired_job_events(database: Database, *, limit: int = 1000) -> int:

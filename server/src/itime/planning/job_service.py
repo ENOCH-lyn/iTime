@@ -58,7 +58,7 @@ from itime.review.memory_service import (
     memory_references,
     memory_system_message,
 )
-from itime.tasks.service import replay_operation, save_operation
+from itime.tasks.service import emit_change, replay_operation, save_operation
 
 ACTIVE_JOB_STATES = ("queued", "running")
 MAX_ACTIVE_USER_AI_JOBS = 3
@@ -547,6 +547,14 @@ async def complete_planning_job(
         if conversation is not None:
             conversation.version += 1
             conversation.updated_at = current
+            emit_change(
+                session,
+                job.owner_id,
+                "conversation",
+                conversation.id,
+                "updated",
+                conversation.version,
+            )
         await create_quality_sample_if_enabled(
             session,
             job,
@@ -704,6 +712,14 @@ async def reject_or_retry_planning_job(
         if conversation is not None:
             conversation.version += 1
             conversation.updated_at = current
+            emit_change(
+                session,
+                job.owner_id,
+                "conversation",
+                conversation.id,
+                "updated",
+                conversation.version,
+            )
         await release_reservation(session, job=job, reason=status)
         return status
 
@@ -997,6 +1013,14 @@ async def _finish_planning_failure(
     if conversation is not None:
         conversation.version += 1
         conversation.updated_at = current
+        emit_change(
+            session,
+            job.owner_id,
+            "conversation",
+            conversation.id,
+            "updated",
+            conversation.version,
+        )
 
 
 def _proposal_title(snapshot: dict[str, Any]) -> str:

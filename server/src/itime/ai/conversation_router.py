@@ -25,7 +25,12 @@ from itime.ai.models import AIJob
 from itime.auth.security import now
 from itime.auth.session import authorized, check_ai_access
 from itime.errors import AppError
-from itime.tasks.service import replay_operation, save_operation, validate_cursor
+from itime.tasks.service import (
+    emit_change,
+    replay_operation,
+    save_operation,
+    validate_cursor,
+)
 
 router = APIRouter(prefix="/api/v1/ai/conversations", tags=["AI 对话"])
 
@@ -114,6 +119,14 @@ async def create_conversation(
         )
         identity.session.add(conversation)
         await identity.session.flush()
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "conversation",
+            conversation.id,
+            "created",
+            conversation.version,
+        )
         result = {
             "operation_id": data.operation_id,
             "conversation": conversation_result(conversation),
@@ -175,6 +188,7 @@ async def update_conversation(
         if conversation.version != data.expected_version:
             raise conversation_version_conflict(conversation)
         changed = False
+        change_action = "updated"
         if data.title is not None and (
             data.title != conversation.title or conversation.title_source != "user"
         ):
@@ -200,9 +214,18 @@ async def update_conversation(
                         )
                 conversation.archived_at = now() if data.archived else None
                 changed = True
+                change_action = "archived" if data.archived else "unarchived"
         if changed:
             conversation.version += 1
             conversation.updated_at = now()
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "conversation",
+                conversation.id,
+                change_action,
+                conversation.version,
+            )
         result = {
             "operation_id": data.operation_id,
             "conversation": conversation_result(conversation),
