@@ -570,14 +570,18 @@ git commit -m "feat: 实现专注计时工作台"
 ### Task 7: 专注离线队列与冲突恢复
 
 **Files:**
+- Modify: `server/src/itime/execution/schemas.py`
+- Modify: `server/src/itime/execution/service.py`
+- Test: `server/tests/test_focus_task_progress.py`
 - Create: `web/src/lib/focus-queue.ts`
+- Modify: `web/src/lib/execution.ts`
 - Modify: `web/src/pages/FocusPage.vue`
-- Modify: `web/src/components/FocusTimer.vue`
 - Modify: `web/src/components/FocusTaskProgress.vue`
 - Modify: `web/src/focus.css`
+- Modify: `web/src/tokens.css`
 - Modify: `web/e2e/focus.spec.ts`
 
-- [ ] **Step 1: 写离线恢复浏览器失败测试**
+- [x] **Step 1: 写离线恢复浏览器失败测试**
 
 覆盖：
 
@@ -593,7 +597,7 @@ git commit -m "feat: 实现专注计时工作台"
 100 项和 7 天边界
 ```
 
-- [ ] **Step 2: 实现账号隔离队列**
+- [x] **Step 2: 实现账号隔离队列**
 
 提供：
 
@@ -623,11 +627,11 @@ export type SendFocusOperation = (
 
 实现 `replayFocusQueue(userId, sessionId, send): Promise<ReplayResult>`，逐项调用注入的 `send`，只在成功响应后移除当前项，遇到 `409` 时返回冲突项并停止。解析 localStorage 时严格校验形状、数量和期限；无效项丢弃，不执行任意路径或方法。
 
-- [ ] **Step 3: 接入离线投影和恢复 UI**
+- [x] **Step 3: 接入离线投影和恢复 UI**
 
 `navigator.onLine=false` 或网络错误时只允许设计范围内的动作。页面显示待同步数、最后服务端时间和冲突详情；冲突对话提供采用服务端、重新应用下一项或转为修订草稿，任何按钮都不静默丢弃队列。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 

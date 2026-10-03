@@ -68,6 +68,7 @@ class FocusProgressInput(OperationInput):
     expected_task_version: int = Field(ge=1)
     expected_occurrence_version: int | None = Field(default=None, ge=0)
     completed_step_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    client_recorded_at: datetime | None = None
 
     @field_validator("completed_step_ids")
     @classmethod
@@ -75,6 +76,11 @@ class FocusProgressInput(OperationInput):
         if len(values) != len(set(values)):
             raise ValueError("已完成步骤不能重复")
         return values
+
+    @field_validator("client_recorded_at")
+    @classmethod
+    def require_time_zone(cls, value: datetime | None) -> datetime | None:
+        return FocusTransitionInput.require_time_zone(value)
 
 
 class FocusTaskCompletionInput(OperationInput):

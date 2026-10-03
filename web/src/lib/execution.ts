@@ -169,9 +169,13 @@ export async function transitionFocus(
 }
 
 export async function updateFocusProgress(
-  focus: FocusSession,
+  focus: Pick<
+    FocusSession,
+    'id' | 'version' | 'task_version' | 'occurrence_version'
+  >,
   operationId: string,
   completedStepIds: string[],
+  clientRecordedAt: string | null = null,
 ) {
   return api<{
     operation_id: string
@@ -187,6 +191,7 @@ export async function updateFocusProgress(
       expected_task_version: focus.task_version,
       expected_occurrence_version: focus.occurrence_version,
       completed_step_ids: completedStepIds,
+      client_recorded_at: clientRecordedAt,
     },
     'PUT',
   )

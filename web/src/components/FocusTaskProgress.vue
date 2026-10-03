@@ -6,6 +6,7 @@ import type { FocusSession } from '../lib/execution'
 const props = defineProps<{
   focus: FocusSession
   pending: boolean
+  completionBlocked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -56,7 +57,7 @@ function toggle(stepId: string, completed: boolean) {
       v-if="['finished', 'abandoned'].includes(focus.status) && focus.task_status === 'open'"
       type="button"
       class="button secondary focus-complete-task"
-      :disabled="pending"
+      :disabled="pending || completionBlocked"
       @click="emit('complete')"
     >
       <CheckCircle2 :size="18" aria-hidden="true" />

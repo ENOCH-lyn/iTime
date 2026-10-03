@@ -620,7 +620,7 @@ def apply_transition(
 async def _transition_time(
     session: AsyncSession,
     focus: FocusSession,
-    data: FocusTransitionInput,
+    data: FocusTransitionInput | FocusProgressInput,
     current_time: datetime,
 ) -> tuple[datetime, str]:
     if data.client_recorded_at is None:
@@ -897,6 +897,12 @@ async def update_focus_progress(
         data.expected_version,
         current_time,
     )
+    occurred_at, source = await _transition_time(
+        session,
+        focus,
+        data,
+        current_time,
+    )
     if focus.status not in OPEN_FOCUS_STATUSES:
         raise AppError(
             "focus_not_open",
@@ -961,9 +967,13 @@ async def update_focus_progress(
                 focus_session_id=focus.id,
                 sequence=sequence + 1,
                 kind="progress",
-                occurred_at=current_time,
-                client_recorded_at=None,
-                source="online",
+                occurred_at=occurred_at,
+                client_recorded_at=(
+                    data.client_recorded_at.astimezone(UTC)
+                    if data.client_recorded_at is not None
+                    else None
+                ),
+                source=source,
                 details={
                     "completed_step_ids": [
                         str(step_id) for step_id in data.completed_step_ids

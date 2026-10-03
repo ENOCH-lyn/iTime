@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LogOut, Plus, X } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  Cloud,
+  CloudOff,
+  LogOut,
+  Plus,
+  RefreshCcw,
+  X,
+} from 'lucide-vue-next'
 import FocusHistory from '../components/FocusHistory.vue'
 import FocusSetup from '../components/FocusSetup.vue'
 import FocusTaskProgress from '../components/FocusTaskProgress.vue'
@@ -32,6 +40,17 @@ import {
   type FocusSession,
   type FocusTransition,
 } from '../lib/execution'
+import {
+  FocusQueueError,
+  appendFocusOperation,
+  applyQueuedFocusOperation,
+  clearFocusQueue,
+  listFocusQueueSessions,
+  loadFocusQueue,
+  replaceFirstFocusOperation,
+  replayFocusQueue,
+  type QueuedFocusOperation,
+} from '../lib/focus-queue'
 import { getTask, listTasks, type TaskSummary } from '../lib/tasks'
 import '../focus.css'
 
@@ -62,12 +81,56 @@ const manualEnd = ref('')
 const manualMinutes = ref(30)
 const manualReason = ref('')
 const tick = ref(0)
+const networkOnline = ref(navigator.onLine)
+const syncing = ref(false)
+const syncRequested = ref(false)
+const pendingOperations = ref<QueuedFocusOperation[]>([])
+const activeQueueSessionId = ref<string | null>(null)
+const lastServerNow = ref<string | null>(null)
+const serverFocus = ref<FocusSession | null>(null)
+const conflictOperation = ref<QueuedFocusOperation | null>(null)
+const conflictFocus = ref<FocusSession | null>(null)
+const conflictError = ref<Failure | null>(null)
+const revisionFromConflict = ref(false)
 let elapsedAnchor = 0
 let monotonicAnchor = performance.now()
 let timer: number | null = null
 let mutationOperation: { fingerprint: string; id: string } | null = null
 
 const shownFocus = computed(() => current.value ?? selected.value)
+const actionPending = computed(() => pending.value || syncing.value)
+const syncState = computed(() => {
+  if (conflictOperation.value) return 'conflict'
+  if (pendingOperations.value.length) return 'pending'
+  return 'saved'
+})
+const canReapplyConflict = computed(() => {
+  if (!conflictOperation.value || !conflictFocus.value) return false
+  const action = conflictOperation.value.action
+  if (action === 'pause') return conflictFocus.value.status === 'running'
+  if (action === 'resume') return conflictFocus.value.status === 'paused'
+  if (action === 'progress') {
+    return ['running', 'paused'].includes(conflictFocus.value.status)
+      && conflictFocus.value.task_id !== null
+  }
+  return ['running', 'paused'].includes(conflictFocus.value.status)
+})
+const terminalConflictOperation = computed(() => (
+  conflictFocus.value && ['finished', 'abandoned'].includes(conflictFocus.value.status)
+    ? [...pendingOperations.value].reverse().find(item =>
+        item.action === 'finish' || item.action === 'abandon') ?? null
+    : null
+))
+const formattedLastServerTime = computed(() => (
+  lastServerNow.value
+    ? new Date(lastServerNow.value).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '尚未取得'
+))
 const elapsedSeconds = computed(() => {
   tick.value
   if (!shownFocus.value) return 0
@@ -88,6 +151,9 @@ watch(authError, value => {
 onMounted(async () => {
   document.title = '专注 · iTime'
   timer = window.setInterval(() => { tick.value += 1 }, 1000)
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
+  window.addEventListener('focus', handleWindowFocus)
   await refreshSession()
   if (!identity.value) {
     await router.replace('/login')
@@ -98,6 +164,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (timer !== null) window.clearInterval(timer)
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
+  window.removeEventListener('focus', handleWindowFocus)
 })
 
 async function initialize() {
@@ -111,6 +180,7 @@ async function initialize() {
     settings.value = currentSettings
     await Promise.all([loadTasks(), loadCurrent(), loadHistory()])
     await applyRouteSelection()
+    await restoreFocusQueue()
   } catch (reason) {
     pageError.value = failure(reason)
   } finally {
@@ -152,9 +222,17 @@ function setFocus(value: FocusSession | null) {
   }
 }
 
+function acceptServerFocus(value: FocusSession) {
+  serverFocus.value = value
+  lastServerNow.value = value.server_now
+  activeQueueSessionId.value = value.id
+  setFocus(value)
+}
+
 async function loadCurrent() {
   const result = await getCurrentFocus()
-  setFocus(result.focus)
+  lastServerNow.value = result.server_now
+  if (result.focus) acceptServerFocus(result.focus)
 }
 
 function historyRange() {
@@ -185,6 +263,248 @@ function stableOperation(fingerprint: string) {
 function clearMessages() {
   pageError.value = null
   pageSuccess.value = ''
+}
+
+function queueFailure(reason: unknown) {
+  if (reason instanceof FocusQueueError) {
+    return localFailure(reason.message)
+  }
+  return failure(reason)
+}
+
+function queuedMessage() {
+  const count = pendingOperations.value.length
+  pageSuccess.value = `${count} 项操作已保存在本设备，联网后将按顺序同步。`
+}
+
+function updatePendingQueue(sessionId: string) {
+  if (!identity.value) return
+  activeQueueSessionId.value = sessionId
+  pendingOperations.value = loadFocusQueue(identity.value.user.id, sessionId)
+}
+
+function applyPendingProjection(base: FocusSession) {
+  let projected = base
+  for (const item of pendingOperations.value) {
+    projected = applyQueuedFocusOperation(projected, item)
+  }
+  setFocus(projected)
+}
+
+async function queuedSessionId() {
+  if (!identity.value) return null
+  if (serverFocus.value) return serverFocus.value.id
+  return listFocusQueueSessions(identity.value.user.id)[0] ?? null
+}
+
+async function restoreFocusQueue() {
+  if (!identity.value) return
+  const sessionId = await queuedSessionId()
+  if (!sessionId) return
+  activeQueueSessionId.value = sessionId
+  updatePendingQueue(sessionId)
+  if (!pendingOperations.value.length) return
+  if (!serverFocus.value || serverFocus.value.id !== sessionId) {
+    const detail = await getFocusSession(sessionId)
+    serverFocus.value = detail.focus
+    lastServerNow.value = detail.server_now
+    setFocus(detail.focus)
+  }
+  if (navigator.onLine) {
+    await synchronizeFocusQueue()
+    return
+  }
+  if (serverFocus.value) applyPendingProjection(serverFocus.value)
+  queuedMessage()
+}
+
+function transitionSuccess(action: QueuedFocusOperation['action']) {
+  if (action === 'pause') return '专注已暂停。'
+  if (action === 'resume') return '专注已继续。'
+  if (action === 'finish') return '本次专注已结束。'
+  if (action === 'abandon') return '本次专注已放弃，已记录的时间仍会保留。'
+  return '步骤进度已保存，任务仍需你明确完成。'
+}
+
+async function sendQueuedOperation(item: QueuedFocusOperation) {
+  if (item.action !== 'progress') {
+    const result = await transitionFocus(
+      { id: item.session_id, version: item.expected_version },
+      item.operation_id,
+      item.action,
+      item.client_recorded_at,
+    )
+    return result.focus
+  }
+  const result = await updateFocusProgress(
+    {
+      id: item.session_id,
+      version: item.expected_version,
+      task_version: item.payload.expected_task_version as number,
+      occurrence_version: item.payload.expected_occurrence_version as number | null,
+    },
+    item.operation_id,
+    item.payload.completed_step_ids as string[],
+    item.client_recorded_at,
+  )
+  return result.focus
+}
+
+async function authoritativeConflictFocus(sessionId: string, error: Failure | null) {
+  const candidate = error?.details?.current_focus
+  if (candidate && typeof candidate === 'object') return candidate as FocusSession
+  return (await getFocusSession(sessionId)).focus
+}
+
+async function synchronizeFocusQueue() {
+  if (syncing.value) {
+    syncRequested.value = true
+    return
+  }
+  if (
+    !networkOnline.value
+    || !identity.value
+    || !activeQueueSessionId.value
+  ) return
+  const sessionId = activeQueueSessionId.value
+  const before = loadFocusQueue(identity.value.user.id, sessionId)
+  if (!before.length) {
+    pendingOperations.value = []
+    return
+  }
+  syncing.value = true
+  pageError.value = null
+  try {
+    const result = await replayFocusQueue(
+      identity.value.user.id,
+      sessionId,
+      sendQueuedOperation,
+    )
+    pendingOperations.value = result.pending
+    if (result.session) acceptServerFocus(result.session)
+    if (result.conflict) {
+      conflictOperation.value = result.conflict
+      conflictError.value = result.conflict_error
+      conflictFocus.value = await authoritativeConflictFocus(
+        sessionId,
+        result.conflict_error,
+      )
+      pageSuccess.value = ''
+      return
+    }
+    conflictOperation.value = null
+    conflictFocus.value = null
+    conflictError.value = null
+    if (result.session) {
+      pageSuccess.value = transitionSuccess(before[before.length - 1].action)
+      if (['finished', 'abandoned'].includes(result.session.status)) {
+        await loadHistory()
+      }
+    }
+  } catch (reason) {
+    updatePendingQueue(sessionId)
+    pageError.value = {
+      ...failure(reason),
+      message: '操作已保存在本设备，恢复连接后会使用原操作号继续同步。',
+      saved: 'unknown',
+      retryable: true,
+    }
+    if (serverFocus.value) {
+      try {
+        applyPendingProjection(serverFocus.value)
+      } catch {
+        // The conflict UI will resolve a projection that no longer applies.
+      }
+    }
+  } finally {
+    syncing.value = false
+    if (syncRequested.value && networkOnline.value) {
+      syncRequested.value = false
+      void synchronizeFocusQueue()
+    }
+  }
+}
+
+function resetConflict() {
+  conflictOperation.value = null
+  conflictFocus.value = null
+  conflictError.value = null
+}
+
+function adoptServerFocus() {
+  if (!identity.value || !activeQueueSessionId.value || !conflictFocus.value) return
+  clearFocusQueue(identity.value.user.id, activeQueueSessionId.value)
+  pendingOperations.value = []
+  acceptServerFocus(conflictFocus.value)
+  resetConflict()
+  pageError.value = null
+  pageSuccess.value = '已采用服务端状态，本地待同步操作已明确丢弃。'
+}
+
+async function reapplyConflict() {
+  if (
+    !identity.value
+    || !activeQueueSessionId.value
+    || !conflictOperation.value
+    || !conflictFocus.value
+    || !canReapplyConflict.value
+  ) return
+  const rebased: QueuedFocusOperation = {
+    ...conflictOperation.value,
+    expected_version: conflictFocus.value.version,
+    payload: conflictOperation.value.action === 'progress'
+      ? {
+          ...conflictOperation.value.payload,
+          expected_task_version: conflictFocus.value.task_version,
+          expected_occurrence_version: conflictFocus.value.occurrence_version,
+        }
+      : {},
+  }
+  try {
+    replaceFirstFocusOperation(
+      identity.value.user.id,
+      activeQueueSessionId.value,
+      rebased,
+    )
+    serverFocus.value = conflictFocus.value
+    setFocus(conflictFocus.value)
+    resetConflict()
+    updatePendingQueue(activeQueueSessionId.value)
+    await synchronizeFocusQueue()
+  } catch (reason) {
+    pageError.value = queueFailure(reason)
+  }
+}
+
+function conflictRevisionDraft() {
+  if (!conflictFocus.value || !terminalConflictOperation.value) return
+  revisionTarget.value = conflictFocus.value
+  resetManualForm(conflictFocus.value)
+  const start = Date.parse(
+    conflictFocus.value.effective_started_at ?? conflictFocus.value.started_at,
+  )
+  const recordedEnd = Date.parse(terminalConflictOperation.value.client_recorded_at)
+  const formEnd = new Date(Math.max(recordedEnd, start + 60_000))
+  manualEnd.value = localInput(formEnd.toISOString(), conflictFocus.value.time_zone)
+  manualMinutes.value = Math.max(0, Math.round((recordedEnd - start) / 60_000))
+  manualReason.value = '按离线记录的结束时间修订'
+  revisionFromConflict.value = true
+  manualOpen.value = true
+  void nextTick(() => document.getElementById('manual-focus-title')?.focus())
+}
+
+function handleOffline() {
+  networkOnline.value = false
+}
+
+function handleOnline() {
+  networkOnline.value = true
+  void synchronizeFocusQueue()
+}
+
+function handleWindowFocus() {
+  networkOnline.value = navigator.onLine
+  if (networkOnline.value) void synchronizeFocusQueue()
 }
 
 async function beginFocus() {
@@ -223,7 +543,7 @@ async function beginFocus() {
     })
     mutationOperation = null
     selected.value = null
-    setFocus(result.focus)
+    acceptServerFocus(result.focus)
     await router.replace('/focus')
     await loadHistory()
     pageSuccess.value = '专注已开始。'
@@ -236,56 +556,59 @@ async function beginFocus() {
 }
 
 async function runTransition(action: FocusTransition) {
-  if (!current.value || pending.value) return
+  if (!current.value || actionPending.value || !identity.value) return
   if (action === 'abandon' && !window.confirm('放弃本次专注？已记录的时间会保留。')) return
   clearMessages()
   const focus = current.value
-  const fingerprint = `${action}:${focus.id}:${focus.version}`
-  pending.value = true
+  const recordedAt = new Date().toISOString()
+  const item: QueuedFocusOperation = {
+    operation_id: crypto.randomUUID(),
+    session_id: focus.id,
+    expected_version: focus.version,
+    action,
+    client_recorded_at: recordedAt,
+    payload: {},
+    created_at: recordedAt,
+  }
   try {
-    const result = await transitionFocus(
-      focus,
-      stableOperation(fingerprint),
-      action,
-    )
-    mutationOperation = null
-    setFocus(result.focus)
-    if (['finish', 'abandon'].includes(action)) {
-      await loadHistory()
-      pageSuccess.value = action === 'finish'
-        ? '本次专注已结束。'
-        : '本次专注已放弃，已记录的时间仍会保留。'
-    } else {
-      pageSuccess.value = action === 'pause' ? '专注已暂停。' : '专注已继续。'
-    }
+    const projected = applyQueuedFocusOperation(focus, item)
+    appendFocusOperation(identity.value.user.id, item)
+    updatePendingQueue(focus.id)
+    setFocus(projected)
+    if (networkOnline.value) await synchronizeFocusQueue()
+    else queuedMessage()
   } catch (reason) {
-    pageError.value = failure(reason)
-    if (pageError.value.saved === 'not_saved') mutationOperation = null
-  } finally {
-    pending.value = false
+    pageError.value = queueFailure(reason)
   }
 }
 
 async function saveProgress(completedStepIds: string[]) {
-  if (!current.value || pending.value) return
+  if (!current.value || actionPending.value || !identity.value) return
   clearMessages()
   const focus = current.value
-  const fingerprint = `progress:${focus.id}:${focus.version}:${completedStepIds.join(',')}`
-  pending.value = true
+  const recordedAt = new Date().toISOString()
+  const item: QueuedFocusOperation = {
+    operation_id: crypto.randomUUID(),
+    session_id: focus.id,
+    expected_version: focus.version,
+    action: 'progress',
+    client_recorded_at: recordedAt,
+    payload: {
+      expected_task_version: focus.task_version,
+      expected_occurrence_version: focus.occurrence_version,
+      completed_step_ids: completedStepIds,
+    },
+    created_at: recordedAt,
+  }
   try {
-    const result = await updateFocusProgress(
-      focus,
-      stableOperation(fingerprint),
-      completedStepIds,
-    )
-    mutationOperation = null
-    setFocus(result.focus)
-    pageSuccess.value = '步骤进度已保存，任务仍需你明确完成。'
+    const projected = applyQueuedFocusOperation(focus, item)
+    appendFocusOperation(identity.value.user.id, item)
+    updatePendingQueue(focus.id)
+    setFocus(projected)
+    if (networkOnline.value) await synchronizeFocusQueue()
+    else queuedMessage()
   } catch (reason) {
-    pageError.value = failure(reason)
-    if (pageError.value.saved === 'not_saved') mutationOperation = null
-  } finally {
-    pending.value = false
+    pageError.value = queueFailure(reason)
   }
 }
 
@@ -364,6 +687,7 @@ function resetManualForm(focus: FocusSession | null = null) {
 }
 
 function openManual() {
+  revisionFromConflict.value = false
   revisionTarget.value = null
   resetManualForm()
   manualOpen.value = true
@@ -372,6 +696,7 @@ function openManual() {
 
 async function openRevision(item: FocusSession) {
   try {
+    revisionFromConflict.value = false
     const detail = await getFocusSession(item.id)
     revisionTarget.value = detail.focus
     resetManualForm(detail.focus)
@@ -425,11 +750,20 @@ async function saveManual() {
       : await createManualFocus(operationId, manualDraft())
     mutationOperation = null
     manualOpen.value = false
-    selected.value = result.focus
-    setAnchor(result.focus)
+    acceptServerFocus(result.focus)
     const success = revisionTarget.value
       ? '专注记录已修订。'
       : '专注记录已补记。'
+    if (
+      revisionFromConflict.value
+      && identity.value
+      && activeQueueSessionId.value
+    ) {
+      clearFocusQueue(identity.value.user.id, activeQueueSessionId.value)
+      pendingOperations.value = []
+      resetConflict()
+      revisionFromConflict.value = false
+    }
     revisionTarget.value = null
     await loadHistory()
     pageSuccess.value = success
@@ -496,6 +830,74 @@ async function logout() {
       </header>
 
       <div class="focus-status-region">
+        <section
+          v-if="activeQueueSessionId"
+          class="focus-sync"
+          :data-state="syncState"
+          :aria-live="syncState === 'conflict' ? 'assertive' : 'polite'"
+        >
+          <div class="focus-sync-summary">
+            <AlertTriangle
+              v-if="syncState === 'conflict'"
+              :size="18"
+              aria-hidden="true"
+            />
+            <CloudOff
+              v-else-if="pendingOperations.length"
+              :size="18"
+              aria-hidden="true"
+            />
+            <Cloud v-else :size="18" aria-hidden="true" />
+            <div>
+              <strong v-if="pendingOperations.length">
+                {{ pendingOperations.length }} 项待同步
+              </strong>
+              <strong v-else>已与服务端同步</strong>
+              <small>
+                最后服务端时间 {{ formattedLastServerTime }}
+                <template v-if="syncing"> · 正在核对</template>
+              </small>
+            </div>
+          </div>
+          <div v-if="conflictOperation && conflictFocus" class="focus-conflict" role="alert">
+            <div>
+              <h2>同步冲突</h2>
+              <p>
+                {{ conflictError?.message ?? '服务器状态已变化。' }}
+                本地操作仍保留，服务器当前为
+                {{ conflictFocus.status === 'running'
+                  ? '进行中'
+                  : conflictFocus.status === 'paused'
+                    ? '已暂停'
+                    : conflictFocus.status === 'finished'
+                      ? '已结束'
+                      : '已放弃' }}。
+              </p>
+            </div>
+            <div class="focus-conflict-actions">
+              <button type="button" class="button secondary" @click="adoptServerFocus">
+                采用服务端状态
+              </button>
+              <button
+                type="button"
+                class="button secondary"
+                :disabled="!canReapplyConflict || syncing"
+                @click="reapplyConflict"
+              >
+                <RefreshCcw :size="17" aria-hidden="true" />
+                重新应用下一项
+              </button>
+              <button
+                v-if="terminalConflictOperation"
+                type="button"
+                class="button"
+                @click="conflictRevisionDraft"
+              >
+                转为修订草稿
+              </button>
+            </div>
+          </div>
+        </section>
         <StatusMessage :error="pageError" :success="pageSuccess" />
       </div>
 
@@ -516,21 +918,27 @@ async function logout() {
           v-if="shownFocus"
           :focus="shownFocus"
           :elapsed-seconds="elapsedSeconds"
-          :pending="pending"
+          :pending="actionPending"
           @transition="runTransition"
         />
         <div
           v-if="shownFocus && ['finished', 'abandoned'].includes(shownFocus.status)"
           class="focus-record-actions"
         >
-          <button type="button" class="button secondary" @click="openRevision(shownFocus)">
+          <button
+            type="button"
+            class="button secondary"
+            :disabled="pendingOperations.length > 0"
+            @click="openRevision(shownFocus)"
+          >
             修订记录
           </button>
         </div>
         <FocusTaskProgress
           v-if="shownFocus"
           :focus="shownFocus"
-          :pending="pending"
+          :pending="actionPending"
+          :completion-blocked="pendingOperations.length > 0"
           @progress="saveProgress"
           @complete="completeTask"
         />

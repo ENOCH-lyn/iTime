@@ -107,6 +107,74 @@ def test_focus_progress_never_implicitly_completes_regular_task(client, database
     )
 
 
+def test_offline_progress_preserves_event_order_between_transitions(
+    client,
+    database_url,
+):
+    create_account(client, database_url)
+    initialize_settings(client)
+    task = create_task(client, title="离线步骤顺序")
+    focus = client.post(
+        "/api/v1/focus-sessions",
+        json=start_payload(title=None, task_id=task["id"]),
+    ).json()["focus"]
+    started_at = datetime.fromisoformat(
+        focus["started_at"].replace("Z", "+00:00")
+    )
+
+    paused = client.post(
+        f"/api/v1/focus-sessions/{focus['id']}/transitions",
+        json=transition_payload(
+            focus["version"],
+            "pause",
+            client_recorded_at=started_at + timedelta(seconds=1),
+        ),
+    ).json()["focus"]
+    progressed = client.put(
+        f"/api/v1/focus-sessions/{focus['id']}/progress",
+        json=progress_payload(
+            paused,
+            task,
+            [focus["steps"][0]["id"]],
+            client_recorded_at=(started_at + timedelta(seconds=2)).isoformat(),
+        ),
+    )
+    assert progressed.status_code == 200, progressed.text
+    progressed_focus = progressed.json()["focus"]
+    resumed = client.post(
+        f"/api/v1/focus-sessions/{focus['id']}/transitions",
+        json=transition_payload(
+            progressed_focus["version"],
+            "resume",
+            client_recorded_at=started_at + timedelta(seconds=3),
+        ),
+    )
+    assert resumed.status_code == 200, resumed.text
+
+    events = client.get(
+        f"/api/v1/focus-sessions/{focus['id']}"
+    ).json()["events"]
+    assert [event["kind"] for event in events] == [
+        "start",
+        "pause",
+        "progress",
+        "resume",
+    ]
+    assert [event["source"] for event in events[1:]] == [
+        "offline",
+        "offline",
+        "offline",
+    ]
+    assert [
+        datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00"))
+        for event in events[1:]
+    ] == [
+        started_at + timedelta(seconds=1),
+        started_at + timedelta(seconds=2),
+        started_at + timedelta(seconds=3),
+    ]
+
+
 def test_focus_progress_updates_only_repeating_occurrence(client, database_url):
     create_account(client, database_url)
     initialize_settings(client)

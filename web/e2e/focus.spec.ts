@@ -91,6 +91,23 @@ async function createTask(page: Page, csrf: string) {
   return (await response.json()).task
 }
 
+async function sessionUserId(page: Page) {
+  const response = await page.request.get('/api/v1/auth/me')
+  expect(response.ok()).toBeTruthy()
+  return ((await response.json()).user.id) as string
+}
+
+async function startFreeFocus(page: Page, title: string) {
+  await page.goto('/focus')
+  await expect(page.getByRole('heading', { name: '专注' })).toBeVisible()
+  await page.locator('.focus-setup').getByLabel('专注内容').fill(title)
+  await page.getByRole('button', { name: '开始专注' }).click()
+  await expect(page.getByRole('heading', { name: title })).toBeVisible()
+  return (await (
+    await page.request.get('/api/v1/focus-sessions/current')
+  ).json()).focus
+}
+
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -212,4 +229,231 @@ test('任务倒计时的步骤和任务完成保持独立', async ({ page, reque
     await screenshot(page, info, '320-large-dark')
     await assertQuality(page)
   }
+})
+
+test('离线暂停恢复结束按原顺序同步', async ({ page, request, context }, info) => {
+  const csrf = await account(page, request)
+  const task = await createTask(page, csrf)
+  await page.goto(`/focus?task=${task.id}`)
+  await page.getByRole('button', { name: '开始专注' }).click()
+  await expect(page.getByRole('heading', { name: '整理课程笔记' })).toBeVisible()
+  const focus = (await (
+    await page.request.get('/api/v1/focus-sessions/current')
+  ).json()).focus
+
+  await context.setOffline(true)
+  await page.getByRole('button', { name: '暂停' }).click()
+  await expect(page.getByText('1 项待同步')).toBeVisible()
+  await expect(page.getByText('已暂停', { exact: true })).toBeVisible()
+  await page.getByLabel('整理重点').check()
+  await expect(page.getByText('2 项待同步')).toBeVisible()
+  await page.getByRole('button', { name: '继续' }).click()
+  await expect(page.getByText('3 项待同步')).toBeVisible()
+  await expect(page.getByText('进行中', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '结束' }).click()
+  await expect(page.getByText('4 项待同步')).toBeVisible()
+  await expect(page.getByText('已结束', { exact: true })).toBeVisible()
+
+  await context.setOffline(false)
+  await expect(page.getByText('已与服务端同步')).toBeVisible()
+  await expect.poll(async () => {
+    const detail = await (
+      await page.request.get(`/api/v1/focus-sessions/${focus.id}`)
+    ).json()
+    return detail.events.map((event: { kind: string }) => event.kind)
+  }).toEqual(['start', 'pause', 'progress', 'resume', 'finish'])
+  const savedTask = await (await page.request.get(`/api/v1/tasks/${task.id}`)).json()
+  expect(savedTask.task.status).toBe('open')
+  expect(savedTask.task.step_progress).toEqual({ total: 2, completed: 1 })
+  await screenshot(page, info, 'offline-synced')
+  await assertQuality(page)
+})
+
+test('未知响应刷新后使用原操作号恢复且不重复保存', async ({
+  page,
+  request,
+  context,
+}, info) => {
+  await account(page, request)
+  const focus = await startFreeFocus(page, '响应恢复验证')
+  let dropped = false
+  await page.route('**/api/v1/focus-sessions/*/transitions', async route => {
+    if (dropped) {
+      await route.continue()
+      return
+    }
+    dropped = true
+    const intercepted = route.request()
+    const cookie = (await context.cookies())
+      .map(item => `${item.name}=${item.value}`)
+      .join('; ')
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          code: 'service_unavailable',
+          message: '测试中断响应',
+          request_id: randomUUID(),
+          saved: 'unknown',
+          retryable: true,
+        },
+      }),
+    })
+    const saved = await request.post(intercepted.url(), {
+      headers: {
+        'X-CSRF-Token': intercepted.headers()['x-csrf-token'],
+        Cookie: cookie,
+      },
+      data: intercepted.postDataJSON(),
+    })
+    expect(saved.ok()).toBeTruthy()
+  })
+
+  await page.getByRole('button', { name: '暂停' }).click()
+  await expect(page.getByText('1 项待同步')).toBeVisible()
+  await page.unroute('**/api/v1/focus-sessions/*/transitions')
+  await page.reload()
+  await expect(page.getByText('已与服务端同步')).toBeVisible()
+  await expect(page.getByText('已暂停', { exact: true })).toBeVisible()
+
+  const detail = await (
+    await page.request.get(`/api/v1/focus-sessions/${focus.id}`)
+  ).json()
+  expect(detail.events.map((event: { kind: string }) => event.kind))
+    .toEqual(['start', 'pause'])
+  await screenshot(page, info, 'unknown-response-replayed')
+  await assertQuality(page)
+})
+
+test('开放状态冲突保留队列并可基于服务器版本重新应用', async ({
+  page,
+  request,
+  context,
+}) => {
+  await account(page, request)
+  await startFreeFocus(page, '冲突重放验证')
+  const second = await context.newPage()
+  watchRuntime(second)
+  try {
+    await second.goto('/focus')
+    await expect(second.getByText('进行中', { exact: true })).toBeVisible()
+    await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+      route.abort('connectionreset'))
+    await second.getByRole('button', { name: '暂停' }).click()
+    await expect(second.getByText('已暂停', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '结束' }).click()
+    await expect(page.getByText('1 项待同步')).toBeVisible()
+    await page.unroute('**/api/v1/focus-sessions/*/transitions')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByRole('heading', { name: '同步冲突' })).toBeVisible()
+    await expect(page.getByText('1 项待同步')).toBeVisible()
+    await page.getByRole('button', { name: '重新应用下一项' }).click()
+    await expect(page.getByText('已与服务端同步')).toBeVisible()
+    await expect(page.getByText('已结束', { exact: true })).toBeVisible()
+  } finally {
+    expect(runtimeErrors.get(second)).toEqual([])
+    await second.close()
+  }
+})
+
+test('终态冲突可转为修订草稿且仅在明确采用后丢弃队列', async ({
+  page,
+  request,
+  context,
+}, info) => {
+  await account(page, request)
+  await startFreeFocus(page, '终态冲突验证')
+  const second = await context.newPage()
+  watchRuntime(second)
+  try {
+    await second.goto('/focus')
+    await expect(second.getByText('进行中', { exact: true })).toBeVisible()
+    await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+      route.abort('connectionreset'))
+    await second.getByRole('button', { name: '结束' }).click()
+    await expect(second.getByText('已结束', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '结束' }).click()
+    await expect(page.getByText('1 项待同步')).toBeVisible()
+    await page.unroute('**/api/v1/focus-sessions/*/transitions')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByRole('heading', { name: '同步冲突' })).toBeVisible()
+    await assertQuality(page)
+    await screenshot(page, info, 'terminal-conflict')
+    await page.getByRole('button', { name: '转为修订草稿' }).click()
+    await expect(page.getByRole('heading', { name: '修订专注记录' })).toBeVisible()
+    await expect(page.getByText('1 项待同步')).toBeVisible()
+    await page.getByRole('button', { name: '保存修订' }).click()
+    await expect(page.getByText('专注记录已修订。')).toBeVisible()
+    await expect(page.getByText('已与服务端同步')).toBeVisible()
+
+    await page.locator('.focus-setup').getByLabel('专注内容')
+      .fill('采用服务器状态验证')
+    await page.getByRole('button', { name: '开始专注' }).click()
+    await expect(page.getByRole('heading', { name: '采用服务器状态验证' })).toBeVisible()
+    await second.reload()
+    await expect(second.getByText('进行中', { exact: true })).toBeVisible()
+    await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+      route.abort('connectionreset'))
+    await second.getByRole('button', { name: '结束', exact: true }).click()
+    await page.getByRole('button', { name: '结束', exact: true }).click()
+    await expect(page.getByText('1 项待同步')).toBeVisible()
+    await page.unroute('**/api/v1/focus-sessions/*/transitions')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByRole('heading', { name: '同步冲突' })).toBeVisible()
+    await page.getByRole('button', { name: '采用服务端状态' }).click()
+    await expect(page.getByText('已与服务端同步')).toBeVisible()
+    await expect(page.getByText('已结束', { exact: true })).toBeVisible()
+    await screenshot(page, info, 'terminal-conflict-adopted')
+    await assertQuality(page)
+  } finally {
+    expect(runtimeErrors.get(second)).toEqual([])
+    await second.close()
+  }
+})
+
+test('队列按账号隔离并执行 100 项与 7 天边界', async ({
+  page,
+  request,
+}) => {
+  await account(page, request)
+  const userId = await sessionUserId(page)
+  const focus = await startFreeFocus(page, '队列边界验证')
+  const now = Date.now()
+  const queue = Array.from({ length: 100 }, (_, index) => ({
+    operation_id: randomUUID(),
+    session_id: focus.id,
+    expected_version: focus.version + index,
+    action: index % 2 === 0 ? 'pause' : 'resume',
+    client_recorded_at: new Date(now + index).toISOString(),
+    payload: {},
+    created_at: new Date(now).toISOString(),
+  }))
+  queue.push({
+    ...queue[0],
+    operation_id: randomUUID(),
+    created_at: new Date(now - 8 * 24 * 60 * 60_000).toISOString(),
+  })
+  queue.push({
+    ...queue[0],
+    operation_id: randomUUID(),
+    action: 'delete' as 'pause',
+  })
+  await page.evaluate(({ key, items, foreignKey }) => {
+    localStorage.setItem(key, JSON.stringify(items))
+    localStorage.setItem(foreignKey, JSON.stringify([items[0]]))
+  }, {
+    key: `itime-focus-queue:${userId}:${focus.id}`,
+    items: queue,
+    foreignKey: `itime-focus-queue:${randomUUID()}:${focus.id}`,
+  })
+  await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+    route.abort('connectionreset'))
+  await page.reload()
+  await expect(page.getByText('100 项待同步')).toBeVisible()
+  await page.getByRole('button', { name: '暂停' }).click()
+  await expect(page.getByRole('alert')).toContainText('最多保留 100 项')
+  await expect(page.getByText('100 项待同步')).toBeVisible()
 })
