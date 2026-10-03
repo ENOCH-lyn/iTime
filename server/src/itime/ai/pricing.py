@@ -7,6 +7,10 @@ MAX_STORED_NANOS = 9_000_000_000_000_000_000
 
 
 def parse_price_per_million(value: str) -> int:
+    return parse_currency_amount(value)
+
+
+def parse_currency_amount(value: str) -> int:
     try:
         amount = Decimal(value)
     except InvalidOperation as exc:
@@ -18,7 +22,7 @@ def parse_price_per_million(value: str) -> int:
         raise ValueError("价格最多保留 9 位小数")
     result = int(nanos)
     if result > MAX_PRICE_NANOS_PER_MILLION:
-        raise ValueError("每百万 Token 价格不得超过 1000000")
+        raise ValueError("金额不得超过 1000000")
     return result
 
 

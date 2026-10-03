@@ -24,6 +24,7 @@ from itime.ai.schemas import (
 from itime.auth.security import now
 from itime.auth.session import audit
 from itime.errors import AppError
+from itime.quota.models import AIQuotaPolicyState, AIQuotaPolicyVersion
 
 router = APIRouter(prefix="/api/v1/admin/ai-configs", tags=["后台 AI 配置"])
 
@@ -301,6 +302,20 @@ async def test_config(config_id: UUID, request: Request) -> dict:
 async def publish_config(config_id: UUID, request: Request) -> dict:
     current = now()
     async with authorized_admin(request, write=True) as identity:
+        quota_state = await identity.session.scalar(
+            select(AIQuotaPolicyState)
+            .where(AIQuotaPolicyState.id == 1)
+            .with_for_update(read=True)
+        )
+        quota_policy = (
+            await identity.session.get(
+                AIQuotaPolicyVersion,
+                quota_state.current_version_id,
+            )
+            if quota_state is not None
+            and quota_state.current_version_id is not None
+            else None
+        )
         capability = await identity.session.scalar(
             select(AIConfigVersion.capability).where(AIConfigVersion.id == config_id)
         )
@@ -314,6 +329,18 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
         )
         if config is None:
             raise config_not_found()
+        if quota_policy is not None and (
+            config.price_currency != quota_policy.currency
+            or config.input_price_nanos_per_million_tokens is None
+            or config.cached_input_price_nanos_per_million_tokens is None
+            or config.output_price_nanos_per_million_tokens is None
+        ):
+            raise AppError(
+                "ai_quota_pricing_unavailable",
+                "AI 配置价格必须与当前每日额度币种一致。",
+                status=409,
+                details={"currency": quota_policy.currency},
+            )
         if state.current_version_id == config.id and config.status == "published":
             return config_result(config)
         target_was_retired = config.status == "retired"
