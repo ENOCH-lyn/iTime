@@ -33,7 +33,7 @@ class ConversationProviderResult:
     content: str
     provider_request_id: str | None
     http_status: int
-    usage: dict | None
+    usage: object | None
 
 
 class ConversationProviderError(Exception):
@@ -46,6 +46,7 @@ class ConversationProviderError(Exception):
         retryable: bool = False,
         provider_request_id: str | None = None,
         http_status: int | None = None,
+        usage: object | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -54,6 +55,7 @@ class ConversationProviderError(Exception):
         self.retryable = retryable
         self.provider_request_id = provider_request_id
         self.http_status = http_status
+        self.usage = usage
 
 
 class ConversationGenerationSuperseded(Exception):
@@ -70,6 +72,7 @@ def conversation_request_body(
         "max_tokens": config.max_output_tokens,
         "temperature": 0,
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
 
 
@@ -117,6 +120,8 @@ def _provider_error(
 def _invalid_stream(
     request_id: str | None,
     http_status: int,
+    *,
+    usage: object | None = None,
 ) -> ConversationProviderError:
     return ConversationProviderError(
         "conversation_stream_invalid",
@@ -124,6 +129,7 @@ def _invalid_stream(
         "validation",
         provider_request_id=request_id,
         http_status=http_status,
+        usage=usage,
     )
 
 
@@ -157,24 +163,24 @@ def _event_delta(
     data: str,
     request_id: str | None,
     http_status: int,
-) -> tuple[str | None, dict | None, bool]:
+) -> tuple[str | None, object | None, bool]:
     if data.strip() == "[DONE]":
         return None, None, True
     try:
         payload = json.loads(data)
+        if not isinstance(payload, dict):
+            raise TypeError
         choices = payload.get("choices")
         usage = payload.get("usage")
     except (TypeError, json.JSONDecodeError) as exc:
         raise _invalid_stream(request_id, http_status) from exc
-    if usage is not None and not isinstance(usage, dict):
-        raise _invalid_stream(request_id, http_status)
     if not choices:
         return None, usage, False
     if not isinstance(choices, list) or not isinstance(choices[0], dict):
-        raise _invalid_stream(request_id, http_status)
+        raise _invalid_stream(request_id, http_status, usage=usage)
     delta = choices[0].get("delta")
     if not isinstance(delta, dict):
-        raise _invalid_stream(request_id, http_status)
+        raise _invalid_stream(request_id, http_status, usage=usage)
     if delta.get("tool_calls") or delta.get("function_call"):
         raise ConversationProviderError(
             "conversation_tools_not_supported",
@@ -182,12 +188,13 @@ def _event_delta(
             "validation",
             provider_request_id=request_id,
             http_status=http_status,
+            usage=usage,
         )
     content = delta.get("content")
     if content is None:
         return None, usage, False
     if not isinstance(content, str):
-        raise _invalid_stream(request_id, http_status)
+        raise _invalid_stream(request_id, http_status, usage=usage)
     return content, usage, False
 
 
@@ -195,12 +202,15 @@ def _json_content(
     body: bytes,
     request_id: str | None,
     http_status: int,
-) -> tuple[str, dict | None]:
+) -> tuple[str, object | None]:
+    usage: object | None = None
     try:
         payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise TypeError
+        usage = payload.get("usage")
         choices = payload["choices"]
         content = choices[0]["message"]["content"]
-        usage = payload.get("usage")
     except (
         KeyError,
         IndexError,
@@ -208,11 +218,9 @@ def _json_content(
         UnicodeDecodeError,
         json.JSONDecodeError,
     ) as exc:
-        raise _invalid_stream(request_id, http_status) from exc
-    if not isinstance(content, str) or (
-        usage is not None and not isinstance(usage, dict)
-    ):
-        raise _invalid_stream(request_id, http_status)
+        raise _invalid_stream(request_id, http_status, usage=usage) from exc
+    if not isinstance(content, str):
+        raise _invalid_stream(request_id, http_status, usage=usage)
     return content, usage
 
 
@@ -220,10 +228,10 @@ async def _consume_sse(
     response: httpx.Response,
     *,
     on_delta: Callable[[str], Awaitable[bool]],
-) -> tuple[str, dict | None]:
+) -> tuple[str, object | None]:
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     request_id = response.headers.get("x-request-id")
-    usage: dict | None = None
+    usage: object | None = None
 
     async def read_events() -> None:
         nonlocal usage
@@ -296,6 +304,7 @@ async def stream_conversation_reply(
     messages: list[dict[str, str]],
     timeout_seconds: float,
     on_delta: Callable[[str], Awaitable[bool]],
+    on_request_started: Callable[[], Awaitable[bool]],
 ) -> ConversationProviderResult:
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -341,6 +350,8 @@ async def stream_conversation_reply(
                 trust_env=False,
                 follow_redirects=False,
             ) as client:
+                if not await on_request_started():
+                    raise ConversationGenerationSuperseded
                 async with client.stream(
                     "POST",
                     config.endpoint_url + "/chat/completions",
@@ -421,6 +432,7 @@ async def stream_conversation_reply(
             "validation",
             provider_request_id=request_id,
             http_status=http_status,
+            usage=usage,
         )
     return ConversationProviderResult(
         content=content,

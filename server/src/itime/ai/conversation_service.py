@@ -810,6 +810,7 @@ async def complete_conversation_job(
             status="succeeded",
             provider_request_id=result.provider_request_id,
             http_status=result.http_status,
+            provider_usage=result.usage,
         )
         message.content = result.content
         message.status = "complete"
@@ -861,6 +862,7 @@ async def reject_or_retry_conversation_job(
     retryable: bool,
     provider_request_id: str | None = None,
     http_status: int | None = None,
+    provider_usage: object | None = None,
 ) -> str | None:
     current = now()
     async with database.transaction() as session:
@@ -915,6 +917,7 @@ async def reject_or_retry_conversation_job(
                 error_stage=error_stage,
                 provider_request_id=provider_request_id,
                 http_status=http_status,
+                provider_usage=provider_usage,
             )
             job.status = "queued"
             job.available_at = current + timedelta(seconds=delay)
@@ -957,6 +960,7 @@ async def reject_or_retry_conversation_job(
             error_stage="deadline" if timed_out else error_stage,
             provider_request_id=provider_request_id,
             http_status=http_status,
+            provider_usage=provider_usage,
         )
         job.status = status
         job.error_code = final_code

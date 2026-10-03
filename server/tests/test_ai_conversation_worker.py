@@ -29,6 +29,12 @@ pytestmark = pytest.mark.integration
 
 PARTIAL_REPLY = "已经保存的片段"
 LATE_REPLY = "不应保存的晚到内容"
+CHAT_USAGE = {
+    "prompt_tokens": 100,
+    "completion_tokens": 20,
+    "total_tokens": 120,
+    "prompt_tokens_details": {"cached_tokens": 10},
+}
 
 
 def sse_delta(text: str) -> bytes:
@@ -37,6 +43,15 @@ def sse_delta(text: str) -> bytes:
         "choices": [{"index": 0, "delta": {"content": text}}],
     }
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+
+
+def sse_usage() -> bytes:
+    payload = {
+        "id": "chat-completion-test",
+        "choices": [],
+        "usage": CHAT_USAGE,
+    }
+    return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 @dataclass
@@ -128,7 +143,14 @@ def chat_handler(state: ChatUpstreamState):
                     request_id,
                 )
                 return
-            if mode == "json":
+            if mode == "invalid_with_usage":
+                self._json_response(
+                    200,
+                    {"choices": [], "usage": CHAT_USAGE},
+                    request_id,
+                )
+                return
+            if mode in {"json", "json_invalid_usage"}:
                 self._json_response(
                     200,
                     {
@@ -139,7 +161,10 @@ def chat_handler(state: ChatUpstreamState):
                                     "content": "一次性 JSON 回复",
                                 }
                             }
-                        ]
+                        ],
+                        "usage": (
+                            CHAT_USAGE if mode == "json" else "invalid-usage"
+                        ),
                     },
                     request_id,
                 )
@@ -150,12 +175,16 @@ def chat_handler(state: ChatUpstreamState):
                 self._write_chunks([b"data: {not-json}\n\n", b"data: [DONE]\n\n"])
                 return
             if mode == "empty":
-                self._write_chunks([b"data: [DONE]\n\n"])
+                self._write_chunks([sse_usage(), b"data: [DONE]\n\n"])
                 return
             if mode == "idle":
                 state.release.wait(timeout=10)
                 self._write_chunks(
-                    [sse_delta("空闲续租后完成"), b"data: [DONE]\n\n"]
+                    [
+                        sse_delta("空闲续租后完成"),
+                        sse_usage(),
+                        b"data: [DONE]\n\n",
+                    ]
                 )
                 return
             if mode == "cancel":
@@ -163,7 +192,7 @@ def chat_handler(state: ChatUpstreamState):
                 state.first_delta_sent.set()
                 state.release.wait(timeout=10)
                 self._write_chunks(
-                    [sse_delta(LATE_REPLY), b"data: [DONE]\n\n"],
+                    [sse_delta(LATE_REPLY), sse_usage(), b"data: [DONE]\n\n"],
                     pause=0,
                 )
                 return
@@ -176,6 +205,7 @@ def chat_handler(state: ChatUpstreamState):
                     first_frame[17:split_at],
                     first_frame[split_at:],
                     sse_delta("，后半段"),
+                    sse_usage(),
                     b"data: [DONE]\n\n",
                 ]
             )
@@ -316,10 +346,14 @@ def publish_conversation_config(
             INSERT INTO ai_config_versions (
                 id, capability, version, endpoint_url, model,
                 api_key_ciphertext, timeout_seconds, max_output_tokens,
+                price_currency, input_price_nanos_per_million_tokens,
+                cached_input_price_nanos_per_million_tokens,
+                output_price_nanos_per_million_tokens,
                 status, last_test_id, last_test_started_at,
                 last_test_completed_at, published_at
             ) VALUES (
                 %s, 'conversation', %s, %s, 'chat-model', %s, 10, 4096,
+                'CNY', 1000000000, 500000000, 2000000000,
                 'published', %s, now(), now(), now()
             )
             """,
@@ -464,6 +498,17 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
             """,
             (job_id,),
         ).fetchall()
+        costs = connection.execute(
+            """
+            SELECT attempt_number, attempt_status, usage_source,
+                   input_tokens, cached_input_tokens, output_tokens,
+                   total_tokens, price_currency, total_cost_nanos
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            ORDER BY attempt_number
+            """,
+            (job_id,),
+        ).fetchall()
     assert job is not None
     assert generation is not None
     assert message is not None
@@ -473,6 +518,7 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
         "message": message,
         "attempts": attempts,
         "events": events,
+        "costs": costs,
     }
 
 
@@ -507,12 +553,14 @@ def assert_success(
     expected_content: str,
     expected_generation: int,
     expected_attempts: int,
+    expected_usage_source: str = "provider",
 ) -> None:
     job = snapshot["job"]
     generation = snapshot["generation"]
     message = snapshot["message"]
     attempts = snapshot["attempts"]
     events = snapshot["events"]
+    costs = snapshot["costs"]
 
     assert job["status"] == "succeeded"
     assert job["output"] is not None
@@ -528,6 +576,20 @@ def assert_success(
     assert len(attempts) == expected_attempts
     assert attempts[-1]["status"] == "succeeded"
     assert attempts[-1]["finished_at"] is not None
+    assert len(costs) == expected_attempts
+    assert costs[-1]["attempt_status"] == "succeeded"
+    assert costs[-1]["usage_source"] == expected_usage_source
+    if expected_usage_source == "provider":
+        assert costs[-1]["input_tokens"] == 100
+        assert costs[-1]["cached_input_tokens"] == 10
+        assert costs[-1]["output_tokens"] == 20
+        assert costs[-1]["total_tokens"] == 120
+        assert costs[-1]["total_cost_nanos"] == 135_000
+    else:
+        assert costs[-1]["input_tokens"] > 0
+        assert costs[-1]["output_tokens"] > 0
+        assert costs[-1]["total_cost_nanos"] > 0
+    assert costs[-1]["price_currency"] == "CNY"
 
     assert_event_consistency(snapshot)
     deltas = [event for event in events if event["kind"] == "content_delta"]
@@ -554,10 +616,11 @@ def parse_sse(body: str) -> list[dict]:
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected_content"),
+    ("mode", "expected_content", "expected_usage_source"),
     [
-        ("split_sse", "前半段，后半段"),
-        ("json", "一次性 JSON 回复"),
+        ("split_sse", "前半段，后半段", "provider"),
+        ("json", "一次性 JSON 回复", "provider"),
+        ("json_invalid_usage", "一次性 JSON 回复", "estimated"),
     ],
 )
 def test_conversation_worker_accepts_split_sse_and_json_fallback(
@@ -566,6 +629,7 @@ def test_conversation_worker_accepts_split_sse_and_json_fallback(
     chat_upstream: tuple[ChatUpstreamState, str],
     mode: str,
     expected_content: str,
+    expected_usage_source: str,
 ) -> None:
     state, endpoint = chat_upstream
     state.reset(mode)
@@ -584,6 +648,7 @@ def test_conversation_worker_accepts_split_sse_and_json_fallback(
         expected_content=expected_content,
         expected_generation=1,
         expected_attempts=1,
+        expected_usage_source=expected_usage_source,
     )
     assert snapshot["attempts"][0]["provider_request_id"] == "chat-request-1"
     assert snapshot["attempts"][0]["http_status"] == 200
@@ -594,6 +659,7 @@ def test_conversation_worker_accepts_split_sse_and_json_fallback(
     assert requests[0]["authorization"] == "Bearer sk-conversation-secret"
     assert requests[0]["body"]["model"] == "chat-model"
     assert requests[0]["body"]["stream"] is True
+    assert requests[0]["body"]["stream_options"] == {"include_usage": True}
 
 
 def test_rate_limit_retry_resets_content_with_new_generation(
@@ -632,6 +698,14 @@ def test_rate_limit_retry_resets_content_with_new_generation(
         expected_attempts=2,
     )
     assert [attempt["status"] for attempt in snapshot["attempts"]] == [
+        "retryable_failed",
+        "succeeded",
+    ]
+    assert [cost["usage_source"] for cost in snapshot["costs"]] == [
+        "estimated",
+        "provider",
+    ]
+    assert [cost["attempt_status"] for cost in snapshot["costs"]] == [
         "retryable_failed",
         "succeeded",
     ]
@@ -682,6 +756,7 @@ def test_queued_deadline_uses_conversation_terminal_projection(
     assert snapshot["message"]["error_code"] == "ai_job_deadline_exceeded"
     assert snapshot["events"][-1]["payload"]["status"] == "timed_out"
     assert state.request_snapshot() == []
+    assert snapshot["costs"] == []
     with psycopg.connect(
         psycopg_url(conversation_worker_database_url)
     ) as connection:
@@ -794,6 +869,10 @@ def test_cancel_wins_against_late_delta_and_completion(
     assert [attempt["status"] for attempt in snapshot["attempts"]] == [
         "cancelled"
     ]
+    assert len(snapshot["costs"]) == 1
+    assert snapshot["costs"][0]["attempt_status"] == "cancelled"
+    assert snapshot["costs"][0]["usage_source"] == "estimated"
+    assert snapshot["costs"][0]["output_tokens"] > 0
     assert snapshot["events"][-1]["kind"] == "job_state"
     assert snapshot["events"][-1]["generation"] == 1
     assert snapshot["events"][-1]["payload"]["status"] == "cancelled"
@@ -828,6 +907,7 @@ def test_cancel_wins_against_late_delta_and_completion(
     [
         ("authentication", "authentication", 401),
         ("invalid", "invalid", 200),
+        ("invalid_with_usage", "invalid", 200),
         ("empty", "empty", 200),
     ],
 )
@@ -874,6 +954,9 @@ def test_non_retryable_responses_finish_message_attempt_job_and_event(
     assert attempts[0]["error_code"] == job["error_code"]
     assert attempts[0]["http_status"] == http_status
     assert attempts[0]["provider_request_id"] == "chat-request-1"
+    assert snapshot["costs"][0]["usage_source"] == (
+        "provider" if mode in {"invalid_with_usage", "empty"} else "estimated"
+    )
     assert not [event for event in events if event["kind"] == "content_delta"]
     assert events[-1]["kind"] == "job_state"
     assert events[-1]["generation"] == 1

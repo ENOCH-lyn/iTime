@@ -74,6 +74,7 @@ def seed_job(
     status: str = "queued",
     deadline_delta: timedelta = timedelta(minutes=3),
     lease_delta: timedelta | None = None,
+    provider_started: bool = False,
 ) -> str:
     job_id = uuid4()
     current = datetime.now(UTC)
@@ -106,10 +107,18 @@ def seed_job(
         connection.execute(
             """
             INSERT INTO ai_job_attempts (
-                id, job_id, owner_id, attempt_number, lease_id, status, started_at
-            ) VALUES (%s, %s, %s, 1, %s, 'running', %s)
+                id, job_id, owner_id, attempt_number, lease_id, status,
+                provider_started_at, started_at
+            ) VALUES (%s, %s, %s, 1, %s, 'running', %s, %s)
             """,
-            (uuid4(), job_id, owner_id, lease_id, current),
+            (
+                uuid4(),
+                job_id,
+                owner_id,
+                lease_id,
+                current if provider_started else None,
+                current,
+            ),
         )
     return str(job_id)
 
@@ -317,6 +326,7 @@ def test_stale_lease_is_reclaimed_without_taking_active_job(database_url, client
             seed_media(connection, owner_id),
             status="running",
             lease_delta=timedelta(seconds=-1),
+            provider_started=True,
         )
         active_job = seed_job(
             connection,
@@ -356,6 +366,16 @@ def test_stale_lease_is_reclaimed_without_taking_active_job(database_url, client
             (stale_job,),
         ).fetchall()
         assert [row[0] for row in attempts] == ["abandoned", "failed"]
+        costs = connection.execute(
+            """
+            SELECT attempt_status, usage_source
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            ORDER BY attempt_number
+            """,
+            (stale_job,),
+        ).fetchall()
+        assert costs == [("abandoned", "estimated"), ("failed", "not_sent")]
         assert connection.execute(
             "SELECT status FROM ai_jobs WHERE id=%s",
             (active_job,),

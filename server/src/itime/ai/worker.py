@@ -20,6 +20,7 @@ from itime.ai.conversation_service import (
     load_conversation_work,
     reject_or_retry_conversation_job,
 )
+from itime.ai.cost_service import mark_provider_request_started
 from itime.ai.governance_service import prepare_attempt_body_log
 from itime.ai.job_service import (
     ClaimedJob,
@@ -29,6 +30,7 @@ from itime.ai.job_service import (
     renew_job_lease,
 )
 from itime.ai.screenshot_provider import (
+    ScreenshotGenerationSuperseded,
     ScreenshotProviderError,
     recognize_screenshot,
 )
@@ -111,6 +113,9 @@ async def _process_screenshot(
         )
         return
     try:
+        async def mark_started() -> bool:
+            return await mark_provider_request_started(database, claim)
+
         provider_result = await _with_lease_heartbeat(
             database,
             claim,
@@ -123,9 +128,10 @@ async def _process_screenshot(
                 content_type=work.content_type,
                 context=work.context,
                 timeout_seconds=remaining,
+                on_request_started=mark_started,
             ),
         )
-    except JobLeaseLost:
+    except (JobLeaseLost, ScreenshotGenerationSuperseded):
         return
     except ScreenshotProviderError as exc:
         await reject_or_retry_job(
@@ -137,6 +143,7 @@ async def _process_screenshot(
             retryable=exc.retryable,
             provider_request_id=exc.provider_request_id,
             http_status=exc.http_status,
+            provider_usage=exc.usage,
         )
         return
     finally:
@@ -194,6 +201,9 @@ async def _process_conversation(
             lease_seconds=settings.ai_job_lease_seconds,
         )
 
+    async def mark_started() -> bool:
+        return await mark_provider_request_started(database, claim)
+
     try:
         provider_result = await _with_lease_heartbeat(
             database,
@@ -206,6 +216,7 @@ async def _process_conversation(
                 messages=work.messages,
                 timeout_seconds=remaining,
                 on_delta=persist_delta,
+                on_request_started=mark_started,
             ),
         )
     except (JobLeaseLost, ConversationGenerationSuperseded):
@@ -221,6 +232,7 @@ async def _process_conversation(
             retryable=exc.retryable,
             provider_request_id=exc.provider_request_id,
             http_status=exc.http_status,
+            provider_usage=exc.usage,
         )
         return
     await complete_conversation_job(

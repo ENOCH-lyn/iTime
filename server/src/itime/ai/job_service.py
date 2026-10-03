@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.ai.cost_service import add_provider_cost
 from itime.ai.governance_service import (
     add_attempt_body_log,
     finish_attempt_body_log,
@@ -97,26 +98,28 @@ async def finish_running_attempt(
     error_stage: str | None = None,
     provider_request_id: str | None = None,
     http_status: int | None = None,
+    provider_usage: object | None = None,
 ) -> None:
     if job.lease_id is None:
         return
     finished_at = now()
-    await session.execute(
-        update(AIJobAttempt)
+    attempt = await session.scalar(
+        select(AIJobAttempt)
         .where(
             AIJobAttempt.job_id == job.id,
             AIJobAttempt.lease_id == job.lease_id,
             AIJobAttempt.status == "running",
         )
-        .values(
-            status=status,
-            error_code=error_code,
-            error_stage=error_stage,
-            provider_request_id=provider_request_id,
-            http_status=http_status,
-            finished_at=finished_at,
-        )
+        .with_for_update()
     )
+    if attempt is None:
+        return
+    attempt.status = status
+    attempt.error_code = error_code
+    attempt.error_stage = error_stage
+    attempt.provider_request_id = provider_request_id
+    attempt.http_status = http_status
+    attempt.finished_at = finished_at
     await finish_attempt_body_log(
         session,
         job,
@@ -126,6 +129,12 @@ async def finish_running_attempt(
         provider_request_id=provider_request_id,
         http_status=http_status,
         finished_at=finished_at,
+    )
+    await add_provider_cost(
+        session,
+        job,
+        attempt,
+        provider_usage=provider_usage,
     )
 
 
@@ -276,6 +285,7 @@ async def complete_job(
     *,
     provider_request_id: str | None = None,
     http_status: int | None = None,
+    provider_usage: object | None = None,
 ) -> bool:
     current = now()
     async with database.transaction() as session:
@@ -300,6 +310,7 @@ async def complete_job(
                 error_stage="deadline",
                 provider_request_id=provider_request_id,
                 http_status=http_status,
+                provider_usage=provider_usage,
             )
             job.status = "timed_out"
             job.error_code = "ai_job_deadline_exceeded"
@@ -315,6 +326,7 @@ async def complete_job(
             status="succeeded",
             provider_request_id=provider_request_id,
             http_status=http_status,
+            provider_usage=provider_usage,
         )
         job.status = "succeeded"
         job.output = output
@@ -337,6 +349,7 @@ async def reject_or_retry_job(
     retryable: bool,
     provider_request_id: str | None = None,
     http_status: int | None = None,
+    provider_usage: object | None = None,
 ) -> str | None:
     current = now()
     async with database.transaction() as session:
@@ -368,6 +381,7 @@ async def reject_or_retry_job(
                 error_stage=error_stage,
                 provider_request_id=provider_request_id,
                 http_status=http_status,
+                provider_usage=provider_usage,
             )
             job.status = "queued"
             job.available_at = current + timedelta(seconds=delay)
@@ -394,6 +408,7 @@ async def reject_or_retry_job(
             error_stage="deadline" if timed_out else error_stage,
             provider_request_id=provider_request_id,
             http_status=http_status,
+            provider_usage=provider_usage,
         )
         job.status = status
         job.error_code = final_code

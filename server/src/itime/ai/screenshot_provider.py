@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import httpx
@@ -26,6 +27,7 @@ class ScreenshotProviderResult:
     response_body: str
     provider_request_id: str | None
     http_status: int
+    usage: object | None
 
 
 class ScreenshotProviderError(Exception):
@@ -38,6 +40,7 @@ class ScreenshotProviderError(Exception):
         retryable: bool = False,
         provider_request_id: str | None = None,
         http_status: int | None = None,
+        usage: object | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -46,6 +49,11 @@ class ScreenshotProviderError(Exception):
         self.retryable = retryable
         self.provider_request_id = provider_request_id
         self.http_status = http_status
+        self.usage = usage
+
+
+class ScreenshotGenerationSuperseded(Exception):
+    pass
 
 
 def _prompt(context: dict) -> str:
@@ -107,14 +115,24 @@ def screenshot_log_request_body(
     }
 
 
-def _parse_response(body: bytes) -> tuple[ScreenshotRecognitionOutput, str]:
+def _parse_response(
+    body: bytes,
+) -> tuple[ScreenshotRecognitionOutput, str, object | None]:
+    usage: object | None = None
     try:
         payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise TypeError
+        usage = payload.get("usage")
         choices = payload["choices"]
         content = choices[0]["message"]["content"]
         if not isinstance(content, str):
             raise TypeError
-        return ScreenshotRecognitionOutput.model_validate_json(content), content
+        return (
+            ScreenshotRecognitionOutput.model_validate_json(content),
+            content,
+            usage,
+        )
     except (
         KeyError,
         IndexError,
@@ -127,6 +145,7 @@ def _parse_response(body: bytes) -> tuple[ScreenshotRecognitionOutput, str]:
             "screenshot_output_invalid",
             "识别服务返回的结构无法校验，请重新尝试。",
             "validation",
+            usage=usage,
         ) from exc
 
 
@@ -139,6 +158,7 @@ async def recognize_screenshot(
     content_type: str,
     context: dict,
     timeout_seconds: float,
+    on_request_started: Callable[[], Awaitable[bool]],
 ) -> ScreenshotProviderResult:
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -211,6 +231,8 @@ async def recognize_screenshot(
                 trust_env=False,
                 follow_redirects=False,
             ) as client:
+                if not await on_request_started():
+                    raise ScreenshotGenerationSuperseded
                 async with client.stream(
                     "POST",
                     config.endpoint_url + "/chat/completions",
@@ -271,7 +293,7 @@ async def recognize_screenshot(
                                 http_status=response.status_code,
                             )
                         chunks.append(chunk)
-    except ScreenshotProviderError:
+    except (ScreenshotProviderError, ScreenshotGenerationSuperseded):
         raise
     except (TimeoutError, httpx.TimeoutException) as exc:
         raise ScreenshotProviderError(
@@ -291,7 +313,7 @@ async def recognize_screenshot(
         api_key = ""
 
     try:
-        output, response_body = _parse_response(b"".join(chunks))
+        output, response_body, usage = _parse_response(b"".join(chunks))
     except ScreenshotProviderError as exc:
         exc.provider_request_id = request_id
         exc.http_status = response.status_code
@@ -301,4 +323,5 @@ async def recognize_screenshot(
         response_body=response_body,
         provider_request_id=request_id,
         http_status=response.status_code,
+        usage=usage,
     )

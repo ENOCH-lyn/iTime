@@ -98,7 +98,14 @@ def vision_handler(state: VisionState):
                 response = {"error": "private-upstream-body"}
             elif mode == "invalid":
                 status = 200
-                response = {"choices": [{"message": {"content": "not json"}}]}
+                response = {
+                    "choices": [{"message": {"content": "not json"}}],
+                    "usage": {
+                        "prompt_tokens": 400,
+                        "completion_tokens": 20,
+                        "total_tokens": 420,
+                    },
+                }
             else:
                 items = [
                     {
@@ -118,7 +125,12 @@ def vision_handler(state: VisionState):
                 response = {
                     "choices": [
                         {"message": {"content": json.dumps({"items": items})}}
-                    ]
+                    ],
+                    "usage": {
+                        "prompt_tokens": 400,
+                        "completion_tokens": 120,
+                        "total_tokens": 520,
+                    },
                 }
             encoded = json.dumps(response).encode()
             try:
@@ -302,10 +314,15 @@ def publish_config(database_url: str, settings: Settings, endpoint: str) -> str:
             INSERT INTO ai_config_versions (
                 id, capability, version, endpoint_url, model, api_key_ciphertext,
                 timeout_seconds, max_output_tokens, status, last_test_id,
+                price_currency, input_price_nanos_per_million_tokens,
+                cached_input_price_nanos_per_million_tokens,
+                output_price_nanos_per_million_tokens,
                 last_test_started_at, last_test_completed_at, published_at
             ) VALUES (
                 %s, 'calendar_screenshot', %s, %s, 'vision-model',
-                %s, 5, 4096, 'published', %s, now(), now(), now()
+                %s, 5, 4096, 'published', %s,
+                'CNY', 1000000000, 500000000, 2000000000,
+                now(), now(), now()
             )
             """,
             (
@@ -420,6 +437,15 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
             """,
             (job["id"],),
         ).fetchone()
+        provider_cost = connection.execute(
+            """
+            SELECT attempt_status, usage_source, input_tokens, output_tokens,
+                   total_tokens, price_currency, total_cost_nanos
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
     assert body_log is not None
     assert body_log[3] == "succeeded"
     serialized_log_request = json.dumps(body_log[1], ensure_ascii=False)
@@ -429,6 +455,15 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
     assert "sk-screenshot-secret" not in serialized_log_request
     assert json.loads(body_log[2])["items"][0]["draft"]["name"] == "高等数学"
     assert sample == (body_log[0], body_log[1], body_log[2], "pending")
+    assert provider_cost == (
+        "succeeded",
+        "provider",
+        400,
+        120,
+        520,
+        "CNY",
+        640_000,
+    )
     batch_id = completed.json()["output"]["batch_id"]
     detail = screenshot_client.get(
         f"/api/v1/calendar/imports/{batch_id}"
@@ -565,6 +600,17 @@ def test_retry_then_invalid_output_preserves_media(
             "SELECT count(*) FROM calendar_import_batches WHERE origin_job_id=%s",
             (job["id"],),
         ).fetchone()[0] == 0
+        costs = connection.execute(
+            """
+            SELECT attempt_status, usage_source, input_tokens, output_tokens
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            ORDER BY attempt_number
+            """,
+            (job["id"],),
+        ).fetchall()
+        assert costs[0][0:2] == ("retryable_failed", "estimated")
+        assert costs[1] == ("failed", "provider", 400, 20)
 
 
 def test_cancel_wins_against_late_provider_result(
@@ -599,6 +645,16 @@ def test_cancel_wins_against_late_provider_result(
             "SELECT count(*) FROM calendar_import_batches WHERE origin_job_id=%s",
             (job["id"],),
         ).fetchone()[0] == 0
+        cost = connection.execute(
+            """
+            SELECT attempt_status, usage_source, output_tokens
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+        assert cost is not None
+        assert cost[0:2] == ("cancelled", "estimated")
 
 
 def test_screenshot_migration_round_trip(admin_url):

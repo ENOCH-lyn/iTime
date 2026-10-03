@@ -416,13 +416,19 @@ class AIProviderCost(Base):
             name="usage_source",
         ),
         CheckConstraint(
+            "(usage_source = 'not_sent') = (provider_started_at IS NULL)",
+            name="provider_started_state",
+        ),
+        CheckConstraint(
             "(usage_source = 'estimated') = "
             "(estimation_reason IS NOT NULL AND estimator_version IS NOT NULL)",
             name="estimation_state",
         ),
         CheckConstraint(
-            "input_tokens >= 0 AND cached_input_tokens >= 0 "
-            "AND output_tokens >= 0 AND total_tokens >= 0 "
+            "input_tokens BETWEEN 0 AND 1000000000 "
+            "AND cached_input_tokens BETWEEN 0 AND 1000000000 "
+            "AND output_tokens BETWEEN 0 AND 1000000000 "
+            "AND total_tokens BETWEEN 0 AND 2000000000 "
             "AND cached_input_tokens <= input_tokens",
             name="tokens",
         ),

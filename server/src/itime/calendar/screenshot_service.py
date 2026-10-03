@@ -182,6 +182,7 @@ async def apply_screenshot_result(
                 error_stage="deadline",
                 provider_request_id=result.provider_request_id,
                 http_status=result.http_status,
+                provider_usage=result.usage,
             )
             job.status = "timed_out"
             job.error_code = "ai_job_deadline_exceeded"
@@ -247,6 +248,7 @@ async def apply_screenshot_result(
             status="succeeded",
             provider_request_id=result.provider_request_id,
             http_status=result.http_status,
+            provider_usage=result.usage,
         )
         job.status = "succeeded"
         job.output = {
