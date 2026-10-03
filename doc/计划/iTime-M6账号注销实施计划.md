@@ -811,7 +811,7 @@ git commit -m "feat: 展示账号注销生命周期"
 - Modify: `web/src/pages/AuthPage.vue`
 - Test: `web/e2e/account-deletion.spec.ts`
 
-- [ ] **Step 1: 写登录恢复和本地清理失败 E2E**
+- [x] **Step 1: 写登录恢复和本地清理失败 E2E**
 
 使用两个 browser context 登录同一账号，预置：
 
@@ -823,7 +823,7 @@ git commit -m "feat: 展示账号注销生命周期"
 申请注销后断言两个标签均清空内存身份、游标和账号本地数据，第二设备业务请求 401。错误密码
 登录只显示凭据错误；正确密码显示到期时刻和撤销按钮；撤销成功显示恢复完成并可进入 `/ai`。
 
-- [ ] **Step 2: 实现 API 类型**
+- [x] **Step 2: 实现 API 类型**
 
 ```typescript
 export interface AccountDeletion {
@@ -858,7 +858,7 @@ export function cancelAccountDeletion(input: {
 }
 ```
 
-- [ ] **Step 3: 实现跨标签删除广播**
+- [x] **Step 3: 实现跨标签删除广播**
 
 `auth.ts` 增加：
 
@@ -878,7 +878,7 @@ export function notifyAccountDiscard(userId: string) {
 channel 接收 `discard` 时，即使当前标签没有有效身份，也清理该 namespace；若身份属于该账号，
 同时 `clearSession({ discardLocal: true })`。保留旧 `changed` 消息兼容现有登录/改密/退出测试。
 
-- [ ] **Step 4: 接入登录页撤销**
+- [x] **Step 4: 接入登录页撤销**
 
 `AuthPage.vue` 在 login 捕获 `account_deletion_pending` 时保留内存中的 email/password，
 从 `details` 构造只读 pending 状态。按钮调用 cancel API；成功后 `acceptSession`、
@@ -886,7 +886,7 @@ channel 接收 `discard` 时，即使当前标签没有有效身份，也清理�
 
 组件卸载和任何非 pending 错误都清空注销状态；不得把凭据或状态写 URL/Storage。
 
-- [ ] **Step 5: 构建、验证并提交**
+- [x] **Step 5: 构建、验证并提交**
 
 ```bash
 cd web

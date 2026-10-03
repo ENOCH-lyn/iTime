@@ -47,22 +47,40 @@ export function confirmDiscardPendingOperations() {
   )
 }
 
+export function discardAccountLocalData(userId: string) {
+  clearTaskQueue(userId)
+  clearFocusQueues(userId)
+  sessionStorage.removeItem(`itime-sync-cursor:${userId}`)
+  void clearAccountCache(userId)
+}
+
 export function clearSession(options: { discardLocal?: boolean } = {}) {
   revision += 1
   const userId = identity.value?.user.id ?? null
   identity.value = null
   setCsrf('')
   if (options.discardLocal && userId) {
-    clearTaskQueue(userId)
-    clearFocusQueues(userId)
-    sessionStorage.removeItem(`itime-sync-cursor:${userId}`)
-    void clearAccountCache(userId)
+    discardAccountLocalData(userId)
   }
   void setCacheAccount(null)
 }
 
 export function notifySessionChange() { channel?.postMessage('changed') }
-channel?.addEventListener('message', () => {
+export function notifyAccountDiscard(userId: string) {
+  channel?.postMessage({ type: 'discard', user_id: userId })
+}
+channel?.addEventListener('message', event => {
+  if (
+    typeof event.data === 'object'
+    && event.data !== null
+    && event.data.type === 'discard'
+    && typeof event.data.user_id === 'string'
+  ) {
+    const userId = event.data.user_id
+    discardAccountLocalData(userId)
+    if (identity.value?.user.id === userId) clearSession()
+    return
+  }
   // A cookie rotation in another tab invalidates any in-flight account snapshot.
   revision += 1
   if (identity.value) {

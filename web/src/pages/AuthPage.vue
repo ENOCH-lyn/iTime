@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowRight, ArrowLeft, MailCheck } from 'lucide-vue-next'
+import {
+  ArrowLeft,
+  ArrowRight,
+  CircleCheck,
+  Clock3,
+  MailCheck,
+  RotateCcw,
+} from 'lucide-vue-next'
 import FormField from '../components/FormField.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import AppearanceControls from '../components/AppearanceControls.vue'
+import { cancelAccountDeletion } from '../lib/account-deletion'
 import { api, failure, localFailure, passwordError, type Failure, type Policy } from '../lib/api'
 import { acceptSession, notifySessionChange, type Session } from '../lib/auth'
 
@@ -35,6 +43,12 @@ const finished = ref(false)
 const token = ref('')
 const invitationToken = ref('')
 const cooldown = ref(0)
+const pendingDeletion = ref<{
+  requested_at: string
+  purge_after: string
+  can_cancel: boolean
+} | null>(null)
+const restored = ref(false)
 let cooldownUntil = 0
 let timer: number | undefined
 const passwordHint = computed(() => policy.value
@@ -74,6 +88,12 @@ onUnmounted(() => {
   invitationToken.value = ''
   values.password = ''
   values.confirmation = ''
+  pendingDeletion.value = null
+})
+watch(() => props.mode, () => {
+  pendingDeletion.value = null
+  restored.value = false
+  values.password = ''
 })
 
 function validate(field: 'email' | 'password' | 'confirmation') {
@@ -107,6 +127,8 @@ async function submit() {
     return
   }
   pending.value = true
+  pendingDeletion.value = null
+  restored.value = false
   try {
     const email = values.email.trim()
     if (props.mode === 'login') {
@@ -138,7 +160,26 @@ async function submit() {
     }
     values.password = ''; values.confirmation = ''
   } catch (err) {
-    error.value = failure(err)
+    const current = failure(err)
+    const details = current.details
+    if (
+      props.mode === 'login'
+      && current.code === 'account_deletion_pending'
+      && typeof details?.requested_at === 'string'
+      && typeof details?.purge_after === 'string'
+      && typeof details?.can_cancel === 'boolean'
+    ) {
+      pendingDeletion.value = {
+        requested_at: details.requested_at,
+        purge_after: details.purge_after,
+        can_cancel: details.can_cancel,
+      }
+      error.value = null
+      await nextTick()
+      document.querySelector<HTMLElement>('[data-deletion-title]')?.focus()
+      return
+    }
+    error.value = current
     for (const field of error.value.details?.fields ?? []) {
       const name = field.path.split('.').pop()!
       errors[name === 'new_password' ? 'password' : name] = '请检查此字段的格式。'
@@ -146,6 +187,46 @@ async function submit() {
     await nextTick()
     document.querySelector<HTMLElement>('.error-status')?.focus()
   } finally { pending.value = false }
+}
+async function restoreAccount() {
+  if (pending.value || !pendingDeletion.value?.can_cancel) return
+  pending.value = true
+  error.value = null
+  try {
+    const result = await cancelAccountDeletion({
+      email: values.email.trim(),
+      password: values.password,
+      device_name: `网页浏览器 · ${navigator.userAgent.includes('Mobile') ? '手机' : '电脑/平板'}`,
+    })
+    acceptSession(result.session)
+    notifySessionChange()
+    values.email = ''
+    values.password = ''
+    pendingDeletion.value = null
+    restored.value = true
+    success.value = '账号已恢复。此前终止的临时任务不会自动重新开始。'
+    await nextTick()
+    document.querySelector<HTMLElement>('[data-restored-title]')?.focus()
+  } catch (reason) {
+    const current = failure(reason)
+    error.value = current
+    if (current.code === 'account_deletion_expired' && pendingDeletion.value) {
+      pendingDeletion.value.can_cancel = false
+    }
+    await nextTick()
+    document.querySelector<HTMLElement>('.error-status')?.focus()
+  } finally {
+    pending.value = false
+  }
+}
+function resetPendingLogin() {
+  pendingDeletion.value = null
+  error.value = null
+  values.password = ''
+  void nextTick(() => document.getElementById('email')?.focus())
+}
+function localTime(value: string) {
+  return new Date(value).toLocaleString('zh-CN')
 }
 async function resend() {
   if (pending.value || cooldown.value || !policy.value) return
@@ -174,7 +255,43 @@ async function resend() {
       </aside>
       <section class="auth-form-panel">
         <div class="auth-form-content">
-          <template v-if="finished">
+          <template v-if="restored">
+            <CircleCheck class="success-icon" :size="32" aria-hidden="true" />
+            <h1 data-restored-title tabindex="-1">账号已恢复</h1>
+            <p class="page-description">
+              已创建新的登录会话。此前终止的 AI、导出和临时文件不会自动恢复。
+            </p>
+            <StatusMessage :success="success" />
+            <button class="button full-width" type="button" @click="router.replace('/ai')">
+              进入 iTime<ArrowRight :size="18" aria-hidden="true" />
+            </button>
+          </template>
+          <template v-else-if="pendingDeletion">
+            <Clock3 class="success-icon" :size="32" aria-hidden="true" />
+            <h1 data-deletion-title tabindex="-1">账号正在注销</h1>
+            <p class="page-description">
+              申请后账号已锁定。你可以在 7 天撤销期内恢复，截止时间为
+              <strong class="wrap-anywhere">{{ localTime(pendingDeletion.purge_after) }}</strong>。
+            </p>
+            <StatusMessage :error="error" />
+            <button
+              v-if="pendingDeletion.can_cancel"
+              class="button full-width"
+              type="button"
+              :disabled="pending"
+              @click="restoreAccount"
+            >
+              <RotateCcw v-if="!pending" :size="18" aria-hidden="true" />
+              {{ pending ? '正在恢复…' : '撤销注销并登录' }}
+            </button>
+            <p v-else class="status error-status" role="alert">
+              7 天撤销期已经结束，账号不能再恢复。
+            </p>
+            <button class="text-button full-width" type="button" :disabled="pending" @click="resetPendingLogin">
+              返回登录
+            </button>
+          </template>
+          <template v-else-if="finished">
             <MailCheck v-if="mailFlow" class="success-icon" :size="32" aria-hidden="true" />
             <h1 tabindex="-1">{{ mailFlow ? '去邮箱看看吧' : (mode === 'verify-email' ? '邮箱已验证' : '密码已重设') }}</h1>
             <p v-if="mailFlow" class="page-description wrap-anywhere">发送至 {{ values.email.trim() }}。邮件可能需要一点时间。</p>
