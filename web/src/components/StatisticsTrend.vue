@@ -62,7 +62,7 @@ function shortDuration(seconds: number) {
           <p>当前计划版本中与活动日相交的时间。</p>
         </div>
       </header>
-      <div class="statistics-chart-scroll">
+      <div class="statistics-chart-scroll" tabindex="0" aria-label="计划分钟趋势，可横向滚动">
         <ol
           class="statistics-chart-points"
           :style="{ '--point-count': Math.max(days.length, 1) }"
@@ -94,7 +94,7 @@ function shortDuration(seconds: number) {
           <p>实色为完成，描边为跳过。</p>
         </div>
       </header>
-      <div class="statistics-chart-scroll">
+      <div class="statistics-chart-scroll" tabindex="0" aria-label="任务结果趋势，可横向滚动">
         <ol
           class="statistics-chart-points"
           :style="{ '--point-count': Math.max(days.length, 1) }"
@@ -130,7 +130,7 @@ function shortDuration(seconds: number) {
           <p>完成、放弃与进行中的有效时长合计。</p>
         </div>
       </header>
-      <div class="statistics-chart-scroll">
+      <div class="statistics-chart-scroll" tabindex="0" aria-label="专注分钟趋势，可横向滚动">
         <ol
           class="statistics-chart-points"
           :style="{ '--point-count': Math.max(days.length, 1) }"
