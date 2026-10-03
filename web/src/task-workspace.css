@@ -894,7 +894,8 @@
 }
 
 .link-source-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   align-items: center;
   gap: 7px;
@@ -904,16 +905,16 @@
 .link-source-heading strong {
   color: var(--text);
   font-size: .8125rem;
+  white-space: nowrap;
 }
 
 .link-source-heading > span {
   min-width: 0;
-  margin-left: auto;
+  justify-self: end;
   text-align: right;
 }
 
 .link-source-heading .link-refresh-button {
-  flex: 0 0 32px;
   width: 32px;
   height: 32px;
   margin: -6px -6px -6px 2px;
@@ -1318,6 +1319,19 @@
     padding: 10px 12px 8px;
   }
 
+  .task-navigation-top {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .product-navigation {
+    flex: 1 1 auto;
+  }
+
+  .task-locations {
+    max-width: 100%;
+  }
+
   .product-navigation .nav-link {
     min-height: 40px;
     padding: 7px 9px;
@@ -1483,6 +1497,22 @@
   .task-account .nav-link {
     width: 36px;
     height: 40px;
+  }
+
+  .link-source-heading {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .link-source-heading > span {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .link-source-heading .link-refresh-button {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 
   .task-list-heading {

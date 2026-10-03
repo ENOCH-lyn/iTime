@@ -23,7 +23,6 @@ OWNER_RATE_WINDOW = timedelta(minutes=10)
 RETRY_DELAYS = (timedelta(minutes=1), timedelta(minutes=5))
 OWNER_ADVISORY_LOCK_SEED = 731_924
 CLAIM_SCAN_LIMIT = 100
-MANUAL_REFRESH_COOLDOWN = timedelta(seconds=30)
 MAX_PLANNING_SOURCES_PER_TASK = 3
 MAX_PLANNING_SOURCE_CHARS = 4000
 MAX_PLANNING_SOURCE_TOTAL_CHARS = 24_000
@@ -171,6 +170,8 @@ async def queue_public_link_refresh(
     owner_id: UUID,
     task_id: UUID,
     link_id: UUID,
+    *,
+    cooldown_seconds: int = 30,
 ) -> TaskLink:
     link = await session.scalar(
         select(TaskLink)
@@ -190,13 +191,14 @@ async def queue_public_link_refresh(
     if link.fetch_status in {"queued", "running"}:
         return link
     current = now()
+    cooldown = timedelta(seconds=cooldown_seconds)
     if (
         link.last_attempt_at is not None
-        and current - link.last_attempt_at < MANUAL_REFRESH_COOLDOWN
+        and current - link.last_attempt_at < cooldown
     ):
         retry_after = ceil(
             (
-                MANUAL_REFRESH_COOLDOWN
+                cooldown
                 - (current - link.last_attempt_at)
             ).total_seconds()
         )

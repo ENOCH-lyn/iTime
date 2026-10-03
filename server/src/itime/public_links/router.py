@@ -43,6 +43,9 @@ async def refresh_task_link(
             identity.user.id,
             task.id,
             link_id,
+            cooldown_seconds=(
+                request.app.state.settings.public_link_refresh_cooldown_seconds
+            ),
         )
         await identity.session.flush()
         result = {

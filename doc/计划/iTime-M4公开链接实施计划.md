@@ -834,7 +834,7 @@ Expected: 构建和任务桌面 E2E 通过，无 axe 或控制台错误。
 - Modify: `server/tests/web_environment.py`
 - Create: `web/e2e/public-links.spec.ts`
 
-- [ ] **Step 1: 扩展隔离 Web 环境**
+- [x] **Step 1: 扩展隔离 Web 环境**
 
 在 `tests.web_environment` 启动仅测试使用的回环页面服务，固定路由：
 
@@ -849,7 +849,7 @@ Expected: 构建和任务桌面 E2E 通过，无 axe 或控制台错误。
 测试 app 只在隔离环境把这些明确主机映射到回环地址，并提供当前测试账号绑定的一次性状态控制；
 生产 `itime.main` 不注册控制端点。启动 `itime.public_links.worker` 并在退出时等待、终止和清理。
 
-- [ ] **Step 2: 实现端到端成功与失败流程**
+- [x] **Step 2: 实现端到端成功与失败流程**
 
 `public-links.spec.ts` 使用 UI：
 
@@ -861,14 +861,14 @@ Expected: 构建和任务桌面 E2E 通过，无 axe 或控制台错误。
 6. 在第二标签页打开任务，确认 worker 完成后 5 秒内刷新状态。
 7. worker 运行中修改 URL，确认旧响应未覆盖新 revision。
 
-- [ ] **Step 3: 验证 AI 不执行页面指令**
+- [x] **Step 3: 验证 AI 不执行页面指令**
 
 发布隔离 conversation/planning 配置。普通对话问“根据课程资料给建议”，检查测试 provider 收到
 带 `untrusted_public_web` 的来源，页面注入文本作为资料出现，响应不产生工具调用或业务写入。
 再生成规划，断言 `planning_snapshot.task_candidates[].public_sources` 包含同一来源，但任务、
 计划、记忆在用户确认前没有额外变化。
 
-- [ ] **Step 4: 完成多视口和辅助功能**
+- [x] **Step 4: 完成多视口和辅助功能**
 
 同一 spec 在 desktop/mobile/tablet 执行；desktop 额外切换 320×700、最大字号、深色、粗指针、
 减少动效。每个关键状态断言：
@@ -883,7 +883,7 @@ expect(runtimeErrors.get(page)).toEqual([])
 
 保存 ready、failed-with-stale、mobile 和 320px 截图到 `/tmp/itime-ui-evidence/`。
 
-- [ ] **Step 5: 执行专项并提交**
+- [x] **Step 5: 执行专项并提交**
 
 ```bash
 cd web

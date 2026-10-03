@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     ai_quality_sample_retention_days: int = Field(default=30, ge=1, le=90)
     calendar_subscription_lease_seconds: int = Field(default=60, ge=30, le=300)
     public_link_lease_seconds: int = Field(default=30, ge=20, le=120)
+    public_link_refresh_cooldown_seconds: int = Field(default=30, ge=1, le=300)
     export_job_lease_seconds: int = Field(default=120, ge=30, le=900)
     export_artifact_retention_hours: int = Field(default=24, ge=1, le=168)
     export_job_retention_days: int = Field(default=30, ge=1, le=90)
