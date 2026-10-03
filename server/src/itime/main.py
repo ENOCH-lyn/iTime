@@ -34,6 +34,7 @@ from itime.planning.router import router as planning_router
 from itime.quota.admin_router import router as admin_quota_router
 from itime.quota.router import router as quota_router
 from itime.review.router import router as review_router
+from itime.statistics.router import router as statistics_router
 from itime.tasks.router import router as tasks_router
 from itime.tasks.schedule_router import router as task_schedule_router
 
@@ -82,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(planning_router)
     app.include_router(execution_router)
     app.include_router(review_router)
+    app.include_router(statistics_router)
 
     @app.get("/api/health", tags=["运行状态"])
     async def health() -> dict:

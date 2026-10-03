@@ -10,7 +10,7 @@ from itime.database import Database
 from itime.statistics.service import read_statistics
 from tests.conftest import psycopg_url
 from tests.test_task_schedules import initialize_settings
-from tests.test_tasks import create_account
+from tests.test_tasks import browser, create_account
 
 pytestmark = pytest.mark.integration
 
@@ -408,3 +408,136 @@ def test_focus_segments_statuses_and_proportional_allocation_are_separate(
     ) == focus["total_seconds"]
     assert result["days"][3]["focus"]["abandoned_seconds"] == 600
     assert result["days"][4]["focus"]["revised_count"] == 1
+
+
+def test_http_contract_errors_empty_state_and_owner_isolation(
+    client,
+    database_url,
+    live_server,
+):
+    endpoint = "/api/v1/statistics"
+    assert client.get(
+        endpoint,
+        params={"scope": "day", "anchor_date": "2026-09-28"},
+    ).status_code == 401
+
+    _, owner_id_value = create_account(client, database_url)
+    missing = client.get(
+        endpoint,
+        params={"scope": "day", "anchor_date": "2026-09-28"},
+    )
+    assert missing.status_code == 409
+    assert missing.json()["error"]["code"] == "time_settings_required"
+    initialize_settings(client)
+
+    invalid_scope = client.get(
+        endpoint,
+        params={"scope": "year", "anchor_date": "2026-09-28"},
+    )
+    assert invalid_scope.status_code == 422
+    future = client.get(
+        endpoint,
+        params={"scope": "day", "anchor_date": "2999-01-01"},
+    )
+    assert future.status_code == 422
+    assert future.json()["error"]["code"] == "future_statistics_range"
+
+    empty = client.get(
+        endpoint,
+        params={"scope": "day", "anchor_date": "2026-09-28"},
+    )
+    assert empty.status_code == 200, empty.text
+    empty_body = empty.json()
+    assert empty_body["methodology_version"] == "statistics_v1"
+    assert empty_body["period_start_date"] == "2026-09-28"
+    assert empty_body["period_end_date"] == "2026-09-28"
+    assert empty_body["data_end_date"] == "2026-09-28"
+    assert empty_body["time_zone"] == "Asia/Shanghai"
+    assert empty_body["activity_day_start_minute"] == 240
+    assert empty_body["calculated_at"]
+    assert empty_body["summary"]["planning"]["block_count"] == 0
+    assert empty_body["summary"]["tasks"]["completed_count"] == 0
+    assert empty_body["summary"]["focus"]["total_seconds"] == 0
+    assert len(empty_body["days"]) == 1
+
+    owner_id = UUID(owner_id_value)
+    seed_statistics_facts(database_url, owner_id)
+    populated = client.get(
+        endpoint,
+        params={"scope": "week", "anchor_date": "2026-09-30"},
+    )
+    assert populated.status_code == 200, populated.text
+    assert populated.json()["summary"]["planning"]["block_count"] == 1
+    assert populated.json()["summary"]["tasks"]["completed_count"] == 2
+
+    with browser(live_server) as other:
+        create_account(other, database_url)
+        initialize_settings(other)
+        isolated = other.get(
+            endpoint,
+            params={"scope": "week", "anchor_date": "2026-09-30"},
+        )
+        assert isolated.status_code == 200, isolated.text
+        assert isolated.json()["summary"]["planning"]["block_count"] == 0
+        assert isolated.json()["summary"]["tasks"]["completed_count"] == 0
+        assert isolated.json()["summary"]["focus"]["session_count"] == 0
+
+
+def test_open_focus_uses_server_time_and_persisted_active_segments(
+    client,
+    database_url,
+    settings,
+):
+    _, owner_id_value = create_account(client, database_url)
+    initialize_settings(client)
+    owner_id = UUID(owner_id_value)
+    focus_id = uuid4()
+    current_time = datetime(2026, 10, 4, 8, tzinfo=UTC)
+    started_at = current_time - timedelta(minutes=10)
+    paused_at = current_time - timedelta(minutes=6)
+    active_started_at = current_time - timedelta(minutes=5)
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        connection.execute(
+            """
+            INSERT INTO focus_sessions (
+                id, owner_id, source, title_snapshot, step_snapshots,
+                mode, status, started_at, active_started_at,
+                accumulated_seconds, time_zone, version
+            ) VALUES (
+                %s, %s, 'timer', '仍在进行', '[]',
+                'stopwatch', 'running', %s, %s, 240, 'Asia/Shanghai', 3
+            )
+            """,
+            (focus_id, owner_id, started_at, active_started_at),
+        )
+        for sequence, kind, occurred_at in (
+            (1, "start", started_at),
+            (2, "pause", paused_at),
+            (3, "resume", active_started_at),
+        ):
+            connection.execute(
+                """
+                INSERT INTO focus_events (
+                    id, owner_id, focus_session_id, sequence, kind,
+                    occurred_at, source, details
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'online', '{}')
+                """,
+                (uuid4(), owner_id, focus_id, sequence, kind, occurred_at),
+            )
+        connection.commit()
+
+    result = read_direct(settings, owner_id, current_time=current_time)
+    assert result["summary"]["focus"] == {
+        "session_count": 1,
+        "total_seconds": 540,
+        "finished_count": 0,
+        "finished_seconds": 0,
+        "abandoned_count": 0,
+        "abandoned_seconds": 0,
+        "manual_count": 0,
+        "manual_seconds": 0,
+        "revised_count": 0,
+        "ongoing_count": 1,
+        "ongoing_seconds": 540,
+        "proportional_focus_count": 0,
+    }
