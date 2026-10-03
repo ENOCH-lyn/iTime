@@ -362,7 +362,7 @@ git commit -m "feat: 提取公开网页摘要"
 - Create: `server/src/itime/public_links/fetcher.py`
 - Create: `server/tests/test_public_link_fetcher.py`
 
-- [ ] **Step 1: 写网页抓取失败测试**
+- [x] **Step 1: 写网页抓取失败测试**
 
 使用共享 fake resolver/transport 和真实回环 server，断言：
 
@@ -379,7 +379,7 @@ assert result.content_sha256 == sha256(body).hexdigest()
 DNS 变化和实际 peer 不符。只允许 `text/html`、`application/xhtml+xml`、`text/plain`；429、
 5xx、网络和超时 `retryable=True`，其他协议/类型/内容错误为 `False`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -388,7 +388,7 @@ uv run pytest -q tests/test_public_link_fetcher.py
 
 Expected: FAIL，网页抓取包装不存在。
 
-- [ ] **Step 3: 实现网页抓取器**
+- [x] **Step 3: 实现网页抓取器**
 
 ```python
 PUBLIC_LINK_LIMITS = FetchLimits(
@@ -415,7 +415,7 @@ class PublicLinkFetchResult:
 `Accept-Encoding: gzip, identity`、`User-Agent: iTime-Public-Link/1` 和
 `Connection: close`。错误消息不插入 URL、DNS 地址、响应头或正文。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
