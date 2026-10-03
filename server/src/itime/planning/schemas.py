@@ -8,6 +8,13 @@ from itime.schemas import Input
 
 PlanScope = Literal["day", "week"]
 PlanDensity = Literal["loose", "balanced", "tight"]
+ProposalEffectiveStatus = Literal[
+    "pending",
+    "applied",
+    "rejected",
+    "expired",
+    "conflicted",
+]
 
 DEFAULT_AVAILABILITY_START = time(8, 0)
 DEFAULT_AVAILABILITY_END = time(22, 0)

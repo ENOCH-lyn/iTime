@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -7,18 +7,26 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
 from itime.auth.session import authorized
+from itime.planning.proposal_service import (
+    apply_proposal,
+    list_proposals,
+    proposal_detail,
+    reject_proposal,
+)
 from itime.planning.schemas import (
     DEFAULT_AVAILABILITY_END,
     DEFAULT_AVAILABILITY_START,
     DEFAULT_BUFFER_MINUTES,
     PlanningContextQuery,
+    ProposalActionInput,
 )
 from itime.planning.snapshot_service import planning_context
+from itime.tasks.service import validate_cursor
 
-router = APIRouter(prefix="/api/v1/planning", tags=["AI 规划"])
+router = APIRouter(prefix="/api/v1", tags=["AI 规划"])
 
 
-@router.get("/context")
+@router.get("/planning/context")
 async def get_planning_context(
     request: Request,
     scope: Literal["day", "week"],
@@ -49,6 +57,66 @@ async def get_planning_context(
             query,
         )
         return {"context": context}
+
+
+@router.get("/proposals")
+async def get_proposals(
+    request: Request,
+    before_time: datetime | None = None,
+    before_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> dict:
+    validate_cursor(before_time, before_id)
+    async with authorized(request) as identity:
+        return await list_proposals(
+            identity.session,
+            identity.user.id,
+            before_time=before_time,
+            before_id=before_id,
+            limit=limit,
+        )
+
+
+@router.get("/proposals/{proposal_id}")
+async def get_proposal(proposal_id: UUID, request: Request) -> dict:
+    async with authorized(request) as identity:
+        return {
+            "proposal": await proposal_detail(
+                identity.session,
+                identity.user.id,
+                proposal_id,
+            )
+        }
+
+
+@router.post("/proposals/{proposal_id}/apply")
+async def confirm_proposal(
+    proposal_id: UUID,
+    data: ProposalActionInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await apply_proposal(
+            identity.session,
+            identity.user.id,
+            proposal_id,
+            data,
+        )
+
+
+@router.post("/proposals/{proposal_id}/reject")
+async def decline_proposal(
+    proposal_id: UUID,
+    data: ProposalActionInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await reject_proposal(
+            identity.session,
+            identity.user.id,
+            proposal_id,
+            data,
+        )
 
 
 def _planning_query(**values: object) -> PlanningContextQuery:
