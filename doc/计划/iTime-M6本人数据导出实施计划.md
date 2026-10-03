@@ -72,7 +72,7 @@
 - Modify: `server/tests/test_planning_models.py`
 - Test: `server/tests/test_data_export_models.py`
 
-- [ ] **Step 1: 写迁移和配置失败测试**
+- [x] **Step 1: 写迁移和配置失败测试**
 
 测试迁移 head、升级/回退、活动作业唯一、状态字段一致性、用户删除级联，以及生产环境拒绝复用任一已有密钥：
 
@@ -93,7 +93,7 @@ Run: `cd server && uv run pytest -q tests/test_data_export_models.py tests/test_
 
 Expected: FAIL，迁移和模型尚不存在，迁移 head 仍是 `0026_review_memory`。
 
-- [ ] **Step 2: 定义配置**
+- [x] **Step 2: 定义配置**
 
 在 `Settings` 增加：
 
@@ -117,7 +117,7 @@ export_max_archive_bytes: int = Field(
 把 `export_encryption_key` 加入 Fernet 校验；生产环境要求它与基础、AI 和订阅密钥均不同。
 `bootstrap.py` 生成独立值，`.env.example` 仅记录配置名和边界，不写真实密钥。
 
-- [ ] **Step 3: 定义模型和迁移**
+- [x] **Step 3: 定义模型和迁移**
 
 `DataExportJob` 必须包含：
 
@@ -156,7 +156,7 @@ class DataExportJob(Base):
 - `owner_id WHERE status IN ('queued','running')` 部分唯一索引。
 - `available_at/status` 领取索引、`expires_at` 产物清理索引和 `finished_at` 元数据清理索引。
 
-- [ ] **Step 4: 运行迁移、模型和静态检查**
+- [x] **Step 4: 运行迁移、模型和静态检查**
 
 Run:
 
@@ -171,7 +171,7 @@ uv run ruff check src/itime/data_export tests/test_data_export_models.py
 
 Expected: PASS；迁移 head 为 `0027_data_exports`，无 ORM 漂移。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add .env.example scripts/bootstrap.py server/src/itime/config.py \
@@ -186,7 +186,7 @@ git commit -m "feat: 持久化本人数据导出作业"
 - Create: `server/src/itime/data_export/snapshot.py`
 - Test: `server/tests/test_data_export_snapshot.py`
 
-- [ ] **Step 1: 写全分类和敏感字段失败测试**
+- [x] **Step 1: 写全分类和敏感字段失败测试**
 
 在一个账号中创建任务、日历、会话、规划、执行、复盘、记忆和额度数据，在第二账号中创建同名
 数据。断言导出只包含第一个账号，并执行递归字段扫描：
@@ -218,7 +218,7 @@ Run: `cd server && uv run pytest -q tests/test_data_export_snapshot.py`
 
 Expected: FAIL，快照模块尚不存在。
 
-- [ ] **Step 2: 定义显式白名单与通用值编码**
+- [x] **Step 2: 定义显式白名单与通用值编码**
 
 ```python
 def export_value(value: object) -> JSONValue:
@@ -240,7 +240,7 @@ def export_value(value: object) -> JSONValue:
 每类表用固定 `select(Model.column, ...)` 和固定键名；不得使用 `table.columns`、`vars(model)` 或
 自动反射，防止未来新增敏感字段自动泄露。无 `owner_id` 的子表通过父表 join 限制。
 
-- [ ] **Step 3: 实现只读一致性事务**
+- [x] **Step 3: 实现只读一致性事务**
 
 ```python
 async def read_consistent_snapshot(
@@ -268,7 +268,7 @@ async def read_consistent_snapshot(
 快照顶层固定 10 个分类和 `snapshot_at/schema_version`。查询按业务顺序和稳定 ID 排序；
 订阅 URL 调用 `decrypt_subscription_url()`，解密失败向 worker 返回确定性错误。
 
-- [ ] **Step 4: 验证一致性和并发写**
+- [x] **Step 4: 验证一致性和并发写**
 
 在测试中用两连接协调：快照事务读取第一分类后，另一连接提交新任务，再继续读取剩余分类。
 断言新任务不进入本次结果，下一次快照可见。
@@ -283,7 +283,7 @@ uv run ruff check src/itime/data_export/snapshot.py tests/test_data_export_snaps
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/data_export/snapshot.py server/tests/test_data_export_snapshot.py
@@ -296,7 +296,7 @@ git commit -m "feat: 构建本人数据一致性导出快照"
 - Create: `server/src/itime/data_export/archive.py`
 - Test: `server/tests/test_data_export_archive.py`
 
-- [ ] **Step 1: 写归档合同失败测试**
+- [x] **Step 1: 写归档合同失败测试**
 
 测试固定文件清单、UTF-8、JSON 结构、CSV BOM/引用/公式注入、ICS 可由 `icalendar.Calendar`
 解析、Markdown 转义、每文件 SHA 和容量上限：
@@ -320,7 +320,7 @@ Run: `cd server && uv run pytest -q tests/test_data_export_archive.py`
 
 Expected: FAIL，归档构建器尚不存在。
 
-- [ ] **Step 2: 实现稳定 JSON、CSV 和清单**
+- [x] **Step 2: 实现稳定 JSON、CSV 和清单**
 
 固定：
 
@@ -354,7 +354,7 @@ def csv_cell(value: object) -> str:
     return f"'{rendered}" if rendered.startswith(("=", "+", "-", "@")) else rendered
 ```
 
-- [ ] **Step 3: 实现 ICS 和 Markdown**
+- [x] **Step 3: 实现 ICS 和 Markdown**
 
 ICS 使用结构化 `icalendar.Calendar/Event`。任务截止、当前计划块、日历系列和订阅事件使用不同
 `X-ITIME-KIND`；标准重复输出 RRULE，课程指定周输出 RDATE，取消/移动使用 EXDATE、
@@ -367,7 +367,7 @@ def markdown_heading(level: int, value: str) -> str:
     return f"{'#' * level} {escape_markdown(value)}"
 ```
 
-- [ ] **Step 4: 实现确定性 ZIP 与容量检查**
+- [x] **Step 4: 实现确定性 ZIP 与容量检查**
 
 使用固定条目路径和 `snapshot_at` 的 ZIP 时间。每加入一个明文条目前累计
 `export_max_uncompressed_bytes`；ZIP 完成后检查 `export_max_archive_bytes`。任何超限抛出
@@ -383,7 +383,7 @@ uv run ruff check src/itime/data_export/archive.py tests/test_data_export_archiv
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/data_export/archive.py server/tests/test_data_export_archive.py
@@ -397,7 +397,7 @@ git commit -m "feat: 生成多格式本人数据导出包"
 - Create: `server/src/itime/data_export/worker.py`
 - Test: `server/tests/test_data_export_worker.py`
 
-- [ ] **Step 1: 写领取、恢复和清理失败测试**
+- [x] **Step 1: 写领取、恢复和清理失败测试**
 
 覆盖：
 
@@ -413,7 +413,7 @@ Run: `cd server && uv run pytest -q tests/test_data_export_worker.py`
 
 Expected: FAIL，作业服务和 worker 尚不存在。
 
-- [ ] **Step 2: 实现领取与续租**
+- [x] **Step 2: 实现领取与续租**
 
 ```python
 @dataclass(frozen=True)
@@ -442,7 +442,7 @@ async def renew_export_lease(
 查询只领取 `queued AND available_at <= now()` 或租约已过期的 `running`；按
 `available_at, created_at, id` 排序，使用 `FOR UPDATE SKIP LOCKED`。
 
-- [ ] **Step 3: 实现生成与终态**
+- [x] **Step 3: 实现生成与终态**
 
 ```python
 async def process_one(database: Database, settings: Settings) -> bool:
@@ -474,7 +474,7 @@ async def process_one(database: Database, settings: Settings) -> bool:
 捕获 `ExportBuildError`、订阅 URL 解密错误和不可重试数据错误后写稳定失败码；未知系统异常在剩余
 次数内延迟重试，日志只记录 `job_id/attempt/error_type`。
 
-- [ ] **Step 4: 实现到期清理**
+- [x] **Step 4: 实现到期清理**
 
 `cleanup_expired_exports()` 每批最多 100 个到期成功作业，行锁后清空密文并标记 `expired`；
 第二批删除 30 天前的 `failed/expired` 元数据。worker 空闲时每分钟清理一次，`--once`
@@ -491,7 +491,7 @@ uv run ruff check src/itime/data_export tests/test_data_export_worker.py
 
 Expected: PASS；空队列运行一次正常退出。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/data_export/service.py \
@@ -506,7 +506,7 @@ git commit -m "feat: 异步生成并清理本人数据导出"
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_data_export_api.py`
 
-- [ ] **Step 1: 写真实 HTTP 失败测试**
+- [x] **Step 1: 写真实 HTTP 失败测试**
 
 覆盖未登录、缺 CSRF、创建、同 operation 重放、相同 operation 不同内容冲突、活动作业复用、
 最近 20 条、单作业、非本人统一 404、未完成/失败/过期下载、成功下载头与 ZIP 摘要、密文损坏、
@@ -526,7 +526,7 @@ Run: `cd server && uv run pytest -q tests/test_data_export_api.py`
 
 Expected: FAIL，路由尚不存在。
 
-- [ ] **Step 2: 实现创建、列表和详情**
+- [x] **Step 2: 实现创建、列表和详情**
 
 创建在 `authorized(write=True)` 的事务中先重放操作，再锁定用户并查询活动作业。新作业和
 `UserOperation` 同事务提交；已有活动作业返回 `reused=true`。列表查询禁止选择
@@ -559,7 +559,7 @@ def export_job_result(job: DataExportJob) -> dict:
 读取时发现产物已到期，先在本人写事务中惰性清理，再返回 `expired`，避免定时 worker 延迟造成
 过期文件仍可下载。
 
-- [ ] **Step 3: 实现认证下载**
+- [x] **Step 3: 实现认证下载**
 
 只按 `id + owner_id` 查询成功且未过期作业，解密后校验字节数和 SHA。返回 `Response`，
 包含设计中的 `Content-Type/Disposition/Length/Digest/Cache-Control`；文件名来自服务端固定
@@ -576,7 +576,7 @@ uv run ruff check src/itime/data_export tests/test_data_export_api.py
 
 Expected: PASS。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add server/src/itime/data_export/router.py server/src/itime/main.py \
@@ -593,7 +593,7 @@ git commit -m "feat: 提供本人数据导出接口"
 - Modify: `web/src/pages/AccountPage.vue`
 - Modify: `web/src/style.css`
 
-- [ ] **Step 1: 定义客户端合同和下载**
+- [x] **Step 1: 定义客户端合同和下载**
 
 ```typescript
 export type DataExportStatus =
@@ -620,7 +620,7 @@ export interface DataExportJob {
 15 秒超时；非 2xx 解析统一错误 JSON，成功返回 Blob 和响应头文件名。调用方创建 object URL，
 点击隐藏 `<a download>` 后立即 revoke。
 
-- [ ] **Step 2: 实现 `/account/data` 路由和导航**
+- [x] **Step 2: 实现 `/account/data` 路由和导航**
 
 `main.ts` 的账号 section 正则加入 `data`。`AccountPage.vue`：
 
@@ -629,7 +629,7 @@ export interface DataExportJob {
 - 账号概览增加“导出个人数据”入口。
 - `section === 'data'` 渲染 `DataExportSettings`。
 
-- [ ] **Step 3: 实现状态恢复和交互**
+- [x] **Step 3: 实现状态恢复和交互**
 
 组件挂载读取最近 20 条；活动作业每 2 秒轮询，页面隐藏时 5 秒，终态立即停止。创建按钮只在
 无活动作业时可用，并复用 operation ID 处理未知结果：
@@ -645,7 +645,7 @@ if (pendingFingerprint.value !== fingerprint) {
 未知保存后先重新读取列表；若出现活动作业即视为已保存。下载前刷新详情，过期则显示重新生成。
 失去认证调用 `refreshSession()`，不把错误吞成普通失败。
 
-- [ ] **Step 4: 完成响应式和可访问状态**
+- [x] **Step 4: 完成响应式和可访问状态**
 
 使用无嵌套卡片的分区列表、固定状态标签、图标按钮 tooltip 和可换行操作区。覆盖 320px：
 
@@ -669,7 +669,7 @@ Run: `cd web && pnpm build`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/src/lib/data-exports.ts web/src/components/DataExportSettings.vue \
@@ -683,7 +683,7 @@ git commit -m "feat: 构建本人数据导出工作区"
 - Create: `web/e2e/data-exports.spec.ts`
 - Modify: `server/tests/web_environment.py`
 
-- [ ] **Step 1: 在隔离环境启动导出 worker**
+- [x] **Step 1: 在隔离环境启动导出 worker**
 
 与 mail/AI/subscription worker 相同，由 `ExitStack` 管理：
 
@@ -698,7 +698,7 @@ export_process = stack.enter_context(process(
 
 把 `export_process` 加入存活检查；测试结束由现有上下文终止，不遗留进程或随机数据库。
 
-- [ ] **Step 2: 写真实数据和下载 E2E**
+- [x] **Step 2: 写真实数据和下载 E2E**
 
 每个视口创建真实账号，并通过 API 建立任务、日历、对话、计划、专注、困难、复盘和记忆中的
 代表数据。进入 `/account/data` 创建导出，等待状态成功，监听 `download`，读取 ZIP：
@@ -715,7 +715,7 @@ expect(download.suggestedFilename()).toMatch(
 使用 Node ZIP 读取库或系统 `unzip -p` 校验 `manifest.json`、`itime-data.json` 和标记文本；
 不得只断言按钮出现。
 
-- [ ] **Step 3: 覆盖失败、恢复和布局**
+- [x] **Step 3: 覆盖失败、恢复和布局**
 
 覆盖：
 
@@ -737,7 +737,7 @@ pnpm exec playwright test e2e/auth.spec.ts e2e/privacy-governance.spec.ts \
 
 Expected: 全部 Chromium projects 通过。
 
-- [ ] **Step 4: 人工检查截图并提交**
+- [x] **Step 4: 人工检查截图并提交**
 
 截图保存到：
 
@@ -769,7 +769,7 @@ git commit -m "test: 验证本人数据导出真实链路"
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/计划/iTime-M6本人数据导出实施计划.md`
 
-- [ ] **Step 1: 执行服务端专项和全量质量门禁**
+- [x] **Step 1: 执行服务端专项和全量质量门禁**
 
 Run:
 
@@ -788,7 +788,7 @@ uv build --no-sources
 
 Expected: 全部通过；迁移 head 为 `0027_data_exports` 且无模型漂移。
 
-- [ ] **Step 2: 执行 Web 全量质量门禁**
+- [x] **Step 2: 执行 Web 全量质量门禁**
 
 Run:
 
@@ -800,7 +800,7 @@ pnpm test:e2e
 
 Expected: 生产构建与全部 Chromium projects 通过。
 
-- [ ] **Step 3: 检查运行状态和清理**
+- [x] **Step 3: 检查运行状态和清理**
 
 重启开发 API 和导出 worker 后验证：
 
@@ -814,7 +814,7 @@ docker --context colima-itime compose --env-file .env.local exec -T postgres \
 
 Expected: API ready、页面 200、随机测试数据库数量为 0。
 
-- [ ] **Step 4: 同步实际实现和证据**
+- [x] **Step 4: 同步实际实现和证据**
 
 文档只记录真实执行结果：
 
@@ -824,7 +824,7 @@ Expected: API ready、页面 200、随机测试数据库数量为 0。
 - 验收清单、designer 和实施记录写入真实行为、命令、通过数、耗时及截图。
 - 通用同步、账号注销、其他对象回收、Edge/真机、性能和生产部署继续明确为未完成。
 
-- [ ] **Step 5: 检查暂存范围并提交证据**
+- [x] **Step 5: 检查暂存范围并提交证据**
 
 Run:
 
@@ -844,3 +844,40 @@ git add README.md doc/README.md designer.md \
   doc/验收/iTime-产品验收清单.md doc/验收/iTime-Web实施与验证.md
 git commit -m "docs: 记录本人数据导出实施证据"
 ```
+
+## 执行结果
+
+2026-10-04 已按本计划完成实现与验证：
+
+- `d02a49f`：持久化作业、迁移 `0027_data_exports`、独立密钥与容量配置。
+- `59906f1`：显式白名单和 PostgreSQL 一致性只读快照。
+- `55dea15`：完整 JSON、分类 CSV/ICS/Markdown、摘要清单和 ZIP。
+- `4f91bf6`：租约 worker、加密终态、重试和 24 小时/30 天分层清理。
+- `998e741`：本人创建、列表、详情和认证下载 API。
+- `d8a7d92`：`/account/data` 数据导出工作区、状态恢复和下载。
+- `b66ff74`：真实独立 worker、下载解包、摘要核对和多视口 E2E。
+
+实际质量门禁：
+
+| 验证 | 结果 |
+| --- | --- |
+| 五个导出服务端测试文件 | **14 passed in 14.59s** |
+| 导出及受影响服务端组合回归 | **40 passed in 27.36s** |
+| `uv run pytest -q` | **404 passed in 332.71s** |
+| `uv run ruff check .` | 通过 |
+| `uv run alembic upgrade head && uv run alembic current && uv run alembic check` | `0027_data_exports (head)`，无模型漂移 |
+| `uv build --no-sources` | 通过 |
+| `pnpm build` | 通过 |
+| `pnpm exec playwright test e2e/data-exports.spec.ts` | **6 passed in 29.5s** |
+| 账号、隐私、额度和导出受影响 Chromium 回归 | **45 passed in 2.7m** |
+| `pnpm test:e2e` | **189 passed in 9.5m** |
+| 开发 API、OpenAPI、`/account/data`、worker 与测试库清理 | ready/page 200，导出路由已加载，worker 运行，测试库残留 0 |
+
+浏览器流程真实创建任务及导出作业，等待独立 worker 完成，下载 ZIP 后用 `unzip -p` 解包，核对
+任务标记、`manifest.json` SHA-256 和敏感字段排除。桌面、手机、平板及 320px 深色最大字号截图
+位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-data-export-ready.png` 和
+`/tmp/itime-ui-evidence/mobile-data-export-320-large-dark.png`，人工检查未见重叠、裁切、空白画面
+或根级横向溢出。
+
+本模块完成不代表通用同步、账号注销、其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥
+轮换或部署已经完成。

@@ -1013,7 +1013,7 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 
 浏览器流程覆盖自由/任务专注、步骤与任务完成分离、刷新恢复、补记修订、离线顺序重放、未知响应幂等恢复、开放与终态冲突、账号隔离、100 项/7 天队列边界、困难增删改恢复、任务/计划块入口和 AI 草稿。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-focus-*.png` 及 `desktop-focus-320-large-dark.png`，人工检查未见重叠、裁切、空白画面或动态布局跳动。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆后续已由 M6-C 实现；统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆、个人统计和本人数据导出后续分别由 M6-C、M6-D、M6-E 实现；通用跨业务同步、困难语音、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
 
 ## M6-C：单日复盘与确认式长期记忆
 
@@ -1046,7 +1046,7 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 浏览器流程覆盖补充事实、短追问、跳过、离页恢复、报告重生成与版本切换、批注、候选确认/拒绝、记忆启停/增改删/恢复、删除后退出检索、普通对话与规划实际收到的记忆上下文，以及取消后恢复可操作状态。每个视口检查 axe、控制台、框架错误层和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-review-desktop-report.png` 与 `mobile-review-320-large-dark.png`，人工检查未见重叠、裁切或空白画面。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计后续已由 M6-D 实现；通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计和本人数据导出后续分别由 M6-D、M6-E 实现；通用跨业务同步、困难语音、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
 
 ## M6-D：个人日周月统计
 
@@ -1079,4 +1079,39 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 统计浏览器流程使用随机 PostgreSQL、真实 API 和生产构建预览，创建真实任务、当前计划版本、任务完成、人工补记及放弃专注后核对响应和页面。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-statistics-populated.png` 与 `/tmp/itime-ui-evidence/mobile-statistics-320-large-dark.png`，已人工检查，无重叠、裁切、空白画面或根级横向溢出。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本模块不代表通用跨业务同步、困难语音、导出、注销、后台运营指标、长历史性能、真实 Edge/实体设备、正式第三方模型质量或生产部署已完成。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。本人数据导出后续已由 M6-E 实现；完成本模块不代表通用跨业务同步、困难语音、注销、后台运营指标、长历史性能、真实 Edge/实体设备、正式第三方模型质量或生产部署已完成。
+
+## M6-E：本人完整数据导出
+
+对应 Git 提交：`83d930b`、`7919fbd`、`d02a49f`、`59906f1`、`55dea15`、`4f91bf6`、`998e741`、`d8a7d92`、`b66ff74`。实际代码为迁移 `0027_data_exports`、`server/src/itime/data_export/`、本人导出 API、独立 worker、`web/src/components/DataExportSettings.vue`、`web/src/lib/data-exports.ts`、`/account/data` 及 `web/e2e/data-exports.spec.ts`；合同见[本人数据导出设计](../设计/iTime-本人数据导出设计.md)。
+
+已实现：
+
+- 持久化作业记录排队、运行、成功、失败和过期状态，保存操作 ID、尝试、租约、产物和终态；部分唯一索引保证同一账号最多一个活动作业，响应未知时重用原操作 ID 或对账活动作业。
+- worker 在 PostgreSQL `REPEATABLE READ READ ONLY` 事务中按显式字段白名单读取一致性快照；顶层覆盖账号、设置、任务、日历、对话、规划、执行、复盘、额度和媒体元数据，所有子表通过所有者路径限制，不使用模型反射自动导出未来字段。
+- ZIP 包含完整 `itime-data.json`、分类 CSV、日历 ICS、Markdown 摘要和 `manifest.json`。清单保存逐文件 SHA-256、大小、格式和 schema 版本；CSV 防公式注入，ICS 由结构化库生成，稳定顺序便于重复核对。
+- 密码摘要、邮件/会话令牌、CSRF、AI Key 密文、内部租约、供应商请求技术正文、质量样本及其他账号数据不进入导出。本人订阅 URL 只在快照事务中解密并写入日历分类。
+- ZIP 在数据库外构建后使用独立 Fernet 密钥加密保存；默认限制明文 100 MiB、归档 50 MiB。双 worker 使用 `SKIP LOCKED` 和续租避免重复终态，失效租约可恢复，有界重试不无限占用。
+- 产物默认提供 24 小时本人认证下载，到期后清除密文并显示重新生成；失败和过期元数据默认保留 30 天后限批删除。会话撤销后下载立即拒绝，非本人作业统一按未找到处理。
+- `/account/data` 从账号概览和设置导航可达，支持创建、离页后恢复、轮询、刷新保留旧记录、未知响应对账、失败/过期恢复和真实 Blob 下载；完整 JSON 标为权威副本，CSV/ICS/Markdown 标为便携视图，不宣称支持整包恢复。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn、独立导出 worker、生产构建预览和 Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q tests/test_data_export_models.py tests/test_data_export_snapshot.py tests/test_data_export_archive.py tests/test_data_export_worker.py tests/test_data_export_api.py` | **14 passed in 14.59s** | 迁移/配置、所有权、一致性快照、格式/摘要、容量、租约/重试、加密、清理及真实 HTTP 下载 |
+| 导出及受影响服务端组合回归 | **40 passed in 27.36s** | 配置、模型、会话鉴权和相邻生命周期回归 |
+| `cd server && uv run pytest -q` | **404 passed in 332.71s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic upgrade head && uv run alembic current && uv run alembic check` | `0027_data_exports (head)`，无新升级操作 | 开发库迁移及 ORM 一致性 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/data-exports.spec.ts` | **6 passed in 29.5s** | 两条导出流程 × 电脑、手机、平板，含真实下载解包 |
+| `cd web && pnpm exec playwright test e2e/auth.spec.ts e2e/privacy-governance.spec.ts e2e/quota.spec.ts e2e/data-exports.spec.ts` | **45 passed in 2.7m** | 账号、隐私、额度与导出设置受影响回归 |
+| `cd web && pnpm test:e2e` | **189 passed in 9.5m** | 全部用户端、后台和公开页面 Chromium 全量回归 |
+
+浏览器流程创建真实任务和导出作业，等待独立 worker 完成，通过浏览器下载 ZIP，再用 `unzip -p` 读取并核对任务标记、`manifest.json` SHA-256、文件集合和敏感字段排除；同时覆盖创建响应未知后对账、刷新失败保留旧记录、设置导航与空状态。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-data-export-ready.png` 和 `/tmp/itime-ui-evidence/mobile-data-export-320-large-dark.png`，已人工检查，无重叠、裁切、空白画面或根级横向溢出。
+
+收口时已重启开发 API 并启动 `itime.data_export.worker`；`GET /api/ready` 返回 200，OpenAPI 包含创建/列表、详情和下载路径，`http://localhost:5173/account/data` 返回 200，`itime_test_%` 测试数据库残留为 0。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本模块不代表通用跨业务同步、账号注销、其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥轮换、备份恢复或部署已经完成。
