@@ -155,6 +155,68 @@ async function createFixedOccurrence(
   expect(response.ok()).toBeTruthy()
 }
 
+async function createCompetingPlanVersion(
+  page: Page,
+  csrf: string,
+  targetDate: string,
+) {
+  const params = new URLSearchParams({
+    scope: 'week',
+    date: targetDate,
+    density: 'balanced',
+    buffer: '15',
+    availability_start: '08:00',
+    availability_end: '22:00',
+  })
+  const contextResponse = await page.request.get(
+    `/api/v1/planning/context?${params}`,
+  )
+  expect(contextResponse.ok()).toBeTruthy()
+  const current = (await contextResponse.json()).context.current_plan
+  expect(current).toBeTruthy()
+  const response = await page.request.post('/api/v1/plans/versions', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: {
+      operation_id: randomUUID(),
+      week_start_date: current.week_start_date,
+      expected_plan_version: current.version,
+      density: current.density,
+      buffer_minutes: current.buffer_minutes,
+      availability_start: current.availability_start,
+      availability_end: current.availability_end,
+      blocks: current.blocks.map((block: {
+        task_id: string
+        occurrence_key: string | null
+        local_date: string
+        local_starts_at: string
+        local_ends_at: string
+        step_ids: string[]
+      }) => ({
+        task_id: block.task_id,
+        occurrence_key: block.occurrence_key,
+        local_date: block.local_date,
+        starts_at: block.local_starts_at,
+        ends_at: block.local_ends_at,
+        step_ids: block.step_ids,
+      })),
+      unscheduled_items: current.unscheduled_items.map((item: {
+        task_id: string
+        occurrence_key: string | null
+        remaining_minutes: number
+        reason: string
+        explanation: string
+      }) => ({
+        task_id: item.task_id,
+        occurrence_key: item.occurrence_key,
+        remaining_minutes: item.remaining_minutes,
+        reason: item.reason,
+        explanation: item.explanation,
+      })),
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -272,9 +334,15 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   const editableBlock = page.locator('.plan-block').first()
   await editableBlock.locator('summary').click()
   await editableBlock.getByRole('checkbox').nth(1).check()
+  await createCompetingPlanVersion(page, csrf, targetDate)
   await page.getByRole('button', { name: '保存新版本', exact: true }).click()
-  await expect(page.getByText('手工调整已保存为第 2 版。')).toBeVisible()
-  await expect(page.getByRole('heading', { name: '第 2 版', exact: true })).toBeVisible()
+  await expect(page.getByText('此周计划已在其他页面或设备更新，请刷新后比较再保存。')).toBeVisible()
+  await expect(page.getByText(/^请求编号：/)).toBeVisible()
+  await page.getByRole('button', { name: '重新读取', exact: true }).click()
+  await expect(page.getByText('有未保存调整', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '保存新版本', exact: true }).click()
+  await expect(page.getByText('手工调整已保存为第 3 版。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '第 3 版', exact: true })).toBeVisible()
 
   await page.getByLabel('查看计划版本').selectOption('1')
   await expect(page.getByText('历史版本 · 只读', { exact: true })).toBeVisible()
@@ -311,7 +379,7 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   await expect(detail.getByText('计划块', { exact: true })).toBeVisible()
   await expect(detail.getByRole('heading', { name: projectedTitle, exact: true })).toBeVisible()
   await expect(detail.getByText('手工调整', { exact: true })).toBeVisible()
-  await expect(detail.getByText('第 2 版', { exact: true })).toBeVisible()
+  await expect(detail.getByText('第 3 版', { exact: true })).toBeVisible()
   await expect(detail.getByRole('button', { name: '标为完成', exact: true })).toHaveCount(0)
   await expect(detail.getByRole('link', { name: '前往规划页', exact: true })).toBeVisible()
   expect(await viewportOverflow(page)).toEqual([])
