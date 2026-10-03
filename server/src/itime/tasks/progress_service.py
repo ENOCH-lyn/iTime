@@ -77,7 +77,7 @@ async def _locked_occurrence(
     owner_id: UUID,
     task: Task,
     occurrence_key: str,
-    expected_occurrence_version: int,
+    expected_occurrence_version: int | None,
 ) -> tuple[TaskSchedule, TaskOccurrenceState | None, date]:
     schedule = await session.get(TaskSchedule, task.id)
     if schedule is None or schedule.recurrence_frequency == "none":
@@ -96,7 +96,10 @@ async def _locked_occurrence(
         .with_for_update()
     )
     current_version = state.version if state is not None else 0
-    if current_version != expected_occurrence_version:
+    if (
+        expected_occurrence_version is not None
+        and current_version != expected_occurrence_version
+    ):
         raise AppError(
             "task_occurrence_version_conflict",
             "此任务实例已在其他页面或设备更新，请刷新后比较再保存。",
@@ -221,6 +224,140 @@ async def set_occurrence_progress(
             step_count=step_count,
         ),
         changed,
+    )
+
+
+async def merge_occurrence_step_completion(
+    session: AsyncSession,
+    owner_id: UUID,
+    task: Task,
+    *,
+    occurrence_key: str,
+    step_id: UUID,
+    expected_task_version: int,
+    expected_occurrence_version: int,
+    completed: bool,
+    changed_at: datetime,
+) -> tuple[dict, dict, str]:
+    schedule, state, occurrence_date = await _locked_occurrence(
+        session,
+        owner_id,
+        task,
+        occurrence_key,
+        None,
+    )
+    current_occurrence_version = state.version if state is not None else 0
+    if (
+        expected_task_version > task.version
+        or expected_occurrence_version > current_occurrence_version
+    ):
+        raise AppError(
+            "sync_version_ahead",
+            "待同步步骤基于未知的新版本，请刷新后核对。",
+            status=409,
+            details={
+                "current_task_version": task.version,
+                "current_occurrence_version": current_occurrence_version,
+            },
+        )
+    if state is not None and state.status != "open":
+        raise AppError(
+            "task_occurrence_not_open",
+            "此任务实例已经完成或跳过，不能继续更新步骤。",
+            status=409,
+            details={"current_version": state.version},
+        )
+    steps = list(
+        await session.scalars(
+            select(TaskStep)
+            .where(
+                TaskStep.task_id == task.id,
+                TaskStep.owner_id == owner_id,
+            )
+            .order_by(TaskStep.position)
+            .with_for_update()
+        )
+    )
+    if step_id not in {step.id for step in steps}:
+        raise AppError(
+            "task_steps_changed",
+            "目标步骤已变化，请刷新后决定是否保留此操作。",
+            status=409,
+        )
+    completed_ids = set(state.completed_step_ids if state is not None else [])
+    step_key = str(step_id)
+    current_completed = step_key in completed_ids
+    rebased = (
+        expected_task_version != task.version
+        or expected_occurrence_version != current_occurrence_version
+    )
+    if current_completed == completed:
+        merge = "converged"
+    else:
+        if completed:
+            completed_ids.add(step_key)
+        else:
+            completed_ids.discard(step_key)
+        ordered_ids = [
+            str(step.id) for step in steps if str(step.id) in completed_ids
+        ]
+        if state is None:
+            state = TaskOccurrenceState(
+                task_id=task.id,
+                owner_id=owner_id,
+                occurrence_key=occurrence_key,
+                original_date=occurrence_date,
+                kind="base",
+                effective_date=occurrence_date,
+                effective_local_time=None,
+                effective_at=None,
+                effective_time_zone=None,
+                ambiguous_offset_minutes=None,
+                rescheduled=False,
+                status="open",
+                completed_at=None,
+                completed_step_ids=ordered_ids,
+                step_count_snapshot=len(steps),
+                makeup_for_key=None,
+                makeup_for_date=None,
+            )
+            session.add(state)
+            await session.flush()
+        else:
+            state.completed_step_ids = ordered_ids
+            state.step_count_snapshot = len(steps)
+            state.version += 1
+            state.updated_at = changed_at
+        task.version += 1
+        task.updated_at = changed_at
+        emit_change(
+            session,
+            owner_id,
+            "task_occurrence",
+            state.id,
+            "completed" if completed else "updated",
+            state.version,
+        )
+        emit_change(
+            session,
+            owner_id,
+            "task",
+            task.id,
+            "updated",
+            task.version,
+        )
+        merge = "rebased" if rebased else "applied"
+    await session.flush()
+    return (
+        await task_detail(session, task),
+        project_task_occurrence(
+            task,
+            schedule,
+            occurrence_date,
+            state,
+            step_count=len(steps),
+        ),
+        merge,
     )
 
 

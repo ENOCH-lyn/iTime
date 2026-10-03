@@ -9,7 +9,19 @@ from itime.database import Database
 from itime.errors import AppError
 from itime.sync.cursor import SyncCursor, decode_sync_cursor, encode_sync_cursor
 from itime.sync.models import SyncState
-from itime.tasks.models import ChangeEvent
+from itime.sync.schemas import (
+    OccurrenceStepCompletionInput,
+    StepCompletionInput,
+)
+from itime.tasks.models import ChangeEvent, TaskSchedule, TaskStep
+from itime.tasks.progress_service import merge_occurrence_step_completion
+from itime.tasks.service import (
+    emit_change,
+    locked_task,
+    replay_operation,
+    save_operation,
+    task_detail,
+)
 
 SYNC_CLEANUP_BATCH_SIZE = 1000
 
@@ -229,3 +241,145 @@ async def cleanup_expired_events(
             state.last_cleanup_at = current_time
             state.updated_at = current_time
         return len(rows)
+
+
+async def merge_task_step_completion(
+    session: AsyncSession,
+    owner_id: UUID,
+    task_id: UUID,
+    step_id: UUID,
+    data: StepCompletionInput,
+) -> dict:
+    scope = f"sync.task_step_completion:{task_id}:{step_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+
+    task = await locked_task(session, owner_id, task_id)
+    if data.expected_task_version > task.version:
+        raise AppError(
+            "sync_version_ahead",
+            "待同步步骤基于未知的新版本，请刷新后核对。",
+            status=409,
+            details={"current_task_version": task.version},
+        )
+    schedule = await session.get(TaskSchedule, task.id)
+    if schedule is not None and schedule.recurrence_frequency != "none":
+        raise AppError(
+            "repeating_task_requires_occurrence",
+            "重复任务的步骤进度必须记录到具体实例。",
+            status=409,
+        )
+    step = await session.scalar(
+        select(TaskStep)
+        .where(
+            TaskStep.id == step_id,
+            TaskStep.task_id == task.id,
+            TaskStep.owner_id == owner_id,
+        )
+        .with_for_update()
+    )
+    if step is None:
+        raise AppError(
+            "task_steps_changed",
+            "目标步骤已变化，请刷新后决定是否保留此操作。",
+            status=409,
+        )
+
+    task_rebased = task.version != data.expected_task_version
+    if step.completed == data.completed:
+        merge = "converged"
+    else:
+        if step.completed != data.base_completed:
+            raise AppError(
+                "task_step_conflict",
+                "此步骤已在其他设备修改，请刷新后选择最终状态。",
+                status=409,
+                details={"current_completed": step.completed},
+            )
+        current_time = now()
+        step.completed = data.completed
+        step.completed_at = current_time if data.completed else None
+        step.updated_at = current_time
+        task.version += 1
+        task.updated_at = current_time
+        emit_change(
+            session,
+            owner_id,
+            "step",
+            step.id,
+            "completed" if data.completed else "updated",
+            task.version,
+        )
+        merge = "rebased" if task_rebased else "applied"
+    await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "merge": merge,
+        "task": await task_detail(session, task),
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+async def merge_task_occurrence_step_completion(
+    session: AsyncSession,
+    owner_id: UUID,
+    data: OccurrenceStepCompletionInput,
+) -> dict:
+    scope = (
+        "sync.occurrence_step:"
+        f"{data.task_id}:{data.step_id}"
+    )
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+
+    task = await locked_task(session, owner_id, data.task_id)
+    task_result, occurrence_result, merge = (
+        await merge_occurrence_step_completion(
+            session,
+            owner_id,
+            task,
+            occurrence_key=data.occurrence_key,
+            step_id=data.step_id,
+            expected_task_version=data.expected_task_version,
+            expected_occurrence_version=data.expected_occurrence_version,
+            completed=data.completed,
+            changed_at=now(),
+        )
+    )
+    result = {
+        "operation_id": data.operation_id,
+        "merge": merge,
+        "task": task_result,
+        "occurrence": occurrence_result,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
