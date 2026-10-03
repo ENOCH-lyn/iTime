@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.ai.models import AIConfigVersion, AIJob, AIProviderCost
@@ -248,46 +248,45 @@ async def quota_snapshot(
     session: AsyncSession,
     daily: AIDailyAllowance,
 ) -> QuotaSnapshot:
-    adjustment_nanos, usage_delta = (
-        await session.execute(
-            select(
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                AIQuotaLedgerEntry.kind.in_(
-                                    ["admin_credit", "admin_debit"]
-                                ),
-                                AIQuotaLedgerEntry.delta_nanos,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                AIQuotaLedgerEntry.kind == "usage_charge",
-                                AIQuotaLedgerEntry.delta_nanos,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ),
-            ).where(AIQuotaLedgerEntry.daily_allowance_id == daily.id)
-        )
-    ).one()
-    reserved_nanos = await session.scalar(
+    adjustment_nanos = (
         select(
-            func.coalesce(func.sum(AIQuotaReservation.reserved_nanos), 0)
-        ).where(
+            func.coalesce(
+                func.sum(AIQuotaLedgerEntry.delta_nanos),
+                0,
+            )
+        )
+        .where(
+            AIQuotaLedgerEntry.daily_allowance_id == daily.id,
+            AIQuotaLedgerEntry.kind.in_(["admin_credit", "admin_debit"]),
+        )
+        .scalar_subquery()
+    )
+    usage_delta = (
+        select(
+            func.coalesce(
+                func.sum(AIQuotaLedgerEntry.delta_nanos),
+                0,
+            )
+        )
+        .where(
+            AIQuotaLedgerEntry.daily_allowance_id == daily.id,
+            AIQuotaLedgerEntry.kind == "usage_charge",
+        )
+        .scalar_subquery()
+    )
+    reserved_nanos = (
+        select(func.coalesce(func.sum(AIQuotaReservation.reserved_nanos), 0))
+        .where(
             AIQuotaReservation.daily_allowance_id == daily.id,
             AIQuotaReservation.status == "reserved",
         )
+        .scalar_subquery()
     )
+    adjustment_nanos, usage_delta, reserved_nanos = (
+        await session.execute(
+            select(adjustment_nanos, usage_delta, reserved_nanos)
+        )
+    ).one()
     adjustment_nanos = int(adjustment_nanos)
     charged_nanos = -int(usage_delta)
     reserved_nanos = int(reserved_nanos or 0)

@@ -1,11 +1,12 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
 from itime.ai.pricing import format_currency_nanos, parse_currency_amount
-from itime.schemas import OperationInput
+from itime.schemas import OperationInput, clean_required
 
 CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 
@@ -40,6 +41,27 @@ class QuotaPolicyCreateInput(OperationInput):
 
 class QuotaPolicyPublishInput(OperationInput):
     pass
+
+
+class QuotaAdjustmentInput(OperationInput):
+    expected_daily_version: int = Field(ge=0)
+    activity_date: date
+    mode: Literal["credit", "debit"]
+    amount: str = Field(min_length=1, max_length=32)
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def valid_amount(cls, value: object) -> str:
+        normalized = normalized_amount(value)
+        if parse_currency_amount(normalized) == 0:
+            raise ValueError("调整金额必须大于零")
+        return normalized
+
+    @field_validator("reason")
+    @classmethod
+    def valid_reason(cls, value: str) -> str:
+        return clean_required(value)
 
 
 class QuotaPolicyOutput(BaseModel):

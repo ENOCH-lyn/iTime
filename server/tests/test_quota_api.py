@@ -15,6 +15,37 @@ from tests.test_calendar_series import create_account
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def reset_quota_api_data(database_url):
+    def cleanup() -> None:
+        with psycopg.connect(
+            psycopg_url(database_url),
+            autocommit=True,
+        ) as connection:
+            connection.execute("DELETE FROM ai_quota_ledger_entries")
+            connection.execute("DELETE FROM ai_quota_admin_adjustments")
+            connection.execute("DELETE FROM ai_jobs")
+            connection.execute("DELETE FROM ai_conversations")
+            connection.execute("DELETE FROM ai_daily_allowances")
+            connection.execute(
+                """
+                UPDATE ai_config_capabilities
+                SET current_version_id=NULL, next_version=1, updated_at=now()
+                WHERE capability='conversation'
+                """
+            )
+            connection.execute(
+                """
+                DELETE FROM ai_config_versions
+                WHERE capability='conversation'
+                """
+            )
+
+    cleanup()
+    yield
+    cleanup()
+
+
 def test_user_quota_summary_reservation_release_and_ledger(
     client,
     live_server,
