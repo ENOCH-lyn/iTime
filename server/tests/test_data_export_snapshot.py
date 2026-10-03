@@ -173,6 +173,29 @@ def test_snapshot_covers_user_data_and_excludes_secrets(
         json=task_payload(title="导出任务"),
     )
     assert created_task.status_code == 201, created_task.text
+    created_link = created_task.json()["task"]["links"][0]
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE task_links
+            SET fetch_status='ready',
+                attempt_count=1,
+                last_attempt_at=now(),
+                last_success_at=now(),
+                final_host='export.example',
+                media_type='text/html',
+                page_title='导出页面',
+                summary='导出摘要',
+                extracted_text='导出网页正文',
+                content_sha256=%s,
+                updated_at=now()
+            WHERE id=%s
+            """,
+            ("a" * 64, created_link["id"]),
+        )
     facts = seed_export_facts(database_url, settings, owner_id)
 
     with browser(live_server) as other:
@@ -201,6 +224,9 @@ def test_snapshot_covers_user_data_and_excludes_secrets(
     assert payload["schema_version"] == 1
     assert payload["account"]["profile"]["id"] == owner_id_value
     assert payload["tasks"]["tasks"][0]["title"] == "导出任务"
+    assert payload["tasks"]["links"][0]["summary"] == "导出摘要"
+    assert payload["tasks"]["links"][0]["extracted_text"] == "导出网页正文"
+    assert payload["tasks"]["links"][0]["content_sha256"] == "a" * 64
     assert payload["calendar"]["subscriptions"][0]["url"] == facts["subscription_url"]
     assert payload["conversations"]["messages"][0]["content"] == facts["marker"]
     assert payload["execution"]["focus_sessions"][0]["title_snapshot"] == facts["marker"]

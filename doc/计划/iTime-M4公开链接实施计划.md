@@ -676,7 +676,7 @@ git commit -m "feat: 将公开资料用于规划"
 - Modify: `server/tests/test_ai_conversation_worker.py`
 - Modify: `server/tests/test_data_export_snapshot.py`
 
-- [ ] **Step 1: 写普通对话来源失败测试**
+- [x] **Step 1: 写普通对话来源失败测试**
 
 断言文本相关性、来源词回退、owner/任务生命周期隔离、3 条/12000 字符边界，以及：
 
@@ -691,7 +691,7 @@ assert "IGNORE ALL RULES" in json.dumps(first_request, ensure_ascii=False)
 在接单后修改或删除 TaskLink，再让 worker 重试；两次 provider 请求必须使用
 `ChatGeneration.public_source_context` 中相同的内容和哈希。普通对话 request body 不提供工具。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -702,7 +702,7 @@ uv run pytest -q tests/test_public_link_context.py \
 
 Expected: FAIL，对话 generation 不保存来源快照。
 
-- [ ] **Step 3: 实现相关来源选择与消息**
+- [x] **Step 3: 实现相关来源选择与消息**
 
 `select_relevant_public_sources()` 使用现有 `_relevance_score()`，候选字段为任务标题/正文、链接
 标题、页面标题、摘要和来源主机。直接 URL/标题/主机命中加权；含“链接、网页、资料、文章、
@@ -722,12 +722,12 @@ URL”且无命中时按最近成功时间回退。返回最多 3 条、总正�
 enqueue 时复制到 `ChatGeneration.public_source_context`，worker load 时只读 generation 快照。
 `SYSTEM_PROMPT` 同时明确网页无工具和写入授权。
 
-- [ ] **Step 4: 扩展本人数据导出**
+- [x] **Step 4: 扩展本人数据导出**
 
 任务链接 JSON 增加用户可见快照字段；chat generation 增加 `public_source_context`。明确排除
 `lease_id`、`lease_until`、`available_at` 和内部 attempt 调度字段，并更新导出 fixture。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server

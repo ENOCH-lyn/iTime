@@ -6,7 +6,11 @@ from sqlalchemy import Select, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from itime.account_deletion.models import AccountDeletion
-from itime.ai.conversation_models import Conversation, ConversationMessage
+from itime.ai.conversation_models import (
+    ChatGeneration,
+    Conversation,
+    ConversationMessage,
+)
 from itime.ai.governance_models import UserPrivacySetting
 from itime.ai.models import AIJob, TemporaryMedia
 from itime.auth.models import DeviceSession, SecurityEvent, User
@@ -467,7 +471,27 @@ async def collect_export_snapshot(
         "links": await _rows(
             connection,
             TaskLink,
-            ("id", "task_id", "title", "url", "position", "created_at"),
+            (
+                "id",
+                "task_id",
+                "title",
+                "url",
+                "position",
+                "fetch_status",
+                "last_attempt_at",
+                "last_success_at",
+                "final_host",
+                "media_type",
+                "page_title",
+                "summary",
+                "extracted_text",
+                "content_sha256",
+                "last_error_code",
+                "last_error_message",
+                "last_http_status",
+                "updated_at",
+                "created_at",
+            ),
             owner_id,
             order=("task_id", "position"),
         ),
@@ -760,6 +784,22 @@ async def collect_export_snapshot(
             ),
             owner_id,
             order=("conversation_id", "sequence"),
+        ),
+        "generations": await _rows(
+            connection,
+            ChatGeneration,
+            (
+                "job_id",
+                "conversation_id",
+                "request_message_id",
+                "response_message_id",
+                "history_through_sequence",
+                "context_message_ids",
+                "public_source_context",
+                "created_at",
+            ),
+            owner_id,
+            order=("conversation_id", "history_through_sequence"),
         ),
         "jobs": await _job_rows(connection, owner_id, "conversation"),
     }

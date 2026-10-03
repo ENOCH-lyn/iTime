@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from itime.ai.relevance import normalized_text, relevance_score
 from itime.auth.models import User
 from itime.auth.security import now
 from itime.database import Database
@@ -26,6 +27,11 @@ MANUAL_REFRESH_COOLDOWN = timedelta(seconds=30)
 MAX_PLANNING_SOURCES_PER_TASK = 3
 MAX_PLANNING_SOURCE_CHARS = 4000
 MAX_PLANNING_SOURCE_TOTAL_CHARS = 24_000
+MAX_CONVERSATION_SOURCES = 3
+MAX_CONVERSATION_SOURCE_CHARS = 4000
+MAX_CONVERSATION_SOURCE_TOTAL_CHARS = 12_000
+MAX_CONVERSATION_SOURCE_CANDIDATES = 200
+PUBLIC_SOURCE_HINTS = ("链接", "网页", "资料", "文章", "url", "http")
 
 
 @dataclass(frozen=True)
@@ -269,6 +275,95 @@ async def planning_public_sources(
             }
         )
     return contexts
+
+
+async def select_relevant_public_sources(
+    session: AsyncSession,
+    owner_id: UUID,
+    content: str,
+) -> list[dict]:
+    rows = list(
+        (
+            await session.execute(
+                select(TaskLink, Task)
+                .join(
+                    Task,
+                    and_(
+                        Task.id == TaskLink.task_id,
+                        Task.owner_id == TaskLink.owner_id,
+                    ),
+                )
+                .where(
+                    TaskLink.owner_id == owner_id,
+                    Task.archived_at.is_(None),
+                    Task.deleted_at.is_(None),
+                    Task.purged_at.is_(None),
+                    TaskLink.last_success_at.is_not(None),
+                    TaskLink.content_sha256.is_not(None),
+                    TaskLink.summary.is_not(None),
+                    TaskLink.extracted_text.is_not(None),
+                )
+                .order_by(
+                    TaskLink.last_success_at.desc(),
+                    TaskLink.position,
+                    TaskLink.id,
+                )
+                .limit(MAX_CONVERSATION_SOURCE_CANDIDATES)
+            )
+        ).all()
+    )
+    if not rows:
+        return []
+    normalized_query = normalized_text(content)
+    scored: list[tuple[int, datetime, TaskLink]] = []
+    for link, task in rows:
+        host = urlsplit(link.url).hostname or ""
+        candidate = " ".join(
+            (
+                task.title,
+                task.description,
+                link.title,
+                link.page_title or "",
+                link.summary or "",
+                host,
+            )
+        )
+        score = relevance_score(content, candidate)
+        for exact_value, bonus in (
+            (link.url, 400),
+            (host, 250),
+            (link.title, 200),
+            (task.title, 200),
+        ):
+            normalized_value = normalized_text(exact_value)
+            if len(normalized_value) >= 2 and normalized_value in normalized_query:
+                score += bonus
+        if score > 0 and link.last_success_at is not None:
+            scored.append((score, link.last_success_at, link))
+    if scored:
+        candidates = [
+            item[2]
+            for item in sorted(
+                scored,
+                key=lambda item: (item[0], item[1], str(item[2].id)),
+                reverse=True,
+            )
+        ]
+    elif any(hint in normalized_query for hint in PUBLIC_SOURCE_HINTS):
+        candidates = [link for link, _ in rows]
+    else:
+        return []
+
+    selected: list[dict] = []
+    remaining_chars = MAX_CONVERSATION_SOURCE_TOTAL_CHARS
+    for link in candidates[:MAX_CONVERSATION_SOURCES]:
+        text_value = link.extracted_text or ""
+        allowed = min(MAX_CONVERSATION_SOURCE_CHARS, remaining_chars)
+        if allowed <= 0:
+            break
+        selected.append(_public_source_payload(link, text_value[:allowed]))
+        remaining_chars -= min(len(text_value), allowed)
+    return selected
 
 
 async def renew_public_link_lease(
