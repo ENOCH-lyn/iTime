@@ -206,7 +206,7 @@ git commit -m "feat: 实现长期记忆生命周期"
 - Modify: `server/src/itime/review/router.py`
 - Test: `server/tests/test_review_sessions.py`
 
-- [ ] **Step 1: 写活动日和会话失败测试**
+- [x] **Step 1: 写活动日和会话失败测试**
 
 构造 `Asia/Shanghai` 下 03:59 与 04:00 两侧的完成任务、跨界专注、困难和当前计划块；断言无计划也能创建、同日并发返回一个会话、未来活动日拒绝、补充事实幂等保存、版本冲突、跨账号隐藏、事实摘要稳定且源变化后改变。
 
@@ -217,13 +217,13 @@ assert detail["facts"]["focus"]["total_seconds"] == 1800
 assert detail["report_freshness"] == "none"
 ```
 
-- [ ] **Step 2: 运行会话测试确认失败**
+- [x] **Step 2: 运行会话测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_review_sessions.py`
 
 Expected: FAIL，事实服务和会话接口尚不存在。
 
-- [ ] **Step 3: 实现确定性事实聚合**
+- [x] **Step 3: 实现确定性事实聚合**
 
 `collect_review_facts()` 使用 `UserTimeSettings` 和 `resolve_local_datetime` 求活动日 UTC 边界，分别查询当前计划版本块、完成事实、相交专注及未删除困难。专注按窗口交集计算；开放专注以当前服务端时刻截断并标为 `ongoing`。
 
@@ -240,17 +240,17 @@ normalized = {
 facts_sha256 = sha256(canonical_json(normalized)).hexdigest()
 ```
 
-- [ ] **Step 4: 实现会话 CRUD 和报告新鲜度**
+- [x] **Step 4: 实现会话 CRUD 和报告新鲜度**
 
 `POST /reviews` 创建或返回 `(owner_id, activity_date)` 唯一会话；`GET` 返回事实、消息、版本摘要和活动作业；`PUT /facts` 增加 `input_revision`。新鲜度比较最新报告快照的 `session_input_revision` 与实时 `facts_sha256`。
 
-- [ ] **Step 5: 运行测试和静态检查**
+- [x] **Step 5: 运行测试和静态检查**
 
 Run: `cd server && uv run pytest -q tests/test_review_sessions.py && uv run ruff check src/itime/review tests/test_review_sessions.py`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add server/src/itime/review server/tests/test_review_sessions.py

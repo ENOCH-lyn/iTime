@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 
 from itime.auth.security import now
 from itime.auth.session import authorized
@@ -22,9 +22,82 @@ from itime.review.schemas import (
     MemoryLifecycleInput,
     MemorySettingsUpdateInput,
     MemoryUpdateInput,
+    ReviewCreateInput,
+    ReviewFactsUpdateInput,
+)
+from itime.review.service import (
+    create_or_get_review,
+    list_reviews,
+    review_detail,
+    update_review_facts,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["复盘与记忆"])
+
+
+@router.get("/reviews")
+async def get_reviews(
+    request: Request,
+    before_date: date | None = None,
+    before_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> dict:
+    async with authorized(request) as identity:
+        return await list_reviews(
+            identity.session,
+            identity.user.id,
+            before_date=before_date,
+            before_id=before_id,
+            limit=limit,
+        )
+
+
+@router.post("/reviews", status_code=201)
+async def create_review(
+    data: ReviewCreateInput,
+    request: Request,
+    response: Response,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        result = await create_or_get_review(
+            identity.session,
+            identity.user.id,
+            data,
+            current_time=current_time,
+        )
+        if not result["created"]:
+            response.status_code = 200
+        return result
+
+
+@router.get("/reviews/{review_id}")
+async def get_review(review_id: UUID, request: Request) -> dict:
+    current_time = now()
+    async with authorized(request) as identity:
+        return await review_detail(
+            identity.session,
+            identity.user.id,
+            review_id,
+            current_time=current_time,
+        )
+
+
+@router.put("/reviews/{review_id}/facts")
+async def save_review_facts(
+    review_id: UUID,
+    data: ReviewFactsUpdateInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await update_review_facts(
+            identity.session,
+            identity.user.id,
+            review_id,
+            data,
+            current_time=current_time,
+        )
 
 
 @router.get("/memory-settings")
