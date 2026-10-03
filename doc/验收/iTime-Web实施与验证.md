@@ -863,7 +863,7 @@ Browser 运行工具未在当前执行环境暴露，因此按前端测试规范
 
 专项浏览器流程在每个视口真实注册用户、验证邮件、切换质检参与、模拟未知保存状态后对账恢复、生成 AI 回复，再由 TOTP 管理员显式读取正文、提交质检结论并从审计页回查。每个视口检查 axe、控制台、Vite 错误层和根级横向溢出；另验证桌面切换到 320×700 最大字号深色。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-*.png` 和 `desktop-privacy-governance-quality-320-large-dark.png`，已人工检查；敏感弹窗、长邮箱、UUID、请求 JSON 和操作按钮无重叠或横向溢出。
 
-Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。金额额度后续已在 M4-E 验证，规划业务提案后续已在 M5-A/M5-B 接入同一治理链路；真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、其他业务提案及正式第三方模型质量仍未验证或实现。
+Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。金额额度后续已在 M4-E 验证，规划业务提案后续已在 M5-A/M5-B 接入同一治理链路，账号注销优先清理后续已由 M6-G 验证；真实 Edge、实体设备、单项彻底删除联动、其他业务提案及正式第三方模型质量仍未验证或实现。
 
 ## M4-D：AI 价格、供应商用量与平台成本
 
@@ -1013,7 +1013,7 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 
 浏览器流程覆盖自由/任务专注、步骤与任务完成分离、刷新恢复、补记修订、离线顺序重放、未知响应幂等恢复、开放与终态冲突、账号隔离、100 项/7 天队列边界、困难增删改恢复、任务/计划块入口和 AI 草稿。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-focus-*.png` 及 `desktop-focus-320-large-dark.png`，人工检查未见重叠、裁切、空白画面或动态布局跳动。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆、个人统计、本人数据导出和通用同步后续分别由 M6-C、M6-D、M6-E、M6-F 实现；困难语音、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆、个人统计、本人数据导出、通用同步和账号注销后续分别由 M6-C、M6-D、M6-E、M6-F、M6-G 实现；困难语音、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
 
 ## M6-C：单日复盘与确认式长期记忆
 
@@ -1046,7 +1046,7 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 浏览器流程覆盖补充事实、短追问、跳过、离页恢复、报告重生成与版本切换、批注、候选确认/拒绝、记忆启停/增改删/恢复、删除后退出检索、普通对话与规划实际收到的记忆上下文，以及取消后恢复可操作状态。每个视口检查 axe、控制台、框架错误层和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-review-desktop-report.png` 与 `mobile-review-320-large-dark.png`，人工检查未见重叠、裁切或空白画面。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计、本人数据导出和通用同步后续分别由 M6-D、M6-E、M6-F 实现；困难语音、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计、本人数据导出、通用同步和账号注销后续分别由 M6-D、M6-E、M6-F、M6-G 实现；困难语音、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
 
 ## M6-D：个人日周月统计
 
@@ -1114,7 +1114,7 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 收口时已重启开发 API 并启动 `itime.data_export.worker`；`GET /api/ready` 返回 200，OpenAPI 包含创建/列表、详情和下载路径，`http://localhost:5173/account/data` 返回 200，`itime_test_%` 测试数据库残留为 0。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。通用同步随后已由 M6-F 实现；完成本模块不代表账号注销、其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥轮换、备份恢复或部署已经完成。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。通用同步和账号注销随后已由 M6-F、M6-G 实现；完成本模块不代表其他对象回收、真实 Edge/实体设备、长历史性能、生产密钥轮换、备份恢复或部署已经完成。
 
 ## M6-F：通用同步与有界离线恢复
 
@@ -1176,6 +1176,67 @@ Playwright Chromium 153 中执行：
 OpenAPI 包含同步变更、状态和两类步骤端点，`http://localhost:5173/account/sync` 返回 200，
 未认证同步状态请求返回 401，`itime_test_%` 测试数据库残留为 0。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本
-模块不代表账号注销、其他对象回收、困难语音、公开链接、其他业务对象提案、正式模型质量、
-M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。账号
+注销随后已由 M6-G 实现；完成本模块不代表其他对象回收、困难语音、公开链接、其他业务对象提案、
+正式模型质量、M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
+
+## M6-G：7 天可撤销账号注销
+
+对应 Git 提交：`6136fc2`、`b11e891`、`71200e1`、`f1a7861`、`e74fe9b`、`882483b`、
+`1edb509`、`852043f`、`99541b0`。实际代码为迁移 `0029_account_deletions`、
+`server/src/itime/account_deletion/`、认证/后台/导出/同步等相邻领域接入、
+`web/src/components/AccountDeletionSettings.vue`、登录恢复页和
+`web/e2e/account-deletion.spec.ts`；合同见[账号注销设计](../设计/iTime-账号注销设计.md)。
+
+已实现：
+
+- 普通用户在 `/account/data` 重新输入完整注册邮箱和当前密码后申请注销；管理员账号被保护。
+  申请事务创建 7 天到期作业、冻结账号、递增认证代次并撤销全部设备，响应丢失时可通过正确
+  凭据登录重新读取同一截止时间，不会重复创建作业。
+- 申请同步停止 queued/running AI 作业及额度预留、导出作业及已有密文、订阅刷新、开放专注、
+  未发送账号邮件和临时媒体。各 worker claim 只选择活动用户，旧 lease 的晚到结果不能重新写入
+  回复、提案、报告、样本、扣额、导出产物或订阅投影。
+- 正确密码才显示“账号正在注销”和截止时间；错误密码保持统一凭据错误。到期前撤销会恢复原
+  用户和持久业务数据，只创建一个新会话，已终止的临时工作不自动复活；找回密码不会隐式撤销。
+- 独立 `itime.account_deletion.worker` 以租约领取到期作业，按用户再作业的顺序锁定，在同一
+  事务中清除邀请和审计关联、写最小完成回执并删除用户根行。失败完整回滚并指数退避，多 worker
+  使用 `SKIP LOCKED`；完成回执不含邮箱、原用户 UUID、正文或对象数量。
+- Web 申请成功后通过 `BroadcastChannel` 清理所有标签页的当前账号内存身份、IndexedDB、
+  同步游标及任务/专注待传队列。后台只读显示“注销中”和剩余期限，不能代用户撤销或延长。
+- 隔离 E2E 只在 `tests.support_app` 提供一次性本人到期控制票据，需活动会话和 CSRF 签发，
+  不接受 `user_id` 且不进入生产应用；测试使用真实常驻注销 worker，不直接调用清理函数。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn、Mailpit、AI/订阅/导出/同步/注销
+worker、生产构建预览和 Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 账号注销专项服务端组合回归 | **16 passed in 22.99s** | 迁移/回退、状态约束、申请/撤销、并发、晚到结果、双 worker、故障回滚、全 owner 表清理和同邮箱重注册 |
+| 认证、后台、AI、规划、复盘、订阅、导出及专注受影响服务端回归 | **72 passed in 65.81s** | 相邻权限、作业终态、额度、快照和在途停止 |
+| `cd server && uv run pytest -q` | **430 passed in 371.65s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic upgrade head`、`current`、`check` | `0029_account_deletions (head)`，无模型漂移 | 开发库迁移与 ORM 一致性 |
+| `cd server && uv run python -m itime.account_deletion.worker --once` | 通过 | 无到期作业时受控退出 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/account-deletion.spec.ts` | **6 passed in 39.4s** | 两条完整注销流程 × 电脑、手机、平板 |
+| 账号、后台、导出、隐私、公开页及同步受影响 Chromium 回归 | **87 passed in 3.7m** | 注销接入页面和相邻流程 |
+| `cd web && pnpm test:e2e` | **216 passed in 10.9m** | 全部用户端、后台和公开页面 Chromium 全量回归 |
+
+真实到期流程先创建持久任务和可下载导出，申请后验证第二设备与全部标签本地状态失效；正确凭据
+撤销后任务仍在而导出临时文件不可下载。再次申请并由受控测试端点推进到期后，真实 worker 删除
+账号；旧凭据仅得到统一 401，探针确认旧用户、旧邮箱及所有 `owner_id` 行均为 0、最小回执为 1。
+同邮箱随后完成真实邮件验证和重新注册，得到新 UUID，旧任务不可读取。额外验证测试端点拒绝
+任意 `user_id` 和错误 CSRF。
+
+截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-account-deletion-dialog.png`、
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-account-deletion-pending.png`、
+`/tmp/itime-ui-evidence/mobile-account-deletion-320-large-dark.png` 和
+`/tmp/itime-ui-evidence/desktop-admin-management-account-deletion.png`。已逐张人工检查，邮箱、
+截止时间、按钮、导航和危险操作层级无重叠、裁切、空白画面或横向溢出。
+
+收口时开发 API、Vite 和 `itime.account_deletion.worker` 已运行；`GET /api/ready` 返回 200，
+OpenAPI 包含申请与撤销路由，`http://localhost:5173/account/data` 返回 200，`itime_test_%`
+测试数据库残留为 0。实施计划明确要求仓库 Playwright，因此使用 Chromium 执行真实浏览器流程。
+本模块不代表其他对象单项回收、困难/任务语音、公开链接、其他业务对象提案、正式模型质量、
+M8 性能分位数、真实 Edge/实体设备、备份恢复删除台账重放或生产部署已经完成。

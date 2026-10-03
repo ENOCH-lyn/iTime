@@ -1,6 +1,6 @@
 # iTime 需求追踪矩阵
 
-版本：0.2；更新：2026-10-04。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出及通用同步已有分模块动态证据；完整 Web 闭环尚未验收，实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
+版本：0.2；更新：2026-10-04。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出、通用同步及账号注销已有分模块动态证据；完整 Web 闭环尚未验收，实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
 
 下表的章节指[详细设计](../设计/iTime-详细设计文档.md)，页面对应 [designer](../../designer.md)，阶段对应[开发总计划](../计划/iTime-开发总计划.md)。已确认方向下的剩余细则以[问题清单](iTime-需求访谈问题清单.md)为准。
 
@@ -62,11 +62,12 @@
 
 | 需求 | 当前代码与证据 | 仍未完成 |
 | --- | --- | --- |
-| REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，AI、任务、规划、日历、专注、复盘、统计和设置从八项统一产品导航可达，设置内 `/account/data` 提供本人数据导出，`/account/sync` 提供同步与离线工作区；现有页面已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 注销及其余数据生命周期页面仍待后续模块；Edge/真机未验证 |
+| REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，AI、任务、规划、日历、专注、复盘、统计和设置从八项统一产品导航可达，设置内 `/account/data` 提供本人数据导出与账号注销，`/account/sync` 提供同步与离线工作区；现有页面已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 其余数据生命周期页面仍待后续模块；Edge/真机未验证 |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
-| REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`、`web/src/lib/auth.ts`；服务端会话撤销、分页列表、并发授权、真实设备管理页面，以及显式退出后的账号级游标、缓存和待传队列清理已动态验证 | 会话意外失效后的重新认证提示和后续账号注销生命周期继续分别验证 |
+| REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`、`web/src/lib/auth.ts`；服务端会话撤销、分页列表、并发授权、真实设备管理页面，以及显式退出或申请注销后的账号级游标、缓存和待传队列清理已动态验证；注销申请即时撤销全部设备，撤销时仅创建一个新会话 | 会话意外失效后的重新认证提示继续单独验证 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks`、`0009_task_schedules` 与 `0016_task_lifecycle`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期、未来拆分、手动归档及 30 天任务回收站已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 任务实例补做 UI 及语音/AI 校对仍待后续模块 |
 | REQ-DATA-01 | `0016_task_lifecycle` 与 `0026_review_memory`、任务和记忆独立清理 worker 及对应 Web 工作区已实现任务/记忆删除、30 天恢复、到期清理和可达回收站 UI；任务保留最小墓碑，记忆删除后立即退出 AI 检索；专项覆盖双 worker、旧操作阻断、并发 UI 冲突和 320px 大字号 | 其他业务对象的回收与跨聚合关联清理仍待实现；账号注销单列 `REQ-DATA-02` |
+| REQ-DATA-02 | 迁移 `0029_account_deletions`、`server/src/itime/account_deletion/`、`POST /api/v1/account-deletion`、`POST /cancel`、独立清理 worker、`/account/data` 危险区和登录恢复页已实现 7 天撤销、会话冻结、在途任务停止、到期单事务清理及最小回执；专项覆盖密码/邮箱/CSRF、并发、晚到结果、双 worker、回滚、全部 owner 表、跨标签本地清理、三视口和同邮箱新 UUID | 生产备份恢复后的删除回执重放、法务保留及其余对象单项回收仍待 M8 或后续模块验证 |
 | REQ-CAL-01 / REQ-CAL-03 / REQ-TIME-01 | `server/src/itime/calendar/`、`server/src/itime/planning/`、`server/src/itime/statistics/`、迁移 `0006`—`0015` 与 `0022`—`0024`、日历及统计页面；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、例外、全部导入、当前计划块投影，以及额度和统计的 04:00 活动日已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试；规划输入变化会使待确认提案冲突失效 | 订阅 occurrence 的用户单次例外及来源更新后已确认计划的专门冲突提示尚未实现 |
 | REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`server/src/itime/ai/`、迁移 `0011`—`0015`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue` 与 `CalendarSubscriptionManager.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停恢复、字段覆盖、差异与统一日历投影 Web 流程 | 已完成首版可达流程；真实第三方私密订阅源兼容性仍需部署前联调 |
 | REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`0022`—`0024` 与 `0026_review_memory`、`server/src/itime/ai/conversation_*.py`、通用 worker/SSE 路由及 `web/src/pages/AIPage.vue` 已实现多普通会话、相关历史快照、消息持久化、文本流、租约续期、重试 reset、取消、离页/断线恢复，以及与普通会话分离的单日复盘会话；文字与结构化工具参数分离，接单已接入用户额度预留及终态结算/释放 | 备用服务路由、公开链接及正式模型质量评测仍待后续模块 |
@@ -76,7 +77,7 @@
 | REQ-STATS-01 | `server/src/itime/statistics/`、`web/src/pages/StatisticsPage.vue`、统计组件/API 及 `web/e2e/statistics.spec.ts` 已实现日/自然周/自然月查询、当前计划版本、任务完成/跳过、专注完成/放弃/补记/修订、跨 04:00 分配、空态和读取失败保旧；已通过真实 PostgreSQL/HTTP、活动日数学、三视口及 320px 大字号 Chromium 验证 | 后台运营指标、长历史性能、Edge 和真机不属于本模块或仍未验证 |
 | REQ-SYNC-01 | 迁移 `0028_sync_feed`、`server/src/itime/sync/`、`web/src/lib/{data-cache,sync,sync-queue,use-sync-refresh}.ts`、`/account/sync` 和 `web/e2e/sync.spec.ts` 已实现账号绑定 HMAC 游标、无正文失效事件、30 天有界清理、跨标签/跨设备刷新、当前已认证页面的 AES-GCM 离线缓存、普通/重复任务步骤与既有专注操作的类型化队列、冲突保留及退出清理；已覆盖游标篡改/过期/超前、账号隔离、清理竞争、幂等重放、跨设备 5 秒上界、断网恢复、三视口和 320px 深色大字号 | 离线新建、离线冷启动不属于已确认首版范围；M8 并发性能分位数、Edge 和真机仍未验证 |
 | REQ-EXPORT-01 | 迁移 `0027_data_exports`、`server/src/itime/data_export/`、`POST/GET /api/v1/data-exports`、独立 worker、`web/src/components/DataExportSettings.vue`、`/account/data` 及 `web/e2e/data-exports.spec.ts` 已实现本人一致性快照、完整 JSON、分类 CSV/ICS/Markdown、加密 ZIP、24 小时认证下载和 30 天终态元数据；专项真实下载并解包核对清单摘要、代表数据及敏感字段排除，覆盖双 worker、租约恢复、所有权、会话撤销、过期/损坏、三视口和 320px 大字号 | 首版导出范围已完成；长历史容量、真实 Edge/实体设备和生产密钥轮换仍未验证 |
-| REQ-PRIV-01 / REQ-PRIV-02 | 迁移 `0018_ai_governance`、逐尝试正文日志、成功终态采样、用户隐私设置、独立 7/30 天清理进程及用户/后台页面已实现；专项覆盖关闭与终态竞态、重试/取消/超时、截图 base64 排除、双清理、显式正文访问和访问审计 | 账号注销优先清理及未来单项彻底删除的跨聚合规则随对应数据模块完成 |
+| REQ-PRIV-01 / REQ-PRIV-02 | 迁移 `0018_ai_governance`、逐尝试正文日志、成功终态采样、用户隐私设置、独立 7/30 天清理进程及用户/后台页面已实现；专项覆盖关闭与终态竞态、重试/取消/超时、截图 base64 排除、双清理、显式正文访问、访问审计及账号注销优先清理 | 未来单项彻底删除的跨聚合规则随对应数据模块完成 |
 | REQ-QUOTA-01 | 迁移 `0019`—`0021`、`server/src/itime/{ai,quota}/` 及截图、对话、规划、复盘四类 AI 接单/终态事务已实现价格、usage、逐尝试成本、04:00 活动日、原子预留、成功一次结算、失败/取消释放和过期恢复；用户 `/account/quota` 与后台 `/admin/quota` 已通过真实 PostgreSQL/HTTP/worker 和三视口 Chromium 测试 | 后续 AI 业务能力继续复用同一额度合同；充值、支付和现金钱包不属于首版 |
 | REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`server/src/itime/ai/admin_*.py`、`server/src/itime/quota/admin_router.py`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请、普通用户/AI 状态、额度策略与调整、带价格 AI 配置、供应商成本、日志、质检、正文访问和审计查询 | 最终恢复/交接规则随部署准备继续细化 |
 

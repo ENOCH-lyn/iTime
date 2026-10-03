@@ -1066,7 +1066,7 @@ git commit -m "test: 验证账号注销真实链路"
 - Modify: `doc/验收/iTime-产品验收清单.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 执行服务端专项与受影响回归**
+- [x] **Step 1: 执行服务端专项与受影响回归**
 
 ```bash
 cd server
@@ -1087,7 +1087,7 @@ uv build --no-sources
 
 Expected: 全部通过；head 为 `0029_account_deletions`，测试库残留为 0。
 
-- [ ] **Step 2: 执行服务端全量回归**
+- [x] **Step 2: 执行服务端全量回归**
 
 ```bash
 cd server
@@ -1096,7 +1096,7 @@ uv run pytest -q
 
 Expected: 所有真实 PostgreSQL/HTTP 测试通过。
 
-- [ ] **Step 3: 执行 Web 专项、受影响与全量回归**
+- [x] **Step 3: 执行 Web 专项、受影响与全量回归**
 
 ```bash
 cd web
@@ -1110,7 +1110,7 @@ pnpm test:e2e
 
 Expected: 全部 Chromium projects 通过。
 
-- [ ] **Step 4: 恢复开发运行环境并核对**
+- [x] **Step 4: 恢复开发运行环境并核对**
 
 重启 API 和新增 worker：
 
@@ -1137,7 +1137,7 @@ docker --context colima-itime compose --env-file .env.local exec -T postgres \
 
 Expected: API ready、注销路由存在、页面 200、worker 运行、随机测试数据库为 0。
 
-- [ ] **Step 5: 同步实际实现和证据**
+- [x] **Step 5: 同步实际实现和证据**
 
 - README 和 cloud 增加注销 worker 与 7 天恢复命令/边界。
 - 追踪矩阵更新 `REQ-DATA-02`；不得把 M8 备份重放写成已完成。
@@ -1146,7 +1146,7 @@ Expected: API ready、注销路由存在、页面 200、worker 运行、随机�
 - 其他对象单项回收、困难/任务语音、公开链接、其他 AI 提案、Edge/真机、性能和生产部署继续
   明确为未完成。
 
-- [ ] **Step 6: 检查范围并提交证据**
+- [x] **Step 6: 检查范围并提交证据**
 
 ```bash
 git diff --check
