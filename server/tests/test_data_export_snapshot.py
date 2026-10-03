@@ -18,7 +18,7 @@ from itime.data_export.snapshot import (
 )
 from itime.database import Database
 from tests.conftest import psycopg_url
-from tests.test_tasks import browser, create_account, task_payload
+from tests.test_tasks import PASSWORD, browser, create_account, task_payload
 
 pytestmark = pytest.mark.integration
 
@@ -211,6 +211,63 @@ def test_snapshot_covers_user_data_and_excludes_secrets(
     assert hidden_marker not in rendered
     assert other_id not in rendered
     assert not recursive_keys(payload) & FORBIDDEN_KEYS
+
+
+def test_snapshot_includes_only_public_cancelled_deletion_history(
+    client,
+    database_url,
+    settings,
+):
+    email, owner_id_value = create_account(client, database_url)
+    requested = client.post(
+        "/api/v1/account-deletion",
+        json={
+            "operation_id": str(uuid4()),
+            "email_confirmation": email,
+            "current_password": PASSWORD,
+        },
+    )
+    assert requested.status_code == 202, requested.text
+    pending = requested.json()["deletion"]
+    cancelled = client.post(
+        "/api/v1/account-deletion/cancel",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "导出注销历史",
+        },
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    payload = read_snapshot(
+        settings,
+        UUID(owner_id_value),
+    )
+    history = payload["account"]["account_deletions"]
+    assert len(history) == 1
+    assert set(history[0]) == {
+        "id",
+        "status",
+        "requested_at",
+        "purge_after",
+        "cancelled_at",
+        "created_at",
+        "updated_at",
+    }
+    assert history[0]["id"] == pending["id"]
+    assert history[0]["status"] == "cancelled"
+    assert history[0]["cancelled_at"] is not None
+    rendered = json.dumps(history, ensure_ascii=False)
+    for forbidden in (
+        "subject_digest",
+        "operation_id",
+        "request_id",
+        "lease_id",
+        "lease_until",
+        "last_error_code",
+        "last_error_message",
+    ):
+        assert forbidden not in rendered
 
 
 def test_repeatable_read_snapshot_excludes_later_commit(

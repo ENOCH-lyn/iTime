@@ -282,7 +282,12 @@ async def revoke_invitation(invitation_id: UUID, request: Request) -> dict:
 async def list_users(
     request: Request,
     search: Annotated[str | None, Query(max_length=254)] = None,
-    status: Literal["all", "active", "suspended"] = "all",
+    status: Literal[
+        "all",
+        "active",
+        "suspended",
+        "pending_deletion",
+    ] = "all",
     ai_access: Literal["all", "allowed", "frozen"] = "all",
     role: Literal["all", "user", "admin"] = "all",
     before_time: datetime | None = None,
@@ -334,6 +339,13 @@ async def locked_managed_user(identity, user_id: UUID) -> User:
             "admin_account_protected",
             "管理员账号需通过服务器交接流程处理，不能在用户列表中修改。",
             status=409,
+        )
+    if user.status == "pending_deletion":
+        raise AppError(
+            "account_deletion_pending",
+            "账号正在注销，管理员不能代替用户撤销或修改状态。",
+            status=409,
+            saved="saved",
         )
     return user
 

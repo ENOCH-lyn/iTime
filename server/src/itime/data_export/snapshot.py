@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from itime.account_deletion.models import AccountDeletion
 from itime.ai.conversation_models import Conversation, ConversationMessage
 from itime.ai.governance_models import UserPrivacySetting
 from itime.ai.models import AIJob, TemporaryMedia
@@ -217,6 +218,36 @@ async def _job_rows(
     ]
 
 
+async def _account_deletion_rows(
+    connection: AsyncConnection,
+    owner_id: UUID,
+) -> list[dict[str, JSONValue]]:
+    fields = (
+        "id",
+        "status",
+        "requested_at",
+        "purge_after",
+        "cancelled_at",
+        "created_at",
+        "updated_at",
+    )
+    result = await connection.execute(
+        select(*_columns(AccountDeletion, fields))
+        .where(
+            AccountDeletion.user_id == owner_id,
+            AccountDeletion.status == "cancelled",
+        )
+        .order_by(
+            AccountDeletion.requested_at,
+            AccountDeletion.id,
+        )
+    )
+    return [
+        {key: export_value(value) for key, value in row.items()}
+        for row in result.mappings()
+    ]
+
+
 async def collect_export_snapshot(
     connection: AsyncConnection,
     owner_id: UUID,
@@ -277,6 +308,10 @@ async def collect_export_snapshot(
             owner_id,
             owner_field="user_id",
             order=("created_at", "id"),
+        ),
+        "account_deletions": await _account_deletion_rows(
+            connection,
+            owner_id,
         ),
     }
     exported_settings = {

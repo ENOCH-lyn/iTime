@@ -332,3 +332,79 @@ def test_user_status_and_ai_access_are_separate_versioned_controls(
             ).fetchall()
         }
         assert actions >= {"user_ai_frozen", "user_suspended", "user_active"}
+
+
+def test_pending_deletion_user_is_visible_but_not_admin_mutable(
+    client,
+    database_url,
+    live_server,
+):
+    setup_admin(client, database_url)
+    user_email = address("deleting")
+    with browser(live_server) as user_client:
+        registered = user_client.post(
+            f"{AUTH}/register",
+            json={"email": user_email, "password": USER_PASSWORD},
+        )
+        assert registered.status_code == 202
+        with psycopg.connect(
+            psycopg_url(database_url),
+            autocommit=True,
+        ) as connection:
+            user_id = connection.execute(
+                """
+                UPDATE users
+                SET email_verified_at=now()
+                WHERE email=%s
+                RETURNING id
+                """,
+                (user_email,),
+            ).fetchone()[0]
+        logged_in = user_client.post(
+            f"{AUTH}/login",
+            json={
+                "email": user_email,
+                "password": USER_PASSWORD,
+                "device_name": "待注销用户",
+            },
+        )
+        assert logged_in.status_code == 200, logged_in.text
+        user_client.headers["x-csrf-token"] = logged_in.json()["csrf_token"]
+        requested = user_client.post(
+            "/api/v1/account-deletion",
+            json={
+                "operation_id": str(uuid4()),
+                "email_confirmation": user_email,
+                "current_password": USER_PASSWORD,
+            },
+        )
+        assert requested.status_code == 202, requested.text
+
+    listing = client.get(
+        f"{ADMIN}/users",
+        params={"status": "pending_deletion"},
+    )
+    assert listing.status_code == 200, listing.text
+    item = next(
+        user
+        for user in listing.json()["items"]
+        if user["id"] == str(user_id)
+    )
+    assert item["status"] == "pending_deletion"
+    assert item["version"] == 2
+
+    status_update = client.put(
+        f"{ADMIN}/users/{user_id}/status",
+        json={"status": "active", "expected_version": item["version"]},
+    )
+    assert status_update.status_code == 409
+    assert status_update.json()["error"]["code"] == (
+        "account_deletion_pending"
+    )
+
+    ai_update = client.put(
+        f"{ADMIN}/users/{user_id}/ai-access",
+        json={"ai_access": "frozen", "expected_version": item["version"]},
+    )
+    assert ai_update.status_code == 409
+    assert ai_update.json()["error"]["code"] == "account_deletion_pending"

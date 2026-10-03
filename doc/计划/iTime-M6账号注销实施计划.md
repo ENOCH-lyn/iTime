@@ -750,7 +750,7 @@ git commit -m "feat: 清理到期注销账号"
 - Modify: `server/tests/test_admin_management.py`
 - Modify: `server/tests/test_data_export_snapshot.py`
 
-- [ ] **Step 1: 写后台和导出失败测试**
+- [x] **Step 1: 写后台和导出失败测试**
 
 验证管理员列表可按 `pending_deletion` 筛选并显示“注销中”，但状态修改端点对该账号返回
 409 `account_deletion_pending`。取消过一次注销后，完整 JSON 的账号分类包含：
@@ -771,7 +771,7 @@ git commit -m "feat: 清理到期注销账号"
 
 导出不包含 `subject_digest`、`operation_id`、lease、request ID 或内部错误。
 
-- [ ] **Step 2: 实现后台只读状态**
+- [x] **Step 2: 实现后台只读状态**
 
 将后台查询 schema 扩展为：
 
@@ -783,13 +783,13 @@ status: Literal["all", "active", "suspended", "pending_deletion"] = "all"
 `user.status == "pending_deletion"` 时返回 409，管理员不能代替撤销、延长或停用。
 Web 管理类型和文案在 Task 8 同步。
 
-- [ ] **Step 3: 扩展完整 JSON 快照**
+- [x] **Step 3: 扩展完整 JSON 快照**
 
 在账号快照查询 `AccountDeletion.user_id == owner_id`，仅输出白名单字段：
 `id/status/requested_at/purge_after/cancelled_at/created_at/updated_at`。只导出取消历史；
 活动注销账号没有业务访问，因此不会创建新导出。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
