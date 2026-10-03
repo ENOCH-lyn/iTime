@@ -5,7 +5,7 @@ import { Eye, EyeOff } from 'lucide-vue-next'
 const props = defineProps<{
   id: string
   label: string
-  type?: 'text' | 'email' | 'password' | 'number'
+  type?: 'text' | 'email' | 'password' | 'number' | 'date'
   autocomplete?: string
   inputmode?: 'text' | 'numeric' | 'decimal'
   maxlength?: number

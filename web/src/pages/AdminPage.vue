@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BadgeDollarSign, Bot, ClipboardCheck, ExternalLink, FileKey2, FileSearch, KeyRound, LogOut, MailPlus, Palette, ScrollText, ShieldCheck, Users } from 'lucide-vue-next'
+import { BadgeDollarSign, Bot, ClipboardCheck, Coins, ExternalLink, FileKey2, FileSearch, KeyRound, LogOut, MailPlus, Palette, ScrollText, ShieldCheck, Users } from 'lucide-vue-next'
 import AdminAuditEvents from '../components/AdminAuditEvents.vue'
 import AdminAISettings from '../components/AdminAISettings.vue'
 import AdminBodyLogs from '../components/AdminBodyLogs.vue'
 import AdminProviderCosts from '../components/AdminProviderCosts.vue'
+import AdminQuotaManagement from '../components/AdminQuotaManagement.vue'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import AdminPasswordSettings from '../components/AdminPasswordSettings.vue'
 import AdminQualitySamples from '../components/AdminQualitySamples.vue'
@@ -21,7 +22,7 @@ const router = useRouter()
 const section = computed(() => String(route.params.section ?? 'security'))
 const titles: Record<string, string> = {
   users: '用户管理', registration: '注册与邀请', security: '账号安全',
-  ai: 'AI 配置', costs: '供应商成本', logs: 'AI 日志',
+  ai: 'AI 配置', quota: 'AI 额度', costs: '供应商成本', logs: 'AI 日志',
   quality: '质量样本', audit: '审计记录',
   password: '修改密码', recovery: '恢复码', appearance: '外观',
 }
@@ -53,6 +54,7 @@ const links = [
   { to: '/admin/users', title: '用户管理', icon: Users },
   { to: '/admin/registration', title: '注册与邀请', icon: MailPlus },
   { to: '/admin/ai', title: 'AI 配置', icon: Bot },
+  { to: '/admin/quota', title: 'AI 额度', icon: Coins },
   { to: '/admin/costs', title: '供应商成本', icon: BadgeDollarSign },
   { to: '/admin/logs', title: 'AI 日志', icon: FileSearch },
   { to: '/admin/quality', title: '质量样本', icon: ClipboardCheck },
@@ -91,6 +93,7 @@ const links = [
         <AdminUserManagement v-if="section === 'users'" />
         <AdminRegistrationSettings v-else-if="section === 'registration'" />
         <AdminAISettings v-else-if="section === 'ai'" />
+        <AdminQuotaManagement v-else-if="section === 'quota'" />
         <AdminProviderCosts v-else-if="section === 'costs'" />
         <AdminBodyLogs v-else-if="section === 'logs'" />
         <AdminQualitySamples v-else-if="section === 'quality'" />
