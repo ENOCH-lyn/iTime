@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from itime.admin.models import AdminSession, RegistrationInvitation, RegistrationPolicy
+from itime.ai.governance_models import UserPrivacySetting
 from itime.auth.mail import queue_email
 from itime.auth.models import DeviceSession, EmailToken, User
 from itime.auth.security import COOKIE_NAME, digest, now, rate_limit
@@ -178,6 +179,7 @@ async def register(data: RegisterInput, request: Request) -> dict:
                     status=403,
                 )
         if new_id:
+            session.add(UserPrivacySetting(owner_id=user.id))
             if time_zone is not None:
                 time_settings = UserTimeSettings(
                     owner_id=user.id,

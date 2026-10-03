@@ -11,6 +11,7 @@ from itime.admin.models import (
     AdminRecoveryCode,
     AdminSession,
 )
+from itime.ai.governance_models import UserPrivacySetting
 from itime.auth.models import DeviceSession, SecurityEvent, User
 from itime.auth.security import Security, digest, new_token, now
 from itime.config import Settings
@@ -89,6 +90,7 @@ async def create_admin(
         if user_id is None:
             raise AdminOperationError("此邮箱已存在；不会覆盖或提升既有账号。")
         user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
+        session.add(UserPrivacySetting(owner_id=user.id))
         raw = await _new_enrollment(session, user, settings)
     return f"{settings.public_origin}/admin/setup#token={raw}"
 
