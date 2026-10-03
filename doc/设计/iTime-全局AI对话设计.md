@@ -233,3 +233,15 @@ Web 使用生产构建和真实 Chromium 验证：
 - 桌面、平板、手机、320px 最大字号、键盘、焦点、减少动效、axe、控制台和横向溢出。
 
 本模块通过不代表额度、提案、规划、日志/质检或完整 Web 首版通过。
+
+## 11. 已实现合同
+
+迁移 `0017_ai_conversations`、`server/src/itime/ai/conversation_*.py`、通用 AI worker、`web/src/pages/AIPage.vue` 及会话组件已实现本文的普通文本对话范围：
+
+- 会话、消息、生成映射、事件、作业和操作结果使用本人复合约束及同事务接单。
+- 当前会话有界历史与最多三组跨会话相关消息 ID 在接单时冻结；worker 只加载该快照。
+- OpenAI 兼容 SSE 拆帧、JSON 回退、150ms/1KiB 分段持久化、空闲续租、generation reset、取消胜出和 7 天事件清理均有真实 PostgreSQL/HTTP 测试。
+- `/api/v1/ai/conversations`、消息分页、通用作业查询/取消和 `/api/v1/ai/jobs/{id}/events` 已接入 `/ai`；登录默认进入该页面。
+- 管理后台可分别维护 `calendar_screenshot` 与 `conversation` 配置版本，并使用不含用户正文的合成输入测试。
+
+当前实现不解析或应用 AI 业务变更，也未执行金额额度预留/结算、正文日志、质检采样和备用服务切换。对应入口不会显示虚构的额度或“已应用”状态。

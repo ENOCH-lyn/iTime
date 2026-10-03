@@ -62,13 +62,14 @@
 
 | 需求 | 当前代码与证据 | 仍未完成 |
 | --- | --- | --- |
-| REQ-WEB-01 | `web/src/pages/ProductPage.vue`、`DemoPage.vue`、`HelpPage.vue`、`TermsPage.vue`、`PrivacyPage.vue` 及公共页样式已实现产品介绍、不持久化演示、帮助、协议隐私和注册/登录入口；已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 全局 AI 主入口及登录后首次使用引导仍待后续模块 |
+| REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，任务、日历和设置从统一产品导航可达；已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 规划、执行、复盘、统计和数据管理页面仍待后续模块 |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`；服务端会话撤销、分页列表、并发授权及真实设备管理页面 | 后续业务离线队列与切账号本地数据清理 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks`、`0009_task_schedules` 与 `0016_task_lifecycle`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期、未来拆分、手动归档及 30 天任务回收站已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 任务实例补做 UI 及语音/AI 校对仍待后续模块 |
 | REQ-DATA-01 | `0016_task_lifecycle`、`tasks/lifecycle_service.py`、独立清理 worker 及任务工作区已实现任务删除、30 天恢复、普通写入阻断、到期脱敏、最小墓碑和可达回收站 UI；专项覆盖双 worker、旧操作响应清理、重复任务前序外键、并发 UI 冲突和 320px 大字号 | 当前只覆盖任务聚合；其他业务对象及跨聚合关联仍待实现 |
 | REQ-CAL-01 / REQ-TIME-01 | `server/src/itime/calendar/`、迁移 `0006`—`0015`、`web/src/pages/CalendarPage.vue` 及日历组件；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、单次取消/调课/覆盖、独立补课、未来系列拆分、文件/截图导入及订阅 occurrence 已通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 订阅 occurrence 的用户单次例外及活动日相关额度/统计应用尚未实现 |
 | REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`server/src/itime/ai/`、迁移 `0011`—`0015`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue` 与 `CalendarSubscriptionManager.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停恢复、字段覆盖、差异与统一日历投影 Web 流程 | 已完成首版可达流程；真实第三方私密订阅源兼容性仍需部署前联调 |
-| REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`server/src/itime/ai/admin_router.py`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请、普通用户/AI 状态管理，以及 AI 配置创建、真实测试、发布和回滚 | 最终恢复/交接规则及额度/正文/日志/质检管理动作 |
+| REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`server/src/itime/ai/conversation_*.py`、通用 worker/SSE 路由及 `web/src/pages/AIPage.vue` 已实现多普通会话、相关历史快照、消息持久化、文本流、租约续期、重试 reset、取消、离页/断线恢复和三视口 UI；服务端 184 项与浏览器 120 项全量回归通过 | 业务提案、额度结算、备用服务路由及正式模型质量评测仍待后续模块 |
+| REQ-ADMIN-01 | 普通注册/登录拒绝管理旁路；`server/src/itime/admin/`、`server/src/itime/ai/admin_router.py`、`web/src/pages/Admin*.vue` 及管理组件已实现并动态验证 TOTP、恢复码、独立会话、注册邀请、普通用户/AI 状态管理，以及截图/对话 AI 配置创建、合成测试、发布和回滚 | 最终恢复/交接规则及额度/正文/日志/质检管理动作 |
 
 只记录实际代码和执行证据，不用测试编号表示已通过。

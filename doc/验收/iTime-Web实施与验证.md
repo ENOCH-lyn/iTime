@@ -775,3 +775,60 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 专项流程真实完成任务创建、归档、取消归档、删除确认、回收站只读查看、期限显示和恢复；另一浏览器页面制造归档版本冲突并采用服务器状态，确认完成事实不变。每个视口均检查 axe、控制台、Vite 错误层和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-task-lifecycle-{trash-detail,conflict-adopted}.png` 及 `desktop-task-lifecycle-trash-320-large-font.png`，已人工检查三栏、双栏、手机单栏和 320px 大字号，没有内容重叠。
 
 Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、日历等其他业务对象回收站及跨聚合删除仍待后续模块。
+
+## M4-A：全局 AI 多会话与可恢复文本流服务
+
+对应 Git 提交：`04a9a60`、`0c09085`、`60955ee`、`91ca75c`。实际代码为迁移 `0017_ai_conversations`、`server/src/itime/ai/conversation_*.py`、通用作业服务和 worker 扩展，以及 `test_ai_conversations.py`、`test_ai_conversation_api.py`、`test_ai_conversation_worker.py`；合同见[全局 AI 对话设计](../设计/iTime-全局AI对话设计.md)。
+
+已实现：
+
+- 多个普通会话的创建、稳定游标列表、改名、归档、重新打开和所有者隔离；会话版本冲突与操作号重放不会覆盖新状态。
+- 用户消息、assistant 占位消息、配置版本、作业、相关历史消息 ID 和首个事件在同一事务提交。当前会话只取有界历史，跨会话只选择少量确定性相关消息，不发送账号全部正文。
+- `conversation` 与 `calendar_screenshot` 分能力配置、合成文本/图片真实测试、独立发布指针和在途版本绑定；Key 继续加密保存且不回显。
+- worker 解析拆分的 OpenAI 兼容 SSE，也兼容一次性 JSON 响应；分段按时间/体积合并后先写 PostgreSQL 消息快照和递增事件，再供客户端读取。
+- 空闲上游请求定期续租。租约续期、增量、完成和失败均校验原租约仍有效；双 worker 不会重复接管合法长请求。
+- 429、5xx、连接和超时错误在总截止时间内有界重试。新尝试先写 `content_reset` 并递增 generation，旧尝试片段不会与新回复拼接。
+- 取消与增量写入锁同一作业；取消后保留已展示的不完整文字，晚到增量和完成结果无法覆盖取消终态。
+- `GET /api/v1/ai/jobs/{id}/events` 以 SSE 返回已提交事件，支持查询游标和 `Last-Event-ID`；事件 7 天清理后仍可从长期消息快照恢复。
+
+2026-10-03 在本地 PostgreSQL 18.6、真实 Uvicorn 和本机流式 HTTP 上游中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q tests/test_ai_conversation_worker.py` | **9 passed** | 拆帧 SSE、JSON 回退、429 重试/reset、空闲续租、取消竞态、401、无效/空输出、事件续读与清理 |
+| `uv run pytest -q tests/test_ai_config.py` | **10 passed** | 截图和对话能力的合成测试、发布回滚、错误与凭据保护 |
+| `uv run pytest -q` | **184 passed in 148.52s** | 服务端真实 HTTP/PostgreSQL 全量回归 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic current && uv run alembic check` | `0017_ai_conversations (head)`，无模型漂移 | 开发库与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+迁移专项还验证了复合所有者外键、截图/对话输入引用约束、同会话单活动作业、对话作业与生成映射延迟一致性、消息身份不可变及有数据时禁止降级。
+
+当前限制：普通回复尚未接入每日金额额度、正文日志和质检样本；业务对象变更仍只会作为文字回复，不会写入任务、日历或计划。额度成功边界与提案应用将在后续提交完成。
+
+## M4-B：全局 AI 对话 Web 界面
+
+对应 Git 提交：`08d88af`、`5e39908`、`633c4a7`。实际代码为 `web/src/pages/AIPage.vue`、`components/Conversation*.vue`、`lib/conversations.ts`、`ai-workspace.css`、管理 AI 配置扩展、隔离浏览器环境和 `e2e/ai-conversations.spec.ts`。
+
+已实现：
+
+- 登录成功默认进入 `/ai`。产品导航统一提供 AI、任务、日历和设置，账号设置可返回全局对话。
+- 会话列表支持活动/已归档、新建、选择、改名、归档、重新打开和分页；生成中的会话禁止归档。
+- 消息区展示用户事实、AI 文本、排队/生成、失败、超时和取消状态；纯文本渲染，不把模型内容作为 HTML 或已执行业务操作。
+- 浏览器以消息快照为基线，按事件序号消费 SSE。页面隐藏、离页、刷新或 SSE 中断后重新读取服务端状态；不会为恢复再次提交用户消息。
+- 发送、改名、归档均保留适用的操作号以处理未知保存状态。取消保留已展示片段，失败消息可把原用户输入放回编辑框。
+- 桌面为会话栏与消息区双栏，平板缩窄会话栏，手机在会话列表和全屏消息间切换；320px 最大字号、深色、键盘、触控和减少动效均有覆盖。
+- 管理后台可分段选择截图识别或全局对话能力，并分别创建、执行合成测试、发布和回滚配置。
+
+2026-10-03 执行：
+
+| 命令（`web/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `pnpm exec playwright test e2e/ai-conversations.spec.ts` | **9 passed in 1.1m** | 3 个对话流程 × 1440×1000、390×844、768×1024，另含 320×700 最大字号与深色 |
+| `pnpm exec playwright test e2e/admin-management.spec.ts --grep '分别创建'` | **3 passed in 13.7s** | 两种 AI 能力配置的真实管理流程 |
+| `pnpm test:e2e` | **120 passed in 5.2m** | 账号、后台、AI、任务、日历、导入、订阅和公开页面全量 Chromium 回归 |
+
+浏览器环境启动随机 PostgreSQL、真实 API、邮件 worker、AI worker、本机分块 SSE 上游、订阅 worker 和生产构建预览。专项覆盖多会话、流式增量、离页恢复、单次尝试、取消晚到结果、重试失败、改名、归档/恢复、AI 冻结、键盘提交、axe、控制台和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-ai-conversation-*.png` 与 `desktop-ai-conversation-320-large-dark.png`，已人工检查。
+
+Browser 运行工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、额度显示、业务提案预览和正式第三方模型质量仍未验证。
