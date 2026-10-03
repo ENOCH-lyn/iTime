@@ -513,6 +513,7 @@ def test_quiesce_account_stops_transient_work_and_rejects_late_results(
             assert summary.focus_sessions == 1
             assert summary.emails == 1
             assert summary.temporary_media == 1
+            assert summary.public_links == 0
 
             conversation_claim = ClaimedJob(
                 id=conversation_job_id,
@@ -950,6 +951,7 @@ def test_request_account_deletion_revokes_devices_and_preserves_durable_data(
             "focus_sessions",
             "emails",
             "temporary_media",
+            "public_links",
         }
         assert body["stopped"]["emails"] == 1
         assert email not in response.text

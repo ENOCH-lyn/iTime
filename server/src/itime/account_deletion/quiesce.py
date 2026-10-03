@@ -16,6 +16,9 @@ from itime.data_export.service import expire_exports_for_account_deletion
 from itime.execution.service import (
     abandon_open_focus_for_account_deletion,
 )
+from itime.public_links.service import (
+    invalidate_public_link_fetches_for_account_deletion,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,7 @@ class QuiesceSummary:
     focus_sessions: int
     emails: int
     temporary_media: int
+    public_links: int
 
 
 async def quiesce_account(
@@ -62,6 +66,11 @@ async def quiesce_account(
             requested_at,
         ),
         temporary_media=await clear_temporary_media_for_account_deletion(
+            session,
+            owner_id,
+            requested_at,
+        ),
+        public_links=await invalidate_public_link_fetches_for_account_deletion(
             session,
             owner_id,
             requested_at,

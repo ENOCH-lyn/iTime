@@ -436,7 +436,7 @@ git commit -m "feat: 安全读取公开网页"
 - Modify: `server/src/itime/account_deletion/quiesce.py`
 - Modify: `server/tests/test_account_deletion_api.py`
 
-- [ ] **Step 1: 写状态机失败测试**
+- [x] **Step 1: 写状态机失败测试**
 
 真实 PostgreSQL 测试覆盖：
 
@@ -448,7 +448,7 @@ git commit -m "feat: 安全读取公开网页"
 - 成功写来源、摘要、文本和哈希，清 lease，产生 `task_link/updated` 事件并推进规划 revision。
 - 链接 URL 修订、移除、任务归档/删除和账号注销后，旧 claim 不能写回。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -457,7 +457,7 @@ uv run pytest -q tests/test_public_link_service.py
 
 Expected: FAIL，service/worker 尚不存在。
 
-- [ ] **Step 3: 实现领取与写回**
+- [x] **Step 3: 实现领取与写回**
 
 固定 claim：
 
@@ -481,7 +481,7 @@ running；使用 `FOR UPDATE SKIP LOCKED OF TaskLink`。同一 owner 已有 runn
 保存解析结果，失败按 `(60, 300)` 秒退避，第三次或不可重试进入 failed。两者保留旧成功快照并
 发 `task_link` 同步事件。
 
-- [ ] **Step 4: 实现 worker 与注销失效**
+- [x] **Step 4: 实现 worker 与注销失效**
 
 `worker.process_one()` 固定顺序为 claim → fetch → renew lease → complete/fail。未知异常转为
 `public_link_worker_failed` 可重试错误，普通日志只记录 ID、attempt、status 和错误码。
@@ -490,7 +490,7 @@ running；使用 `FOR UPDATE SKIP LOCKED OF TaskLink`。同一 owner 已有 runn
 fetch revision、清 lease 并置 failed `public_link_account_deletion`。把计数加入
 `QuiesceSummary.public_links`。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
