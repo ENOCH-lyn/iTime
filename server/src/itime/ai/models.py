@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -79,6 +80,23 @@ class AIConfigVersion(Base):
             name="max_output_tokens",
         ),
         CheckConstraint(
+            "num_nonnulls(price_currency, "
+            "input_price_nanos_per_million_tokens, "
+            "cached_input_price_nanos_per_million_tokens, "
+            "output_price_nanos_per_million_tokens) = 0 "
+            "OR (num_nonnulls(price_currency, "
+            "input_price_nanos_per_million_tokens, "
+            "cached_input_price_nanos_per_million_tokens, "
+            "output_price_nanos_per_million_tokens) = 4 "
+            "AND price_currency ~ '^[A-Z]{3}$' "
+            "AND input_price_nanos_per_million_tokens BETWEEN 0 AND 1000000000000000 "
+            "AND cached_input_price_nanos_per_million_tokens "
+            "BETWEEN 0 AND 1000000000000000 "
+            "AND output_price_nanos_per_million_tokens "
+            "BETWEEN 0 AND 1000000000000000)",
+            name="pricing",
+        ),
+        CheckConstraint(
             "(last_test_error_code IS NULL) = (last_test_error_stage IS NULL)",
             name="test_error_pair",
         ),
@@ -133,6 +151,16 @@ class AIConfigVersion(Base):
     api_key_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
     timeout_seconds: Mapped[int] = mapped_column(Integer)
     max_output_tokens: Mapped[int] = mapped_column(Integer)
+    price_currency: Mapped[str | None] = mapped_column(String(3))
+    input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
+    cached_input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
+    output_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
     last_test_id: Mapped[UUID | None]
     last_test_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -369,5 +397,129 @@ class AIJobAttempt(Base):
     http_status: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_stage: Mapped[str | None] = mapped_column(String(40))
+    provider_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIProviderCost(Base):
+    __tablename__ = "ai_provider_costs"
+    __table_args__ = (
+        CheckConstraint("attempt_number BETWEEN 1 AND 5", name="attempt_number"),
+        CheckConstraint(
+            "attempt_status IN ('succeeded', 'retryable_failed', 'failed', "
+            "'timed_out', 'cancelled', 'abandoned')",
+            name="attempt_status",
+        ),
+        CheckConstraint(
+            "usage_source IN ('provider', 'estimated', 'not_sent')",
+            name="usage_source",
+        ),
+        CheckConstraint(
+            "(usage_source = 'estimated') = "
+            "(estimation_reason IS NOT NULL AND estimator_version IS NOT NULL)",
+            name="estimation_state",
+        ),
+        CheckConstraint(
+            "input_tokens >= 0 AND cached_input_tokens >= 0 "
+            "AND output_tokens >= 0 AND total_tokens >= 0 "
+            "AND cached_input_tokens <= input_tokens",
+            name="tokens",
+        ),
+        CheckConstraint(
+            "usage_source <> 'not_sent' OR "
+            "(input_tokens = 0 AND cached_input_tokens = 0 "
+            "AND output_tokens = 0 AND total_tokens = 0)",
+            name="not_sent_tokens",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(usage_details) = 'object'",
+            name="usage_details",
+        ),
+        CheckConstraint(
+            "num_nonnulls(price_currency, "
+            "input_price_nanos_per_million_tokens, "
+            "cached_input_price_nanos_per_million_tokens, "
+            "output_price_nanos_per_million_tokens, "
+            "input_cost_nanos, cached_input_cost_nanos, "
+            "output_cost_nanos, total_cost_nanos) = 0 "
+            "OR (num_nonnulls(price_currency, "
+            "input_price_nanos_per_million_tokens, "
+            "cached_input_price_nanos_per_million_tokens, "
+            "output_price_nanos_per_million_tokens, "
+            "input_cost_nanos, cached_input_cost_nanos, "
+            "output_cost_nanos, total_cost_nanos) = 8 "
+            "AND price_currency ~ '^[A-Z]{3}$' "
+            "AND input_price_nanos_per_million_tokens BETWEEN 0 AND 1000000000000000 "
+            "AND cached_input_price_nanos_per_million_tokens "
+            "BETWEEN 0 AND 1000000000000000 "
+            "AND output_price_nanos_per_million_tokens "
+            "BETWEEN 0 AND 1000000000000000 "
+            "AND input_cost_nanos >= 0 "
+            "AND cached_input_cost_nanos >= 0 "
+            "AND output_cost_nanos >= 0 "
+            "AND total_cost_nanos = input_cost_nanos "
+            "+ cached_input_cost_nanos + output_cost_nanos)",
+            name="pricing",
+        ),
+        ForeignKeyConstraint(
+            ["job_id", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.owner_id"],
+            name="fk_ai_provider_costs_job_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["job_id", "attempt_number"],
+            ["ai_job_attempts.job_id", "ai_job_attempts.attempt_number"],
+            name="fk_ai_provider_costs_job_attempt",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "job_id",
+            "attempt_number",
+            name="uq_ai_provider_costs_job_attempt",
+        ),
+        Index(
+            "ix_ai_provider_costs_owner_created",
+            "owner_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_ai_provider_costs_created",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    job_id: Mapped[UUID]
+    owner_id: Mapped[UUID]
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    attempt_status: Mapped[str] = mapped_column(String(24))
+    provider_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    usage_source: Mapped[str] = mapped_column(String(16))
+    estimation_reason: Mapped[str | None] = mapped_column(String(40))
+    estimator_version: Mapped[str | None] = mapped_column(String(40))
+    input_tokens: Mapped[int] = mapped_column(BigInteger)
+    cached_input_tokens: Mapped[int] = mapped_column(BigInteger)
+    output_tokens: Mapped[int] = mapped_column(BigInteger)
+    total_tokens: Mapped[int] = mapped_column(BigInteger)
+    usage_details: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    price_currency: Mapped[str | None] = mapped_column(String(3))
+    input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
+    cached_input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
+    output_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
+        BigInteger
+    )
+    input_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
+    cached_input_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
+    output_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
+    total_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
