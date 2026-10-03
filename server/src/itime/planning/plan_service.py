@@ -4,13 +4,15 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import now
+from itime.calendar.models import UserTimeSettings
 from itime.errors import AppError
 from itime.planning.models import (
     Plan,
@@ -20,18 +22,25 @@ from itime.planning.models import (
     PlanVersion,
     ScheduledBlock,
 )
+from itime.planning.schemas import ManualPlanVersionInput, PlanningRequestFields
+from itime.planning.snapshot_service import lock_planning_revision, planning_context
 from itime.planning.validation import (
     NormalizedBlock,
     NormalizedPlan,
     NormalizedUnscheduledItem,
+    PlanningToolOutput,
+    normalize_plan_payload,
     validate_plan_blocks,
 )
 from itime.schemas import Input
 from itime.tasks.models import Task, TaskStep
-from itime.tasks.service import replay_operation, save_operation
+from itime.tasks.service import emit_change, replay_operation, save_operation
 
 PlanSource = Literal["ai", "manual"]
 PLAN_VERSION_OPERATION_SCOPE = "planning.plan_version.create"
+MANUAL_PLAN_VERSION_OPERATION_SCOPE = "planning.manual_plan_version.create"
+MAX_PLAN_RANGE_WEEKS = 52
+MAX_BLOCK_RANGE_DAYS = 93
 
 
 class _CreatePlanVersionOperation(Input):
@@ -145,6 +154,81 @@ async def read_week_plan(
     return plan_result(plan, selected_version)
 
 
+async def list_week_plans(
+    session: AsyncSession,
+    owner_id: UUID,
+    start: date,
+    end: date,
+) -> list[dict]:
+    _validate_plan_range(start, end)
+    plans = list(
+        await session.scalars(
+            select(Plan)
+            .where(
+                Plan.owner_id == owner_id,
+                Plan.week_start_date >= start,
+                Plan.week_start_date <= end,
+            )
+            .order_by(Plan.week_start_date, Plan.id)
+        )
+    )
+    if not plans:
+        return []
+    versions = {
+        version.id: version
+        for version in await session.scalars(
+            select(PlanVersion).where(
+                PlanVersion.owner_id == owner_id,
+                PlanVersion.id.in_([plan.current_version_id for plan in plans]),
+            )
+        )
+    }
+    if len(versions) != len(plans):
+        raise AppError(
+            "current_plan_unavailable",
+            "当前计划版本暂时无法读取，请刷新后重试。",
+            status=409,
+            retryable=True,
+        )
+    blocks, unscheduled = await _load_version_children(
+        session,
+        owner_id,
+        list(versions),
+    )
+    return [
+        plan_result(
+            plan,
+            plan_version_result(
+                versions[plan.current_version_id],
+                blocks.get(plan.current_version_id, []),
+                unscheduled.get(plan.current_version_id, []),
+            ),
+        )
+        for plan in plans
+    ]
+
+
+async def read_plan(
+    session: AsyncSession,
+    owner_id: UUID,
+    plan_id: UUID,
+    *,
+    version: int | None = None,
+) -> dict:
+    plan = await session.scalar(
+        select(Plan).where(Plan.id == plan_id, Plan.owner_id == owner_id)
+    )
+    if plan is None:
+        raise AppError("plan_not_found", "未找到此周计划。", status=404)
+    selected_version = await _load_plan_version(
+        session,
+        owner_id,
+        plan,
+        version=version,
+    )
+    return plan_result(plan, selected_version)
+
+
 async def read_plan_history(
     session: AsyncSession,
     owner_id: UUID,
@@ -181,6 +265,157 @@ async def read_plan_history(
         )
         for version in versions
     ]
+
+
+async def read_current_plan_blocks(
+    session: AsyncSession,
+    owner_id: UUID,
+    start: date,
+    end: date,
+) -> tuple[list[dict], str]:
+    _validate_block_range(start, end)
+    settings = await session.get(UserTimeSettings, owner_id)
+    if settings is None:
+        raise AppError(
+            "time_settings_required",
+            "请先保存当前使用的时区，再查看计划块。",
+            status=409,
+        )
+    zone = ZoneInfo(settings.time_zone)
+    range_start = datetime.combine(start, time.min, tzinfo=zone).astimezone(UTC)
+    range_end = datetime.combine(end, time.min, tzinfo=zone).astimezone(UTC)
+    rows = list(
+        (
+            await session.execute(
+                select(ScheduledBlock, PlanVersion, Plan)
+                .join(
+                    PlanVersion,
+                    and_(
+                        PlanVersion.id == ScheduledBlock.plan_version_id,
+                        PlanVersion.owner_id == ScheduledBlock.owner_id,
+                    ),
+                )
+                .join(
+                    Plan,
+                    and_(
+                        Plan.id == PlanVersion.plan_id,
+                        Plan.owner_id == PlanVersion.owner_id,
+                        Plan.current_version_id == PlanVersion.id,
+                    ),
+                )
+                .where(
+                    ScheduledBlock.owner_id == owner_id,
+                    PlanVersion.owner_id == owner_id,
+                    Plan.owner_id == owner_id,
+                    ScheduledBlock.starts_at < range_end,
+                    ScheduledBlock.ends_at > range_start,
+                )
+                .order_by(
+                    ScheduledBlock.local_date,
+                    ScheduledBlock.local_starts_at,
+                    ScheduledBlock.local_ends_at,
+                    ScheduledBlock.id,
+                )
+            )
+        ).all()
+    )
+    return (
+        [
+            {
+                **scheduled_block_result(block),
+                "source": "plan",
+                "plan_id": str(plan.id),
+                "plan_version_id": str(version.id),
+                "plan_version": version.version,
+                "plan_source": version.source,
+            }
+            for block, version, plan in rows
+        ],
+        settings.time_zone,
+    )
+
+
+async def create_manual_plan_version(
+    session: AsyncSession,
+    owner_id: UUID,
+    data: ManualPlanVersionInput,
+) -> dict:
+    """Validate and save a complete manual week from current server-owned inputs."""
+    await _advisory_lock(
+        session,
+        f"planning-manual-operation:{owner_id}:{data.operation_id}",
+    )
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        MANUAL_PLAN_VERSION_OPERATION_SCOPE,
+        data,
+    )
+    if replay is not None:
+        return replay
+
+    await _advisory_lock(session, f"planning-owner:{owner_id}")
+    revision = await lock_planning_revision(session, owner_id, write=True)
+    task_ids = sorted(
+        {
+            item.task_id
+            for item in (*data.blocks, *data.unscheduled_items)
+        },
+        key=str,
+    )
+    context = await planning_context(
+        session,
+        owner_id,
+        PlanningRequestFields(
+            scope="week",
+            target_date=data.week_start_date,
+            density=data.density,
+            buffer_minutes=data.buffer_minutes,
+            availability_start=data.availability_start,
+            availability_end=data.availability_end,
+            task_ids=task_ids,
+            instruction="",
+        ),
+    )
+    if context["revision"] != revision.revision:
+        raise AppError(
+            "planning_revision_conflict",
+            "规划输入已变化，请刷新后重新保存。",
+            status=409,
+            retryable=True,
+            details={"current_revision": context["revision"]},
+        )
+    normalized, validation_context = _normalize_manual_plan(context, data)
+    internal_operation_id = uuid5(
+        NAMESPACE_URL,
+        f"itime:manual-plan-version:{owner_id}:{data.operation_id}",
+    )
+    created = await create_plan_version(
+        session,
+        owner_id,
+        normalized,
+        snapshot=validation_context,
+        source="manual",
+        proposal_id=None,
+        expected_revision=revision.revision,
+        expected_plan_version=data.expected_plan_version,
+        operation_id=internal_operation_id,
+    )
+    result = {
+        **created,
+        "operation_id": str(data.operation_id),
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        MANUAL_PLAN_VERSION_OPERATION_SCOPE,
+        data,
+        result,
+    )
+    await session.flush()
+    return result
 
 
 async def create_plan_version(
@@ -366,6 +601,14 @@ async def create_plan_version(
     ]
     session.add_all([*blocks, *unscheduled_items])
     await session.flush()
+    emit_change(
+        session,
+        owner_id,
+        "plan",
+        plan.id,
+        "created" if previous_version_id is None else "updated",
+        next_version,
+    )
 
     serialized_version = plan_version_result(version, blocks, unscheduled_items)
     result = {
@@ -382,6 +625,116 @@ async def create_plan_version(
     )
     await session.flush()
     return result
+
+
+def _normalize_manual_plan(
+    context: dict[str, Any],
+    data: ManualPlanVersionInput,
+) -> tuple[NormalizedPlan, dict[str, Any]]:
+    context = {
+        **context,
+        "task_candidates": [
+            dict(candidate) for candidate in context["task_candidates"]
+        ],
+    }
+    candidates = {
+        (
+            UUID(str(candidate["task_id"])),
+            (
+                str(candidate["occurrence_key"])
+                if candidate.get("occurrence_key") is not None
+                else None
+            ),
+        ): candidate
+        for candidate in context["task_candidates"]
+    }
+    submitted_minutes: defaultdict[tuple[UUID, str | None], int] = defaultdict(int)
+    for block in data.blocks:
+        start = datetime.combine(block.local_date, block.starts_at)
+        end = datetime.combine(block.local_date, block.ends_at)
+        submitted_minutes[(block.task_id, block.occurrence_key)] += int(
+            (end - start).total_seconds() // 60
+        )
+    for item in data.unscheduled_items:
+        submitted_minutes[(item.task_id, item.occurrence_key)] += (
+            item.remaining_minutes
+        )
+    for identity, minutes in submitted_minutes.items():
+        candidate = candidates.get(identity)
+        if candidate is not None and candidate["estimated_minutes"] is None:
+            candidate["estimated_minutes"] = minutes
+            candidate["estimate_source"] = "user"
+
+    def candidate_key(task_id: UUID, occurrence_key: str | None) -> str:
+        candidate = candidates.get((task_id, occurrence_key))
+        if candidate is None:
+            raise AppError(
+                "unknown_plan_candidate",
+                "手工计划引用了当前周中不存在的任务实例。",
+                details={
+                    "task_id": str(task_id),
+                    "occurrence_key": occurrence_key,
+                },
+            )
+        return str(candidate["candidate_key"])
+
+    output = PlanningToolOutput(
+        summary="手工周计划",
+        assumptions=[],
+        estimates=[],
+        blocks=[
+            {
+                "candidate_key": candidate_key(
+                    block.task_id,
+                    block.occurrence_key,
+                ),
+                "local_date": block.local_date,
+                "starts_at": block.starts_at,
+                "ends_at": block.ends_at,
+                "step_ids": block.step_ids,
+            }
+            for block in data.blocks
+        ],
+        unscheduled_items=[
+            {
+                "candidate_key": candidate_key(
+                    item.task_id,
+                    item.occurrence_key,
+                ),
+                "remaining_minutes": item.remaining_minutes,
+                "reason": item.reason,
+                "explanation": item.explanation,
+            }
+            for item in data.unscheduled_items
+        ],
+    )
+    return normalize_plan_payload(context, output), context
+
+
+def _validate_plan_range(start: date, end: date) -> None:
+    if (
+        start.weekday() != 0
+        or end.weekday() != 6
+        or end < start
+        or (end - start).days > MAX_PLAN_RANGE_WEEKS * 7 - 1
+    ):
+        raise AppError(
+            "invalid_plan_range",
+            "计划范围必须是周一到周日的完整自然周，且不能超过 52 周。",
+            status=422,
+            details={"maximum_weeks": MAX_PLAN_RANGE_WEEKS},
+        )
+
+
+def _validate_block_range(start: date, end: date) -> None:
+    days = (end - start).days
+    if not 1 <= days <= MAX_BLOCK_RANGE_DAYS:
+        raise AppError(
+            "invalid_plan_block_range",
+            "计划块日期范围必须大于 0 天且不能超过 93 天。",
+            status=422,
+            details={"maximum_days": MAX_BLOCK_RANGE_DAYS},
+        )
 
 
 async def _load_plan_version(

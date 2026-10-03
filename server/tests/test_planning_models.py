@@ -229,7 +229,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             ).fetchone() == ("planning", 1, None)
             assert (
                 connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0022_ai_proposals_planning"
+                == "0023_planning_integration"
             )
 
         from itime.ai.models import AIJob
@@ -428,7 +428,20 @@ def test_planning_revision_trigger_does_not_block_user_cascade_delete(admin_url)
     with isolated_database(admin_url) as database_url:
         with psycopg.connect(psycopg_url(database_url)) as connection:
             owner_id = seed_user(connection)
-            seed_task(connection, owner_id)
+            task_id = seed_task(connection, owner_id)
+            _, version_id = seed_plan_version(connection, owner_id)
+            connection.execute(
+                """
+                INSERT INTO plan_unscheduled_items (
+                    id, plan_version_id, owner_id, position, task_id,
+                    task_title_snapshot, remaining_minutes, reason, explanation
+                ) VALUES (
+                    %s, %s, %s, 0, %s,
+                    '删除账号时保留到级联', 60, 'no_capacity', '测试级联删除'
+                )
+                """,
+                (uuid4(), version_id, owner_id, task_id),
+            )
             connection.commit()
 
             with connection.transaction():

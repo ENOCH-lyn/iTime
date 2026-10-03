@@ -541,7 +541,8 @@ class ScheduledBlock(Base):
             ["task_id", "owner_id"],
             ["tasks.id", "tasks.owner_id"],
             name="fk_scheduled_blocks_task_owner",
-            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         UniqueConstraint(
             "plan_version_id",
@@ -623,7 +624,8 @@ class PlanUnscheduledItem(Base):
             ["task_id", "owner_id"],
             ["tasks.id", "tasks.owner_id"],
             name="fk_plan_unscheduled_items_task_owner",
-            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         UniqueConstraint(
             "plan_version_id",

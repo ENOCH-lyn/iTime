@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
+from itime.planning import models as planning_models  # noqa: F401
 
 
 class AIConfigCapability(Base):

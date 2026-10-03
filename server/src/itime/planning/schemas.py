@@ -134,7 +134,9 @@ class ManualUnscheduledItemInput(Input):
 
 class ManualPlanVersionInput(Input):
     operation_id: UUID
-    expected_plan_version: int = Field(ge=1)
+    week_start_date: date
+    expected_plan_version: int = Field(ge=0)
+    density: PlanDensity = "balanced"
     buffer_minutes: int = Field(ge=0, le=60, multiple_of=5)
     availability_start: time
     availability_end: time
@@ -148,6 +150,13 @@ class ManualPlanVersionInput(Input):
     @classmethod
     def valid_local_time(cls, value: time) -> time:
         return PlanningRequestFields.valid_local_time(value)
+
+    @field_validator("week_start_date")
+    @classmethod
+    def valid_week_start(cls, value: date) -> date:
+        if value.weekday() != 0:
+            raise ValueError("周计划开始日期必须是周一")
+        return value
 
     @model_validator(mode="after")
     def valid_availability(self) -> "ManualPlanVersionInput":
