@@ -1,7 +1,42 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { mkdir } from 'node:fs/promises'
+import AxeBuilder from '@axe-core/playwright'
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+  type TestInfo,
+} from '@playwright/test'
 
 const password = 'Valid-sync-ui-password-123'
+const runtimeErrors = new WeakMap<Page, string[]>()
+
+function watchRuntime(page: Page) {
+  const errors: string[] = []
+  runtimeErrors.set(page, errors)
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (
+      message.type() === 'error'
+      && !message.text().includes('Failed to load resource')
+    ) errors.push(message.text())
+  })
+}
+
+async function screenshot(page: Page, info: TestInfo, name: string) {
+  await mkdir('/tmp/itime-ui-evidence', { recursive: true })
+  await page.screenshot({
+    path: `/tmp/itime-ui-evidence/${info.project.name}-sync-${name}.png`,
+    fullPage: true,
+    animations: 'disabled',
+  })
+}
+
+test.beforeEach(async ({ page }) => watchRuntime(page))
+test.afterEach(async ({ page }) => {
+  expect(runtimeErrors.get(page)).toEqual([])
+})
 
 async function mailLink(request: APIRequestContext, address: string) {
   let id = ''
@@ -66,6 +101,49 @@ async function createTask(page: Page, csrf: string, title: string) {
   })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).task
+}
+
+function futureDate(days: number) {
+  const value = new Date()
+  value.setDate(value.getDate() + days)
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+async function makeTaskRecurring(
+  page: Page,
+  csrf: string,
+  task: { id: string; version: number },
+  date: string,
+) {
+  const response = await page.request.put(`/api/v1/tasks/${task.id}/schedule`, {
+    headers: { 'X-CSRF-Token': csrf },
+    data: {
+      operation_id: randomUUID(),
+      expected_task_version: task.version,
+      due_kind: 'date',
+      due_date: date,
+      due_time: null,
+      time_zone: null,
+      ambiguous_utc_offset_minutes: null,
+      splittable: true,
+      minimum_block_minutes: 15,
+      recurrence: {
+        frequency: 'daily',
+        interval: 1,
+        weekdays: [],
+        month: null,
+        day_of_month: null,
+        until: null,
+        count: 2,
+        week_numbers: [],
+      },
+    },
+  })
+  expect(response.ok()).toBeTruthy()
 }
 
 test('offline cache is encrypted and never hides an HTTP failure', async ({
@@ -139,7 +217,7 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   page,
   request,
   context,
-}) => {
+}, info) => {
   const session = await account(page, request)
   await page.goto('/account/sync')
   await expect(page.getByRole('heading', { name: '同步与离线' })).toBeVisible()
@@ -167,6 +245,25 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   await page.reload()
   await expect(page.getByText('同步基线已重新建立。')).toBeVisible()
   await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+  expect(await page.evaluate(
+    () => document.documentElement.scrollWidth <= window.innerWidth,
+  )).toBe(true)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'status')
+  if (info.project.name === 'mobile') {
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+    ))
+    await page.reload()
+    await expect(page.getByRole('heading', { name: '同步与离线' })).toBeVisible()
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    )).toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'status-320-large-dark')
+  }
 })
 
 test('cross-device task refresh and offline step queue converge', async ({
@@ -215,7 +312,7 @@ test('offline step conflict stays visible until explicitly discarded', async ({
   page,
   request,
   browser,
-}) => {
+}, info) => {
   const session = await account(page, request)
   const marker = `冲突任务 ${randomUUID()}`
   const task = await createTask(page, session.csrf_token, marker)
@@ -249,9 +346,99 @@ test('offline step conflict stays visible until explicitly discarded', async ({
     await expect(
       second.getByRole('heading', { name: '同步冲突' }),
     ).toBeVisible()
+    if (info.project.name === 'desktop') {
+      await screenshot(second, info, 'conflict')
+    }
     await second.getByRole('button', { name: '丢弃此操作' }).click()
     await expect(second.getByText('已同步', { exact: true })).toBeVisible()
   } finally {
     await secondContext.close()
   }
+})
+
+test('recurring occurrence step queues offline without changing the template', async ({
+  page,
+  request,
+  context,
+}) => {
+  const session = await account(page, request)
+  const marker = `重复实例同步 ${randomUUID()}`
+  const task = await createTask(page, session.csrf_token, marker)
+  const date = futureDate(2)
+  await makeTaskRecurring(page, session.csrf_token, task, date)
+
+  await page.goto('/calendar')
+  await page.getByLabel('跳转日期').fill(date)
+  const daySelector = (page.viewportSize()?.width ?? 0) <= 840
+    ? '.agenda-day'
+    : '.calendar-day'
+  const day = page.locator(daySelector).filter({
+    has: page.locator(`time[datetime="${date}"]`),
+  })
+  await day.getByRole('button').filter({ hasText: marker }).click()
+  await expect(page.getByRole('heading', { name: '本次步骤' })).toBeVisible()
+
+  await context.setOffline(true)
+  await page.getByLabel('离线可见步骤', { exact: true }).click()
+  await expect(page.getByLabel(/1 项待同步/)).toBeVisible()
+  await context.setOffline(false)
+  await expect(page.getByLabel(/同步状态：已同步/)).toBeVisible({
+    timeout: 8_000,
+  })
+
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `/api/v1/task-occurrences?start=${date}&end=${futureDate(4)}`,
+    )
+    const items = (await response.json()).items
+    return items[0]?.completed_step_ids.length
+  }).toBe(1)
+  const template = await (
+    await page.request.get(`/api/v1/tasks/${task.id}`)
+  ).json()
+  expect(template.task.steps[0].completed).toBe(false)
+})
+
+test('explicit logout confirms and clears account-local sync data', async ({
+  page,
+  request,
+}) => {
+  const session = await account(page, request)
+  const marker = `退出清理任务 ${randomUUID()}`
+  await createTask(page, session.csrf_token, marker)
+  await page.goto('/tasks')
+  await page.getByText(marker, { exact: true }).click()
+  await page.route(
+    '**/api/v1/sync/tasks/**/completion',
+    route => route.abort('failed'),
+  )
+  await page.getByLabel('完成步骤 离线可见步骤').click()
+  await expect(page.getByLabel(/1 项待同步/)).toBeVisible()
+
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await expect(page).toHaveURL('/tasks')
+  await expect(page.getByLabel(/1 项待同步/)).toBeVisible()
+
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await expect(page).toHaveURL('/login')
+  await expect.poll(async () => page.evaluate(async userId => {
+    const localKeys = Object.keys(localStorage)
+      .filter(key => key.includes(userId))
+    const open = indexedDB.open('itime-sync-cache')
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      open.onsuccess = () => resolve(open.result)
+      open.onerror = () => reject(open.error)
+    })
+    const transaction = database.transaction('responses', 'readonly')
+    const index = transaction.objectStore('responses').index('account_id')
+    const request = index.count(IDBKeyRange.only(userId))
+    const cacheCount = await new Promise<number>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    database.close()
+    return localKeys.length + cacheCount
+  }, session.user.id)).toBe(0)
 })

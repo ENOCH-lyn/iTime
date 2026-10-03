@@ -21,7 +21,11 @@ const label = computed(() => {
   if (syncStatus.phase === 'pending') {
     return `同步状态：${syncStatus.pending_count} 项待同步`
   }
-  if (syncStatus.phase === 'error') return '同步状态：同步失败'
+  if (syncStatus.phase === 'error') {
+    return syncStatus.pending_count
+      ? `同步状态：同步失败，${syncStatus.pending_count} 项待同步`
+      : '同步状态：同步失败'
+  }
   return '同步状态：已同步'
 })
 

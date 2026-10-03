@@ -39,6 +39,13 @@ interface SyncPage {
   server_time: string
 }
 
+interface SyncServerStatus {
+  latest_change_at: string | null
+  retention_days: number
+  server_time: string
+  last_cleanup_at: string | null
+}
+
 export interface SyncStatus {
   phase: SyncPhase
   account_id: string | null
@@ -236,6 +243,20 @@ export function requestSync() {
   inFlight = pullChanges().finally(() => {
     inFlight = null
   })
+}
+
+export async function refreshSyncServerStatus() {
+  const accountId = syncStatus.account_id
+  if (accountId === null || !navigator.onLine) return
+  try {
+    const result = await api<SyncServerStatus>('/sync/status')
+    if (syncStatus.account_id !== accountId) return
+    syncStatus.latest_change_at = result.latest_change_at
+    syncStatus.server_time = result.server_time
+  } catch (error) {
+    if (syncStatus.account_id !== accountId) return
+    syncStatus.error = failure(error)
+  }
 }
 
 export function discardTaskConflict() {

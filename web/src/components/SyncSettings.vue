@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import {
   Cloud,
   CloudOff,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-vue-next'
 import {
   discardTaskConflict,
+  refreshSyncServerStatus,
   requestSync,
   syncStatus,
 } from '../lib/sync'
@@ -36,6 +37,13 @@ const statusIcon = computed(() => {
 function localTime(value: string | null) {
   return value === null ? '暂无变更' : new Date(value).toLocaleString('zh-CN')
 }
+
+async function refresh() {
+  requestSync()
+  await refreshSyncServerStatus()
+}
+
+onMounted(refreshSyncServerStatus)
 </script>
 
 <template>
@@ -48,7 +56,7 @@ function localTime(value: string | null) {
         type="button"
         class="button secondary"
         :disabled="syncStatus.phase === 'connecting' || syncStatus.phase === 'offline'"
-        @click="requestSync"
+        @click="refresh"
       >
         <RefreshCw :size="17" aria-hidden="true" />
         {{ syncStatus.phase === 'connecting' ? '正在同步' : '立即同步' }}
@@ -59,7 +67,7 @@ function localTime(value: string | null) {
       :error="syncStatus.error"
       :success="syncStatus.reset_message"
       :retry-label="syncStatus.error?.retryable ? '重试同步' : undefined"
-      @retry="requestSync"
+      @retry="refresh"
     />
 
     <div class="sync-summary">

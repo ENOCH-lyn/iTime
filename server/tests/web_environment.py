@@ -839,6 +839,12 @@ def main():
             env,
             logs / "data-export.log",
         ))
+        sync_cleanup_process = stack.enter_context(process(
+            [sys.executable, "-m", "itime.sync.cleanup_worker"],
+            SERVER,
+            env,
+            logs / "sync-cleanup.log",
+        ))
         web_process = stack.enter_context(process(
             [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
              "--port", "4173"],
@@ -854,6 +860,7 @@ def main():
                 ai_process,
                 subscription_process,
                 export_process,
+                sync_cleanup_process,
                 web_process,
             )
         ):
