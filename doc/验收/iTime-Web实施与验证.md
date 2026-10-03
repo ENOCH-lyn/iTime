@@ -864,3 +864,35 @@ Browser 运行工具未在当前执行环境暴露，因此按前端测试规范
 专项浏览器流程在每个视口真实注册用户、验证邮件、切换质检参与、模拟未知保存状态后对账恢复、生成 AI 回复，再由 TOTP 管理员显式读取正文、提交质检结论并从审计页回查。每个视口检查 axe、控制台、Vite 错误层和根级横向溢出；另验证桌面切换到 320×700 最大字号深色。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-*.png` 和 `desktop-privacy-governance-quality-320-large-dark.png`，已人工检查；敏感弹窗、长邮箱、UUID、请求 JSON 和操作按钮无重叠或横向溢出。
 
 Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、金额额度、业务提案及正式第三方模型质量仍未验证或实现。
+
+## M4-D：AI 价格、供应商用量与平台成本
+
+对应 Git 提交：`6bdd607`、`60ccfff`、`b6482cc`、`0858bc3`、`3dae969`、`6dcd57c`。实际代码为迁移 `0019_ai_provider_costs`、`0020_ai_provider_cost_lifecycle`，`server/src/itime/ai/{pricing,usage,cost_service}.py`、两类 provider/worker 终态接入、后台成本查询及 `/admin/costs`；合同见[AI 额度与成本账本设计](../设计/iTime-AI额度与成本账本设计.md)。
+
+已实现：
+
+- AI 配置版本增加币种、普通输入、缓存输入和输出价格；后台以每百万 Token 的十进制字符串输入，服务端精确转换为纳币种单位并纳入不可变配置。历史未定价版本保持 `NULL` 并明确提示，不伪造零成本。
+- 对话流发送 `stream_options.include_usage=true`，兼容 usage-only SSE 和一次性 JSON；截图读取非流式 usage。非法或缺失 usage 不使有效业务结果失败，改用带版本标记的本地估算。
+- 每个真实 `AIJobAttempt` 最多一条不可变 `AIProviderCost`。成功、失败、429 重试、超时、取消和租约失效分别核算；未实际发出供应商请求的尝试记录零成本，排队阶段未创建 attempt 时不造成本记录。
+- provider 调用前以当前作业租约固化 `provider_started_at`；取消或租约失效先提交终态和成本，晚到 usage 无法覆盖。成本、attempt、正文日志和作业终态处于同一事务。
+- 金额以十亿分之一币种单位保存，按价格版本进行整数计算；数据库和应用同时限制 Token、价格及 `BIGINT` 范围。usage 详情只保留计数白名单，不持久化供应商任意键名或正文。
+- 管理后台 `/admin/costs` 支持按用户、能力、尝试状态、usage 来源和计价状态筛选，展示 Token、金额、模型/配置版本、作业和上游请求关联。页面明确失败及重试成本由平台承担，不代表用户额度扣减。
+
+2026-10-03 在本地 PostgreSQL 18.6、真实 Uvicorn、本机 OpenAI 兼容 HTTP 服务及生产构建 Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q tests/test_ai_usage.py tests/test_ai_provider_cost_models.py tests/test_ai_jobs.py tests/test_ai_conversation_worker.py tests/test_calendar_screenshot_imports.py` | **27 passed in 42.17s** | 定点价格、usage 兼容/估算、流式 usage-only、截图 usage、重试、取消晚到、租约接管、迁移约束 |
+| `cd server && uv run pytest -q tests/test_admin_provider_costs.py tests/test_ai_config.py tests/test_ai_governance_lifecycle.py` | **16 passed in 26.28s** | 管理鉴权、筛选/分页、精确金额、价格配置及治理回归 |
+| `cd server && uv run pytest -q` | **203 passed in 172.80s** | 服务端真实 HTTP/PostgreSQL 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic current && uv run alembic check` | `0020_ai_provider_cost_lifecycle (head)`，无模型漂移 | 开发库与 ORM 一致 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/admin-management.spec.ts --grep '分别创建'` | **3 passed in 14.3s** | 三视口真实创建、测试、发布和回滚带价格配置 |
+| `cd web && pnpm exec playwright test e2e/privacy-governance.spec.ts --grep '管理员显式读取'` | **3 passed in 22.0s** | 三视口生成真实成本、管理筛选、金额与正文隔离 |
+| `cd web && pnpm test:e2e` | **126 passed in 5.8m** | 账号、后台、AI、任务、日历、导入、订阅、治理与成本页面全量 Chromium 回归 |
+
+成本页面在 1440×1000、390×844、768×1024 三个视口检查标题、数据、筛选、axe、控制台和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-provider-costs.png`，已人工检查。
+
+当前限制：这里记录的是平台供应商成本，不是用户消费。每日额度数值、预留、成功结算、跨 04:00 归属、提案拒绝/过期及超预留规则仍未实现，继续受 Q-QUOTA-01 约束。
