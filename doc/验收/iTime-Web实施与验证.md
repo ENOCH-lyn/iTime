@@ -1013,4 +1013,37 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 
 浏览器流程覆盖自由/任务专注、步骤与任务完成分离、刷新恢复、补记修订、离线顺序重放、未知响应幂等恢复、开放与终态冲突、账号隔离、100 项/7 天队列边界、困难增删改恢复、任务/计划块入口和 AI 草稿。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-focus-*.png` 及 `desktop-focus-320-large-dark.png`，人工检查未见重叠、裁切、空白画面或动态布局跳动。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘、记忆、统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。复盘与记忆后续已由 M6-C 实现；统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、性能和生产部署仍未实现或验证。
+
+## M6-C：单日复盘与确认式长期记忆
+
+对应 Git 提交：`43a55e6`、`f18999b`、`4a0adbc`、`68962f9`、`0ec0cb3`、`cf1b488`、`e9cbebf`、`9daf825`、`180f395`、`283e168`、`d00f7a9`。实际代码为迁移 `0026_review_memory`、`server/src/itime/review/`、通用 AI worker 的 `review` 能力、`web/src/pages/ReviewsPage.vue`、复盘与记忆组件/API，以及 `web/e2e/reviews.spec.ts`；合同见[复盘与记忆设计](../设计/iTime-复盘与记忆设计.md)。
+
+已实现：
+
+- 同账号同活动日只有一个复盘会话；活动日按用户时区 04:00 切换。事实快照区分计划块、任务完成、专注和困难，允许在没有计划记录时补充事实并继续。
+- 复盘短对话最多三轮单问题追问，用户可回答继续或随时跳过；问题和回答先持久化，离页后通过作业状态恢复，不依赖浏览器连接存活。
+- `review` 独立 AI 能力使用目的限定的结构化工具输出。服务端校验事实来源、用户说明、AI 推测、下一步、信息缺口和记忆候选，不把模型文本直接当成业务写入。
+- 报告版本不可变，重新生成只新增版本；事实或用户说明变化会使旧报告标记过期但不删除。批注独立增改删，不改变报告正文。
+- 记忆候选只有用户确认后才形成长期记忆；拒绝不写入。用户可人工新增、编辑、暂停全部读取、删除、30 天内恢复；删除和暂停立即退出普通对话、规划与复盘的新请求上下文。
+- 接单、作业、额度预留、报告/问题终态、供应商成本和治理记录沿用同一原子事务与租约机制。取消释放预留且保留已保存输入，AI 冻结只阻止新作业。
+- `/reviews` 在桌面使用侧栏和主工作区，在手机/平板使用可滚动顶部导航与单列内容；支持活动日选择、历史版本、批注、记忆建议和独立记忆管理。
+
+2026-10-03 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit/AI worker、生产构建预览和 Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run pytest -q tests/test_review_models.py tests/test_review_sessions.py tests/test_review_provider.py tests/test_review_worker.py tests/test_review_annotations.py tests/test_review_cleanup.py tests/test_memory_context.py tests/test_ai_conversation_worker.py tests/test_planning_worker.py` | **40 passed in 50.33s** | 迁移、事实、会话、provider、worker、额度释放、报告、批注、记忆生命周期及跨能力上下文 |
+| `cd server && uv run pytest -q` | **380 passed in 313.74s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run alembic upgrade head && uv run alembic current && uv run alembic check` | `0026_review_memory (head)`，无新升级操作 | 开发库迁移及 ORM 一致性 |
+| `cd server && uv run python -m itime.review.cleanup_worker --once` | 通过 | 记忆到期清理进程可单次运行 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/reviews.spec.ts e2e/planning.spec.ts --grep "daily review\|cancelled review\|生成、离页恢复"` | **9 passed in 1.3m** | 复盘主流程、取消恢复、记忆启停/删除/恢复/编辑、普通对话与规划记忆上下文 × 三视口 |
+| `cd web && pnpm exec playwright test e2e/focus.spec.ts e2e/planning.spec.ts e2e/tasks.spec.ts e2e/calendar-imports.spec.ts e2e/calendar-subscriptions.spec.ts` | **63 passed in 3.4m** | 七项导航引入后的 320px 与既有核心工作区回归 |
+| `cd web && pnpm test:e2e` | **177 passed in 9.0m** | 账号、后台、AI、额度、任务、规划、执行、困难、复盘、记忆、日历、导入、订阅、治理和公开页面三视口全量回归 |
+
+浏览器流程覆盖补充事实、短追问、跳过、离页恢复、报告重生成与版本切换、批注、候选确认/拒绝、记忆启停/增改删/恢复、删除后退出检索、普通对话与规划实际收到的记忆上下文，以及取消后恢复可操作状态。每个视口检查 axe、控制台、框架错误层和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-review-desktop-report.png` 与 `mobile-review-320-large-dark.png`，人工检查未见重叠、裁切或空白画面。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。

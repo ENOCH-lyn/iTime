@@ -569,7 +569,7 @@ git commit -m "test: 验证复盘与记忆真实链路"
 - Modify: `doc/验收/iTime-产品验收清单.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 运行服务端全量验证**
+- [x] **Step 1: 运行服务端全量验证**
 
 Run:
 
@@ -586,7 +586,7 @@ uv build --no-sources
 
 Expected: 全部 PASS；迁移 head 为 `0026_review_memory`。
 
-- [ ] **Step 2: 运行前端全量验证**
+- [x] **Step 2: 运行前端全量验证**
 
 Run:
 
@@ -598,15 +598,15 @@ pnpm test:e2e
 
 Expected: 全部 Chromium 用例 PASS；测试服务和会话均正常退出。
 
-- [ ] **Step 3: 人工检查截图和进程**
+- [x] **Step 3: 人工检查截图和进程**
 
 检查 `/tmp/itime-ui-evidence/` 中桌面、手机、320px 大字号深色截图，无文本裁切、重叠、不可见控件或横向溢出；确认没有遗留 API、Worker、preview 或测试数据库。
 
-- [ ] **Step 4: 同步文档**
+- [x] **Step 4: 同步文档**
 
-记录实际迁移、路由、代码位置、测试数量、命令和结果；把 `REQ-REVIEW-01`、`REQ-MEM-01` 更新为已实现，把 M6-A 计划任务勾选完成。不得把尚未实现的统计、通用同步、导出或注销写成完成。
+记录实际迁移、路由、代码位置、测试数量、命令和结果；把 `REQ-REVIEW-01`、`REQ-MEM-01` 更新为已实现，把 M6-C 计划任务勾选完成。不得把尚未实现的统计、通用同步、导出或注销写成完成。
 
-- [ ] **Step 5: 检查提交范围并提交**
+- [x] **Step 5: 检查提交范围并提交**
 
 Run: `git status --short && git diff --check && git diff --stat`
 
@@ -617,8 +617,8 @@ git add README.md doc
 git commit -m "docs: 记录复盘与记忆实施证据"
 ```
 
-- [ ] **Step 6: 最终确认工作区**
+- [x] **Step 6: 最终确认工作区**
 
 Run: `git status --short && git log -10 --oneline`
 
-Expected: 工作区干净，M6-A 按功能形成独立提交链。
+Expected: 工作区干净，M6-C 按功能形成独立提交链。
