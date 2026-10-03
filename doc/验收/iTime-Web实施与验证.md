@@ -804,7 +804,7 @@ Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓
 
 迁移专项还验证了复合所有者外键、截图/对话输入引用约束、同会话单活动作业、对话作业与生成映射延迟一致性、消息身份不可变及有数据时禁止降级。
 
-当前限制：普通回复的每日金额额度后续已在 M4-E 接入；正文日志和质检样本已在 M4-C 接入。业务对象变更仍只会作为文字回复，不会写入任务、日历或计划；提案应用仍待后续提交。
+当前限制：普通回复的每日金额额度后续已在 M4-E 接入；正文日志和质检样本已在 M4-C 接入。规划业务提案及确认应用后续已由 M5-A/M5-B 接入；普通回复及任务、日历、记忆等其他业务对象仍不会仅凭模型文字直接修改。
 
 ## M4-B：全局 AI 对话 Web 界面
 
@@ -831,7 +831,7 @@ Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓
 
 浏览器环境启动随机 PostgreSQL、真实 API、邮件 worker、AI worker、本机分块 SSE 上游、订阅 worker 和生产构建预览。专项覆盖多会话、流式增量、离页恢复、单次尝试、取消晚到结果、重试失败、改名、归档/恢复、AI 冻结、键盘提交、axe、控制台和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-ai-conversation-*.png` 与 `desktop-ai-conversation-320-large-dark.png`，已人工检查。
 
-Browser 运行工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。用户与后台额度显示后续已在 M4-E 验证；真实 Edge、实体设备、业务提案预览和正式第三方模型质量仍未验证。
+Browser 运行工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。用户与后台额度显示后续已在 M4-E 验证，规划提案卡和确认预览后续已在 M5-B 验证；真实 Edge、实体设备、其他业务对象提案和正式第三方模型质量仍未验证。
 
 ## M4-C：AI 正文日志、质量样本与访问审计
 
@@ -863,7 +863,7 @@ Browser 运行工具未在当前执行环境暴露，因此按前端测试规范
 
 专项浏览器流程在每个视口真实注册用户、验证邮件、切换质检参与、模拟未知保存状态后对账恢复、生成 AI 回复，再由 TOTP 管理员显式读取正文、提交质检结论并从审计页回查。每个视口检查 axe、控制台、Vite 错误层和根级横向溢出；另验证桌面切换到 320×700 最大字号深色。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-*.png` 和 `desktop-privacy-governance-quality-320-large-dark.png`，已人工检查；敏感弹窗、长邮箱、UUID、请求 JSON 和操作按钮无重叠或横向溢出。
 
-Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。金额额度后续已在 M4-E 验证；真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、业务提案及正式第三方模型质量仍未验证或实现。
+Browser 插件工具未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。金额额度后续已在 M4-E 验证，规划业务提案后续已在 M5-A/M5-B 接入同一治理链路；真实 Edge、实体设备、账号注销优先清理、单项彻底删除联动、其他业务提案及正式第三方模型质量仍未验证或实现。
 
 ## M4-D：AI 价格、供应商用量与平台成本
 
@@ -927,4 +927,58 @@ Browser 插件工具未在当前执行环境暴露，因此按前端测试规范
 
 专项浏览器流程真实完成普通用户注册、邮件验证、成功 AI 结算、取消/最终失败释放、时区初始化恢复、管理员 9 位小数调整、响应丢失后账本对账、策略发布、既有活动日保持旧策略、新用户使用新策略及余额耗尽拒绝。每个视口检查 axe、控制台、API 500 和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-quota-{user-ledger,admin-ledger}.png`、`desktop-quota-user-320-large-dark.png` 和 `desktop-quota-admin-320-large-dark.png`，已人工检查金额、长邮箱、UUID、确认对话框和深色大字号无重叠或裁切。
 
-Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、正式第三方模型账单对账、业务提案、支付/充值和现金钱包仍未验证或不属于本阶段。
+Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。规划业务提案后续已在 M5-A/M5-B 接入同一预留和结算合同；真实 Edge、实体设备、正式第三方模型账单对账、其他业务提案、支付/充值和现金钱包仍未验证或不属于本阶段。
+
+## M5-A：AI 提案与日周规划服务
+
+对应 Git 提交：`6f5a68e`、`3f767ac`、`56422b1`、`7b10b62`、`248cba0`、`ee99538`、`0e0790b`、`c03df9f`、`b00950a`、`81ebbe3`、`bd73509`。实际代码为迁移 `0022_ai_proposals_planning`—`0024_planning_lifecycle`、`server/src/itime/planning/`、AI 对话/worker/额度恢复扩展及规划专项测试；合同见[AI 提案与日周规划设计](../设计/iTime-AI提案与日周规划设计.md)。
+
+已实现：
+
+- 账号级规划输入修订锁和不可变输入快照统一读取任务、完整步骤、重复实例、固定安排、订阅投影、当前周计划和用户时区；共享/排他锁保证生成与确认不会混入并发提交。
+- 通用提案、变化、周计划、不可变版本、计划块和未排项由复合所有者外键、唯一约束和数据库不可变触发器保护。用户删除仍可级联清理，不被修订触发器阻断。
+- `planning` 独立 AI 能力固定调用唯一 `submit_itime_plan` 工具；可见正文与分片工具参数分离。服务端拒绝未知任务/步骤、越界日期、DST 歧义、重叠、固定占用、截止、拆分、估时守恒、密度和缓冲违规。
+- 独立规划页和对话规划模式均可创建持久化作业；接单原子写快照、作业、事件和额度预留。成功原子写提案、provider 成本、额度结算、治理数据及可选对话消息，失败、超时和取消释放预留。
+- 提案查询区分待确认、已应用、已拒绝、已过期和输入冲突。确认时重建当前上下文并再次校验；重复确认/拒绝和原请求重试幂等，计划与提案任一步失败均整体回滚。
+- 单日确认只替换目标日并保留同周其他日期，整周确认替换完整周。手工保存复用相同硬约束，创建新的完整周版本；历史版本不可原地修改。
+- 计划块提供本人范围查询并按当前显示时区投影；对话中的 planning 作业继续受同会话单活动生成和账号三作业并发上限约束。
+
+2026-10-03 在本地 PostgreSQL 18.6、真实 Uvicorn、本机 OpenAI 兼容 HTTP 上游和双 worker 场景中执行：
+
+| 命令（`server/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `uv run pytest -q` | **327 passed in 279.67s** | 服务端真实 HTTP/PostgreSQL 全量回归，含规划模型、输入快照、确定性校验、提案事务、版本、provider、worker、对话和额度 |
+| `uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `uv run alembic upgrade head` | 通过 | 开发库升级至规划生命周期迁移 |
+| `uv run alembic current` | `0024_planning_lifecycle (head)` | 开发库迁移版本 |
+| `uv run alembic check` | 无新升级操作 | 迁移与 ORM 一致 |
+| `uv build --no-sources` | 通过 | sdist 和 wheel |
+
+专项覆盖迁移往返、复合所有权、历史不可变、用户级联删除、上海/纽约 DST、超过 100 候选、共享/排他锁、随机边界、双 worker 租约、重试、取消竞态、过期恢复、跨 capability 并发、额度结算及事务回滚。正式第三方模型规划质量、备用服务路由、性能和生产部署仍未验证。
+
+## M5-B：规划、对话提案与日历 Web 界面
+
+对应 Git 提交：`167a8b3`、`354f66c`、`b6e67da`、`552c9cb`。实际代码为 `web/src/pages/PlansPage.vue`、规划组件与 API、AI 规划模式和提案卡、统一日历计划块投影，以及 `web/e2e/planning.spec.ts`、`ai-conversations.spec.ts` 和 `calendar.spec.ts`。
+
+已实现：
+
+- 五项统一产品导航新增“规划”，`/plans` 支持单日/整周、任务选择、三种密度、缓冲、可规划时段、独立生成、离页恢复和显式取消。
+- 提案预览明确“尚未写入计划”，展示计划块、步骤、估计、未排原因、有效期及额度结算说明；用户可确认、拒绝，过期或冲突后可重新生成。
+- 当前计划支持时间、步骤和顺序手工纠错并明确保存，历史版本可查看。版本冲突保留本地草稿，显示服务器最新版和请求编号，采用服务器内容后可继续处理。
+- AI 对话 composer 可切换普通回复和生成计划；规划成功后由作业输出的 `proposal_id` 展示独立提案卡，正文不解析工具 JSON，可直接进入同一规划确认页。
+- 统一日历可切换计划块显示，已确认当前版本按真实日期合并到周/月视图；详情显示任务、步骤、来源和计划版本并提供规划入口，不提供任务完成操作。未确认、拒绝和过期提案不进入日历。
+- 桌面、平板和手机分别采用双栏、收窄双栏或单列/全屏布局；320px 最大字号深色下仍可完成生成、预览、确认、手工编辑和日历查看。
+
+2026-10-03 执行：
+
+| 命令（`web/`） | 实际结果 | 范围 |
+| --- | --- | --- |
+| `pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `pnpm exec playwright test e2e/planning.spec.ts` | **6 passed** | 生成恢复、确认、手工版本、取消、拒绝及版本冲突 × 三种视口 |
+| `pnpm exec playwright test e2e/ai-conversations.spec.ts` | **12 passed in 1.3m** | 普通对话回归及规划提案卡 × 三种视口 |
+| `pnpm exec playwright test e2e/calendar.spec.ts` | **12 passed in 44.5s** | 原日历流程及确认计划块投影 × 三种视口 |
+| `pnpm test:e2e` | **141 passed in 7.0m** | 账号、后台、AI、额度、任务、规划、日历、导入、订阅、治理和公开页面 Chromium 全量回归 |
+
+浏览器流程使用随机 PostgreSQL、真实 API、AI worker、本机分块上游和生产构建预览；版本冲突增强后又分别在 desktop、mobile、tablet 定向重跑通过。每个视口检查 axe、控制台、API 500 和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-planning-confirmed-manual-version.png`、`desktop-planning-320-large-dark.png`、`{desktop,mobile,tablet}-planning-calendar-projection.png` 及对应 AI planning card/proposal 文件，已人工检查，无重叠、裁切或空白画面。
+
+Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工具，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、正式第三方模型规划质量、执行/困难、复盘和完整首版闭环仍未验证或实现。

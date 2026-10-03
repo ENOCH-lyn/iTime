@@ -18,7 +18,7 @@
 - Create: `server/src/itime/planning/models.py`
 - Test: `server/tests/test_planning_models.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 在隔离数据库验证：
 
@@ -37,13 +37,13 @@ assert table_names >= {
 
 并直接插入非法 owner 组合、第二次 `source_job_id`、可变历史版本和重复周计划，断言数据库拒绝。
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run: `cd server && uv run pytest tests/test_planning_models.py -q`
 
 Expected: FAIL，迁移和模型尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 迁移必须：
 
@@ -57,7 +57,7 @@ Expected: FAIL，迁移和模型尚不存在。
 
 ORM 字段和约束名必须与迁移一致；`AIJob` 增加 `planning_snapshot_id`。
 
-- [ ] **Step 4: 验证迁移和模型**
+- [x] **Step 4: 验证迁移和模型**
 
 Run:
 
@@ -70,7 +70,7 @@ uv run alembic check
 
 Expected: PASS；head 为 `0022_ai_proposals_planning`；无模型漂移。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/migrations/versions/0022_ai_proposals_planning.py \
@@ -88,7 +88,7 @@ git commit -m "feat: 建立 AI 提案与计划版本模型"
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_planning_inputs.py`
 
-- [ ] **Step 1: 写输入和并发失败测试**
+- [x] **Step 1: 写输入和并发失败测试**
 
 覆盖：
 
@@ -104,13 +104,13 @@ busy 固定、取消、调课、补课和订阅投影
 跨账号任务 ID 返回统一 not found
 ```
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run: `cd server && uv run pytest tests/test_planning_inputs.py -q`
 
 Expected: FAIL，规划上下文路由不存在。
 
-- [ ] **Step 3: 实现快照服务**
+- [x] **Step 3: 实现快照服务**
 
 提供以下稳定入口：
 
@@ -134,11 +134,11 @@ async def planning_context(
 
 实现时复用 `query_occurrences()`、`query_task_occurrences()` 和任务批量详情查询；补充无截止任务及完整步骤，规范化 JSON 后计算 SHA-256。
 
-- [ ] **Step 4: 实现只读上下文 API**
+- [x] **Step 4: 实现只读上下文 API**
 
 `GET /api/v1/planning/context` 接受 scope、date、density、buffer、availability 和重复 `task_id`，返回任务候选、固定占用、当前周计划及默认值。无时间设置返回 `time_settings_required`；无候选返回空结果，不调用 AI。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run: `cd server && uv run pytest tests/test_planning_inputs.py -q`
 
@@ -156,7 +156,7 @@ git commit -m "feat: 提供一致规划输入快照"
 - Test: `server/tests/test_plan_validation.py`
 - Test: `server/tests/test_plan_versions.py`
 
-- [ ] **Step 1: 写边界失败测试**
+- [x] **Step 1: 写边界失败测试**
 
 用参数化和随机区间覆盖：
 
@@ -173,7 +173,7 @@ DST 缺失/重复时间
 手工保存版本冲突和 operation_id 重放
 ```
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run:
 
@@ -184,7 +184,7 @@ uv run pytest tests/test_plan_validation.py tests/test_plan_versions.py -q
 
 Expected: FAIL，校验与版本服务不存在。
 
-- [ ] **Step 3: 实现纯校验器**
+- [x] **Step 3: 实现纯校验器**
 
 核心入口：
 
@@ -203,7 +203,7 @@ def validate_plan_blocks(
 
 校验器不得访问数据库；所有对象只从快照解析，便于对同一输入稳定复算。
 
-- [ ] **Step 4: 实现周版本服务**
+- [x] **Step 4: 实现周版本服务**
 
 核心入口：
 
@@ -222,7 +222,7 @@ async def create_plan_version(
 
 服务锁定规划修订和周计划；日范围合并其他日期；写完整不可变版本并切换当前指针。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run:
 
@@ -245,15 +245,15 @@ git commit -m "feat: 实现计划硬约束与周版本"
 - Modify: `server/src/itime/planning/schemas.py`
 - Test: `server/tests/test_plan_proposals.py`
 
-- [ ] **Step 1: 写提案事务失败测试**
+- [x] **Step 1: 写提案事务失败测试**
 
 覆盖 pending/applied/rejected/expired/conflicted，有效期、输入修订、基础计划版本、重复确认、同 ID 异内容、客户端超时重试、跨账号、提案与计划原子回滚。
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run: `cd server && uv run pytest tests/test_plan_proposals.py -q`
 
-- [ ] **Step 3: 实现服务和路由**
+- [x] **Step 3: 实现服务和路由**
 
 提供：
 
@@ -265,7 +265,7 @@ async def reject_proposal(session, owner_id, proposal, data) -> dict: ...
 
 实现设计文档 §7/§8 的分页、有效状态、冲突详情和幂等语义。提案应用必须调用 Task 3 的同一版本服务。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd server && uv run pytest tests/test_plan_proposals.py -q`
 
@@ -288,11 +288,11 @@ git commit -m "feat: 实现规划提案确认与拒绝"
 - Test: `server/tests/test_ai_config.py`
 - Test: `server/tests/test_quota_service.py`
 
-- [ ] **Step 1: 写 provider 与终态失败测试**
+- [x] **Step 1: 写 provider 与终态失败测试**
 
 本地 HTTP 上游覆盖工具参数分片、可见正文、JSON 响应、未知/多个/缺失工具、结构越界、网络重试、认证失败、超时、取消、租约丢失和重启恢复。
 
-- [ ] **Step 2: 执行失败测试**
+- [x] **Step 2: 执行失败测试**
 
 Run:
 
@@ -302,19 +302,19 @@ uv run pytest tests/test_planning_worker.py \
   tests/test_ai_config.py tests/test_quota_service.py -q
 ```
 
-- [ ] **Step 3: 实现 provider**
+- [x] **Step 3: 实现 provider**
 
 请求固定 `submit_itime_plan` 工具和 `tool_choice`。解析器分别累计 `delta.content` 与目标工具 `arguments`，总响应限制 1 MiB，参数解析为 `PlanningToolOutput` 后调用确定性校验器。
 
-- [ ] **Step 4: 实现接单和 worker**
+- [x] **Step 4: 实现接单和 worker**
 
 `POST /planning/generations` 同事务创建快照、作业、初始事件、预留和 operation replay。worker 成功事务写提案、变化、provider cost、额度结算、作业输出和质量样本；失败或取消释放预留。
 
-- [ ] **Step 5: 扩展配置合成测试和恢复**
+- [x] **Step 5: 扩展配置合成测试和恢复**
 
 后台 planning 配置测试必须收到合成工具调用 `{ "marker": "09:00" }`。过期作业对账把 planning 路由到规划投影，不能留下永久生成中状态。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 Run:
 
@@ -340,7 +340,7 @@ git commit -m "feat: 接入 AI 规划作业与额度结算"
 - Test: `server/tests/test_ai_plan_proposal_api.py`
 - Test: `server/tests/test_ai_conversation_worker.py`
 
-- [ ] **Step 1: 写对话规划失败测试**
+- [x] **Step 1: 写对话规划失败测试**
 
 覆盖：
 
@@ -354,7 +354,7 @@ response_mode=planning 缺范围拒绝
 断线重连和显式取消
 ```
 
-- [ ] **Step 2: 泛化对话接单和终态**
+- [x] **Step 2: 泛化对话接单和终态**
 
 `ConversationMessageCreateInput` 增加：
 
@@ -365,7 +365,7 @@ planning: PlanningRequestFields | None = None
 
 planning 作业继续写 `ChatGeneration`，assistant 消息正文使用模型可见说明或服务端保底文案，`AIJob.output` 同时保存 `message_id` 和 `proposal_id`。
 
-- [ ] **Step 3: 验证并提交**
+- [x] **Step 3: 验证并提交**
 
 Run:
 
@@ -396,19 +396,19 @@ git commit -m "feat: 支持对话生成规划提案"
 - Modify: `web/src/task-workspace.css`
 - Test: `web/e2e/planning.spec.ts`
 
-- [ ] **Step 1: 写真实浏览器失败测试**
+- [x] **Step 1: 写真实浏览器失败测试**
 
 三视口覆盖单日/整周输入、任务选择、生成恢复、失败/取消、提案预览、确认、拒绝、未排项、手工时间和顺序调整、版本冲突、请求编号。
 
-- [ ] **Step 2: 建立路由、共享导航和 API 类型**
+- [x] **Step 2: 建立路由、共享导航和 API 类型**
 
 新增 `/plans?scope=day|week&date=YYYY-MM-DD&proposal=<id>`。第五个导航项在粗指针下保持至少 44px 命中区；共享导航样式移到 `style.css`。
 
-- [ ] **Step 3: 实现规划页面**
+- [x] **Step 3: 实现规划页面**
 
 桌面采用条件栏和预览区；840px 以下按日议程。所有块提供时间输入、步骤选择和上移/下移替代拖拽。确认前明确“尚未写入计划”，未知保存状态保留原 operation ID。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 
@@ -440,19 +440,19 @@ git commit -m "feat: 增加日周规划与提案页面"
 - Modify: `web/e2e/ai-conversations.spec.ts`
 - Modify: `web/e2e/calendar.spec.ts`
 
-- [ ] **Step 1: 写浏览器失败测试**
+- [x] **Step 1: 写浏览器失败测试**
 
 从对话切换规划模式并提交，正文流不显示 JSON，完成后出现提案卡；打开规划页确认后，日历显示计划块；提案未确认、拒绝和过期均不进入日历。
 
-- [ ] **Step 2: 实现提案卡和模式输入**
+- [x] **Step 2: 实现提案卡和模式输入**
 
 对话 composer 使用分段控件选择普通回复或生成计划；规划模式显示范围、日期、密度和缓冲。消息通过 job output 的 `proposal_id` 读取提案卡，不解析正文。
 
-- [ ] **Step 3: 实现日历投影**
+- [x] **Step 3: 实现日历投影**
 
 日历加载范围内当前计划块，合并为 `source=plan`；详情显示任务、步骤、计划版本和前往规划页入口，不提供任务完成按钮。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 
@@ -482,7 +482,7 @@ git commit -m "feat: 联通对话提案与日历计划块"
 - Modify: `doc/计划/iTime-开发总计划.md`
 - Modify: `doc/计划/iTime-M5提案与规划实施计划.md`
 
-- [ ] **Step 1: 服务端全量验证**
+- [x] **Step 1: 服务端全量验证**
 
 Run:
 
@@ -497,7 +497,7 @@ uv build --no-sources
 
 记录真实通过数量、耗时、迁移 head 和任何未验证项。
 
-- [ ] **Step 2: Web 全量验证**
+- [x] **Step 2: Web 全量验证**
 
 Run:
 
@@ -509,11 +509,11 @@ pnpm test:e2e
 
 人工检查 `/tmp/itime-ui-evidence/` 的桌面、平板、手机、320px 大字号和深色截图；确认无重叠、裁切、空白画面或提案状态误导。
 
-- [ ] **Step 3: 同步文档**
+- [x] **Step 3: 同步文档**
 
 只把实际通过的行为写为已实现；正式第三方模型质量、Edge、实体设备、性能和生产部署未执行时继续明确标注。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add README.md doc designer.md
