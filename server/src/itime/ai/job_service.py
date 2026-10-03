@@ -519,7 +519,9 @@ def append_planning_job_event(
     *,
     payload: dict,
 ) -> AIJobEvent | None:
-    if job.capability != "planning":
+    if job.capability != "planning" or (
+        job.conversation_id is not None and payload.get("status") == "running"
+    ):
         return None
     job.last_event_sequence += 1
     event = AIJobEvent(

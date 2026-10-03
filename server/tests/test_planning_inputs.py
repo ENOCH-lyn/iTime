@@ -285,7 +285,22 @@ def test_context_uses_effective_busy_calendar_occurrences(client, database_url):
 
 def test_context_includes_subscription_occurrences(client, database_url):
     create_account(client, database_url, time_zone="UTC")
-    create_subscription(client, name="规划订阅")
+    subscription = create_subscription(client, name="规划订阅")
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE calendar_subscriptions
+            SET next_refresh_at = CASE
+                WHEN source_id=%s THEN now() - interval '1 day'
+                ELSE now() + interval '1 day'
+            END
+            WHERE refresh_status='queued'
+            """,
+            (subscription["id"],),
+        )
     today = datetime.now(UTC).date()
     fetcher = FakeFetcher([result(daily_ics("订阅课程", today))])
     assert asyncio.run(run_worker(database_url, fetcher))

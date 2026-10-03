@@ -442,7 +442,8 @@ class PlanVersion(Base):
             ["proposal_id", "owner_id"],
             ["ai_proposals.id", "ai_proposals.owner_id"],
             name="fk_plan_versions_proposal_owner",
-            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         UniqueConstraint("id", "owner_id", name="uq_plan_versions_id_owner"),
         UniqueConstraint(

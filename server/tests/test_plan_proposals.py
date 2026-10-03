@@ -19,6 +19,26 @@ from tests.test_tasks import create_task
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def cleanup_created_users(database_url):
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        existing_ids = {
+            row[0] for row in connection.execute("SELECT id FROM users")
+        }
+    yield
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        created_ids = [
+            row[0]
+            for row in connection.execute("SELECT id FROM users")
+            if row[0] not in existing_ids
+        ]
+        for user_id in created_ids:
+            connection.execute("DELETE FROM users WHERE id=%s", (user_id,))
+
+
 def _target_week() -> tuple[date, date]:
     today = datetime.now(UTC).astimezone(ZoneInfo("Asia/Shanghai")).date()
     week_start = today - timedelta(days=today.weekday())
