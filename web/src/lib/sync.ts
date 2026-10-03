@@ -297,6 +297,11 @@ function handleCacheFallback(event: Event) {
   syncStatus.cache_fallback_at = detail?.cached_at ?? new Date().toISOString()
 }
 
+function handleRefreshError(event: Event) {
+  syncStatus.error = failure((event as CustomEvent<unknown>).detail)
+  if (navigator.onLine) syncStatus.phase = 'error'
+}
+
 function handleBroadcast() {
   requestSync()
 }
@@ -334,6 +339,7 @@ export function startSyncCoordinator() {
   window.addEventListener('focus', handleOnline)
   window.addEventListener('itime:cache-fallback', handleCacheFallback)
   window.addEventListener('itime:sync-queue-changed', handleQueueChanged)
+  window.addEventListener('itime:sync-refresh-error', handleRefreshError)
   document.addEventListener('visibilitychange', handleVisible)
   channel?.addEventListener('message', handleBroadcast)
 }
@@ -351,6 +357,7 @@ export function stopSyncCoordinator() {
   window.removeEventListener('focus', handleOnline)
   window.removeEventListener('itime:cache-fallback', handleCacheFallback)
   window.removeEventListener('itime:sync-queue-changed', handleQueueChanged)
+  window.removeEventListener('itime:sync-refresh-error', handleRefreshError)
   document.removeEventListener('visibilitychange', handleVisible)
   channel?.removeEventListener('message', handleBroadcast)
 }

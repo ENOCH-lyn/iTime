@@ -18,7 +18,11 @@ export function useSyncRefresh(
     timer = 0
     const events = pending
     pending = []
-    void refresh(events)
+    Promise.resolve(refresh(events)).catch(error => {
+      window.dispatchEvent(new CustomEvent('itime:sync-refresh-error', {
+        detail: error,
+      }))
+    })
   }
 
   function handle(event: Event) {
