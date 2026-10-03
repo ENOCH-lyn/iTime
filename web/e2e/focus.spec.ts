@@ -395,9 +395,11 @@ test('终态冲突可转为修订草稿且仅在明确采用后丢弃队列', as
     await expect(page.getByRole('heading', { name: '采用服务器状态验证' })).toBeVisible()
     await second.reload()
     await expect(second.getByText('进行中', { exact: true })).toBeVisible()
+    await second.getByRole('button', { name: '结束', exact: true }).click()
+    await page.bringToFront()
+    await page.waitForTimeout(100)
     await page.route('**/api/v1/focus-sessions/*/transitions', route =>
       route.abort('connectionreset'))
-    await second.getByRole('button', { name: '结束', exact: true }).click()
     await page.getByRole('button', { name: '结束', exact: true }).click()
     await expect(page.getByText('1 项待同步')).toBeVisible()
     await page.unroute('**/api/v1/focus-sessions/*/transitions')
