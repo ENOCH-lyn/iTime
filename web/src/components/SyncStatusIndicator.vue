@@ -11,22 +11,22 @@ import { syncStatus } from '../lib/sync'
 const label = computed(() => {
   if (syncStatus.phase === 'offline') {
     return syncStatus.pending_count
-      ? `同步状态：离线，${syncStatus.pending_count} 项待同步`
-      : '同步状态：离线'
+      ? `同步：离线，${syncStatus.pending_count} 项待同步`
+      : '同步：离线'
   }
-  if (syncStatus.phase === 'connecting') return '同步状态：正在同步'
+  if (syncStatus.phase === 'connecting') return '同步：正在同步'
   if (syncStatus.phase === 'conflict') {
-    return `同步状态：${syncStatus.conflict_count} 项冲突`
+    return `同步：${syncStatus.conflict_count} 项冲突`
   }
   if (syncStatus.phase === 'pending') {
-    return `同步状态：${syncStatus.pending_count} 项待同步`
+    return `同步：${syncStatus.pending_count} 项待同步`
   }
   if (syncStatus.phase === 'error') {
     return syncStatus.pending_count
-      ? `同步状态：同步失败，${syncStatus.pending_count} 项待同步`
-      : '同步状态：同步失败'
+      ? `同步：失败，${syncStatus.pending_count} 项待同步`
+      : '同步：失败'
   }
-  return '同步状态：已同步'
+  return '同步：已同步'
 })
 
 const icon = computed(() => {

@@ -82,6 +82,8 @@ let inFlight: Promise<void> | null = null
 let timer = 0
 let failureCount = 0
 let taskConflict = false
+let localMutationRevision = 0
+let acknowledgedMutationRevision = 0
 let stopIdentityWatch: (() => void) | null = null
 let stopMutationObserver: (() => void) | null = null
 const channel = typeof BroadcastChannel === 'undefined'
@@ -156,6 +158,7 @@ async function pullChanges() {
   let recoveredInvalidCursor = false
   const collected: SyncEvent[] = []
   let resetRequired = false
+  const mutationRevisionAtStart = localMutationRevision
   try {
     const replay = await replayTaskQueue(accountId)
     taskConflict = replay.conflict !== null
@@ -219,7 +222,11 @@ async function pullChanges() {
       : syncStatus.pending_count > 0
         ? 'pending'
         : 'synced'
-    dispatchEvents(collected, resetRequired)
+    const containsLocalMutation = (
+      mutationRevisionAtStart > acknowledgedMutationRevision
+    )
+    acknowledgedMutationRevision = mutationRevisionAtStart
+    if (!containsLocalMutation) dispatchEvents(collected, resetRequired)
     if (collected.length) channel?.postMessage({ type: 'events' })
     schedule()
   } catch (error) {
@@ -318,6 +325,7 @@ export function startSyncCoordinator() {
     if (session) requestSync()
   }, { immediate: true })
   stopMutationObserver = observeMutations(() => {
+    localMutationRevision += 1
     channel?.postMessage({ type: 'mutation' })
     requestSync()
   })

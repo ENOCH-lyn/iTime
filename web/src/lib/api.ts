@@ -70,7 +70,7 @@ export async function api<T>(
     return result as T
   } catch (error) {
     if (error instanceof ApiError) throw error
-    if (method === 'GET' && !responseReceived) {
+    if (method === 'GET' && !responseReceived && !navigator.onLine) {
       const cached = await getCachedResponse<T>(path)
       if (cached !== null) {
         window.dispatchEvent(new CustomEvent('itime:cache-fallback', {

@@ -149,6 +149,7 @@ async function makeTaskRecurring(
 test('offline cache is encrypted and never hides an HTTP failure', async ({
   page,
   request,
+  context,
 }) => {
   const session = await account(page, request)
   const marker = `离线缓存任务 ${randomUUID()}`
@@ -190,11 +191,11 @@ test('offline cache is encrypted and never hides an HTTP failure', async ({
   await page.getByRole('button', { name: '已归档', exact: true }).click()
   await expect(page.getByRole('heading', { name: '已归档' })).toBeVisible()
   await expect(page.locator('.task-list li')).toHaveCount(0)
-  await page.route('**/api/v1/tasks?**', route => route.abort('failed'))
+  await context.setOffline(true)
   await page.getByRole('button', { name: '活动', exact: true }).click()
   await expect(page.getByText(marker, { exact: true })).toBeVisible()
 
-  await page.unroute('**/api/v1/tasks?**')
+  await context.setOffline(false)
   await page.route('**/api/v1/tasks?**', route => route.fulfill({
     status: 503,
     contentType: 'application/json',
@@ -230,12 +231,12 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   ), { timeout: 5_000 }).not.toBe('暂无变更')
 
   await page.goto('/tasks')
-  await expect(page.getByLabel(/同步状态：已同步/)).toBeVisible()
+  await expect(page.getByLabel(/同步：已同步/)).toBeVisible()
   await context.setOffline(true)
   await expect(page.getByText('当前离线。显示最近同步的数据。')).toBeVisible()
-  await expect(page.getByLabel(/同步状态：离线/)).toBeVisible()
+  await expect(page.getByLabel(/同步：离线/)).toBeVisible()
   await context.setOffline(false)
-  await page.getByLabel(/同步状态：/).click()
+  await page.getByLabel(/同步：/).click()
   await expect(page).toHaveURL('/account/sync')
   await expect(page.getByText('已同步', { exact: true })).toBeVisible()
 
@@ -295,7 +296,7 @@ test('cross-device task refresh and offline step queue converge', async ({
     ).toBeChecked()
 
     await secondContext.setOffline(false)
-    await expect(second.getByLabel(/同步状态：已同步/)).toBeVisible({
+    await expect(second.getByLabel(/同步：已同步/)).toBeVisible({
       timeout: 8_000,
     })
     await expect.poll(async () => {
@@ -382,7 +383,7 @@ test('recurring occurrence step queues offline without changing the template', a
   await page.getByLabel('离线可见步骤', { exact: true }).click()
   await expect(page.getByLabel(/1 项待同步/)).toBeVisible()
   await context.setOffline(false)
-  await expect(page.getByLabel(/同步状态：已同步/)).toBeVisible({
+  await expect(page.getByLabel(/同步：已同步/)).toBeVisible({
     timeout: 8_000,
   })
 
