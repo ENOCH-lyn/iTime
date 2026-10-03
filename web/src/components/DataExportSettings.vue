@@ -120,6 +120,7 @@ async function createExport() {
   creating.value = true
   error.value = null
   success.value = ''
+  const knownJobIds = new Set(jobs.value.map(job => job.id))
   if (!pendingOperationId) pendingOperationId = crypto.randomUUID()
   try {
     const result = await createDataExport(pendingOperationId)
@@ -135,10 +136,13 @@ async function createExport() {
     await handleAuth(current)
     if (current.saved === 'unknown') {
       await load({ quiet: true })
-      if (active.value) {
+      const recovered = jobs.value.find(job => !knownJobIds.has(job.id))
+      if (recovered) {
         pendingOperationId = ''
         error.value = null
-        success.value = '已从服务器确认数据包正在生成。'
+        success.value = recovered.status === 'succeeded'
+          ? '已从服务器确认数据包生成成功。'
+          : '已从服务器确认数据包正在生成。'
         schedulePoll()
       }
     }

@@ -833,6 +833,12 @@ def main():
             env,
             logs / "subscription.log",
         ))
+        export_process = stack.enter_context(process(
+            [sys.executable, "-m", "itime.data_export.worker"],
+            SERVER,
+            env,
+            logs / "data-export.log",
+        ))
         web_process = stack.enter_context(process(
             [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
              "--port", "4173"],
@@ -847,6 +853,7 @@ def main():
                 mail_process,
                 ai_process,
                 subscription_process,
+                export_process,
                 web_process,
             )
         ):
