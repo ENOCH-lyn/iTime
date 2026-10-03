@@ -18,6 +18,12 @@ values = {
     "ITIME_PUBLIC_ORIGIN": "http://localhost:5173",
     "ITIME_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
     "ITIME_AI_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
+    "ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+        secrets.token_bytes(32)
+    ).decode(),
+    "ITIME_EXPORT_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+        secrets.token_bytes(32)
+    ).decode(),
 }
 try:
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

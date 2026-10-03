@@ -10,6 +10,7 @@ from itime.ai import models as ai_models  # noqa: F401
 from itime.auth import models as auth_models  # noqa: F401
 from itime.calendar import models as calendar_models  # noqa: F401
 from itime.config import get_settings
+from itime.data_export import models as data_export_models  # noqa: F401
 from itime.database import Base, Database
 from itime.execution import models as execution_models  # noqa: F401
 from itime.planning import models as planning_models  # noqa: F401

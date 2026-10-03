@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     encryption_key: SecretStr
     ai_encryption_key: SecretStr | None = None
     calendar_subscription_encryption_key: SecretStr | None = None
+    export_encryption_key: SecretStr | None = None
     session_hours: int = Field(default=24 * 30, ge=1, le=24 * 90)
     admin_session_hours: int = Field(default=8, ge=1, le=24)
     admin_setup_minutes: int = Field(default=30, ge=5, le=120)
@@ -45,6 +46,19 @@ class Settings(BaseSettings):
     ai_body_log_retention_days: int = Field(default=7, ge=1, le=30)
     ai_quality_sample_retention_days: int = Field(default=30, ge=1, le=90)
     calendar_subscription_lease_seconds: int = Field(default=60, ge=30, le=300)
+    export_job_lease_seconds: int = Field(default=120, ge=30, le=900)
+    export_artifact_retention_hours: int = Field(default=24, ge=1, le=168)
+    export_job_retention_days: int = Field(default=30, ge=1, le=90)
+    export_max_uncompressed_bytes: int = Field(
+        default=100 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=500 * 1024 * 1024,
+    )
+    export_max_archive_bytes: int = Field(
+        default=50 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=250 * 1024 * 1024,
+    )
     verification_minutes: int = Field(default=30, ge=5, le=1440)
     password_reset_minutes: int = Field(default=15, ge=5, le=60)
     mail_cooldown_seconds: int = Field(default=60, ge=1, le=600)
@@ -63,6 +77,7 @@ class Settings(BaseSettings):
         "encryption_key",
         "ai_encryption_key",
         "calendar_subscription_encryption_key",
+        "export_encryption_key",
     )
     @classmethod
     def fernet_key(cls, value: SecretStr | None) -> SecretStr | None:
@@ -142,6 +157,27 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "生产环境必须配置独立的 calendar_subscription_encryption_key"
+            )
+        existing_encryption_keys = {
+            self.encryption_key.get_secret_value(),
+            (
+                self.ai_encryption_key.get_secret_value()
+                if self.ai_encryption_key is not None
+                else ""
+            ),
+            (
+                self.calendar_subscription_encryption_key.get_secret_value()
+                if self.calendar_subscription_encryption_key is not None
+                else ""
+            ),
+        }
+        if self.environment == "production" and (
+            self.export_encryption_key is None
+            or self.export_encryption_key.get_secret_value()
+            in existing_encryption_keys
+        ):
+            raise ValueError(
+                "生产环境必须配置独立的 export_encryption_key"
             )
         if self.smtp_host not in {"localhost", "127.0.0.1", "::1"} and not self.smtp_starttls:
             raise ValueError("外部 SMTP 必须启用 STARTTLS")
