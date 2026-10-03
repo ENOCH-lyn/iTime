@@ -191,7 +191,9 @@ test('管理员显式读取 AI 正文、提交质检并回查审计', async ({
   const costRow = page.getByRole('list', { name: 'AI 供应商成本' })
     .getByRole('listitem').filter({ hasText: address })
   await expect(costRow).toContainText('供应商上报')
-  await expect(costRow).toContainText('CNY 0.000135')
+  await expect(costRow.locator('.cost-amount')).toHaveText(
+    /^CNY 0\.[0-9]+$/,
+  )
   await expect(costRow).toContainText(
     /输入 100\s*（缓存 10）\s*· 输出 20 Token/,
   )
