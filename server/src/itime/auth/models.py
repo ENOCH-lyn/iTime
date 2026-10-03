@@ -14,6 +14,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
@@ -107,11 +108,20 @@ class AuthRateBucket(Base):
 
 class SecurityEvent(Base):
     __tablename__ = "security_events"
-    __table_args__ = (Index("ix_security_events_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(details) = 'object'", name="details"),
+        Index("ix_security_events_user_created", "user_id", "created_at"),
+        Index("ix_security_events_action_created", "action", "created_at", "id"),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str] = mapped_column(String(50))
     request_id: Mapped[str] = mapped_column(String(36))
     target_id: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

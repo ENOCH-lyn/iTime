@@ -82,13 +82,22 @@ async def authorized(request: Request, *, write: bool = False) -> AsyncIterator[
         yield Identity(session, user, device, csrf)
 
 
-def audit(request: Request, session: AsyncSession, user: User, action: str, target=None) -> None:
+def audit(
+    request: Request,
+    session: AsyncSession,
+    user: User,
+    action: str,
+    target=None,
+    *,
+    details: dict | None = None,
+) -> None:
     session.add(
         SecurityEvent(
             user_id=user.id,
             action=action,
             request_id=request.state.request_id,
             target_id=str(target) if target is not None else None,
+            details=details or {},
         )
     )
 
