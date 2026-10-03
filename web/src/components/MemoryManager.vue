@@ -17,11 +17,6 @@ import {
 } from '../lib/memories'
 import StatusMessage from './StatusMessage.vue'
 
-const emit = defineEmits<{
-  error: [error: Failure]
-  success: [message: string]
-}>()
-
 const settings = ref<MemorySettings | null>(null)
 const items = ref<Memory[]>([])
 const lifecycle = ref<'active' | 'trashed'>('active')
@@ -61,7 +56,6 @@ function clearDraft() {
 
 function setError(reason: unknown) {
   error.value = failure(reason)
-  emit('error', error.value)
 }
 
 async function load() {
@@ -95,7 +89,6 @@ async function toggleEnabled() {
     success.value = enabled
       ? '长期记忆已恢复用于后续 AI 请求。'
       : '长期记忆已暂停，后续 AI 请求不会读取已有记忆。'
-    emit('success', success.value)
   } catch (reason) {
     setError(reason)
   } finally {
@@ -149,7 +142,6 @@ async function save() {
     operation = null
     clearDraft()
     await load()
-    emit('success', success.value)
   } catch (reason) {
     setError(reason)
   } finally {
@@ -165,7 +157,6 @@ async function remove(memory: Memory) {
     await deleteMemory(memory, crypto.randomUUID())
     success.value = '记忆已移到回收站，将保留 30 天。'
     await load()
-    emit('success', success.value)
   } catch (reason) {
     setError(reason)
   } finally {
@@ -181,7 +172,6 @@ async function restore(memory: Memory) {
     await restoreMemory(memory, crypto.randomUUID())
     success.value = '记忆已恢复。'
     await load()
-    emit('success', success.value)
   } catch (reason) {
     setError(reason)
   } finally {

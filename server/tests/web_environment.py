@@ -71,6 +71,7 @@ def planning_tool_arguments(request_body: dict) -> dict:
     snapshot = json.loads(request_body["messages"][-1]["content"])[
         "planning_snapshot"
     ]
+    prompt = json.dumps(request_body["messages"], ensure_ascii=False)
     candidates = snapshot["task_candidates"]
     estimates = []
     adopted_estimates = {}
@@ -123,11 +124,80 @@ def planning_tool_arguments(request_body: dict) -> dict:
             }
         )
     return {
-        "summary": "先完成最重要的一项，其余任务保留为待安排。",
+        "summary": (
+            "已按长期记忆调整计划。"
+            if "计划时优先安排上午" in prompt
+            else "先完成最重要的一项，其余任务保留为待安排。"
+        ),
         "assumptions": ["按当前可规划时段和已有估时安排。"],
         "estimates": estimates,
         "blocks": blocks,
         "unscheduled_items": unscheduled,
+    }
+
+
+def review_tool_arguments(request_body: dict) -> dict:
+    snapshot = json.loads(request_body["messages"][-1]["content"])[
+        "review_snapshot"
+    ]
+    user_sources = []
+    if snapshot["user_context"]["supplemental_facts"]:
+        user_sources.append("user:supplemental_facts")
+    user_sources.extend(
+        item["source_key"]
+        for item in snapshot["user_context"]["messages"]
+        if item["role"] == "user"
+    )
+    facts = []
+    for group in ("planned_blocks", "task_completions", "focus", "difficulties"):
+        for item in snapshot["facts"][group]["items"][:1]:
+            facts.append(
+                {
+                    "source_key": item["source_key"],
+                    "text": (
+                        item.get("title")
+                        or item.get("content")
+                        or "已有记录"
+                    ),
+                }
+            )
+    memory_candidates = (
+        [
+            {
+                "kind": "preference",
+                "title": "深度工作时段",
+                "content": "上午更适合持续思考。",
+                "rationale": "来自用户在复盘中的明确说明。",
+                "source_keys": [user_sources[0]],
+            },
+            {
+                "kind": "context",
+                "title": "资料整理方式",
+                "content": "整理资料时先确定核心入口。",
+                "rationale": "来自用户在复盘中的明确说明。",
+                "source_keys": [user_sources[0]],
+            },
+        ]
+        if user_sources
+        else []
+    )
+    return {
+        "summary": "今天完成了核心事项，也留下了可继续优化的线索。",
+        "facts": facts,
+        "user_statements": (
+            [snapshot["user_context"]["supplemental_facts"]]
+            if snapshot["user_context"]["supplemental_facts"]
+            else []
+        ),
+        "insights": [
+            {
+                "text": "较完整的时间段可能更适合当前任务。",
+                "basis": "ai_inference",
+            }
+        ],
+        "next_actions": ["明早继续整理资料。"],
+        "uncertainties": [] if facts else ["这一天没有计划或执行记录。"],
+        "memory_candidates": memory_candidates,
     }
 
 
@@ -238,6 +308,87 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
                 self.close_connection = True
                 return
+            if tool_name in {
+                "submit_itime_review_question",
+                "submit_itime_review_report",
+            }:
+                if tool_name == "submit_itime_review_report":
+                    snapshot = json.loads(body["messages"][-1]["content"])[
+                        "review_snapshot"
+                    ]
+                    if "离页恢复" in snapshot["generation_instruction"]:
+                        time.sleep(1.5)
+                    arguments = review_tool_arguments(body)
+                else:
+                    arguments = {"question": "今天最顺利的是哪一段？"}
+                encoded_arguments = json.dumps(
+                    arguments,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                midpoint = len(encoded_arguments) // 2
+                events = [
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "playwright-review-call",
+                                            "type": "function",
+                                            "function": {
+                                                "name": tool_name,
+                                                "arguments": encoded_arguments[:midpoint],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {
+                                                "arguments": encoded_arguments[midpoint:],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 120,
+                            "completion_tokens": 80,
+                            "total_tokens": 200,
+                            "prompt_tokens_details": {"cached_tokens": 0},
+                        },
+                    },
+                ]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.send_header("x-request-id", "playwright-fake-review")
+                self.end_headers()
+                for event in events:
+                    self.wfile.write(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+                    )
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
             user_messages = [
                 message.get("content", "")
                 for message in body.get("messages", [])
@@ -252,11 +403,21 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(encoded)
                 return
-            parts = (
-                ["已收到这条消息。", "取消后不应出现。"]
-                if "取消测试" in user_prompt
-                else ["先把今天最重要的事情列出来。", " 然后为第一项留出一段完整时间。"]
-            )
+            if "检查记忆上下文" in user_prompt:
+                parts = [
+                    (
+                        "已读取长期记忆。"
+                        if "上午更适合持续思考。" in prompt
+                        else "未读取长期记忆。"
+                    )
+                ]
+            elif "取消测试" in user_prompt:
+                parts = ["已收到这条消息。", "取消后不应出现。"]
+            else:
+                parts = [
+                    "先把今天最重要的事情列出来。",
+                    " 然后为第一项留出一段完整时间。",
+                ]
             pause = 1.5 if "取消测试" in user_prompt else (
                 0.6 if "离页恢复" in user_prompt else 0.12
             )
@@ -555,6 +716,7 @@ async def seed_admins(
                 ("calendar_screenshot", "vision-test-model"),
                 ("conversation", "chat-test-model"),
                 ("planning", "planning-test-model"),
+                ("review", "review-test-model"),
             ):
                 current = now()
                 state = await session.get(

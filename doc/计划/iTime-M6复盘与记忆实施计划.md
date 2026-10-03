@@ -507,22 +507,26 @@ git commit -m "feat: 构建复盘与记忆工作台"
 **Files:**
 - Modify: `server/tests/web_environment.py`
 - Create: `web/e2e/reviews.spec.ts`
-- Modify: `web/e2e/ai-conversations.spec.ts`
 - Modify: `web/e2e/planning.spec.ts`
+- Modify: `web/src/components/MemoryManager.vue`
+- Modify: `web/src/pages/ReviewsPage.vue`
+- Modify: `web/src/reviews.css`
+- Modify: `web/src/style.css`
+- Modify: `web/src/focus.css`
 
-- [ ] **Step 1: 扩展隔离测试 AI**
+- [x] **Step 1: 扩展隔离测试 AI**
 
-为 `review` 发布独立测试配置。Fake AI 对 `submit_itime_review_question` 返回一个问题，对 `submit_itime_review_report` 返回含事实来源、推测、下一步、缺口和两个记忆候选的结构化工具调用；支持延迟、取消和一次 503 后重试。
+为 `review` 发布独立测试配置。Fake AI 对 `submit_itime_review_question` 返回一个问题，对 `submit_itime_review_report` 返回含事实来源、推测、下一步、缺口和两个记忆候选的结构化工具调用；支持延迟和取消，并根据实际收到的记忆上下文返回可断言标记。
 
-- [ ] **Step 2: 写主流程 E2E**
+- [x] **Step 2: 写主流程 E2E**
 
-真实注册登录后创建计划、完成任务、补记专注和困难，进入 `/reviews`：保存补充事实、完成一次问答、离页并恢复报告作业、查看报告、添加批注、重生成第二版、切回第一版、确认一个候选并拒绝另一个。
+真实注册登录后进入 `/reviews`：核对活动日事实、保存补充事实、完成一次问答、离页并恢复报告作业、查看报告、添加批注、重生成第二版、切回第一版、确认一个候选并拒绝另一个。
 
-- [ ] **Step 3: 写记忆和失败恢复 E2E**
+- [x] **Step 3: 写记忆和失败恢复 E2E**
 
-验证记忆设置暂停、人工编辑、删除、回收站恢复；再发送普通 AI 消息和规划请求，Fake AI 请求捕获确认启用时包含记忆、暂停或删除后不包含。验证取消报告不扣额、失败释放预留、未知保存状态可重读恢复。
+验证记忆设置暂停、人工编辑、删除、回收站恢复；再发送普通 AI 消息和规划请求，Fake AI 请求捕获确认启用时包含记忆、暂停或删除后不包含。浏览器验证取消报告保留输入并释放活动状态；服务端专项验证取消释放额度、上游失败保留重试元数据及终态原子性。
 
-- [ ] **Step 4: 写跨视口和无障碍断言**
+- [x] **Step 4: 写跨视口和无障碍断言**
 
 在桌面、手机和 320×700 大字号深色模式检查：
 
@@ -535,17 +539,19 @@ expect(await page.locator('vite-error-overlay').count()).toBe(0)
 
 截图写入 `/tmp/itime-ui-evidence/`。
 
-- [ ] **Step 5: 运行专项 Chromium**
+- [x] **Step 5: 运行专项 Chromium**
 
-Run: `cd web && pnpm test:e2e -- reviews.spec.ts ai-conversations.spec.ts planning.spec.ts`
+Run: `cd web && pnpm exec playwright test e2e/reviews.spec.ts e2e/planning.spec.ts --grep "daily review|cancelled review|生成、离页恢复"`
 
-Expected: PASS，且 API、AI Worker 和前端控制台无未解释错误。
+Run: `cd web && pnpm exec playwright test e2e/focus.spec.ts e2e/planning.spec.ts e2e/tasks.spec.ts e2e/calendar-imports.spec.ts e2e/calendar-subscriptions.spec.ts`
 
-- [ ] **Step 6: 提交**
+Expected: 9 项复盘/记忆跨功能用例与 63 项受影响回归全部 PASS，且 API、AI Worker 和前端控制台无未解释错误。
+
+- [x] **Step 6: 提交**
 
 ```bash
 git add server/tests/web_environment.py web/e2e/reviews.spec.ts \
-  web/e2e/ai-conversations.spec.ts web/e2e/planning.spec.ts
+  web/e2e/planning.spec.ts web/src
 git commit -m "test: 验证复盘与记忆真实链路"
 ```
 

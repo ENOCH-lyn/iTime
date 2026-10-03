@@ -492,11 +492,7 @@ async function logout() {
         />
       </div>
 
-      <MemoryManager
-        v-if="view === 'memories'"
-        @error="pageError = $event"
-        @success="pageSuccess = $event"
-      />
+      <MemoryManager v-if="view === 'memories'" />
 
       <template v-else>
         <p v-if="loading && !detail" class="review-loading" role="status">

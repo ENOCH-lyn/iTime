@@ -90,6 +90,19 @@ async function initializeTimeSettings(page: Page) {
   return session.csrf_token as string
 }
 
+async function createPlanningMemory(page: Page, csrf: string) {
+  const response = await page.request.post('/api/v1/memories', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: {
+      operation_id: randomUUID(),
+      kind: 'preference',
+      title: '规划时段',
+      content: '计划时优先安排上午。',
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
 async function createTask(
   page: Page,
   csrf: string,
@@ -284,6 +297,7 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
 }, info) => {
   const targetDate = futureDate(14)
   const csrf = await account(page, request)
+  await createPlanningMemory(page, csrf)
   const tasks = await Promise.all([
     createTask(page, csrf, '完成项目提纲', 60),
     createTask(page, csrf, '整理实验数据', 45),
@@ -306,6 +320,8 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible({
     timeout: 15_000,
   })
+  await expect(page.getByText('已按长期记忆调整计划。', { exact: true }))
+    .toBeVisible()
   await expect(page.locator('.plan-block')).toHaveCount(2)
   await expect(page.getByRole('heading', { name: '暂未排入', exact: true })).toBeVisible()
   for (const task of tasks) {
