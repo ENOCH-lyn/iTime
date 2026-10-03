@@ -20,6 +20,7 @@ from itime.ai.conversation_provider import (
 from itime.ai.governance_service import (
     create_quality_sample_if_enabled,
     locked_attempt_body_log,
+    validate_request_body,
     validate_response_body,
 )
 from itime.ai.job_service import (
@@ -33,6 +34,16 @@ from itime.ai.provider import ProviderConfig
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
+from itime.planning.job_service import (
+    PLANNING_REQUEST_SCHEMA_VERSION,
+    lock_owner_ai_job_capacity,
+    planning_provider_config,
+    planning_provider_messages,
+    planning_snapshot_payload,
+)
+from itime.planning.provider import planning_request_body
+from itime.planning.schemas import PlanningRequestFields
+from itime.planning.snapshot_service import build_planning_snapshot
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
@@ -44,7 +55,6 @@ from itime.tasks.service import save_operation
 
 ACTIVE_JOB_STATES = {"queued", "running"}
 EVENT_RETENTION = timedelta(days=7)
-MAX_ACTIVE_CONVERSATION_JOBS = 3
 MAX_CURRENT_CONTEXT_MESSAGES = 30
 MAX_CURRENT_CONTEXT_CHARS = 48_000
 MAX_RELATED_CONTEXT_CHARS = 12_000
@@ -309,6 +319,8 @@ async def enqueue_message(
     content: str,
     operation_data,
     timeout_seconds: int,
+    response_mode: str = "text",
+    planning: PlanningRequestFields | None = None,
 ) -> dict:
     conversation = await locked_conversation(session, owner_id, conversation_id)
     if conversation.version != expected_version:
@@ -332,24 +344,26 @@ async def enqueue_message(
             "此会话仍在生成回复，请等待完成或先取消。",
             status=409,
         )
-    active_count = await session.scalar(
-        select(func.count())
-        .select_from(AIJob)
-        .where(
-            AIJob.owner_id == owner_id,
-            AIJob.capability == "conversation",
-            AIJob.status.in_(ACTIVE_JOB_STATES),
-        )
-    )
-    if active_count >= MAX_ACTIVE_CONVERSATION_JOBS:
-        raise AppError(
-            "ai_job_limit_reached",
-            "已有 3 个对话作业正在处理，请完成后再发送。",
-            status=429,
-            retryable=True,
-        )
+    await lock_owner_ai_job_capacity(session, owner_id)
 
-    state = await session.get(AIConfigCapability, "conversation")
+    capability = "planning" if response_mode == "planning" else "conversation"
+    planning_snapshot = None
+    if capability == "planning":
+        if planning is None:
+            raise AppError(
+                "planning_request_required",
+                "生成规划时必须提供规划范围。",
+                status=422,
+            )
+        planning_snapshot = await build_planning_snapshot(session, owner_id, planning)
+        if not planning_snapshot.task_candidates:
+            raise AppError(
+                "planning_candidates_empty",
+                "当前范围没有可规划任务，请先添加或选择未完成任务。",
+                status=409,
+            )
+
+    state = await session.get(AIConfigCapability, capability)
     config = (
         await session.get(AIConfigVersion, state.current_version_id)
         if state is not None and state.current_version_id is not None
@@ -358,7 +372,11 @@ async def enqueue_message(
     if config is None or config.status != "published":
         raise AppError(
             "ai_capability_unavailable",
-            "全局 AI 对话暂未配置，请稍后重试；任务和日历仍可手动使用。",
+            (
+                "AI 规划暂未配置，请稍后重试；任务和日历仍可手动使用。"
+                if capability == "planning"
+                else "全局 AI 对话暂未配置，请稍后重试；任务和日历仍可手动使用。"
+            ),
             status=503,
             retryable=True,
         )
@@ -386,19 +404,44 @@ async def enqueue_message(
         context_message_ids=context_message_ids,
         pending_user_content=content,
     )
-    provider = ProviderConfig(
-        endpoint_url=config.endpoint_url,
-        model=config.model,
-        api_key_ciphertext=bytes(config.api_key_ciphertext),
-        timeout_seconds=config.timeout_seconds,
-        max_output_tokens=config.max_output_tokens,
-    )
-    request_body = conversation_request_body(provider, messages)
+    if planning_snapshot is not None:
+        provider = planning_provider_config(config)
+        snapshot_payload = planning_snapshot_payload(planning_snapshot)
+        provider_messages = planning_provider_messages(
+            snapshot_payload,
+            conversation_context=messages,
+        )
+        request_body = planning_request_body(provider, provider_messages)
+        validate_request_body(request_body)
+        input_summary = {
+            "resource_type": "planning_snapshot",
+            "planning_snapshot_id": str(planning_snapshot.id),
+            "scope": planning_snapshot.scope,
+            "target_date": planning_snapshot.target_date.isoformat(),
+            "candidate_count": len(planning_snapshot.task_candidates),
+            "content_sha256": planning_snapshot.content_sha256,
+            "request_schema_version": PLANNING_REQUEST_SCHEMA_VERSION,
+            "related_context_count": len(context_message_ids),
+        }
+    else:
+        provider = ProviderConfig(
+            endpoint_url=config.endpoint_url,
+            model=config.model,
+            api_key_ciphertext=bytes(config.api_key_ciphertext),
+            timeout_seconds=config.timeout_seconds,
+            max_output_tokens=config.max_output_tokens,
+        )
+        request_body = conversation_request_body(provider, messages)
+        input_summary = {
+            "resource_type": "conversation_message",
+            "history_through_sequence": last_sequence + 1,
+            "related_context_count": len(context_message_ids),
+        }
     estimate = estimate_reservation_budget(
         config,
         request_body=request_body,
-        input_summary={},
-        capability="conversation",
+        input_summary=input_summary if planning_snapshot is not None else {},
+        capability=capability,
     )
     daily = await get_or_create_daily_allowance(
         session,
@@ -434,18 +477,20 @@ async def enqueue_message(
     job = AIJob(
         id=uuid4(),
         owner_id=owner_id,
-        capability="conversation",
+        capability=capability,
         config_version_id=config.id,
         input_media_id=None,
         conversation_id=conversation.id,
+        planning_snapshot_id=(
+            planning_snapshot.id if planning_snapshot is not None else None
+        ),
         quota_mode="user",
         status="queued",
         input_summary={
-            "resource_type": "conversation_message",
+            **input_summary,
             "request_message_id": str(request_message.id),
             "response_message_id": str(response_message.id),
             "history_through_sequence": request_message.sequence,
-            "related_context_count": len(context_message_ids),
         },
         available_at=current,
         deadline_at=current + timedelta(seconds=timeout_seconds),
@@ -1088,7 +1133,7 @@ async def cancel_conversation_projection(
     session: AsyncSession,
     job: AIJob,
 ) -> None:
-    if job.capability != "conversation":
+    if job.conversation_id is None:
         return
     generation = await session.scalar(
         select(ChatGeneration)
@@ -1098,7 +1143,7 @@ async def cancel_conversation_projection(
     if generation is None:
         raise AppError(
             "ai_job_state_invalid",
-            "对话作业状态不完整，请保留请求编号并联系管理员。",
+            "对话消息作业状态不完整，请保留请求编号并联系管理员。",
             status=503,
             retryable=True,
         )
@@ -1125,17 +1170,18 @@ async def cancel_conversation_projection(
     message.error_message = None
     message.completed_at = current
     message.updated_at = current
-    append_job_event(
-        session,
-        job,
-        generation=generation.stream_generation,
-        kind="job_state",
-        payload={
-            "status": "cancelled",
-            "message_id": str(message.id),
-            "attempt": job.attempt_count,
-        },
-    )
+    if job.capability == "conversation":
+        append_job_event(
+            session,
+            job,
+            generation=generation.stream_generation,
+            kind="job_state",
+            payload={
+                "status": "cancelled",
+                "message_id": str(message.id),
+                "attempt": job.attempt_count,
+            },
+        )
     conversation = await session.get(Conversation, generation.conversation_id)
     if conversation is not None:
         conversation.version += 1

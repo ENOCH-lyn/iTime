@@ -294,4 +294,6 @@ async def create_message(
             content=data.content,
             operation_data=data,
             timeout_seconds=request.app.state.settings.ai_job_timeout_seconds,
+            response_mode=data.response_mode,
+            planning=data.planning,
         )

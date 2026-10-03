@@ -670,7 +670,11 @@ def test_retry_keeps_reservation_then_succeeds(
                 (job_id,),
             ).fetchone()[0] == "reserved"
             connection.execute(
-                "UPDATE ai_jobs SET available_at=now() WHERE id=%s",
+                """
+                UPDATE ai_jobs
+                SET available_at=now() - interval '1 second'
+                WHERE id=%s
+                """,
                 (job_id,),
             )
         state.mode = "success"

@@ -288,8 +288,16 @@ async def _process_planning(
         )
         return
 
-    async def accept_delta(_: str) -> bool:
-        return True
+    async def persist_delta(text: str) -> bool:
+        if work.generation is None:
+            return True
+        return await append_conversation_delta(
+            database,
+            claim,
+            generation_number=work.generation,
+            text_delta=text,
+            lease_seconds=settings.ai_job_lease_seconds,
+        )
 
     async def mark_started() -> bool:
         return await mark_provider_request_started(database, claim)
@@ -305,7 +313,7 @@ async def _process_planning(
                 cipher,
                 messages=work.messages,
                 timeout_seconds=remaining,
-                on_delta=accept_delta,
+                on_delta=persist_delta,
                 on_request_started=mark_started,
             ),
         )

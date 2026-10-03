@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from itime.ai.conversation_models import AIJobEvent
+from itime.ai.conversation_models import AIJobEvent, ChatGeneration
 from itime.ai.cost_service import add_provider_cost
 from itime.ai.governance_service import (
     add_attempt_body_log,
@@ -99,12 +99,22 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     job.finished_at = current
     job.updated_at = current
     job.version += 1
+    message_id = (
+        await session.scalar(
+            select(ChatGeneration.response_message_id).where(
+                ChatGeneration.job_id == job.id
+            )
+        )
+        if job.capability == "planning" and job.conversation_id is not None
+        else None
+    )
     append_planning_job_event(
         session,
         job,
         payload={
             "status": "cancelled",
             "attempt": job.attempt_count,
+            **({"message_id": str(message_id)} if message_id is not None else {}),
         },
     )
     clear_job_lease(job)

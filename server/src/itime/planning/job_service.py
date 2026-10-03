@@ -10,7 +10,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from itime.ai.conversation_models import AIJobEvent
+from itime.ai.conversation_models import (
+    AIJobEvent,
+    ChatGeneration,
+    Conversation,
+    ConversationMessage,
+)
 from itime.ai.governance_service import (
     create_quality_sample_if_enabled,
     locked_attempt_body_log,
@@ -72,6 +77,7 @@ class PlanningWork:
     snapshot: dict[str, Any]
     messages: list[dict[str, object]]
     request_body: dict
+    generation: int | None = None
 
 
 async def enqueue_planning_generation(
@@ -92,7 +98,7 @@ async def enqueue_planning_generation(
     if replay is not None:
         return replay
 
-    await _lock_owner_capacity(session, owner_id)
+    await lock_owner_ai_job_capacity(session, owner_id)
     snapshot = await build_planning_snapshot(session, owner_id, data)
     if not snapshot.task_candidates:
         raise AppError(
@@ -115,7 +121,7 @@ async def enqueue_planning_generation(
             retryable=True,
         )
 
-    provider = _provider_config(config)
+    provider = planning_provider_config(config)
     snapshot_payload = planning_snapshot_payload(snapshot)
     messages = planning_provider_messages(snapshot_payload)
     request_body = planning_request_body(provider, messages)
@@ -253,9 +259,88 @@ async def load_planning_work(
                 "规划请求协议已更新，请重新生成。",
                 "configuration",
             )
-        provider = _provider_config(config)
+        provider = planning_provider_config(config)
         snapshot_payload = planning_snapshot_payload(snapshot)
-        messages = planning_provider_messages(snapshot_payload)
+        generation_number = None
+        conversation_context = None
+        if job.conversation_id is not None:
+            from itime.ai.conversation_service import (
+                append_job_event,
+                conversation_provider_messages,
+            )
+
+            generation = await session.scalar(
+                select(ChatGeneration)
+                .where(
+                    ChatGeneration.job_id == job.id,
+                    ChatGeneration.owner_id == job.owner_id,
+                    ChatGeneration.conversation_id == job.conversation_id,
+                )
+                .with_for_update()
+            )
+            if generation is None:
+                raise PlanningWorkUnavailable(
+                    "ai_job_input_invalid",
+                    "规划作业缺少对话消息映射，请重新发送。",
+                    "validation",
+                )
+            response_message = await session.scalar(
+                select(ConversationMessage)
+                .where(
+                    ConversationMessage.id == generation.response_message_id,
+                    ConversationMessage.owner_id == job.owner_id,
+                )
+                .with_for_update()
+            )
+            if response_message is None:
+                raise PlanningWorkUnavailable(
+                    "ai_job_input_invalid",
+                    "规划回复位置已不可用，请重新发送。",
+                    "validation",
+                )
+            generation.stream_generation += 1
+            if generation.stream_generation > job.max_attempts:
+                raise PlanningWorkUnavailable(
+                    "ai_job_attempts_exhausted",
+                    "AI 作业重试次数已用尽，请重新发送。",
+                    "worker",
+                )
+            if generation.stream_generation > 1:
+                response_message.content = ""
+                append_job_event(
+                    session,
+                    job,
+                    generation=generation.stream_generation,
+                    kind="content_reset",
+                    payload={"message_id": str(response_message.id)},
+                )
+            response_message.status = "running"
+            response_message.error_code = None
+            response_message.error_message = None
+            response_message.updated_at = current
+            append_job_event(
+                session,
+                job,
+                generation=generation.stream_generation,
+                kind="job_state",
+                payload={
+                    "status": "running",
+                    "message_id": str(response_message.id),
+                    "attempt": claim.attempt_number,
+                },
+            )
+            conversation_context = await conversation_provider_messages(
+                session,
+                owner_id=job.owner_id,
+                conversation_id=generation.conversation_id,
+                history_through_sequence=generation.history_through_sequence,
+                context_message_ids=generation.context_message_ids,
+            )
+            generation_number = generation.stream_generation
+        messages = planning_provider_messages(
+            snapshot_payload,
+            conversation_context=conversation_context,
+        )
         request_body = planning_request_body(provider, messages)
         validate_request_body(request_body)
         return PlanningWork(
@@ -263,6 +348,7 @@ async def load_planning_work(
             snapshot=snapshot_payload,
             messages=messages,
             request_body=request_body,
+            generation=generation_number,
         )
 
 
@@ -291,6 +377,43 @@ async def complete_planning_job(
         )
         if job is None:
             return False
+        generation = None
+        message = None
+        conversation = None
+        if job.conversation_id is not None:
+            generation = await session.scalar(
+                select(ChatGeneration)
+                .where(
+                    ChatGeneration.job_id == job.id,
+                    ChatGeneration.owner_id == job.owner_id,
+                    ChatGeneration.conversation_id == job.conversation_id,
+                )
+                .with_for_update()
+            )
+            if generation is None:
+                return False
+            message = await session.scalar(
+                select(ConversationMessage)
+                .where(
+                    ConversationMessage.id == generation.response_message_id,
+                    ConversationMessage.owner_id == job.owner_id,
+                )
+                .with_for_update()
+            )
+            conversation = await session.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.id == generation.conversation_id,
+                    Conversation.owner_id == job.owner_id,
+                )
+                .with_for_update()
+            )
+            if (
+                message is None
+                or conversation is None
+                or message.status != "running"
+            ):
+                return False
         body_log = await locked_attempt_body_log(
             session,
             job,
@@ -331,7 +454,14 @@ async def complete_planning_job(
             )
             return False
 
-        proposal = _create_proposal(session, job, snapshot, normalized, current)
+        proposal = _create_proposal(
+            session,
+            job,
+            snapshot,
+            normalized,
+            current,
+            source_message_id=message.id if message is not None else None,
+        )
         await session.flush()
         finalized = await finish_running_attempt(
             session,
@@ -353,10 +483,22 @@ async def complete_planning_job(
             job=job,
             provider_cost=finalized.provider_cost,
         )
+        if message is not None:
+            message.content = result.content
+            message.status = "complete"
+            message.error_code = None
+            message.error_message = None
+            message.updated_at = current
+            message.completed_at = current
         job.status = "succeeded"
         job.output = {
             "resource_type": "planning_proposal",
             "proposal_id": str(proposal.id),
+            **(
+                {"message_id": str(message.id)}
+                if message is not None
+                else {}
+            ),
         }
         job.error_code = None
         job.error_message = None
@@ -366,14 +508,26 @@ async def complete_planning_job(
         append_planning_event(
             session,
             job,
-            generation=claim.attempt_number,
+            generation=(
+                generation.stream_generation
+                if generation is not None
+                else claim.attempt_number
+            ),
             payload={
                 "status": "succeeded",
                 "attempt": claim.attempt_number,
                 "proposal_id": str(proposal.id),
+                **(
+                    {"message_id": str(message.id)}
+                    if message is not None
+                    else {}
+                ),
             },
         )
         clear_job_lease(job)
+        if conversation is not None:
+            conversation.version += 1
+            conversation.updated_at = current
         await create_quality_sample_if_enabled(
             session,
             job,
@@ -395,17 +549,144 @@ async def reject_or_retry_planning_job(
     http_status: int | None = None,
     provider_usage: object | None = None,
 ) -> str | None:
-    return await reject_or_retry_job(
-        database,
-        claim,
-        error_code=error_code,
-        error_message=error_message,
-        error_stage=error_stage,
-        retryable=retryable,
-        provider_request_id=provider_request_id,
-        http_status=http_status,
-        provider_usage=provider_usage,
-    )
+    if claim.conversation_id is None:
+        return await reject_or_retry_job(
+            database,
+            claim,
+            error_code=error_code,
+            error_message=error_message,
+            error_stage=error_stage,
+            retryable=retryable,
+            provider_request_id=provider_request_id,
+            http_status=http_status,
+            provider_usage=provider_usage,
+        )
+
+    current = now()
+    async with database.transaction() as session:
+        job = await session.scalar(
+            select(AIJob)
+            .where(
+                AIJob.id == claim.id,
+                AIJob.owner_id == claim.owner_id,
+                AIJob.capability == "planning",
+                AIJob.status == "running",
+                AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
+            )
+            .with_for_update()
+        )
+        if job is None:
+            return None
+        generation = await session.scalar(
+            select(ChatGeneration)
+            .where(ChatGeneration.job_id == job.id)
+            .with_for_update()
+        )
+        if generation is None:
+            return None
+        message = await session.scalar(
+            select(ConversationMessage)
+            .where(
+                ConversationMessage.id == generation.response_message_id,
+                ConversationMessage.owner_id == job.owner_id,
+            )
+            .with_for_update()
+        )
+        if message is None:
+            return None
+        can_retry = (
+            retryable
+            and job.deadline_at > current
+            and job.attempt_count < job.max_attempts
+            and current + timedelta(seconds=min(30, 2**job.attempt_count))
+            < job.deadline_at
+        )
+        if can_retry:
+            delay = min(30, 2**job.attempt_count)
+            await finish_running_attempt(
+                session,
+                job,
+                status="retryable_failed",
+                error_code=error_code,
+                error_stage=error_stage,
+                provider_request_id=provider_request_id,
+                http_status=http_status,
+                provider_usage=provider_usage,
+            )
+            job.status = "queued"
+            job.available_at = current + timedelta(seconds=delay)
+            job.error_code = error_code
+            job.error_message = error_message
+            job.updated_at = current
+            job.version += 1
+            message.status = "queued"
+            message.error_code = None
+            message.error_message = None
+            message.updated_at = current
+            append_planning_event(
+                session,
+                job,
+                generation=generation.stream_generation,
+                payload={
+                    "status": "queued",
+                    "message_id": str(message.id),
+                    "attempt": claim.attempt_number,
+                    "retrying": True,
+                    "error_code": error_code,
+                },
+            )
+            clear_job_lease(job)
+            return "queued"
+
+        timed_out = job.deadline_at <= current
+        status = "timed_out" if timed_out else "failed"
+        final_code = "ai_job_deadline_exceeded" if timed_out else error_code
+        final_message = (
+            "AI 作业已超过总等待时间，请重新生成。"
+            if timed_out
+            else error_message
+        )
+        await finish_running_attempt(
+            session,
+            job,
+            status=status,
+            error_code=final_code,
+            error_stage="deadline" if timed_out else error_stage,
+            provider_request_id=provider_request_id,
+            http_status=http_status,
+            provider_usage=provider_usage,
+        )
+        job.status = status
+        job.error_code = final_code
+        job.error_message = final_message
+        job.finished_at = current
+        job.updated_at = current
+        job.version += 1
+        message.status = status
+        message.error_code = final_code
+        message.error_message = final_message
+        message.completed_at = current
+        message.updated_at = current
+        append_planning_event(
+            session,
+            job,
+            generation=generation.stream_generation,
+            payload={
+                "status": status,
+                "message_id": str(message.id),
+                "attempt": claim.attempt_number,
+                "error_code": final_code,
+                "error_message": final_message,
+            },
+        )
+        clear_job_lease(job)
+        conversation = await session.get(Conversation, generation.conversation_id)
+        if conversation is not None:
+            conversation.version += 1
+            conversation.updated_at = current
+        await release_reservation(session, job=job, reason=status)
+        return status
 
 
 def planning_snapshot_payload(snapshot: PlanningInputSnapshot) -> dict[str, Any]:
@@ -437,8 +718,11 @@ def planning_snapshot_payload(snapshot: PlanningInputSnapshot) -> dict[str, Any]
 
 def planning_provider_messages(
     snapshot: dict[str, Any],
+    *,
+    conversation_context: list[dict[str, str]] | None = None,
 ) -> list[dict[str, object]]:
     return [
+        *(conversation_context or []),
         {
             "role": "user",
             "content": json.dumps(
@@ -472,7 +756,7 @@ def append_planning_event(
     return event
 
 
-async def _lock_owner_capacity(
+async def lock_owner_ai_job_capacity(
     session: AsyncSession,
     owner_id: UUID,
 ) -> None:
@@ -495,13 +779,13 @@ async def _lock_owner_capacity(
     if active_count is not None and active_count >= MAX_ACTIVE_USER_AI_JOBS:
         raise AppError(
             "ai_job_limit_reached",
-            "已有 3 个 AI 作业正在处理，请完成后再生成计划。",
+            "已有 3 个 AI 作业正在处理，请等待完成后再试。",
             status=429,
             retryable=True,
         )
 
 
-def _provider_config(config: AIConfigVersion) -> ProviderConfig:
+def planning_provider_config(config: AIConfigVersion) -> ProviderConfig:
     return ProviderConfig(
         endpoint_url=config.endpoint_url,
         model=config.model,
@@ -517,14 +801,16 @@ def _create_proposal(
     snapshot: dict[str, Any],
     normalized: NormalizedPlan,
     current: datetime,
+    *,
+    source_message_id: UUID | None = None,
 ) -> Proposal:
     proposal = Proposal(
         id=uuid4(),
         owner_id=job.owner_id,
         kind="plan",
         source_job_id=job.id,
-        conversation_id=None,
-        source_message_id=None,
+        conversation_id=job.conversation_id,
+        source_message_id=source_message_id,
         input_snapshot_id=job.planning_snapshot_id,
         schema_version=1,
         status="pending",
@@ -611,6 +897,35 @@ async def _finish_planning_failure(
     http_status: int | None,
     provider_usage: object | None,
 ) -> None:
+    generation = None
+    message = None
+    conversation = None
+    if job.conversation_id is not None:
+        generation = await session.scalar(
+            select(ChatGeneration)
+            .where(
+                ChatGeneration.job_id == job.id,
+                ChatGeneration.owner_id == job.owner_id,
+            )
+            .with_for_update()
+        )
+        if generation is not None:
+            message = await session.scalar(
+                select(ConversationMessage)
+                .where(
+                    ConversationMessage.id == generation.response_message_id,
+                    ConversationMessage.owner_id == job.owner_id,
+                )
+                .with_for_update()
+            )
+            conversation = await session.scalar(
+                select(Conversation)
+                .where(
+                    Conversation.id == generation.conversation_id,
+                    Conversation.owner_id == job.owner_id,
+                )
+                .with_for_update()
+            )
     await finish_running_attempt(
         session,
         job,
@@ -629,19 +944,37 @@ async def _finish_planning_failure(
     job.finished_at = current
     job.updated_at = current
     job.version += 1
+    if message is not None:
+        message.status = status
+        message.error_code = error_code
+        message.error_message = error_message
+        message.completed_at = current
+        message.updated_at = current
     await release_reservation(session, job=job, reason=status)
     append_planning_event(
         session,
         job,
-        generation=job.attempt_count,
+        generation=(
+            generation.stream_generation
+            if generation is not None
+            else job.attempt_count
+        ),
         payload={
             "status": status,
             "attempt": job.attempt_count,
             "error_code": error_code,
             "error_message": error_message,
+            **(
+                {"message_id": str(message.id)}
+                if message is not None
+                else {}
+            ),
         },
     )
     clear_job_lease(job)
+    if conversation is not None:
+        conversation.version += 1
+        conversation.updated_at = current
 
 
 def _proposal_title(snapshot: dict[str, Any]) -> str:
