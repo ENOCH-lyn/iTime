@@ -229,7 +229,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             ).fetchone() == ("planning", 1, None)
             assert (
                 connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0027_data_exports"
+                == "0028_sync_feed"
             )
 
         from itime.ai.models import AIJob

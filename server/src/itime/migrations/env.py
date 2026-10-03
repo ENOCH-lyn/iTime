@@ -16,6 +16,7 @@ from itime.execution import models as execution_models  # noqa: F401
 from itime.planning import models as planning_models  # noqa: F401
 from itime.quota import models as quota_models  # noqa: F401
 from itime.review import models as review_models  # noqa: F401
+from itime.sync import models as sync_models  # noqa: F401
 from itime.tasks import models as task_models  # noqa: F401
 
 target_metadata = Base.metadata

@@ -504,7 +504,8 @@ class ChangeEvent(Base):
             "('project', 'task', 'step', 'label', 'time_settings', 'term', "
             "'calendar_series', 'calendar_exception', 'task_occurrence', "
             "'calendar_addition', 'calendar_source', 'privacy_settings', 'plan', "
-            "'focus_session', 'difficulty')",
+            "'focus_session', 'difficulty', 'review_session', 'review_report', "
+            "'review_annotation', 'memory', 'memory_settings', 'conversation')",
             name="entity_type",
         ),
         CheckConstraint(

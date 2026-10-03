@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     export_job_lease_seconds: int = Field(default=120, ge=30, le=900)
     export_artifact_retention_hours: int = Field(default=24, ge=1, le=168)
     export_job_retention_days: int = Field(default=30, ge=1, le=90)
+    sync_event_retention_days: int = Field(default=30, ge=7, le=90)
     export_max_uncompressed_bytes: int = Field(
         default=100 * 1024 * 1024,
         ge=1024 * 1024,
