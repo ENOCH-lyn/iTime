@@ -938,7 +938,7 @@ def test_cleanup_worker_once_runs_in_a_separate_process(
     assert deleted.status_code == 200, deleted.text
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
         connection.execute(
-            "UPDATE tasks SET purge_after=now() WHERE id=%s",
+            "UPDATE tasks SET purge_after=deleted_at WHERE id=%s",
             (task["id"],),
         )
 
