@@ -26,7 +26,7 @@ class AIConfigCapability(Base):
     __tablename__ = "ai_config_capabilities"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation')",
+            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
             name="capability",
         ),
         CheckConstraint("next_version >= 1", name="next_version"),
@@ -51,7 +51,7 @@ class AIConfigVersion(Base):
     __tablename__ = "ai_config_versions"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation')",
+            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
             name="capability",
         ),
         CheckConstraint(
@@ -240,7 +240,7 @@ class AIJob(Base):
     __tablename__ = "ai_jobs"
     __table_args__ = (
         CheckConstraint(
-            "capability IN ('calendar_screenshot', 'conversation')",
+            "capability IN ('calendar_screenshot', 'conversation', 'planning')",
             name="capability",
         ),
         CheckConstraint(
@@ -261,9 +261,13 @@ class AIJob(Base):
         CheckConstraint("last_event_sequence >= 0", name="last_event_sequence"),
         CheckConstraint(
             "(capability = 'calendar_screenshot' "
-            "AND input_media_id IS NOT NULL AND conversation_id IS NULL) "
+            "AND input_media_id IS NOT NULL AND conversation_id IS NULL "
+            "AND planning_snapshot_id IS NULL) "
             "OR (capability = 'conversation' "
-            "AND input_media_id IS NULL AND conversation_id IS NOT NULL)",
+            "AND input_media_id IS NULL AND conversation_id IS NOT NULL "
+            "AND planning_snapshot_id IS NULL) "
+            "OR (capability = 'planning' "
+            "AND input_media_id IS NULL AND planning_snapshot_id IS NOT NULL)",
             name="input_reference",
         ),
         CheckConstraint(
@@ -305,8 +309,18 @@ class AIJob(Base):
             name="fk_ai_jobs_conversation_owner",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["planning_snapshot_id", "owner_id"],
+            ["planning_input_snapshots.id", "planning_input_snapshots.owner_id"],
+            name="fk_ai_jobs_planning_snapshot_owner",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_ai_jobs_id_owner"),
         UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
+        UniqueConstraint(
+            "planning_snapshot_id",
+            name="uq_ai_jobs_planning_snapshot",
+        ),
         Index("ix_ai_jobs_owner_created", "owner_id", "created_at", "id"),
         Index(
             "ix_ai_jobs_due",
@@ -337,6 +351,7 @@ class AIJob(Base):
     config_version_id: Mapped[UUID]
     input_media_id: Mapped[UUID | None]
     conversation_id: Mapped[UUID | None]
+    planning_snapshot_id: Mapped[UUID | None]
     quota_mode: Mapped[str] = mapped_column(
         String(16),
         default="platform",
