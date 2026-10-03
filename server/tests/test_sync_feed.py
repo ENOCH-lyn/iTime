@@ -1,10 +1,16 @@
+import asyncio
 from contextlib import contextmanager
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import httpx
 import psycopg
 import pytest
 
+from itime.auth.security import now
+from itime.config import Settings
+from itime.database import Database
+from itime.sync.service import cleanup_expired_events
 from tests.conftest import psycopg_url
 
 pytestmark = pytest.mark.integration
@@ -240,3 +246,109 @@ def test_sync_cursor_expired_ahead_and_missing_state(client, database_url):
     missing = client.get("/api/v1/sync/changes")
     assert missing.status_code == 503
     assert missing.json()["error"]["code"] == "sync_state_unavailable"
+
+
+def test_sync_event_cleanup_is_bounded_concurrent_and_advances_each_owner(
+    client,
+    database_url,
+    live_server,
+):
+    _, owner_id = create_account(client, database_url)
+    baseline = client.get("/api/v1/sync/changes").json()["next_cursor"]
+    with browser(live_server) as other:
+        _, other_owner_id = create_account(other, database_url)
+
+    old = now() - timedelta(days=31)
+    future = now() - timedelta(days=1)
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        owner_old = [
+            insert_event(
+                connection,
+                owner_id,
+                "task",
+                "updated",
+                entity_version=index,
+            )[0]
+            for index in (1, 2, 3)
+        ]
+        other_old = insert_event(
+            connection,
+            other_owner_id,
+            "task",
+            "updated",
+            entity_version=1,
+        )[0]
+        future_event = insert_event(
+            connection,
+            owner_id,
+            "task",
+            "updated",
+            entity_version=4,
+        )[0]
+        connection.execute(
+            """
+            UPDATE change_events SET changed_at=%s
+            WHERE sequence = ANY(%s)
+            """,
+            (old, [*owner_old, other_old]),
+        )
+        connection.execute(
+            "UPDATE change_events SET changed_at=%s WHERE sequence=%s",
+            (future, future_event),
+        )
+
+    async def clean() -> tuple[list[int], int]:
+        database = Database(
+            Settings(environment="test", database_url=database_url)
+        )
+        try:
+            first = await asyncio.gather(
+                cleanup_expired_events(
+                    database,
+                    retention_days=30,
+                    limit=2,
+                ),
+                cleanup_expired_events(
+                    database,
+                    retention_days=30,
+                    limit=2,
+                ),
+            )
+            final = await cleanup_expired_events(
+                database,
+                retention_days=30,
+                limit=2,
+            )
+            return first, final
+        finally:
+            await database.close()
+
+    first, final = asyncio.run(clean())
+    assert sum(first) == 4
+    assert final == 0
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT sequence FROM change_events WHERE owner_id=%s",
+            (owner_id,),
+        ).fetchall() == [(future_event,)]
+        floors = dict(
+            connection.execute(
+                """
+                SELECT owner_id, discarded_through_sequence
+                FROM sync_states
+                WHERE owner_id = ANY(%s)
+                """,
+                ([owner_id, other_owner_id],),
+            ).fetchall()
+        )
+        assert floors[owner_id] == max(owner_old)
+        assert floors[other_owner_id] == other_old
+
+    expired = client.get(
+        "/api/v1/sync/changes",
+        params={"cursor": baseline},
+    )
+    assert expired.status_code == 200
+    assert expired.json()["reset_required"] is True
+    assert expired.json()["reset_reason"] == "cursor_expired"

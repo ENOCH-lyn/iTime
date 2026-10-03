@@ -1,14 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import Security, now
+from itime.database import Database
 from itime.errors import AppError
 from itime.sync.cursor import SyncCursor, decode_sync_cursor, encode_sync_cursor
 from itime.sync.models import SyncState
 from itime.tasks.models import ChangeEvent
+
+SYNC_CLEANUP_BATCH_SIZE = 1000
 
 
 def change_event_result(event: ChangeEvent) -> dict:
@@ -159,3 +162,70 @@ async def sync_status(
         "server_time": now(),
         "last_cleanup_at": state.last_cleanup_at,
     }
+
+
+async def cleanup_expired_events(
+    database: Database,
+    *,
+    retention_days: int,
+    limit: int = SYNC_CLEANUP_BATCH_SIZE,
+) -> int:
+    if retention_days < 1:
+        raise ValueError("retention_days must be positive")
+    if limit < 1 or limit > SYNC_CLEANUP_BATCH_SIZE:
+        raise ValueError(
+            f"limit must be between 1 and {SYNC_CLEANUP_BATCH_SIZE}"
+        )
+    current_time = now()
+    cutoff = current_time - timedelta(days=retention_days)
+    async with database.transaction() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(ChangeEvent.sequence, ChangeEvent.owner_id)
+                    .where(ChangeEvent.changed_at <= cutoff)
+                    .order_by(ChangeEvent.changed_at, ChangeEvent.sequence)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+        )
+        if not rows:
+            return 0
+
+        owner_ids = sorted({row.owner_id for row in rows}, key=str)
+        states = list(
+            await session.scalars(
+                select(SyncState)
+                .where(SyncState.owner_id.in_(owner_ids))
+                .order_by(SyncState.owner_id)
+                .with_for_update()
+            )
+        )
+        if len(states) != len(owner_ids):
+            raise AppError(
+                "sync_state_unavailable",
+                "同步状态暂时不可用，请保留请求编号并稍后重试。",
+                status=503,
+                retryable=True,
+            )
+
+        discarded_by_owner: dict[UUID, int] = {}
+        sequences: list[int] = []
+        for row in rows:
+            sequences.append(row.sequence)
+            discarded_by_owner[row.owner_id] = max(
+                discarded_by_owner.get(row.owner_id, 0),
+                row.sequence,
+            )
+        await session.execute(
+            delete(ChangeEvent).where(ChangeEvent.sequence.in_(sequences))
+        )
+        for state in states:
+            state.discarded_through_sequence = max(
+                state.discarded_through_sequence,
+                discarded_by_owner[state.owner_id],
+            )
+            state.last_cleanup_at = current_time
+            state.updated_at = current_time
+        return len(rows)
