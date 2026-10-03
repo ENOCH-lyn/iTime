@@ -10,6 +10,7 @@ from itime.calendar.models import UserTimeSettings
 from itime.calendar.service import activity_day_at
 from itime.errors import AppError
 from itime.review.fact_service import collect_review_facts
+from itime.review.memory_service import memory_proposal_result
 from itime.review.models import (
     MemoryProposal,
     ReviewAnnotation,
@@ -18,7 +19,13 @@ from itime.review.models import (
     ReviewReportVersion,
     ReviewSession,
 )
-from itime.review.schemas import ReviewCreateInput, ReviewFactsUpdateInput
+from itime.review.schemas import (
+    ReviewAnnotationCreateInput,
+    ReviewAnnotationDeleteInput,
+    ReviewAnnotationUpdateInput,
+    ReviewCreateInput,
+    ReviewFactsUpdateInput,
+)
 from itime.tasks.service import (
     emit_change,
     replay_operation,
@@ -68,26 +75,10 @@ def annotation_result(annotation: ReviewAnnotation) -> dict:
     return {
         "id": annotation.id,
         "content": annotation.content,
+        "deleted_at": annotation.deleted_at,
         "version": annotation.version,
         "created_at": annotation.created_at,
         "updated_at": annotation.updated_at,
-    }
-
-
-def memory_proposal_result(proposal: MemoryProposal) -> dict:
-    return {
-        "id": proposal.id,
-        "position": proposal.position,
-        "kind": proposal.kind,
-        "title": proposal.title,
-        "content": proposal.content,
-        "rationale": proposal.rationale,
-        "status": proposal.status,
-        "confirmed_at": proposal.confirmed_at,
-        "rejected_at": proposal.rejected_at,
-        "version": proposal.version,
-        "created_at": proposal.created_at,
-        "updated_at": proposal.updated_at,
     }
 
 
@@ -469,3 +460,215 @@ async def review_report_detail(
             else None
         ),
     }
+
+
+async def owned_report(
+    session: AsyncSession,
+    owner_id: UUID,
+    report_id: UUID,
+) -> ReviewReportVersion:
+    report = await session.scalar(
+        select(ReviewReportVersion).where(
+            ReviewReportVersion.id == report_id,
+            ReviewReportVersion.owner_id == owner_id,
+        )
+    )
+    if report is None:
+        raise AppError(
+            "review_report_not_found",
+            "未找到此复盘报告版本。",
+            status=404,
+        )
+    return report
+
+
+async def owned_annotation(
+    session: AsyncSession,
+    owner_id: UUID,
+    annotation_id: UUID,
+    *,
+    lock: bool = False,
+) -> ReviewAnnotation:
+    statement = select(ReviewAnnotation).where(
+        ReviewAnnotation.id == annotation_id,
+        ReviewAnnotation.owner_id == owner_id,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    annotation = await session.scalar(statement)
+    if annotation is None or annotation.deleted_at is not None:
+        raise AppError(
+            "review_annotation_not_found",
+            "未找到此报告批注。",
+            status=404,
+        )
+    return annotation
+
+
+def annotation_version_conflict(annotation: ReviewAnnotation) -> AppError:
+    return AppError(
+        "review_annotation_version_conflict",
+        "此批注已在其他页面或设备更新，请刷新后比较再保存。",
+        status=409,
+        details={"current_version": annotation.version},
+    )
+
+
+async def create_annotation(
+    session: AsyncSession,
+    owner_id: UUID,
+    report_id: UUID,
+    data: ReviewAnnotationCreateInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"review_annotation.create:{report_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    await owned_report(session, owner_id, report_id)
+    annotation = ReviewAnnotation(
+        owner_id=owner_id,
+        report_version_id=report_id,
+        content=data.content,
+        deleted_at=None,
+        version=1,
+        created_at=current_time,
+        updated_at=current_time,
+    )
+    session.add(annotation)
+    await session.flush()
+    emit_change(
+        session,
+        owner_id,
+        "review_annotation",
+        annotation.id,
+        "created",
+        annotation.version,
+    )
+    result = {
+        "operation_id": data.operation_id,
+        "annotation": annotation_result(annotation),
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+async def update_annotation(
+    session: AsyncSession,
+    owner_id: UUID,
+    annotation_id: UUID,
+    data: ReviewAnnotationUpdateInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"review_annotation.update:{annotation_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    annotation = await owned_annotation(
+        session,
+        owner_id,
+        annotation_id,
+        lock=True,
+    )
+    if annotation.version != data.expected_version:
+        raise annotation_version_conflict(annotation)
+    if annotation.content != data.content:
+        annotation.content = data.content
+        annotation.version += 1
+        annotation.updated_at = current_time
+        emit_change(
+            session,
+            owner_id,
+            "review_annotation",
+            annotation.id,
+            "updated",
+            annotation.version,
+        )
+    await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "annotation": annotation_result(annotation),
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result
+
+
+async def delete_annotation(
+    session: AsyncSession,
+    owner_id: UUID,
+    annotation_id: UUID,
+    data: ReviewAnnotationDeleteInput,
+    *,
+    current_time: datetime,
+) -> dict:
+    scope = f"review_annotation.delete:{annotation_id}"
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+    annotation = await owned_annotation(
+        session,
+        owner_id,
+        annotation_id,
+        lock=True,
+    )
+    if annotation.version != data.expected_version:
+        raise annotation_version_conflict(annotation)
+    annotation.deleted_at = current_time
+    annotation.version += 1
+    annotation.updated_at = current_time
+    emit_change(
+        session,
+        owner_id,
+        "review_annotation",
+        annotation.id,
+        "deleted",
+        annotation.version,
+    )
+    await session.flush()
+    result = {
+        "operation_id": data.operation_id,
+        "annotation": annotation_result(annotation),
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    return result

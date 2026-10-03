@@ -53,6 +53,11 @@ from itime.quota.service import (
     reserve_job_budget,
     settle_success,
 )
+from itime.review.memory_service import (
+    memory_context,
+    memory_references,
+    memory_system_message,
+)
 from itime.tasks.service import replay_operation, save_operation
 
 ACTIVE_JOB_STATES = ("queued", "running")
@@ -123,7 +128,11 @@ async def enqueue_planning_generation(
 
     provider = planning_provider_config(config)
     snapshot_payload = planning_snapshot_payload(snapshot)
-    messages = planning_provider_messages(snapshot_payload)
+    memory_items = await memory_context(session, owner_id)
+    messages = planning_provider_messages(
+        snapshot_payload,
+        memory_items=memory_items,
+    )
     request_body = planning_request_body(provider, messages)
     validate_request_body(request_body)
     input_summary = {
@@ -134,6 +143,7 @@ async def enqueue_planning_generation(
         "candidate_count": len(snapshot.task_candidates),
         "content_sha256": snapshot.content_sha256,
         "request_schema_version": PLANNING_REQUEST_SCHEMA_VERSION,
+        "memory_references": memory_references(memory_items),
     }
     estimate = estimate_reservation_budget(
         config,
@@ -263,6 +273,11 @@ async def load_planning_work(
         snapshot_payload = planning_snapshot_payload(snapshot)
         generation_number = None
         conversation_context = None
+        memory_items = await memory_context(
+            session,
+            claim.owner_id,
+            references=job.input_summary.get("memory_references", []),
+        )
         if job.conversation_id is not None:
             from itime.ai.conversation_service import (
                 append_job_event,
@@ -335,11 +350,15 @@ async def load_planning_work(
                 conversation_id=generation.conversation_id,
                 history_through_sequence=generation.history_through_sequence,
                 context_message_ids=generation.context_message_ids,
+                memory_items=memory_items,
             )
             generation_number = generation.stream_generation
         messages = planning_provider_messages(
             snapshot_payload,
             conversation_context=conversation_context,
+            memory_items=(
+                memory_items if conversation_context is None else None
+            ),
         )
         request_body = planning_request_body(provider, messages)
         validate_request_body(request_body)
@@ -720,8 +739,11 @@ def planning_provider_messages(
     snapshot: dict[str, Any],
     *,
     conversation_context: list[dict[str, str]] | None = None,
+    memory_items: list[dict] | None = None,
 ) -> list[dict[str, object]]:
+    memory_message = memory_system_message(memory_items or [])
     return [
+        *([memory_message] if memory_message is not None else []),
         *(conversation_context or []),
         {
             "role": "user",

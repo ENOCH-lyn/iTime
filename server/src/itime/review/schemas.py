@@ -47,6 +47,27 @@ class ReviewReportGenerationInput(OperationInput):
         return value.strip()
 
 
+class ReviewAnnotationCreateInput(OperationInput):
+    content: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("content")
+    @classmethod
+    def clean_content(cls, value: str) -> str:
+        return clean_required(value)
+
+
+class ReviewAnnotationUpdateInput(ReviewAnnotationCreateInput):
+    expected_version: int = Field(ge=1)
+
+
+class ReviewAnnotationDeleteInput(OperationInput):
+    expected_version: int = Field(ge=1)
+
+
+class MemoryProposalActionInput(OperationInput):
+    expected_version: int = Field(ge=1)
+
+
 class MemoryFields(Input):
     kind: MemoryKind
     title: str = Field(min_length=1, max_length=120)

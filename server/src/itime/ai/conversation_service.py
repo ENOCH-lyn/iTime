@@ -51,6 +51,11 @@ from itime.quota.service import (
     reserve_job_budget,
     settle_success,
 )
+from itime.review.memory_service import (
+    memory_context,
+    memory_references,
+    memory_system_message,
+)
 from itime.tasks.service import save_operation
 
 ACTIVE_JOB_STATES = {"queued", "running"}
@@ -396,6 +401,7 @@ async def enqueue_message(
         or 0
     )
     current = now()
+    memory_items = await memory_context(session, owner_id)
     messages = await conversation_provider_messages(
         session,
         owner_id=owner_id,
@@ -403,6 +409,7 @@ async def enqueue_message(
         history_through_sequence=last_sequence,
         context_message_ids=context_message_ids,
         pending_user_content=content,
+        memory_items=memory_items,
     )
     if planning_snapshot is not None:
         provider = planning_provider_config(config)
@@ -437,6 +444,7 @@ async def enqueue_message(
             "history_through_sequence": last_sequence + 1,
             "related_context_count": len(context_message_ids),
         }
+    input_summary["memory_references"] = memory_references(memory_items)
     estimate = estimate_reservation_budget(
         config,
         request_body=request_body,
@@ -597,6 +605,7 @@ async def conversation_provider_messages(
     history_through_sequence: int,
     context_message_ids: list[str],
     pending_user_content: str | None = None,
+    memory_items: list[dict] | None = None,
 ) -> list[dict[str, str]]:
     history_limit = MAX_CURRENT_CONTEXT_MESSAGES - (
         1 if pending_user_content is not None else 0
@@ -636,6 +645,9 @@ async def conversation_provider_messages(
         if message_id in related_by_id
     ]
     messages: list[dict[str, str]] = []
+    memory_message = memory_system_message(memory_items or [])
+    if memory_message is not None:
+        messages.append(memory_message)
     if related_messages:
         related_text = "\n\n".join(
             f"[{message.role}] {message.content}" for message in related_messages
@@ -764,12 +776,18 @@ async def load_conversation_work(
             timeout_seconds=config.timeout_seconds,
             max_output_tokens=config.max_output_tokens,
         )
+        memory_items = await memory_context(
+            session,
+            claim.owner_id,
+            references=job.input_summary.get("memory_references", []),
+        )
         messages = await conversation_provider_messages(
             session,
             owner_id=claim.owner_id,
             conversation_id=generation.conversation_id,
             history_through_sequence=generation.history_through_sequence,
             context_message_ids=generation.context_message_ids,
+            memory_items=memory_items,
         )
         await session.flush()
         return ConversationWork(

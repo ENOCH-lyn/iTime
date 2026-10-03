@@ -11,11 +11,13 @@ from itime.review.job_service import (
     enqueue_review_report,
 )
 from itime.review.memory_service import (
+    confirm_memory_proposal,
     create_memory,
     list_memories,
     memory_detail,
     memory_settings,
     memory_settings_result,
+    reject_memory_proposal,
     restore_memory,
     trash_memory,
     update_memory,
@@ -24,18 +26,25 @@ from itime.review.memory_service import (
 from itime.review.schemas import (
     MemoryCreateInput,
     MemoryLifecycleInput,
+    MemoryProposalActionInput,
     MemorySettingsUpdateInput,
     MemoryUpdateInput,
+    ReviewAnnotationCreateInput,
+    ReviewAnnotationDeleteInput,
+    ReviewAnnotationUpdateInput,
     ReviewCreateInput,
     ReviewFactsUpdateInput,
     ReviewQuestionGenerationInput,
     ReviewReportGenerationInput,
 )
 from itime.review.service import (
+    create_annotation,
     create_or_get_review,
+    delete_annotation,
     list_reviews,
     review_detail,
     review_report_detail,
+    update_annotation,
     update_review_facts,
 )
 
@@ -153,6 +162,91 @@ async def get_review_report(
             identity.user.id,
             review_id,
             version,
+        )
+
+
+@router.post("/review-reports/{report_id}/annotations", status_code=201)
+async def add_review_annotation(
+    report_id: UUID,
+    data: ReviewAnnotationCreateInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await create_annotation(
+            identity.session,
+            identity.user.id,
+            report_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.put("/review-annotations/{annotation_id}")
+async def edit_review_annotation(
+    annotation_id: UUID,
+    data: ReviewAnnotationUpdateInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await update_annotation(
+            identity.session,
+            identity.user.id,
+            annotation_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.delete("/review-annotations/{annotation_id}")
+async def remove_review_annotation(
+    annotation_id: UUID,
+    data: ReviewAnnotationDeleteInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await delete_annotation(
+            identity.session,
+            identity.user.id,
+            annotation_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.post("/memory-proposals/{proposal_id}/confirm")
+async def confirm_proposal(
+    proposal_id: UUID,
+    data: MemoryProposalActionInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await confirm_memory_proposal(
+            identity.session,
+            identity.user.id,
+            proposal_id,
+            data,
+            current_time=current_time,
+        )
+
+
+@router.post("/memory-proposals/{proposal_id}/reject")
+async def reject_proposal(
+    proposal_id: UUID,
+    data: MemoryProposalActionInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request, write=True) as identity:
+        return await reject_memory_proposal(
+            identity.session,
+            identity.user.id,
+            proposal_id,
+            data,
+            current_time=current_time,
         )
 
 

@@ -43,7 +43,14 @@ def report_arguments() -> dict:
                 "content": "上午更适合持续思考。",
                 "rationale": "来自用户补充事实。",
                 "source_keys": ["user:supplemental_facts"],
-            }
+            },
+            {
+                "kind": "context",
+                "title": "资料整理方式",
+                "content": "整理资料时先确定核心入口。",
+                "rationale": "来自用户补充事实。",
+                "source_keys": ["user:supplemental_facts"],
+            },
         ],
     }
 

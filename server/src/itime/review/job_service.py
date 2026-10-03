@@ -40,6 +40,7 @@ from itime.review.fact_service import (
     build_review_snapshot,
     review_snapshot_payload,
 )
+from itime.review.memory_service import memory_context, memory_references
 from itime.review.models import (
     MemoryProposal,
     ReviewInputSnapshot,
@@ -428,6 +429,11 @@ async def load_review_work(
             "question" if snapshot.purpose == "question" else "report"
         )
         payload = review_snapshot_payload(snapshot)
+        payload["memory_context"] = await memory_context(
+            session,
+            claim.owner_id,
+            references=memory_references(snapshot.memory_context),
+        )
         messages = review_provider_messages(payload)
         provider = review_provider_config(config)
         request_body = review_request_body(provider, messages, purpose)

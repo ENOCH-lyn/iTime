@@ -394,7 +394,7 @@ git commit -m "feat: 生成复盘问题与版本报告"
 - Test: `server/tests/test_review_annotations.py`
 - Test: `server/tests/test_memory_context.py`
 
-- [ ] **Step 1: 写批注、候选与上下文失败测试**
+- [x] **Step 1: 写批注、候选与上下文失败测试**
 
 覆盖批注 CRUD/重放/冲突、候选确认和拒绝互斥、确认只创建一次、跨账号隐藏、整体暂停、删除后新接单不包含、加载工作前删除时重建、对话和规划最多 30 条/12000 字符。
 
@@ -404,17 +404,17 @@ messages = await conversation_provider_messages(...)
 assert "已删除的记忆正文" not in json.dumps(messages, ensure_ascii=False)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_review_annotations.py tests/test_memory_context.py`
 
 Expected: FAIL，批注、候选事务和上下文注入尚不存在。
 
-- [ ] **Step 3: 实现批注和候选状态机**
+- [x] **Step 3: 实现批注和候选状态机**
 
 批注写操作走 `operation_id` 和 `expected_version`。候选确认锁候选并检查 `pending`，创建唯一 `Memory(source_type='review_proposal')` 后更新候选；拒绝只更新候选。已确认和已拒绝之间不允许切换。
 
-- [ ] **Step 4: 实现有界记忆上下文**
+- [x] **Step 4: 实现有界记忆上下文**
 
 `memory_context()` 在设置启用时按更新时间与 ID 稳定排序，限制 30 条和 12000 字符，返回 ID、版本、种类、标题和正文。对话和规划接单将其放入系统背景消息，并把 ID/版本写入 `input_summary` 或领域快照。
 
@@ -427,13 +427,13 @@ if memories:
     })
 ```
 
-- [ ] **Step 5: 运行专项和现有对话/规划回归**
+- [x] **Step 5: 运行专项和现有对话/规划回归**
 
 Run: `cd server && uv run pytest -q tests/test_review_annotations.py tests/test_memory_context.py tests/test_ai_conversations.py tests/test_ai_conversation_api.py tests/test_planning_worker.py tests/test_planning_api.py`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add server/src/itime/review server/src/itime/ai/conversation_service.py \

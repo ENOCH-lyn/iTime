@@ -14,6 +14,7 @@ from itime.calendar.models import UserTimeSettings
 from itime.errors import AppError
 from itime.execution.models import DifficultyRecord, FocusSession
 from itime.planning.models import Plan, PlanVersion, ScheduledBlock
+from itime.review.memory_service import memory_context
 from itime.review.models import ReviewInputSnapshot, ReviewMessage, ReviewSession
 from itime.tasks.models import Task, TaskOccurrenceState
 
@@ -296,6 +297,7 @@ async def build_review_snapshot(
             .order_by(ReviewMessage.sequence)
         )
     )
+    memories = await memory_context(session, review.owner_id)
     snapshot = ReviewInputSnapshot(
         owner_id=review.owner_id,
         review_session_id=review.id,
@@ -318,7 +320,7 @@ async def build_review_snapshot(
                 for message in messages
             ],
         },
-        memory_context=[],
+        memory_context=memories,
         generation_instruction=generation_instruction,
         created_at=current_time,
     )
