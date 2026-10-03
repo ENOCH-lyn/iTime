@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,15 +68,15 @@ async def add_provider_cost(
     attempt: AIJobAttempt,
     *,
     provider_usage: object | None,
-) -> None:
+) -> AIProviderCost:
     existing = await session.scalar(
-        select(AIProviderCost.id).where(
+        select(AIProviderCost).where(
             AIProviderCost.job_id == job.id,
             AIProviderCost.attempt_number == attempt.attempt_number,
         )
     )
     if existing is not None:
-        return
+        return existing
     body_log = await session.scalar(
         select(AIBodyLog).where(
             AIBodyLog.job_id == job.id,
@@ -160,29 +160,31 @@ async def add_provider_cost(
         total_cost = None
         price_currency = None
 
-    session.add(
-        AIProviderCost(
-            job_id=job.id,
-            owner_id=job.owner_id,
-            attempt_number=attempt.attempt_number,
-            attempt_status=attempt.status,
-            provider_started_at=attempt.provider_started_at,
-            usage_source=usage_source,
-            estimation_reason=estimation_reason,
-            estimator_version=estimator_version,
-            input_tokens=input_tokens,
-            cached_input_tokens=cached_input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            usage_details=usage_details,
-            price_currency=price_currency,
-            input_price_nanos_per_million_tokens=input_price,
-            cached_input_price_nanos_per_million_tokens=cached_input_price,
-            output_price_nanos_per_million_tokens=output_price,
-            input_cost_nanos=input_cost,
-            cached_input_cost_nanos=cached_input_cost,
-            output_cost_nanos=output_cost,
-            total_cost_nanos=total_cost,
-            created_at=now(),
-        )
+    cost = AIProviderCost(
+        id=uuid4(),
+        job_id=job.id,
+        owner_id=job.owner_id,
+        attempt_number=attempt.attempt_number,
+        attempt_status=attempt.status,
+        provider_started_at=attempt.provider_started_at,
+        usage_source=usage_source,
+        estimation_reason=estimation_reason,
+        estimator_version=estimator_version,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        usage_details=usage_details,
+        price_currency=price_currency,
+        input_price_nanos_per_million_tokens=input_price,
+        cached_input_price_nanos_per_million_tokens=cached_input_price,
+        output_price_nanos_per_million_tokens=output_price,
+        input_cost_nanos=input_cost,
+        cached_input_cost_nanos=cached_input_cost,
+        output_cost_nanos=output_cost,
+        total_cost_nanos=total_cost,
+        created_at=now(),
     )
+    session.add(cost)
+    await session.flush()
+    return cost

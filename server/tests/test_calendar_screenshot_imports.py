@@ -252,6 +252,8 @@ def reset_vision(vision_upstream, screenshot_database_url):
             "DELETE FROM calendar_series WHERE source_type='screenshot'"
         )
         connection.execute("DELETE FROM calendar_sources WHERE kind='screenshot'")
+        connection.execute("DELETE FROM ai_quota_ledger_entries")
+        connection.execute("DELETE FROM ai_quota_reservations")
         connection.execute("DELETE FROM ai_job_attempts")
         connection.execute("DELETE FROM ai_jobs")
         connection.execute("DELETE FROM temporary_media")
@@ -448,6 +450,23 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
             """,
             (job["id"],),
         ).fetchone()
+        reservation = connection.execute(
+            """
+            SELECT status, reserved_nanos, actual_cost_nanos,
+                   charged_nanos, platform_overage_nanos, usage_source
+            FROM ai_quota_reservations
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+        ledger = connection.execute(
+            """
+            SELECT kind, delta_nanos, currency, usage_source
+            FROM ai_quota_ledger_entries
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
     assert body_log is not None
     assert body_log[3] == "succeeded"
     serialized_log_request = json.dumps(body_log[1], ensure_ascii=False)
@@ -466,6 +485,12 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
         "CNY",
         640_000,
     )
+    assert reservation[0] == "settled"
+    assert reservation[2] == 640_000
+    assert reservation[3] == min(reservation[1], 640_000)
+    assert reservation[4] == 640_000 - reservation[3]
+    assert reservation[5] == "provider"
+    assert ledger == ("usage_charge", -reservation[3], "CNY", "provider")
     batch_id = completed.json()["output"]["batch_id"]
     detail = screenshot_client.get(
         f"/api/v1/calendar/imports/{batch_id}"
@@ -613,6 +638,19 @@ def test_retry_then_invalid_output_preserves_media(
         ).fetchall()
         assert costs[0][0:2] == ("retryable_failed", "estimated")
         assert costs[1] == ("failed", "provider", 400, 20)
+        reservation = connection.execute(
+            """
+            SELECT status, release_reason
+            FROM ai_quota_reservations
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+        assert reservation == ("released", "failed")
+        assert connection.execute(
+            "SELECT count(*) FROM ai_quota_ledger_entries WHERE job_id=%s",
+            (job["id"],),
+        ).fetchone()[0] == 0
 
 
 def test_cancel_wins_against_late_provider_result(
@@ -657,6 +695,15 @@ def test_cancel_wins_against_late_provider_result(
         ).fetchone()
         assert cost is not None
         assert cost[0:2] == ("cancelled", "estimated")
+        reservation = connection.execute(
+            """
+            SELECT status, release_reason
+            FROM ai_quota_reservations
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+        assert reservation == ("released", "cancelled")
 
 
 def test_screenshot_migration_round_trip(admin_url):

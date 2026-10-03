@@ -19,6 +19,7 @@ from itime.ai.models import AIJob
 from itime.ai.schemas import AIJobCancelInput, Capability
 from itime.auth.session import authorized
 from itime.errors import AppError
+from itime.quota.service import release_reservation
 from itime.tasks.service import replay_operation, save_operation, validate_cursor
 
 router = APIRouter(prefix="/api/v1/ai/jobs", tags=["AI 作业"])
@@ -102,6 +103,11 @@ async def cancel_ai_job(
         changed = await cancel_job(identity.session, job)
         if changed:
             await cancel_conversation_projection(identity.session, job)
+            await release_reservation(
+                identity.session,
+                job=job,
+                reason="cancelled",
+            )
         result = {"operation_id": data.operation_id, "job": job_result(job)}
         save_operation(
             identity.session,

@@ -135,6 +135,8 @@ def reset_ai_configs(database_url):
             "UPDATE ai_config_capabilities"
             " SET current_version_id=NULL, next_version=1, updated_at=now()"
         )
+        connection.execute("DELETE FROM ai_quota_ledger_entries")
+        connection.execute("DELETE FROM ai_quota_reservations")
         connection.execute("DELETE FROM ai_job_attempts")
         connection.execute("DELETE FROM ai_jobs")
         connection.execute("DELETE FROM temporary_media")
@@ -145,6 +147,8 @@ def reset_ai_configs(database_url):
             "UPDATE ai_config_capabilities"
             " SET current_version_id=NULL, next_version=1, updated_at=now()"
         )
+        connection.execute("DELETE FROM ai_quota_ledger_entries")
+        connection.execute("DELETE FROM ai_quota_reservations")
         connection.execute("DELETE FROM ai_job_attempts")
         connection.execute("DELETE FROM ai_jobs")
         connection.execute("DELETE FROM temporary_media")

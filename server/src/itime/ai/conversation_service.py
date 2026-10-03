@@ -36,7 +36,9 @@ from itime.errors import AppError
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
+    release_reservation,
     reserve_job_budget,
+    settle_success,
 )
 from itime.tasks.service import save_operation
 
@@ -875,13 +877,25 @@ async def complete_conversation_job(
             return False
         validate_response_body(result.content)
         body_log.response_body = result.content
-        await finish_running_attempt(
+        finalized = await finish_running_attempt(
             session,
             job,
             status="succeeded",
             provider_request_id=result.provider_request_id,
             http_status=result.http_status,
             provider_usage=result.usage,
+        )
+        if finalized is None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "最终成功尝试状态不完整。",
+                status=503,
+                saved="unknown",
+            )
+        await settle_success(
+            session,
+            job=job,
+            provider_cost=finalized.provider_cost,
         )
         message.content = result.content
         message.status = "complete"
@@ -1062,6 +1076,11 @@ async def reject_or_retry_conversation_job(
         if conversation is not None:
             conversation.version += 1
             conversation.updated_at = current
+        await release_reservation(
+            session,
+            job=job,
+            reason=status,
+        )
         return status
 
 

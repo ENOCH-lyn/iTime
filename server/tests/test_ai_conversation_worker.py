@@ -46,11 +46,11 @@ def sse_delta(text: str) -> bytes:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
-def sse_usage() -> bytes:
+def sse_usage(usage: dict | None = None) -> bytes:
     payload = {
         "id": "chat-completion-test",
         "choices": [],
-        "usage": CHAT_USAGE,
+        "usage": usage or CHAT_USAGE,
     }
     return f"data: {json.dumps(payload)}\n\n".encode()
 
@@ -200,13 +200,22 @@ def chat_handler(state: ChatUpstreamState):
 
             first_frame = sse_delta("前半段")
             split_at = first_frame.index("半".encode()) + 1
+            usage = (
+                {
+                    "prompt_tokens": 100_000,
+                    "completion_tokens": 100_000,
+                    "total_tokens": 200_000,
+                }
+                if mode == "overage"
+                else CHAT_USAGE
+            )
             self._write_chunks(
                 [
                     first_frame[:17],
                     first_frame[17:split_at],
                     first_frame[split_at:],
                     sse_delta("，后半段"),
-                    sse_usage(),
+                    sse_usage(usage),
                     b"data: [DONE]\n\n",
                 ]
             )
@@ -511,6 +520,25 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
             """,
             (job_id,),
         ).fetchall()
+        reservation = connection.execute(
+            """
+            SELECT id, status, reserved_nanos, actual_cost_nanos,
+                   charged_nanos, platform_overage_nanos,
+                   usage_source, release_reason
+            FROM ai_quota_reservations
+            WHERE job_id=%s
+            """,
+            (job_id,),
+        ).fetchone()
+        ledger = connection.execute(
+            """
+            SELECT kind, delta_nanos, currency, usage_source
+            FROM ai_quota_ledger_entries
+            WHERE job_id=%s
+            ORDER BY created_at, id
+            """,
+            (job_id,),
+        ).fetchall()
     assert job is not None
     assert generation is not None
     assert message is not None
@@ -521,6 +549,8 @@ def job_snapshot(database_url: str, job_id: str) -> dict:
         "attempts": attempts,
         "events": events,
         "costs": costs,
+        "reservation": reservation,
+        "ledger": ledger,
     }
 
 
@@ -563,6 +593,8 @@ def assert_success(
     attempts = snapshot["attempts"]
     events = snapshot["events"]
     costs = snapshot["costs"]
+    reservation = snapshot["reservation"]
+    ledger = snapshot["ledger"]
 
     assert job["status"] == "succeeded"
     assert job["output"] is not None
@@ -592,6 +624,23 @@ def assert_success(
         assert costs[-1]["output_tokens"] > 0
         assert costs[-1]["total_cost_nanos"] > 0
     assert costs[-1]["price_currency"] == "CNY"
+    assert reservation["status"] == "settled"
+    assert reservation["actual_cost_nanos"] == costs[-1]["total_cost_nanos"]
+    assert reservation["charged_nanos"] == min(
+        reservation["actual_cost_nanos"],
+        reservation["reserved_nanos"],
+    )
+    assert reservation["platform_overage_nanos"] == (
+        reservation["actual_cost_nanos"] - reservation["charged_nanos"]
+    )
+    assert ledger == [
+        {
+            "kind": "usage_charge",
+            "delta_nanos": -reservation["charged_nanos"],
+            "currency": "CNY",
+            "usage_source": expected_usage_source,
+        }
+    ]
 
     assert_event_consistency(snapshot)
     deltas = [event for event in events if event["kind"] == "content_delta"]
@@ -689,6 +738,8 @@ def test_rate_limit_retry_resets_content_with_new_generation(
         "retryable_failed"
     ]
     assert after_rate_limit["attempts"][0]["http_status"] == 429
+    assert after_rate_limit["reservation"]["status"] == "reserved"
+    assert after_rate_limit["ledger"] == []
 
     make_job_due(conversation_worker_database_url, job_id)
     assert run_process_once(conversation_worker_database_url)
@@ -725,6 +776,31 @@ def test_rate_limit_retry_resets_content_with_new_generation(
     assert len(state.request_snapshot()) == 2
 
 
+def test_success_over_reservation_is_absorbed_by_platform(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("overage")
+    submitted = enqueue_conversation_job(
+        conversation_worker_client,
+        conversation_worker_database_url,
+        endpoint,
+        prompt="验证超预留",
+    )
+    job_id = submitted["job"]["id"]
+
+    assert run_process_once(conversation_worker_database_url)
+    snapshot = job_snapshot(conversation_worker_database_url, job_id)
+    reservation = snapshot["reservation"]
+    assert reservation["status"] == "settled"
+    assert reservation["actual_cost_nanos"] > reservation["reserved_nanos"]
+    assert reservation["charged_nanos"] == reservation["reserved_nanos"]
+    assert reservation["platform_overage_nanos"] > 0
+    assert snapshot["ledger"][0]["delta_nanos"] == -reservation["reserved_nanos"]
+
+
 def test_queued_deadline_uses_conversation_terminal_projection(
     conversation_worker_client: httpx.Client,
     conversation_worker_database_url: str,
@@ -759,6 +835,9 @@ def test_queued_deadline_uses_conversation_terminal_projection(
     assert snapshot["events"][-1]["payload"]["status"] == "timed_out"
     assert state.request_snapshot() == []
     assert snapshot["costs"] == []
+    assert snapshot["reservation"]["status"] == "released"
+    assert snapshot["reservation"]["release_reason"] == "timed_out"
+    assert snapshot["ledger"] == []
     with psycopg.connect(
         psycopg_url(conversation_worker_database_url)
     ) as connection:
@@ -875,6 +954,9 @@ def test_cancel_wins_against_late_delta_and_completion(
     assert snapshot["costs"][0]["attempt_status"] == "cancelled"
     assert snapshot["costs"][0]["usage_source"] == "estimated"
     assert snapshot["costs"][0]["output_tokens"] > 0
+    assert snapshot["reservation"]["status"] == "released"
+    assert snapshot["reservation"]["release_reason"] == "cancelled"
+    assert snapshot["ledger"] == []
     assert snapshot["events"][-1]["kind"] == "job_state"
     assert snapshot["events"][-1]["generation"] == 1
     assert snapshot["events"][-1]["payload"]["status"] == "cancelled"
@@ -966,6 +1048,9 @@ def test_non_retryable_responses_finish_message_attempt_job_and_event(
     assert events[-1]["payload"]["error_code"] == job["error_code"]
     assert events[-1]["payload"]["message_id"] == str(message["id"])
     assert len(state.request_snapshot()) == 1
+    assert snapshot["reservation"]["status"] == "released"
+    assert snapshot["reservation"]["release_reason"] == "failed"
+    assert snapshot["ledger"] == []
 
 
 def test_committed_sse_events_resume_and_expired_events_fall_back_to_snapshot(

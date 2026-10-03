@@ -29,6 +29,8 @@ from itime.calendar.import_service import (
 )
 from itime.calendar.models import CalendarImportBatch, CalendarSource
 from itime.database import Database
+from itime.errors import AppError
+from itime.quota.service import release_reservation, settle_success
 
 SCREENSHOT_REVIEW_DAYS = 30
 
@@ -190,6 +192,11 @@ async def apply_screenshot_result(
             job.finished_at = current
             job.updated_at = current
             job.version += 1
+            await release_reservation(
+                session,
+                job=job,
+                reason="timed_out",
+            )
             clear_job_lease(job)
             return None
         if body_log is None or body_log.status != "running":
@@ -242,13 +249,25 @@ async def apply_screenshot_result(
         session.add_all(candidates)
         await session.flush()
         await refresh_batch_state(session, batch)
-        await finish_running_attempt(
+        finalized = await finish_running_attempt(
             session,
             job,
             status="succeeded",
             provider_request_id=result.provider_request_id,
             http_status=result.http_status,
             provider_usage=result.usage,
+        )
+        if finalized is None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "最终成功尝试状态不完整。",
+                status=503,
+                saved="unknown",
+            )
+        await settle_success(
+            session,
+            job=job,
+            provider_cost=finalized.provider_cost,
         )
         job.status = "succeeded"
         job.output = {

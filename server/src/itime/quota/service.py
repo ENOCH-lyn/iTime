@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from itime.ai.models import AIConfigVersion, AIJob
+from itime.ai.models import AIConfigVersion, AIJob, AIProviderCost
 from itime.ai.pricing import format_currency_nanos, token_cost_breakdown
 from itime.ai.usage import estimate_usage
 from itime.auth.models import User
@@ -385,4 +385,175 @@ async def reserve_job_budget(
     daily.updated_at = now()
     session.add(reservation)
     await session.flush()
+    return reservation
+
+
+async def _locked_job_reservation(
+    session: AsyncSession,
+    job: AIJob,
+) -> AIQuotaReservation | None:
+    reservation = await session.scalar(
+        select(AIQuotaReservation)
+        .where(
+            AIQuotaReservation.job_id == job.id,
+            AIQuotaReservation.owner_id == job.owner_id,
+        )
+        .with_for_update()
+    )
+    if job.quota_mode == "platform":
+        if reservation is not None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "平台承担作业不应关联用户额度预留。",
+                status=503,
+                saved="unknown",
+            )
+        return None
+    if reservation is None:
+        raise AppError(
+            "ai_quota_state_invalid",
+            "AI 作业缺少额度预留，请保留请求编号并联系管理员。",
+            status=503,
+            saved="unknown",
+        )
+    return reservation
+
+
+async def settle_success(
+    session: AsyncSession,
+    *,
+    job: AIJob,
+    provider_cost: AIProviderCost,
+) -> AIQuotaLedgerEntry | None:
+    reservation = await _locked_job_reservation(session, job)
+    if reservation is None:
+        return None
+    if reservation.status == "settled":
+        ledger = await session.scalar(
+            select(AIQuotaLedgerEntry).where(
+                AIQuotaLedgerEntry.reservation_id == reservation.id,
+                AIQuotaLedgerEntry.kind == "usage_charge",
+            )
+        )
+        if ledger is None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "额度预留已结算但缺少账本记录。",
+                status=503,
+                saved="unknown",
+            )
+        return ledger
+    if reservation.status != "reserved":
+        raise AppError(
+            "ai_quota_state_invalid",
+            "额度预留已经释放，不能再次结算。",
+            status=503,
+            saved="unknown",
+        )
+    if (
+        provider_cost.job_id != job.id
+        or provider_cost.owner_id != job.owner_id
+        or provider_cost.attempt_status != "succeeded"
+        or provider_cost.usage_source not in {"provider", "estimated"}
+        or provider_cost.price_currency is None
+        or provider_cost.total_cost_nanos is None
+    ):
+        raise AppError(
+            "ai_quota_state_invalid",
+            "最终成功尝试缺少可结算的成本事实。",
+            status=503,
+            saved="unknown",
+        )
+    daily = await session.scalar(
+        select(AIDailyAllowance)
+        .where(
+            AIDailyAllowance.id == reservation.daily_allowance_id,
+            AIDailyAllowance.owner_id == job.owner_id,
+        )
+        .with_for_update()
+    )
+    if daily is None or daily.currency != provider_cost.price_currency:
+        raise AppError(
+            "ai_quota_state_invalid",
+            "额度币种或活动日状态不一致。",
+            status=503,
+            saved="unknown",
+        )
+    charged_nanos = min(
+        provider_cost.total_cost_nanos,
+        reservation.reserved_nanos,
+    )
+    reservation.status = "settled"
+    reservation.actual_cost_nanos = provider_cost.total_cost_nanos
+    reservation.charged_nanos = charged_nanos
+    reservation.platform_overage_nanos = (
+        provider_cost.total_cost_nanos - charged_nanos
+    )
+    reservation.usage_source = provider_cost.usage_source
+    reservation.provider_cost_id = provider_cost.id
+    reservation.terminal_at = now()
+    reservation.updated_at = reservation.terminal_at
+    daily.version += 1
+    daily.updated_at = reservation.terminal_at
+    ledger = AIQuotaLedgerEntry(
+        id=uuid4(),
+        owner_id=job.owner_id,
+        daily_allowance_id=daily.id,
+        reservation_id=reservation.id,
+        adjustment_id=None,
+        job_id=job.id,
+        provider_cost_id=provider_cost.id,
+        kind="usage_charge",
+        delta_nanos=-charged_nanos,
+        currency=daily.currency,
+        usage_source=provider_cost.usage_source,
+        created_at=reservation.terminal_at,
+    )
+    session.add(ledger)
+    await session.flush()
+    return ledger
+
+
+async def release_reservation(
+    session: AsyncSession,
+    *,
+    job: AIJob,
+    reason: str,
+) -> AIQuotaReservation | None:
+    if reason not in {"failed", "timed_out", "cancelled"}:
+        raise ValueError("unsupported quota release reason")
+    reservation = await _locked_job_reservation(session, job)
+    if reservation is None:
+        return None
+    if reservation.status == "released":
+        return reservation
+    if reservation.status != "reserved":
+        raise AppError(
+            "ai_quota_state_invalid",
+            "已结算的额度预留不能释放。",
+            status=503,
+            saved="unknown",
+        )
+    daily = await session.scalar(
+        select(AIDailyAllowance)
+        .where(
+            AIDailyAllowance.id == reservation.daily_allowance_id,
+            AIDailyAllowance.owner_id == job.owner_id,
+        )
+        .with_for_update()
+    )
+    if daily is None:
+        raise AppError(
+            "ai_quota_state_invalid",
+            "额度活动日记录不存在。",
+            status=503,
+            saved="unknown",
+        )
+    current = now()
+    reservation.status = "released"
+    reservation.release_reason = reason
+    reservation.terminal_at = current
+    reservation.updated_at = current
+    daily.version += 1
+    daily.updated_at = current
     return reservation

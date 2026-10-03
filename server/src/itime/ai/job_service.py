@@ -10,10 +10,11 @@ from itime.ai.governance_service import (
     add_attempt_body_log,
     finish_attempt_body_log,
 )
-from itime.ai.models import AIJob, AIJobAttempt, TemporaryMedia
+from itime.ai.models import AIJob, AIJobAttempt, AIProviderCost, TemporaryMedia
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
+from itime.quota.service import release_reservation, settle_success
 
 TERMINAL_JOB_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
 
@@ -32,6 +33,12 @@ class ClaimedJob:
     terminal_error_code: str | None = None
     terminal_error_message: str | None = None
     terminal_error_stage: str | None = None
+
+
+@dataclass(frozen=True)
+class FinalizedAttempt:
+    attempt: AIJobAttempt
+    provider_cost: AIProviderCost
 
 
 def job_result(job: AIJob) -> dict:
@@ -99,9 +106,9 @@ async def finish_running_attempt(
     provider_request_id: str | None = None,
     http_status: int | None = None,
     provider_usage: object | None = None,
-) -> None:
+) -> FinalizedAttempt | None:
     if job.lease_id is None:
-        return
+        return None
     finished_at = now()
     attempt = await session.scalar(
         select(AIJobAttempt)
@@ -113,7 +120,7 @@ async def finish_running_attempt(
         .with_for_update()
     )
     if attempt is None:
-        return
+        return None
     attempt.status = status
     attempt.error_code = error_code
     attempt.error_stage = error_stage
@@ -130,12 +137,13 @@ async def finish_running_attempt(
         http_status=http_status,
         finished_at=finished_at,
     )
-    await add_provider_cost(
+    provider_cost = await add_provider_cost(
         session,
         job,
         attempt,
         provider_usage=provider_usage,
     )
+    return FinalizedAttempt(attempt=attempt, provider_cost=provider_cost)
 
 
 def clear_job_lease(job: AIJob) -> None:
@@ -318,15 +326,32 @@ async def complete_job(
             job.finished_at = current
             job.updated_at = current
             job.version += 1
+            await release_reservation(
+                session,
+                job=job,
+                reason="timed_out",
+            )
             clear_job_lease(job)
             return False
-        await finish_running_attempt(
+        finalized = await finish_running_attempt(
             session,
             job,
             status="succeeded",
             provider_request_id=provider_request_id,
             http_status=http_status,
             provider_usage=provider_usage,
+        )
+        if finalized is None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "最终成功尝试状态不完整。",
+                status=503,
+                saved="unknown",
+            )
+        await settle_success(
+            session,
+            job=job,
+            provider_cost=finalized.provider_cost,
         )
         job.status = "succeeded"
         job.output = output
@@ -416,6 +441,11 @@ async def reject_or_retry_job(
         job.finished_at = current
         job.updated_at = current
         job.version += 1
+        await release_reservation(
+            session,
+            job=job,
+            reason=status,
+        )
         clear_job_lease(job)
         return status
 
