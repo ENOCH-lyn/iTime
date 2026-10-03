@@ -424,6 +424,29 @@ def test_planning_revision_triggers_cover_sources_and_plan_switches(admin_url):
             )
 
 
+def test_planning_revision_trigger_does_not_block_user_cascade_delete(admin_url):
+    with isolated_database(admin_url) as database_url:
+        with psycopg.connect(psycopg_url(database_url)) as connection:
+            owner_id = seed_user(connection)
+            seed_task(connection, owner_id)
+            connection.commit()
+
+            with connection.transaction():
+                connection.execute("DELETE FROM users WHERE id=%s", (owner_id,))
+
+            assert (
+                connection.execute(
+                    """
+                    SELECT count(*)
+                    FROM planning_input_revisions
+                    WHERE owner_id=%s
+                    """,
+                    (owner_id,),
+                ).fetchone()[0]
+                == 0
+            )
+
+
 def test_planning_ownership_uniqueness_and_conversation_mapping(admin_url):
     with isolated_database(admin_url) as database_url:
         with psycopg.connect(psycopg_url(database_url)) as connection:

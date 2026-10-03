@@ -831,6 +831,12 @@ def upgrade() -> None:
                 target_owner_id := NEW.owner_id;
             END IF;
 
+            IF NOT EXISTS (
+                SELECT 1 FROM users WHERE id = target_owner_id
+            ) THEN
+                RETURN NULL;
+            END IF;
+
             INSERT INTO planning_input_revisions (owner_id, revision, updated_at)
             VALUES (target_owner_id, 1, now())
             ON CONFLICT (owner_id) DO UPDATE
