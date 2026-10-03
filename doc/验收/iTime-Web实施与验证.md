@@ -1,6 +1,6 @@
 # iTime Web 实施与验证
 
-更新：2026-10-03。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
+更新：2026-10-04。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
 
 ## M1-A：服务运行基础
 
@@ -1046,4 +1046,37 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 
 浏览器流程覆盖补充事实、短追问、跳过、离页恢复、报告重生成与版本切换、批注、候选确认/拒绝、记忆启停/增改删/恢复、删除后退出检索、普通对话与规划实际收到的记忆上下文，以及取消后恢复可操作状态。每个视口检查 axe、控制台、框架错误层和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-review-desktop-report.png` 与 `mobile-review-320-large-dark.png`，人工检查未见重叠、裁切或空白画面。
 
-Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。统计、通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。个人统计后续已由 M6-D 实现；通用跨业务同步、困难语音、导出、注销、真实 Edge/实体设备、正式第三方模型质量、性能和生产部署仍未实现或验证。
+
+## M6-D：个人日周月统计
+
+对应 Git 提交：`5bd7176`、`aaaabfc`、`0d79007`、`82f4f0f`、`69844d2`、`f13a238`、`bc13db1`。实际代码为 `server/src/itime/statistics/`、`server/tests/test_statistics_time_math.py`、`server/tests/test_statistics_api.py`、`web/src/pages/StatisticsPage.vue`、统计组件/API/CSS 及 `web/e2e/statistics.spec.ts`；合同见[个人统计设计](../设计/iTime-个人统计设计.md)。
+
+已实现：
+
+- `GET /api/v1/statistics` 按本人日、自然周或自然月返回计划、任务和专注的独立汇总与逐活动日序列；当前周/月截止服务器判定的当前活动日，未来范围拒绝读取。
+- 服务端按用户当前 IANA 时区的当地 04:00 构造活动日窗口，覆盖 DST；计划块和专注跨活动日时按交集分配，人工补记或修订使用稳定整数比例分配并保持总秒数守恒。
+- 计划只读取当前周计划版本并按块、任务去重；任务按当前完成或跳过投影归属；专注分别统计完成、放弃、人工补记、修订和进行中，不从步骤、计时或计划块推断任务完成。
+- 聚合在查询时从权威事实计算，不新增统计表或迁移，不触发 AI、额度或同步写入；响应不返回任务、困难、复盘正文或专注事件详情。
+- `/stats` 提供日/周/月切换、前后范围、回到当前、三组独立总览和趋势、04:00 口径、空状态及相关业务入口；不合成效率分或无可靠分母的百分比。
+- 首次读取失败显示原因、请求编号和重试；已有结果刷新失败时保留旧结果及计算时刻。桌面、平板、手机和 320px 最大字号深色均使用稳定响应式布局。
+- 八项产品导航已在所有用户工作区可达。统计 E2E 发现并修复 320px 专注页导航横向溢出，窄屏只滚动导航容器且专注计数区改为稳定八列布局。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn、生产构建预览和 Playwright Chromium 153 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q tests/test_statistics_time_math.py tests/test_statistics_api.py` | **10 passed** | 活动日范围、DST、整数分配、真实 PostgreSQL/HTTP、所有权和统计聚合 |
+| `cd server && uv run pytest -q tests/test_statistics_time_math.py tests/test_statistics_api.py tests/test_tasks.py tests/test_task_schedules.py tests/test_plan_versions.py tests/test_focus_sessions.py tests/test_execution_revisions.py tests/test_review_sessions.py` | **43 passed** | 统计及受影响任务、规划、执行、修订和复盘事实回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic upgrade head && uv run alembic current && uv run alembic check` | `0026_review_memory (head)`，无新升级操作 | 统计无新增表；开发库迁移及 ORM 一致性 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd server && uv run pytest -q` | **390 passed in 329.25s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm exec playwright test e2e/statistics.spec.ts` | **6 passed in 25.5s** | 真实数据、日周月、空态、失败保旧、三种视口、axe、控制台和溢出 |
+| `cd web && pnpm exec playwright test e2e/focus.spec.ts e2e/statistics.spec.ts` | **30 passed in 1.3m** | 八项导航及 320px 专注布局修复回归 |
+| `cd web && pnpm test:e2e` | **183 passed in 9.3m** | 账号、后台、任务、日历、AI、规划、执行、复盘、统计和公开页面 Chromium 全量回归 |
+
+统计浏览器流程使用随机 PostgreSQL、真实 API 和生产构建预览，创建真实任务、当前计划版本、任务完成、人工补记及放弃专注后核对响应和页面。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-statistics-populated.png` 与 `/tmp/itime-ui-evidence/mobile-statistics-320-large-dark.png`，已人工检查，无重叠、裁切、空白画面或根级横向溢出。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。完成本模块不代表通用跨业务同步、困难语音、导出、注销、后台运营指标、长历史性能、真实 Edge/实体设备、正式第三方模型质量或生产部署已完成。
