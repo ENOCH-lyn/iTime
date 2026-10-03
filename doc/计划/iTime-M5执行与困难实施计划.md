@@ -438,14 +438,13 @@ git commit -m "feat: 实现困难记录与回收清理"
 - Create: `web/src/components/FocusSetup.vue`
 - Create: `web/src/components/FocusTaskProgress.vue`
 - Create: `web/src/components/FocusHistory.vue`
-- Create: `web/src/components/DifficultyPanel.vue`
 - Create: `web/src/focus.css`
 - Modify: `web/src/main.ts`
 - Modify: `web/src/components/ProductNavigation.vue`
 - Modify: `web/src/style.css`
 - Test: `web/e2e/focus.spec.ts`
 
-- [ ] **Step 1: 写在线流程浏览器失败测试**
+- [x] **Step 1: 写在线流程浏览器失败测试**
 
 三视口覆盖：
 
@@ -460,7 +459,7 @@ git commit -m "feat: 实现困难记录与回收清理"
 历史详情和 12 小时提示
 ```
 
-- [ ] **Step 2: 建立前端类型和 API**
+- [x] **Step 2: 建立前端类型和 API**
 
 `web/src/lib/execution.ts` 定义：
 
@@ -532,7 +531,7 @@ export interface DifficultyRecord {
 
 所有写操作由调用方传入稳定 operation ID；未知结果时不生成新 ID。
 
-- [ ] **Step 3: 实现 `/focus` 在线工作台**
+- [x] **Step 3: 实现 `/focus` 在线工作台**
 
 页面逻辑：
 
@@ -547,11 +546,11 @@ const displayNow = computed(() =>
 
 使用固定宽度数字和稳定计时器容器；每秒只更新前端显示。暂停、恢复、结束和放弃成功后以服务端快照替换本地投影。步骤、任务完成和计时状态分别显示。
 
-- [ ] **Step 4: 扩展导航和响应式样式**
+- [x] **Step 4: 扩展导航和响应式样式**
 
 新增 `/focus` 路由和 `TimerReset` 图标导航。窄屏产品导航只显示图标，保持至少 44px 命中区；布局不得出现卡片套卡片或滚动遮挡主操作。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 Run:
 
@@ -650,7 +649,7 @@ git commit -m "feat: 支持专注离线恢复"
 **Files:**
 - Modify: `web/src/lib/execution.ts`
 - Modify: `web/src/pages/FocusPage.vue`
-- Modify: `web/src/components/DifficultyPanel.vue`
+- Create: `web/src/components/DifficultyPanel.vue`
 - Modify: `web/src/components/TaskEditor.vue`
 - Modify: `web/src/components/CalendarOccurrencePanel.vue`
 - Modify: `web/src/pages/AIPage.vue`

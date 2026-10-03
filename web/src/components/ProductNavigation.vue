@@ -5,15 +5,17 @@ import {
   ListChecks,
   MessageCircleMore,
   Settings,
+  TimerReset,
 } from 'lucide-vue-next'
 
-defineProps<{ current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'settings' }>()
+defineProps<{ current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'focus' | 'settings' }>()
 
 const links = [
   { key: 'ai', to: '/ai', label: 'AI', icon: MessageCircleMore },
   { key: 'tasks', to: '/tasks', label: '任务', icon: CheckSquare2 },
   { key: 'plans', to: '/plans', label: '规划', icon: ListChecks },
   { key: 'calendar', to: '/calendar', label: '日历', icon: CalendarDays },
+  { key: 'focus', to: '/focus', label: '专注', icon: TimerReset },
   { key: 'settings', to: '/account', label: '设置', icon: Settings },
 ] as const
 </script>
