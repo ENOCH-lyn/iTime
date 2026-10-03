@@ -9,9 +9,38 @@ from tests.test_ai_conversation_api import (
     publish_conversation_config,
     send_message,
 )
-from tests.test_calendar_series import create_account
 
 pytestmark = pytest.mark.integration
+PASSWORD = "Valid-sync-event-password-123"
+
+
+def create_sync_account(client, database_url):
+    email = f"sync-event-{uuid4().hex}@example.com"
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "time_zone": "Asia/Shanghai",
+        },
+    )
+    assert response.status_code == 202, response.text
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        owner_id = connection.execute(
+            "UPDATE users SET email_verified_at=now() WHERE email=%s RETURNING id",
+            (email,),
+        ).fetchone()[0]
+    login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "同步事件测试",
+        },
+    )
+    assert login.status_code == 200, login.text
+    client.headers["x-csrf-token"] = login.json()["csrf_token"]
+    return email, str(owner_id)
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +50,9 @@ def reset_sync_event_coverage_data(database_url):
             psycopg_url(database_url),
             autocommit=True,
         ) as connection:
-            connection.execute("DELETE FROM users")
+            connection.execute(
+                "DELETE FROM users WHERE email LIKE 'sync-event-%'"
+            )
             connection.execute(
                 """
                 UPDATE ai_config_capabilities
@@ -32,14 +63,6 @@ def reset_sync_event_coverage_data(database_url):
             connection.execute(
                 "DELETE FROM ai_config_versions WHERE capability='conversation'"
             )
-            connection.execute(
-                """
-                UPDATE ai_quota_policy_state
-                SET current_version_id=NULL, next_version=1, updated_at=now()
-                WHERE id=1
-                """
-            )
-            connection.execute("DELETE FROM ai_quota_policy_versions")
 
     cleanup()
     yield
@@ -50,7 +73,7 @@ def test_conversation_events_cover_create_update_message_and_cancel(
     client,
     database_url,
 ):
-    _, owner_id = create_account(client, database_url)
+    _, owner_id = create_sync_account(client, database_url)
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
         connection.execute(
             "DELETE FROM change_events WHERE owner_id=%s",
