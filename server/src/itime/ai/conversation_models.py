@@ -29,10 +29,6 @@ class Conversation(Base):
         ),
         CheckConstraint("title_source IN ('auto', 'user')", name="title_source"),
         CheckConstraint("version >= 1", name="version"),
-        CheckConstraint(
-            "archived_at IS NULL OR archived_at >= created_at",
-            name="archived_at",
-        ),
         UniqueConstraint("id", "owner_id", name="uq_ai_conversations_id_owner"),
         Index(
             "ix_ai_conversations_owner_archived_updated",

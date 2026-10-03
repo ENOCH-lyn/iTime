@@ -39,6 +39,7 @@ def job_result(job: AIJob) -> dict:
         ),
         "attempt_count": job.attempt_count,
         "max_attempts": job.max_attempts,
+        "last_event_sequence": job.last_event_sequence,
         "deadline_at": job.deadline_at,
         "version": job.version,
         "created_at": job.created_at,

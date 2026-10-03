@@ -126,10 +126,6 @@ def upgrade() -> None:
             "version >= 1",
             name=op.f("ck_ai_conversations_version"),
         ),
-        sa.CheckConstraint(
-            "archived_at IS NULL OR archived_at >= created_at",
-            name=op.f("ck_ai_conversations_archived_at"),
-        ),
         sa.ForeignKeyConstraint(
             ["owner_id"],
             ["users.id"],
