@@ -6,7 +6,7 @@ import {
   cancelAIJob,
   listScreenshotJobs,
   uploadCalendarScreenshot,
-  type AIJob,
+  type CalendarScreenshotJob,
   type AIJobStatus,
 } from '../lib/ai-jobs'
 import { failure, localFailure, type Failure } from '../lib/api'
@@ -16,7 +16,7 @@ const emit = defineEmits<{ batchReady: [batchId: string] }>()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const file = ref<File | null>(null)
-const jobs = ref<AIJob[]>([])
+const jobs = ref<CalendarScreenshotJob[]>([])
 const loading = ref(false)
 const uploadPending = ref(false)
 const cancellingId = ref('')
@@ -57,7 +57,7 @@ function schedulePolling() {
   pollDelay = Math.min(3000, pollDelay + 1000)
 }
 
-function processSucceeded(items: AIJob[]) {
+function processSucceeded(items: CalendarScreenshotJob[]) {
   for (const job of items) {
     if (
       job.status === 'succeeded'
@@ -155,14 +155,14 @@ async function upload() {
   }
 }
 
-async function cancel(job: AIJob) {
+async function cancel(job: CalendarScreenshotJob) {
   if (cancellingId.value) return
   const operationId = cancelOperations.get(job.id) ?? crypto.randomUUID()
   cancelOperations.set(job.id, operationId)
   cancellingId.value = job.id
   error.value = null
   try {
-    const result = await cancelAIJob(job.id, operationId)
+    const result = await cancelAIJob<CalendarScreenshotJob>(job.id, operationId)
     cancelOperations.delete(job.id)
     autoOpenIds.delete(job.id)
     jobs.value = jobs.value.map(item => item.id === job.id ? result.job : item)
@@ -175,7 +175,7 @@ async function cancel(job: AIJob) {
   }
 }
 
-function openBatch(job: AIJob) {
+function openBatch(job: CalendarScreenshotJob) {
   if (job.output?.batch_id) emit('batchReady', job.output.batch_id)
 }
 

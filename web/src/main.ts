@@ -13,6 +13,7 @@ const router = createRouter({
       path: `/${mode}`, name: mode,
       component: () => import('./pages/AuthPage.vue'), props: { mode },
     })),
+    { path: '/ai', component: () => import('./pages/AIPage.vue') },
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
     { path: '/account', component: () => import('./pages/AccountPage.vue') },

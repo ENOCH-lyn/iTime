@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { CalendarDays, CheckSquare2, Settings } from 'lucide-vue-next'
+import { CalendarDays, CheckSquare2, MessageCircleMore, Settings } from 'lucide-vue-next'
 
-defineProps<{ current: 'tasks' | 'calendar' | 'settings' }>()
+defineProps<{ current: 'ai' | 'tasks' | 'calendar' | 'settings' }>()
 
 const links = [
+  { key: 'ai', to: '/ai', label: 'AI', icon: MessageCircleMore },
   { key: 'tasks', to: '/tasks', label: '任务', icon: CheckSquare2 },
   { key: 'calendar', to: '/calendar', label: '日历', icon: CalendarDays },
   { key: 'settings', to: '/account', label: '设置', icon: Settings },

@@ -1,10 +1,11 @@
 import { api } from './api'
 
 export type AIConfigStatus = 'draft' | 'tested' | 'published' | 'retired'
+export type AIConfigCapability = 'calendar_screenshot' | 'conversation'
 
 export interface AIConfigVersion {
   id: string
-  capability: 'calendar_screenshot'
+  capability: AIConfigCapability
   version: number
   endpoint_url: string
   model: string
@@ -24,14 +25,14 @@ export interface AIConfigVersion {
   retired_at: string | null
 }
 
-export async function listAIConfigs() {
+export async function listAIConfigs(capability: AIConfigCapability) {
   return (await api<{
     items: AIConfigVersion[]
     next_cursor: { before_time: string; before_id: string } | null
-  }>('/admin/ai-configs?capability=calendar_screenshot&limit=100')).items
+  }>(`/admin/ai-configs?capability=${capability}&limit=100`)).items
 }
 
-export async function createAIConfig(input: {
+export async function createAIConfig(capability: AIConfigCapability, input: {
   endpoint_url: string
   model: string
   api_key: string
@@ -39,7 +40,7 @@ export async function createAIConfig(input: {
   max_output_tokens: number
 }) {
   return api<AIConfigVersion>('/admin/ai-configs', {
-    capability: 'calendar_screenshot',
+    capability,
     ...input,
   })
 }

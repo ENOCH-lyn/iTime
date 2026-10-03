@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { FlaskConical, RotateCcw, Rocket, ServerCog } from 'lucide-vue-next'
 import FormField from './FormField.vue'
 import StatusMessage from './StatusMessage.vue'
@@ -8,6 +8,7 @@ import {
   listAIConfigs,
   publishAIConfig,
   testAIConfig,
+  type AIConfigCapability,
   type AIConfigStatus,
   type AIConfigVersion,
 } from '../lib/admin-ai'
@@ -28,6 +29,24 @@ const apiKey = ref('')
 const timeout = ref('120')
 const maxTokens = ref('4096')
 const fieldErrors = ref<Record<string, string>>({})
+const capability = ref<AIConfigCapability>('calendar_screenshot')
+
+const capabilityCopy: Record<AIConfigCapability, {
+  label: string
+  heading: string
+  testDescription: string
+}> = {
+  calendar_screenshot: {
+    label: '截图识别',
+    heading: '截图识别配置',
+    testDescription: '合成图片',
+  },
+  conversation: {
+    label: '全局对话',
+    heading: '全局对话配置',
+    testDescription: '合成文本',
+  },
+}
 
 const statusLabels: Record<AIConfigStatus, string> = {
   draft: '草稿',
@@ -63,7 +82,7 @@ async function loadConfigs(keepStatus = false) {
     success.value = ''
   }
   try {
-    configs.value = await listAIConfigs()
+    configs.value = await listAIConfigs(capability.value)
     loaded.value = true
   } catch (reason) {
     error.value = await handleError(reason)
@@ -116,7 +135,7 @@ async function createConfig() {
   error.value = null
   success.value = ''
   try {
-    const created = await createAIConfig({
+    const created = await createAIConfig(capability.value, {
       endpoint_url: endpoint.value.trim(),
       model: model.value.trim(),
       api_key: apiKey.value,
@@ -142,7 +161,7 @@ async function testConfig(config: AIConfigVersion) {
   try {
     const updated = await testAIConfig(config.id, config.timeout_seconds)
     configs.value = configs.value.map(item => item.id === updated.id ? updated : item)
-    success.value = `版本 ${updated.version} 已通过合成图片测试。`
+    success.value = `版本 ${updated.version} 已通过${capabilityCopy[config.capability].testDescription}测试。`
   } catch (reason) {
     error.value = await handleError(reason)
     await loadConfigs(true)
@@ -174,6 +193,13 @@ async function publishConfig(config: AIConfigVersion) {
 }
 
 onMounted(() => void loadConfigs())
+watch(capability, () => {
+  configs.value = []
+  loaded.value = false
+  error.value = null
+  success.value = ''
+  void loadConfigs()
+})
 </script>
 
 <template>
@@ -181,7 +207,7 @@ onMounted(() => void loadConfigs())
     <section class="management-section" aria-labelledby="new-ai-config-title">
       <div class="section-intro">
         <div>
-          <h2 id="new-ai-config-title">截图识别配置</h2>
+          <h2 id="new-ai-config-title">{{ capabilityCopy[capability].heading }}</h2>
           <p class="page-description">新版本先测试，发布后仅影响新提交的作业。</p>
         </div>
         <ServerCog :size="24" aria-hidden="true" />
@@ -190,6 +216,15 @@ onMounted(() => void loadConfigs())
         :retry-label="error?.retryable ? '重新读取' : undefined"
         @retry="loadConfigs()" />
       <form class="ai-config-form" novalidate @submit.prevent="createConfig">
+        <fieldset class="segmented-field ai-capability-switch">
+          <legend>能力</legend>
+          <label v-for="(copy, key) in capabilityCopy" :key="key"
+            :class="{ selected: capability === key }">
+            <input v-model="capability" type="radio" name="ai-capability"
+              :value="key" :disabled="!!pendingAction" />
+            {{ copy.label }}
+          </label>
+        </fieldset>
         <FormField id="ai-endpoint" v-model="endpoint" label="OpenAI 兼容端点"
           autocomplete="url" :maxlength="2048"
           :error="fieldErrors.endpoint" :disabled="!!pendingAction"
@@ -227,7 +262,9 @@ onMounted(() => void loadConfigs())
         </button>
       </div>
       <p v-if="loading && !loaded" role="status" class="muted">正在读取配置…</p>
-      <p v-else-if="loaded && !configs.length" class="empty-state">还没有截图识别配置。</p>
+      <p v-else-if="loaded && !configs.length" class="empty-state">
+        还没有{{ capabilityCopy[capability].label }}配置。
+      </p>
       <ol v-else class="management-list ai-config-list" aria-label="AI 配置版本">
         <li v-for="config in configs" :key="config.id">
           <div class="management-primary">
