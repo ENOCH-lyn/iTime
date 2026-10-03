@@ -891,7 +891,7 @@ Browser 插件工具未在当前执行环境暴露，因此按前端测试规范
 | `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
 | `cd web && pnpm exec playwright test e2e/admin-management.spec.ts --grep '分别创建'` | **3 passed in 14.3s** | 三视口真实创建、测试、发布和回滚带价格配置 |
 | `cd web && pnpm exec playwright test e2e/privacy-governance.spec.ts --grep '管理员显式读取'` | **3 passed in 22.0s** | 三视口生成真实成本、管理筛选、金额与正文隔离 |
-| `cd web && pnpm test:e2e` | **126 passed in 5.8m** | 账号、后台、AI、任务、日历、导入、订阅、治理与成本页面全量 Chromium 回归 |
+| `cd web && pnpm test:e2e` | **126 passed** | 账号、后台、AI、任务、日历、导入、订阅、治理与成本页面全量 Chromium 回归 |
 
 成本页面在 1440×1000、390×844、768×1024 三个视口检查标题、数据、筛选、axe、控制台和根级横向溢出；截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-privacy-governance-provider-costs.png`，已人工检查。
 
