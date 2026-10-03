@@ -585,7 +585,7 @@ git commit -m "feat: 支持撤销账号注销"
 - Create: `server/tests/test_account_deletion_worker.py`
 - Modify: `server/tests/test_account_deletion_models.py`
 
-- [ ] **Step 1: 写清理、并发和回滚失败测试**
+- [x] **Step 1: 写清理、并发和回滚失败测试**
 
 在一个账号下创建每个当前含 `owner_id` 的领域数据和直接用户外键数据，并另建对照账号与平台
 配置。将 `purge_after` 调到过去，覆盖：
@@ -613,7 +613,7 @@ assert sorted(results) == [False, True]
 - stale lease 可重领；到期前、已取消或 lease 不匹配均不清理。
 - 清理完成后错误密码登录仍为 `invalid_credentials`，同邮箱可注册全新 UUID。
 
-- [ ] **Step 2: 实现领取和失败退避**
+- [x] **Step 2: 实现领取和失败退避**
 
 ```python
 @dataclass(frozen=True)
@@ -641,7 +641,7 @@ async def record_deletion_failure(
 claim 只锁注销行并立即提交；`available_at` 退避为
 `min(3600, 2 ** min(attempt_count, 12))` 秒。错误记录不保存异常正文。
 
-- [ ] **Step 3: 实现单事务清理**
+- [x] **Step 3: 实现单事务清理**
 
 ```python
 async def purge_claimed_account(
@@ -694,7 +694,7 @@ async def purge_claimed_account(
 `scrub_account_audit` 删除 `SecurityEvent.user_id=user_id`，并对管理员事件
 `target_id=str(user_id)` 设置 `target_id=NULL, details={}`。
 
-- [ ] **Step 4: 实现 worker**
+- [x] **Step 4: 实现 worker**
 
 ```python
 async def run(*, once: bool = False) -> None:
@@ -728,7 +728,7 @@ async def run(*, once: bool = False) -> None:
         await database.close()
 ```
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server

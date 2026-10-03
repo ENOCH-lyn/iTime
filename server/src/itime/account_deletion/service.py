@@ -1,9 +1,9 @@
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
-from sqlalchemy import select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,8 @@ from itime.account_deletion.schemas import (
     AccountDeletionCancel,
     AccountDeletionRequest,
 )
-from itime.auth.models import DeviceSession, User
+from itime.admin.models import RegistrationInvitation
+from itime.auth.models import DeviceSession, SecurityEvent, User
 from itime.auth.security import now
 from itime.auth.session import (
     audit,
@@ -22,9 +23,19 @@ from itime.auth.session import (
     invalid_credentials,
     session_result,
 )
+from itime.database import Database
 from itime.errors import AppError
 
 ACCOUNT_DELETION_GRACE = timedelta(days=7)
+ACCOUNT_DELETION_MAX_RETRY_SECONDS = 3600
+
+
+@dataclass(frozen=True)
+class ClaimedDeletion:
+    id: UUID
+    user_id: UUID
+    lease_id: UUID
+    attempt_number: int
 
 
 def deletion_result(deletion: AccountDeletion) -> dict:
@@ -344,3 +355,159 @@ async def cancel_account_deletion(
             },
             raw,
         )
+
+
+async def claim_next_deletion(
+    database: Database,
+    *,
+    lease_seconds: int = 120,
+) -> ClaimedDeletion | None:
+    if lease_seconds < 1:
+        raise ValueError("lease_seconds must be positive")
+    current = now()
+    async with database.transaction() as session:
+        deletion = await session.scalar(
+            select(AccountDeletion)
+            .where(
+                AccountDeletion.user_id.is_not(None),
+                AccountDeletion.available_at <= current,
+                or_(
+                    (
+                        (AccountDeletion.status == "pending")
+                        & (AccountDeletion.purge_after <= current)
+                    ),
+                    (
+                        (AccountDeletion.status == "processing")
+                        & (AccountDeletion.lease_until <= current)
+                    ),
+                ),
+            )
+            .order_by(
+                AccountDeletion.purge_after,
+                AccountDeletion.available_at,
+                AccountDeletion.id,
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        if deletion is None or deletion.user_id is None:
+            return None
+        lease_id = uuid4()
+        deletion.status = "processing"
+        deletion.lease_id = lease_id
+        deletion.lease_until = current + timedelta(seconds=lease_seconds)
+        deletion.attempt_count += 1
+        deletion.started_at = deletion.started_at or current
+        deletion.last_error_code = None
+        deletion.last_error_message = None
+        deletion.updated_at = current
+        await session.flush()
+        return ClaimedDeletion(
+            id=deletion.id,
+            user_id=deletion.user_id,
+            lease_id=lease_id,
+            attempt_number=deletion.attempt_count,
+        )
+
+
+async def record_deletion_failure(
+    database: Database,
+    claim: ClaimedDeletion,
+    *,
+    code: str = "account_deletion_failed",
+    message: str = "账号数据清理失败，系统会自动重试。",
+) -> bool:
+    current = now()
+    async with database.transaction() as session:
+        deletion = await session.scalar(
+            select(AccountDeletion)
+            .where(
+                AccountDeletion.id == claim.id,
+                AccountDeletion.user_id == claim.user_id,
+                AccountDeletion.status == "processing",
+                AccountDeletion.lease_id == claim.lease_id,
+            )
+            .with_for_update()
+        )
+        if deletion is None:
+            return False
+        delay_seconds = min(
+            ACCOUNT_DELETION_MAX_RETRY_SECONDS,
+            2 ** min(deletion.attempt_count, 12),
+        )
+        deletion.status = "pending"
+        deletion.available_at = current + timedelta(seconds=delay_seconds)
+        deletion.lease_id = None
+        deletion.lease_until = None
+        deletion.last_error_code = code[:80]
+        deletion.last_error_message = message[:300]
+        deletion.updated_at = current
+        return True
+
+
+async def scrub_account_audit(
+    session: AsyncSession,
+    owner_id: UUID,
+) -> None:
+    await session.execute(
+        delete(SecurityEvent).where(SecurityEvent.user_id == owner_id)
+    )
+    await session.execute(
+        update(SecurityEvent)
+        .where(SecurityEvent.target_id == str(owner_id))
+        .values(target_id=None, details={})
+    )
+
+
+async def purge_claimed_account(
+    database: Database,
+    claim: ClaimedDeletion,
+) -> bool:
+    async with database.transaction() as session:
+        user = await session.scalar(
+            select(User)
+            .where(User.id == claim.user_id)
+            .with_for_update()
+        )
+        deletion = await session.scalar(
+            select(AccountDeletion)
+            .where(AccountDeletion.id == claim.id)
+            .with_for_update()
+        )
+        current = now()
+        if (
+            user is None
+            or user.status != "pending_deletion"
+            or deletion is None
+            or deletion.user_id != user.id
+            or deletion.status != "processing"
+            or deletion.lease_id != claim.lease_id
+            or deletion.lease_until is None
+            or deletion.lease_until <= current
+            or deletion.purge_after > current
+        ):
+            return False
+
+        await scrub_account_audit(session, user.id)
+        await session.execute(
+            delete(RegistrationInvitation).where(
+                or_(
+                    RegistrationInvitation.email == user.email,
+                    RegistrationInvitation.consumed_by_user_id == user.id,
+                )
+            )
+        )
+
+        deletion.user_id = None
+        deletion.status = "completed"
+        deletion.lease_id = None
+        deletion.lease_until = None
+        deletion.completed_at = current
+        deletion.last_error_code = None
+        deletion.last_error_message = None
+        deletion.updated_at = current
+        await session.flush()
+
+        await session.delete(user)
+        await session.flush()
+        return True
