@@ -131,3 +131,57 @@ class FocusRevisionInput(FocusManualFields):
     @classmethod
     def clean_reason(cls, value: str) -> str:
         return clean_required(value)
+
+
+class DifficultyFields(Input):
+    content: str = Field(min_length=1, max_length=2000)
+    category: str | None = Field(default=None, max_length=40)
+    emotion: str | None = Field(default=None, max_length=40)
+    task_id: UUID | None = None
+    focus_session_id: UUID | None = None
+    occurrence_key: str | None = Field(default=None, max_length=120)
+    occurred_at: datetime | None = None
+
+    @field_validator("content")
+    @classmethod
+    def clean_content(cls, value: str) -> str:
+        return clean_required(value)
+
+    @field_validator("category", "emotion", mode="before")
+    @classmethod
+    def clean_optional_text(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("occurrence_key")
+    @classmethod
+    def clean_difficulty_occurrence_key(cls, value: str | None) -> str | None:
+        return FocusStartInput.clean_occurrence_key(value)
+
+    @field_validator("occurred_at")
+    @classmethod
+    def require_occurred_time_zone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("困难发生时间必须包含 UTC 偏移")
+        return value
+
+    @model_validator(mode="after")
+    def difficulty_occurrence_requires_task(self) -> "DifficultyFields":
+        if self.occurrence_key is not None and self.task_id is None:
+            raise ValueError("任务实例必须同时提供任务")
+        return self
+
+
+class DifficultyCreateInput(DifficultyFields):
+    operation_id: UUID
+
+
+class DifficultyUpdateInput(DifficultyFields):
+    operation_id: UUID
+    expected_version: int = Field(ge=1)
+
+
+class DifficultyLifecycleInput(OperationInput):
+    expected_version: int = Field(ge=1)

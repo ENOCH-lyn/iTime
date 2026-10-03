@@ -384,7 +384,7 @@ git commit -m "feat: 支持专注补记与事实修订"
 - Test: `server/tests/test_difficulties.py`
 - Test: `server/tests/test_execution_cleanup.py`
 
-- [ ] **Step 1: 写困难生命周期失败测试**
+- [x] **Step 1: 写困难生命周期失败测试**
 
 覆盖：
 
@@ -401,17 +401,17 @@ git commit -m "feat: 支持专注补记与事实修订"
 旧操作响应清理后不能复活正文
 ```
 
-- [ ] **Step 2: 实现服务和 API**
+- [x] **Step 2: 实现服务和 API**
 
 在 `difficulty_service.py` 提供 `create_difficulty`、`update_difficulty`、`trash_difficulty`、`restore_difficulty` 和 `cleanup_expired_difficulties`。前四个函数接收 session、owner、输入及适用对象 ID并返回稳定结果字典；清理函数接收 `Database` 和默认批量 100，返回实际清理数量。
 
 注册设计文档 §7 的困难路由。编辑和删除锁定本人记录并校验版本；删除后普通编辑拒绝。清理 worker 支持 `--once`，普通日志只输出计数和 ID，不输出正文。
 
-- [ ] **Step 3: 联动任务清理**
+- [x] **Step 3: 联动任务清理**
 
 任务到期清理前，将关联困难的 `task_id` 置空但保留 `task_title_snapshot`；同一事务清理关联 `UserOperation.response`。不得因困难外键阻止任务墓碑处理。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run:
 

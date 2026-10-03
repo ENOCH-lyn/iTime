@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import now
 from itime.database import Database
+from itime.execution.models import DifficultyRecord
 from itime.tasks.models import (
     Task,
     TaskLabel,
@@ -47,6 +48,26 @@ async def expire_task_operation_responses(
 async def _purge_task(session: AsyncSession, task: Task) -> None:
     current = now()
     await expire_task_operation_responses(session, task.owner_id, task.id)
+    difficulties = list(
+        await session.scalars(
+            select(DifficultyRecord)
+            .where(DifficultyRecord.task_id == task.id)
+            .with_for_update()
+        )
+    )
+    for difficulty in difficulties:
+        difficulty.task_id = None
+        difficulty.occurrence_key = None
+        difficulty.version += 1
+        difficulty.updated_at = current
+        emit_change(
+            session,
+            task.owner_id,
+            "difficulty",
+            difficulty.id,
+            "updated",
+            difficulty.version,
+        )
     for model in (
         TaskOccurrenceState,
         TaskSchedule,
