@@ -194,9 +194,13 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .ai-config-form { max-width: 760px; }
 .ai-capability-switch { max-width: 360px; }
 .ai-config-number-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.ai-pricing-fields { display: grid; gap: 8px; margin: 4px 0 0; padding: 20px 0 0; border: 0; border-top: 1px solid var(--border); }
+.ai-pricing-fields legend { padding: 0 12px 0 0; font-size: .9375rem; font-weight: 550; }
+.ai-pricing-fields > p { margin-bottom: 8px; color: var(--muted); font-size: .8125rem; }
 .ai-config-submit { width: fit-content; }
 .ai-config-list li { align-items: center; }
 .ai-config-list .management-primary > p + p { margin-top: 2px; }
+.ai-config-list .warning-text { color: var(--notice-text); }
 .state-label[data-state="published"], .state-label[data-state="tested"] { color: var(--accent); border-color: var(--accent); }
 .state-label[data-state="draft"] { color: var(--notice-text); border-color: var(--notice-border); }
 .state-label[data-state="succeeded"], .state-label[data-state="reviewed"], .state-label[data-state="acceptable"] { color: var(--accent); border-color: var(--accent); }

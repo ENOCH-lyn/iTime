@@ -308,6 +308,10 @@ test('分别创建、测试和发布截图与对话配置', async ({ page }, inf
   await page.getByLabel('API Key', { exact: true }).fill(key)
   await page.getByLabel('单次超时（秒）', { exact: true }).fill('10')
   await page.getByLabel('最大输出 Token', { exact: true }).fill('2048')
+  await page.getByLabel('币种代码', { exact: true }).fill('cny')
+  await page.getByLabel('输入价格（每百万 Token）', { exact: true }).fill('1.25')
+  await page.getByLabel('缓存输入价格（每百万 Token）', { exact: true }).fill('0.5')
+  await page.getByLabel('输出价格（每百万 Token）', { exact: true }).fill('4.75')
   await page.getByRole('button', { name: '保存新版本', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('已保存为草稿')
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('')
@@ -315,6 +319,7 @@ test('分别创建、测试和发布截图与对话配置', async ({ page }, inf
 
   const row = page.locator('.ai-config-list li').filter({ hasText: model })
   await expect(row.getByText('草稿', { exact: true })).toBeVisible()
+  await expect(row).toContainText('CNY 输入 1.25 · 缓存输入 0.5 · 输出 4.75')
   await row.getByRole('button', { name: '测试', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('已通过合成图片测试')
   await expect(row.getByText('测试通过', { exact: true })).toBeVisible()

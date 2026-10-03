@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from itime.admin.security import authorized_admin
 from itime.ai.models import AIConfigCapability, AIConfigVersion
+from itime.ai.pricing import format_price_per_million, parse_price_per_million
 from itime.ai.provider import (
     EndpointPolicyError,
     ProviderConfig,
@@ -28,6 +29,28 @@ router = APIRouter(prefix="/api/v1/admin/ai-configs", tags=["后台 AI 配置"])
 
 
 def config_result(config: AIConfigVersion) -> dict:
+    prices = (
+        config.input_price_nanos_per_million_tokens,
+        config.cached_input_price_nanos_per_million_tokens,
+        config.output_price_nanos_per_million_tokens,
+    )
+    pricing_configured = config.price_currency is not None and all(
+        price is not None for price in prices
+    )
+    pricing = None
+    if pricing_configured:
+        input_price, cached_input_price, output_price = prices
+        assert input_price is not None
+        assert cached_input_price is not None
+        assert output_price is not None
+        pricing = {
+            "currency": config.price_currency,
+            "input_per_million_tokens": format_price_per_million(input_price),
+            "cached_input_per_million_tokens": format_price_per_million(
+                cached_input_price
+            ),
+            "output_per_million_tokens": format_price_per_million(output_price),
+        }
     return {
         "id": config.id,
         "capability": config.capability,
@@ -36,6 +59,8 @@ def config_result(config: AIConfigVersion) -> dict:
         "model": config.model,
         "timeout_seconds": config.timeout_seconds,
         "max_output_tokens": config.max_output_tokens,
+        "pricing": pricing,
+        "pricing_configured": pricing_configured,
         "key_configured": True,
         "status": config.status,
         "current": config.status == "published",
@@ -147,6 +172,12 @@ async def create_config(data: AIConfigCreateInput, request: Request) -> dict:
     ciphertext = request.app.state.security.ai_cipher.encrypt(
         data.api_key.get_secret_value().encode()
     )
+    input_price = parse_price_per_million(data.pricing.input_per_million_tokens)
+    cached_input_price = parse_price_per_million(
+        data.pricing.cached_input_per_million_tokens
+        or data.pricing.input_per_million_tokens
+    )
+    output_price = parse_price_per_million(data.pricing.output_per_million_tokens)
     async with authorized_admin(request, write=True) as identity:
         state = await locked_capability(identity.session, data.capability)
         config = AIConfigVersion(
@@ -157,6 +188,10 @@ async def create_config(data: AIConfigCreateInput, request: Request) -> dict:
             api_key_ciphertext=ciphertext,
             timeout_seconds=data.timeout_seconds,
             max_output_tokens=data.max_output_tokens,
+            price_currency=data.pricing.currency,
+            input_price_nanos_per_million_tokens=input_price,
+            cached_input_price_nanos_per_million_tokens=cached_input_price,
+            output_price_nanos_per_million_tokens=output_price,
             created_by_user_id=identity.user.id,
         )
         state.next_version += 1

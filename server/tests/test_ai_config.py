@@ -197,6 +197,7 @@ def create_config(
     model: str = "vision-model-1",
     timeout: int = 2,
     capability: str = "calendar_screenshot",
+    pricing: dict | None = None,
 ) -> httpx.Response:
     return client.post(
         AI_CONFIGS,
@@ -207,6 +208,13 @@ def create_config(
             "api_key": key,
             "timeout_seconds": timeout,
             "max_output_tokens": 321,
+            "pricing": pricing
+            or {
+                "currency": "cny",
+                "input_per_million_tokens": "1.25",
+                "cached_input_per_million_tokens": "0.5",
+                "output_per_million_tokens": "4.75",
+            },
         },
     )
 
@@ -233,6 +241,13 @@ def test_create_list_detail_constraints_encryption_and_audit(
     assert item["version"] == 1
     assert item["status"] == "draft"
     assert item["key_configured"] is True
+    assert item["pricing"] == {
+        "currency": "CNY",
+        "input_per_million_tokens": "1.25",
+        "cached_input_per_million_tokens": "0.5",
+        "output_per_million_tokens": "4.75",
+    }
+    assert item["pricing_configured"] is True
     assert key not in created.text
     assert "api_key" not in item
     assert state.requests == []
@@ -260,6 +275,29 @@ def test_create_list_detail_constraints_encryption_and_audit(
         assert rejected.status_code == 422
         assert key not in rejected.text
     assert create_config(client, endpoint, model="bad model").status_code == 422
+    for pricing in (
+        {
+            "currency": "CN",
+            "input_per_million_tokens": "1",
+            "output_per_million_tokens": "2",
+        },
+        {
+            "currency": "CNY",
+            "input_per_million_tokens": "-1",
+            "output_per_million_tokens": "2",
+        },
+        {
+            "currency": "CNY",
+            "input_per_million_tokens": "0.0000000001",
+            "output_per_million_tokens": "2",
+        },
+        {
+            "currency": "CNY",
+            "input_per_million_tokens": 1.5,
+            "output_per_million_tokens": "2",
+        },
+    ):
+        assert create_config(client, endpoint, pricing=pricing).status_code == 422
 
     with psycopg.connect(psycopg_url(database_url)) as connection:
         ciphertext = connection.execute(
@@ -269,6 +307,18 @@ def test_create_list_detail_constraints_encryption_and_audit(
         assert key.encode() not in bytes(ciphertext)
         ai_key = settings.ai_encryption_key or settings.encryption_key
         assert Fernet(ai_key.get_secret_value()).decrypt(bytes(ciphertext)).decode() == key
+        prices = connection.execute(
+            """
+            SELECT price_currency,
+                   input_price_nanos_per_million_tokens,
+                   cached_input_price_nanos_per_million_tokens,
+                   output_price_nanos_per_million_tokens
+            FROM ai_config_versions
+            WHERE id=%s
+            """,
+            (item["id"],),
+        ).fetchone()
+        assert prices == ("CNY", 1_250_000_000, 500_000_000, 4_750_000_000)
         with pytest.raises(CheckViolation):
             connection.execute(
                 "UPDATE ai_config_versions SET model='mutated-model' WHERE id=%s",

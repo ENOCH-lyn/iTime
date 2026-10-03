@@ -28,6 +28,10 @@ const model = ref('')
 const apiKey = ref('')
 const timeout = ref('120')
 const maxTokens = ref('4096')
+const currency = ref('')
+const inputPrice = ref('')
+const cachedInputPrice = ref('')
+const outputPrice = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 const capability = ref<AIConfigCapability>('calendar_screenshot')
 
@@ -62,6 +66,15 @@ const stageLabels: Record<string, string> = {
   authentication: '凭据验证',
   upstream: '上游服务',
   response: '响应格式',
+}
+
+function validPrice(value: string) {
+  const normalized = value.trim()
+  const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/.exec(normalized)
+  if (!match) return false
+  const nanos = BigInt(match[1]) * 1_000_000_000n
+    + BigInt((match[2] ?? '').padEnd(9, '0'))
+  return nanos <= 1_000_000_000_000_000n
 }
 
 async function handleError(reason: unknown) {
@@ -117,6 +130,18 @@ function validate() {
   if (!Number.isInteger(tokenValue) || tokenValue < 1 || tokenValue > 32768) {
     errors.maxTokens = '请输入 1—32768。'
   }
+  if (!/^[A-Za-z]{3}$/.test(currency.value.trim())) {
+    errors.currency = '请输入三个字母的币种代码，例如 CNY。'
+  }
+  if (!validPrice(inputPrice.value)) {
+    errors.inputPrice = '请输入 0—1000000，最多 9 位小数。'
+  }
+  if (cachedInputPrice.value.trim() && !validPrice(cachedInputPrice.value)) {
+    errors.cachedInputPrice = '请输入 0—1000000，最多 9 位小数。'
+  }
+  if (!validPrice(outputPrice.value)) {
+    errors.outputPrice = '请输入 0—1000000，最多 9 位小数。'
+  }
   fieldErrors.value = errors
   return Object.keys(errors).length === 0
 }
@@ -125,7 +150,17 @@ async function createConfig() {
   if (pendingAction.value || !validate()) {
     if (Object.keys(fieldErrors.value).length) {
       await nextTick()
-      const first = ['endpoint', 'model', 'apiKey', 'timeout', 'maxTokens']
+      const first = [
+        'endpoint',
+        'model',
+        'apiKey',
+        'timeout',
+        'maxTokens',
+        'currency',
+        'inputPrice',
+        'cachedInputPrice',
+        'outputPrice',
+      ]
         .find(key => fieldErrors.value[key])
       if (first) document.getElementById(`ai-${first}`)?.focus()
     }
@@ -141,6 +176,13 @@ async function createConfig() {
       api_key: apiKey.value,
       timeout_seconds: Number(timeout.value),
       max_output_tokens: Number(maxTokens.value),
+      pricing: {
+        currency: currency.value.trim().toUpperCase(),
+        input_per_million_tokens: inputPrice.value.trim(),
+        cached_input_per_million_tokens:
+          cachedInputPrice.value.trim() || undefined,
+        output_per_million_tokens: outputPrice.value.trim(),
+      },
     })
     apiKey.value = ''
     configs.value = [created, ...configs.value]
@@ -243,6 +285,29 @@ watch(capability, () => {
             type="number" inputmode="numeric" :min="1" :max="32768" :step="1"
             :error="fieldErrors.maxTokens" :disabled="!!pendingAction" @blur="validate" />
         </div>
+        <fieldset class="ai-pricing-fields">
+          <legend>供应商价格</legend>
+          <p>金额按每百万 Token 填写，并随此配置版本冻结。</p>
+          <div class="ai-config-number-grid">
+            <FormField id="ai-currency" v-model="currency" label="币种代码"
+              autocomplete="off" :maxlength="3" :error="fieldErrors.currency"
+              :disabled="!!pendingAction" hint="三个字母，例如 CNY 或 USD。"
+              @blur="validate" />
+            <FormField id="ai-inputPrice" v-model="inputPrice"
+              label="输入价格（每百万 Token）" inputmode="decimal"
+              :maxlength="32" :error="fieldErrors.inputPrice"
+              :disabled="!!pendingAction" @blur="validate" />
+            <FormField id="ai-cachedInputPrice" v-model="cachedInputPrice"
+              label="缓存输入价格（每百万 Token）" inputmode="decimal"
+              :maxlength="32" :error="fieldErrors.cachedInputPrice"
+              :disabled="!!pendingAction" hint="留空时与普通输入价格相同。"
+              @blur="validate" />
+            <FormField id="ai-outputPrice" v-model="outputPrice"
+              label="输出价格（每百万 Token）" inputmode="decimal"
+              :maxlength="32" :error="fieldErrors.outputPrice"
+              :disabled="!!pendingAction" @blur="validate" />
+          </div>
+        </fieldset>
         <button type="submit" class="button ai-config-submit" :disabled="!!pendingAction">
           <ServerCog :size="18" aria-hidden="true" />
           {{ pendingAction === 'create' ? '正在保存…' : '保存新版本' }}
@@ -278,6 +343,15 @@ watch(capability, () => {
             <p>
               Key 已加密设置 · 超时 {{ config.timeout_seconds }} 秒 ·
               最多 {{ config.max_output_tokens }} Token
+            </p>
+            <p v-if="config.pricing">
+              {{ config.pricing.currency }}
+              输入 {{ config.pricing.input_per_million_tokens }} ·
+              缓存输入 {{ config.pricing.cached_input_per_million_tokens }} ·
+              输出 {{ config.pricing.output_per_million_tokens }} / 百万 Token
+            </p>
+            <p v-else class="warning-text">
+              此历史版本未配置价格，调用只能记录用量，不能计算金额。
             </p>
             <p v-if="config.last_test_completed_at">
               最近测试 {{ localDate(config.last_test_completed_at) }}

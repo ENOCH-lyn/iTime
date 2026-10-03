@@ -7,7 +7,7 @@ const props = defineProps<{
   label: string
   type?: 'text' | 'email' | 'password' | 'number'
   autocomplete?: string
-  inputmode?: 'text' | 'numeric'
+  inputmode?: 'text' | 'numeric' | 'decimal'
   maxlength?: number
   min?: number
   max?: number

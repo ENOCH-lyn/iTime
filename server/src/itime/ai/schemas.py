@@ -6,11 +6,54 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
+from itime.ai.pricing import format_price_per_million, parse_price_per_million
 from itime.schemas import Input
 
 Capability = Literal["calendar_screenshot", "conversation"]
 ConfigStatus = Literal["draft", "tested", "published", "retired"]
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$")
+CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+
+
+class AIPriceInput(Input):
+    currency: str = Field(min_length=3, max_length=3)
+    input_per_million_tokens: str = Field(min_length=1, max_length=32)
+    cached_input_per_million_tokens: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+    )
+    output_per_million_tokens: str = Field(min_length=1, max_length=32)
+
+    @field_validator("currency")
+    @classmethod
+    def valid_currency(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not CURRENCY_PATTERN.fullmatch(value):
+            raise ValueError("币种必须是三个英文字母")
+        return value
+
+    @field_validator(
+        "input_per_million_tokens",
+        "cached_input_per_million_tokens",
+        "output_per_million_tokens",
+        mode="before",
+    )
+    @classmethod
+    def valid_price(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("价格必须使用十进制字符串")
+        normalized = value.strip()
+        return format_price_per_million(parse_price_per_million(normalized))
+
+
+class AIPriceOutput(BaseModel):
+    currency: str
+    input_per_million_tokens: str
+    cached_input_per_million_tokens: str
+    output_per_million_tokens: str
 
 
 class AIConfigCreateInput(Input):
@@ -20,6 +63,7 @@ class AIConfigCreateInput(Input):
     api_key: Annotated[SecretStr, Field(min_length=1, max_length=8192)]
     timeout_seconds: int = Field(ge=1, le=300)
     max_output_tokens: int = Field(ge=1, le=32768)
+    pricing: AIPriceInput
 
     @field_validator("endpoint_url")
     @classmethod
@@ -68,6 +112,8 @@ class AIConfigVersionOutput(BaseModel):
     model: str
     timeout_seconds: int
     max_output_tokens: int
+    pricing: AIPriceOutput | None
+    pricing_configured: bool
     key_configured: Literal[True] = True
     status: ConfigStatus
     current: bool

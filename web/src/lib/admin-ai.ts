@@ -3,6 +3,13 @@ import { api } from './api'
 export type AIConfigStatus = 'draft' | 'tested' | 'published' | 'retired'
 export type AIConfigCapability = 'calendar_screenshot' | 'conversation'
 
+export interface AIConfigPricing {
+  currency: string
+  input_per_million_tokens: string
+  cached_input_per_million_tokens: string
+  output_per_million_tokens: string
+}
+
 export interface AIConfigVersion {
   id: string
   capability: AIConfigCapability
@@ -11,6 +18,8 @@ export interface AIConfigVersion {
   model: string
   timeout_seconds: number
   max_output_tokens: number
+  pricing: AIConfigPricing | null
+  pricing_configured: boolean
   key_configured: true
   status: AIConfigStatus
   current: boolean
@@ -38,6 +47,12 @@ export async function createAIConfig(capability: AIConfigCapability, input: {
   api_key: string
   timeout_seconds: number
   max_output_tokens: number
+  pricing: {
+    currency: string
+    input_per_million_tokens: string
+    cached_input_per_million_tokens?: string
+    output_per_million_tokens: string
+  }
 }) {
   return api<AIConfigVersion>('/admin/ai-configs', {
     capability,
