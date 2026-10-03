@@ -30,6 +30,7 @@ from itime.planning.schemas import (
     MAX_SELECTED_TASKS,
     PlanningRequestFields,
 )
+from itime.public_links.service import planning_public_sources
 from itime.tasks.models import Task, TaskSchedule, TaskStep
 from itime.tasks.schedule_service import query_task_occurrences
 
@@ -338,6 +339,17 @@ async def _task_candidates(
         for task, schedule, occurrence in drafts
     ]
     candidates.sort(key=lambda item: item["candidate_key"])
+    source_contexts = await planning_public_sources(
+        session,
+        owner_id,
+        [UUID(item["task_id"]) for item in candidates],
+    )
+    for candidate, source_context in zip(
+        candidates,
+        source_contexts,
+        strict=True,
+    ):
+        candidate.update(source_context)
     return candidates
 
 

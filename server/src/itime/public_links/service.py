@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import ceil
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, or_, select, text
@@ -22,6 +23,9 @@ RETRY_DELAYS = (timedelta(minutes=1), timedelta(minutes=5))
 OWNER_ADVISORY_LOCK_SEED = 731_924
 CLAIM_SCAN_LIMIT = 100
 MANUAL_REFRESH_COOLDOWN = timedelta(seconds=30)
+MAX_PLANNING_SOURCES_PER_TASK = 3
+MAX_PLANNING_SOURCE_CHARS = 4000
+MAX_PLANNING_SOURCE_TOTAL_CHARS = 24_000
 
 
 @dataclass(frozen=True)
@@ -209,6 +213,62 @@ async def queue_public_link_refresh(
     link.updated_at = current
     _emit_link_change(session, link)
     return link
+
+
+async def planning_public_sources(
+    session: AsyncSession,
+    owner_id: UUID,
+    candidate_task_ids: list[UUID],
+) -> list[dict]:
+    unique_task_ids = list(dict.fromkeys(candidate_task_ids))
+    links = (
+        list(
+            await session.scalars(
+                select(TaskLink)
+                .where(
+                    TaskLink.owner_id == owner_id,
+                    TaskLink.task_id.in_(unique_task_ids),
+                    TaskLink.last_success_at.is_not(None),
+                    TaskLink.content_sha256.is_not(None),
+                    TaskLink.summary.is_not(None),
+                    TaskLink.extracted_text.is_not(None),
+                )
+                .order_by(TaskLink.task_id, TaskLink.position, TaskLink.id)
+            )
+        )
+        if unique_task_ids
+        else []
+    )
+    by_task: dict[UUID, list[TaskLink]] = {
+        task_id: [] for task_id in unique_task_ids
+    }
+    for link in links:
+        by_task[link.task_id].append(link)
+
+    remaining_chars = MAX_PLANNING_SOURCE_TOTAL_CHARS
+    contexts: list[dict] = []
+    for task_id in candidate_task_ids:
+        task_links = by_task.get(task_id, [])
+        selected: list[dict] = []
+        truncated = len(task_links) > MAX_PLANNING_SOURCES_PER_TASK
+        for link in task_links[:MAX_PLANNING_SOURCES_PER_TASK]:
+            text_value = link.extracted_text or ""
+            allowed = min(MAX_PLANNING_SOURCE_CHARS, remaining_chars)
+            if allowed <= 0:
+                truncated = True
+                break
+            excerpt = text_value[:allowed]
+            if len(excerpt) < len(text_value):
+                truncated = True
+            selected.append(_public_source_payload(link, excerpt))
+            remaining_chars -= len(excerpt)
+        contexts.append(
+            {
+                "public_sources": selected,
+                "public_sources_truncated": truncated,
+            }
+        )
+    return contexts
 
 
 async def renew_public_link_lease(
@@ -428,3 +488,22 @@ def _emit_link_change(session: AsyncSession, link: TaskLink) -> None:
         "updated",
         link.fetch_revision,
     )
+
+
+def _public_source_payload(link: TaskLink, excerpt: str) -> dict:
+    return {
+        "link_id": str(link.id),
+        "label": link.title or link.page_title or urlsplit(link.url).hostname or "公开资料",
+        "source_host": urlsplit(link.url).hostname or "",
+        "final_host": link.final_host,
+        "page_title": link.page_title,
+        "summary": link.summary,
+        "content_excerpt": excerpt,
+        "fetched_at": (
+            link.last_success_at.isoformat()
+            if link.last_success_at is not None
+            else None
+        ),
+        "content_sha256": link.content_sha256,
+        "trust": "untrusted_public_web",
+    }
