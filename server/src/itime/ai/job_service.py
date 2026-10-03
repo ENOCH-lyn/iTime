@@ -5,6 +5,10 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.ai.governance_service import (
+    add_attempt_body_log,
+    finish_attempt_body_log,
+)
 from itime.ai.models import AIJob, AIJobAttempt, TemporaryMedia
 from itime.auth.security import now
 from itime.database import Database
@@ -24,6 +28,9 @@ class ClaimedJob:
     lease_id: UUID
     attempt_number: int
     deadline_at: datetime
+    terminal_error_code: str | None = None
+    terminal_error_message: str | None = None
+    terminal_error_stage: str | None = None
 
 
 def job_result(job: AIJob) -> dict:
@@ -93,6 +100,7 @@ async def finish_running_attempt(
 ) -> None:
     if job.lease_id is None:
         return
+    finished_at = now()
     await session.execute(
         update(AIJobAttempt)
         .where(
@@ -106,8 +114,18 @@ async def finish_running_attempt(
             error_stage=error_stage,
             provider_request_id=provider_request_id,
             http_status=http_status,
-            finished_at=now(),
+            finished_at=finished_at,
         )
+    )
+    await finish_attempt_body_log(
+        session,
+        job,
+        status=status,
+        error_code=error_code,
+        error_stage=error_stage,
+        provider_request_id=provider_request_id,
+        http_status=http_status,
+        finished_at=finished_at,
     )
 
 
@@ -121,6 +139,7 @@ async def claim_next_job(
     *,
     capability: str | None = None,
     lease_seconds: int = 300,
+    body_log_retention_days: int = 7,
 ) -> ClaimedJob | None:
     for _ in range(20):
         current = now()
@@ -151,59 +170,72 @@ async def claim_next_job(
             stale_running = job.status == "running"
             if stale_running and job.lease_until is not None and job.lease_until > current:
                 return None
+            terminal_error_code = None
+            terminal_error_message = None
+            terminal_error_stage = None
             if job.deadline_at <= current:
-                await finish_running_attempt(
-                    session,
-                    job,
-                    status="timed_out",
-                    error_code="ai_job_deadline_exceeded",
-                    error_stage="deadline",
-                )
-                job.status = "timed_out"
-                job.error_code = "ai_job_deadline_exceeded"
-                job.error_message = "AI 作业已超过总等待时间，请重新提交。"
-                job.finished_at = current
-                job.updated_at = current
-                job.version += 1
-                clear_job_lease(job)
-                continue
-            if job.attempt_count >= job.max_attempts:
-                await finish_running_attempt(
-                    session,
-                    job,
-                    status="failed",
-                    error_code="ai_job_attempts_exhausted",
-                    error_stage="worker",
-                )
-                job.status = "failed"
-                job.error_code = "ai_job_attempts_exhausted"
-                job.error_message = "AI 作业重试次数已用尽，请重新提交。"
-                job.finished_at = current
-                job.updated_at = current
-                job.version += 1
-                clear_job_lease(job)
-                continue
+                terminal_error_code = "ai_job_deadline_exceeded"
+                terminal_error_message = "AI 作业已超过总等待时间，请重新提交。"
+                terminal_error_stage = "deadline"
+            elif job.attempt_count >= job.max_attempts:
+                terminal_error_code = "ai_job_attempts_exhausted"
+                terminal_error_message = "AI 作业重试次数已用尽，请重新提交。"
+                terminal_error_stage = "worker"
+
             if stale_running:
                 await finish_running_attempt(
                     session,
                     job,
-                    status="abandoned",
-                    error_code="ai_job_lease_expired",
-                    error_stage="worker",
+                    status=(
+                        "timed_out"
+                        if terminal_error_code == "ai_job_deadline_exceeded"
+                        else "abandoned"
+                    ),
+                    error_code=(
+                        terminal_error_code
+                        if terminal_error_code == "ai_job_deadline_exceeded"
+                        else "ai_job_lease_expired"
+                    ),
+                    error_stage=(
+                        terminal_error_stage
+                        if terminal_error_code == "ai_job_deadline_exceeded"
+                        else "worker"
+                    ),
                 )
 
             lease_id = uuid4()
             job.status = "running"
-            job.attempt_count += 1
             job.lease_id = lease_id
-            job.lease_until = min(
-                current + timedelta(seconds=lease_seconds),
-                job.deadline_at,
+            job.lease_until = (
+                current + timedelta(seconds=min(30, lease_seconds))
+                if terminal_error_code is not None
+                else min(
+                    current + timedelta(seconds=lease_seconds),
+                    job.deadline_at,
+                )
             )
             job.error_code = None
             job.error_message = None
             job.updated_at = current
             job.version += 1
+            if terminal_error_code is not None:
+                await session.flush()
+                return ClaimedJob(
+                    id=job.id,
+                    owner_id=job.owner_id,
+                    capability=job.capability,
+                    config_version_id=job.config_version_id,
+                    input_media_id=job.input_media_id,
+                    conversation_id=job.conversation_id,
+                    lease_id=lease_id,
+                    attempt_number=job.attempt_count,
+                    deadline_at=job.deadline_at,
+                    terminal_error_code=terminal_error_code,
+                    terminal_error_message=terminal_error_message,
+                    terminal_error_stage=terminal_error_stage,
+                )
+
+            job.attempt_count += 1
             session.add(
                 AIJobAttempt(
                     job_id=job.id,
@@ -213,6 +245,14 @@ async def claim_next_job(
                     status="running",
                     started_at=current,
                 )
+            )
+            await session.flush()
+            add_attempt_body_log(
+                session,
+                job,
+                attempt_number=job.attempt_count,
+                started_at=current,
+                retention_days=body_log_retention_days,
             )
             await session.flush()
             return ClaimedJob(

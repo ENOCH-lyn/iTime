@@ -20,6 +20,7 @@ from itime.ai.conversation_service import (
     load_conversation_work,
     reject_or_retry_conversation_job,
 )
+from itime.ai.governance_service import prepare_attempt_body_log
 from itime.ai.job_service import (
     ClaimedJob,
     claim_next_job,
@@ -95,6 +96,8 @@ async def _process_screenshot(
             retryable=False,
         )
         return
+    if not await prepare_attempt_body_log(database, claim, work.request_body):
+        return
 
     remaining = (claim.deadline_at - now()).total_seconds()
     if remaining <= 0:
@@ -139,7 +142,12 @@ async def _process_screenshot(
     finally:
         work = None
 
-    await apply_screenshot_result(database, claim, provider_result)
+    await apply_screenshot_result(
+        database,
+        claim,
+        provider_result,
+        quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+    )
 
 
 async def _process_conversation(
@@ -160,6 +168,8 @@ async def _process_conversation(
             error_stage=exc.stage,
             retryable=False,
         )
+        return
+    if not await prepare_attempt_body_log(database, claim, work.request_body):
         return
 
     remaining = (claim.deadline_at - now()).total_seconds()
@@ -218,6 +228,7 @@ async def _process_conversation(
         claim,
         work.generation,
         provider_result,
+        quality_sample_retention_days=settings.ai_quality_sample_retention_days,
     )
 
 
@@ -225,9 +236,33 @@ async def process_one(database: Database, settings: Settings) -> bool:
     claim = await claim_next_job(
         database,
         lease_seconds=settings.ai_job_lease_seconds,
+        body_log_retention_days=settings.ai_body_log_retention_days,
     )
     if claim is None:
         return False
+    if claim.terminal_error_code is not None:
+        if claim.capability == "conversation":
+            await reject_or_retry_conversation_job(
+                database,
+                claim,
+                None,
+                error_code=claim.terminal_error_code,
+                error_message=claim.terminal_error_message
+                or "AI 作业未能完成，请重新提交。",
+                error_stage=claim.terminal_error_stage or "worker",
+                retryable=False,
+            )
+        else:
+            await reject_or_retry_job(
+                database,
+                claim,
+                error_code=claim.terminal_error_code,
+                error_message=claim.terminal_error_message
+                or "AI 作业未能完成，请重新提交。",
+                error_stage=claim.terminal_error_stage or "worker",
+                retryable=False,
+            )
+        return True
     cipher = Fernet(
         (settings.ai_encryption_key or settings.encryption_key).get_secret_value()
     )

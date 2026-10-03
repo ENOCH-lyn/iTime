@@ -403,6 +403,32 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
     completed = screenshot_client.get(f"/api/v1/ai/jobs/{job['id']}")
     assert completed.status_code == 200
     assert completed.json()["status"] == "succeeded"
+    with psycopg.connect(psycopg_url(screenshot_database_url)) as connection:
+        body_log = connection.execute(
+            """
+            SELECT id, request_body, response_body, status
+            FROM ai_body_logs
+            WHERE job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+        sample = connection.execute(
+            """
+            SELECT source_body_log_id, request_body, response_body, status
+            FROM ai_quality_samples
+            WHERE source_job_id=%s
+            """,
+            (job["id"],),
+        ).fetchone()
+    assert body_log is not None
+    assert body_log[3] == "succeeded"
+    serialized_log_request = json.dumps(body_log[1], ensure_ascii=False)
+    assert "image_metadata" in serialized_log_request
+    assert "omitted_by_retention_policy" in serialized_log_request
+    assert "base64" not in serialized_log_request
+    assert "sk-screenshot-secret" not in serialized_log_request
+    assert json.loads(body_log[2])["items"][0]["draft"]["name"] == "高等数学"
+    assert sample == (body_log[0], body_log[1], body_log[2], "pending")
     batch_id = completed.json()["output"]["batch_id"]
     detail = screenshot_client.get(
         f"/api/v1/calendar/imports/{batch_id}"

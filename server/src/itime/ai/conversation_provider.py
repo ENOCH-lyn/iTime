@@ -60,6 +60,19 @@ class ConversationGenerationSuperseded(Exception):
     pass
 
 
+def conversation_request_body(
+    config: ProviderConfig,
+    messages: list[dict[str, str]],
+) -> dict:
+    return {
+        "model": config.model,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
+        "max_tokens": config.max_output_tokens,
+        "temperature": 0,
+        "stream": True,
+    }
+
+
 def _provider_error(
     response: httpx.Response,
     request_id: str | None,
@@ -315,13 +328,7 @@ async def stream_conversation_reply(
             "configuration",
         ) from exc
 
-    request_body = {
-        "model": config.model,
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
-        "max_tokens": config.max_output_tokens,
-        "temperature": 0,
-        "stream": True,
-    }
+    request_body = conversation_request_body(config, messages)
     timeout = httpx.Timeout(
         max(0.1, min(float(config.timeout_seconds), timeout_seconds))
     )

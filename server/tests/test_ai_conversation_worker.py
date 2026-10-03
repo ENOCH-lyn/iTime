@@ -649,6 +649,52 @@ def test_rate_limit_retry_resets_content_with_new_generation(
     assert len(state.request_snapshot()) == 2
 
 
+def test_queued_deadline_uses_conversation_terminal_projection(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("split_sse")
+    submitted = enqueue_conversation_job(
+        conversation_worker_client,
+        conversation_worker_database_url,
+        endpoint,
+        prompt="排队阶段已超时",
+    )
+    job_id = submitted["job"]["id"]
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "UPDATE ai_jobs SET deadline_at=now() - interval '1 second' "
+            "WHERE id=%s",
+            (job_id,),
+        )
+
+    assert run_process_once(conversation_worker_database_url)
+    snapshot = job_snapshot(conversation_worker_database_url, job_id)
+    assert_event_consistency(snapshot)
+    assert snapshot["job"]["status"] == "timed_out"
+    assert snapshot["job"]["error_code"] == "ai_job_deadline_exceeded"
+    assert snapshot["message"]["status"] == "timed_out"
+    assert snapshot["message"]["error_code"] == "ai_job_deadline_exceeded"
+    assert snapshot["events"][-1]["payload"]["status"] == "timed_out"
+    assert state.request_snapshot() == []
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM ai_body_logs WHERE job_id=%s",
+            (job_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT count(*) FROM ai_quality_samples WHERE source_job_id=%s",
+            (job_id,),
+        ).fetchone()[0] == 0
+
+
 def test_idle_stream_renews_lease_and_blocks_second_worker(
     conversation_worker_client: httpx.Client,
     conversation_worker_database_url: str,
@@ -758,6 +804,23 @@ def test_cancel_wins_against_late_delta_and_completion(
     )
     assert persisted_deltas == PARTIAL_REPLY
     assert LATE_REPLY not in persisted_deltas
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        body_log = connection.execute(
+            """
+            SELECT status, response_body
+            FROM ai_body_logs
+            WHERE job_id=%s
+            """,
+            (job_id,),
+        ).fetchone()
+        sample_count = connection.execute(
+            "SELECT count(*) FROM ai_quality_samples WHERE source_job_id=%s",
+            (job_id,),
+        ).fetchone()[0]
+    assert body_log == ("cancelled", PARTIAL_REPLY)
+    assert sample_count == 0
 
 
 @pytest.mark.parametrize(

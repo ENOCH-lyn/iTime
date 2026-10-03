@@ -5,6 +5,11 @@ from datetime import timedelta
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 
+from itime.ai.governance_service import (
+    create_quality_sample_if_enabled,
+    locked_attempt_body_log,
+    validate_response_body,
+)
 from itime.ai.job_service import (
     ClaimedJob,
     clear_job_lease,
@@ -12,7 +17,10 @@ from itime.ai.job_service import (
 )
 from itime.ai.models import AIConfigVersion, AIJob, TemporaryMedia
 from itime.ai.provider import ProviderConfig
-from itime.ai.screenshot_provider import ScreenshotProviderResult
+from itime.ai.screenshot_provider import (
+    ScreenshotProviderResult,
+    screenshot_log_request_body,
+)
 from itime.auth.security import now
 from itime.calendar.import_parsers import ParsedCandidate
 from itime.calendar.import_service import (
@@ -40,6 +48,7 @@ class ScreenshotWork:
     content_type: str
     filename: str
     context: dict
+    request_body: dict
 
 
 async def load_screenshot_work(
@@ -124,6 +133,13 @@ async def load_screenshot_work(
         content_type=content_type,
         filename=filename,
         context=context,
+        request_body=screenshot_log_request_body(
+            provider,
+            content_type=content_type,
+            byte_size=len(image),
+            content_sha256=expected_hash,
+            context=context,
+        ),
     )
 
 
@@ -131,6 +147,8 @@ async def apply_screenshot_result(
     database: Database,
     claim: ClaimedJob,
     result: ScreenshotProviderResult,
+    *,
+    quality_sample_retention_days: int = 30,
 ) -> str | None:
     current = now()
     async with database.transaction() as session:
@@ -147,6 +165,14 @@ async def apply_screenshot_result(
         )
         if job is None:
             return None
+        body_log = await locked_attempt_body_log(
+            session,
+            job,
+            claim.attempt_number,
+        )
+        if body_log is not None and body_log.status == "running":
+            validate_response_body(result.response_body)
+            body_log.response_body = result.response_body
         if job.deadline_at <= current:
             await finish_running_attempt(
                 session,
@@ -164,6 +190,8 @@ async def apply_screenshot_result(
             job.updated_at = current
             job.version += 1
             clear_job_lease(job)
+            return None
+        if body_log is None or body_log.status != "running":
             return None
 
         parsed = [
@@ -232,4 +260,10 @@ async def apply_screenshot_result(
         job.updated_at = current
         job.version += 1
         clear_job_lease(job)
+        await create_quality_sample_if_enabled(
+            session,
+            job,
+            body_log,
+            retention_days=quality_sample_retention_days,
+        )
         return str(batch.id)

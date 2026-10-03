@@ -13,7 +13,15 @@ from itime.ai.conversation_models import (
     Conversation,
     ConversationMessage,
 )
-from itime.ai.conversation_provider import ConversationProviderResult
+from itime.ai.conversation_provider import (
+    ConversationProviderResult,
+    conversation_request_body,
+)
+from itime.ai.governance_service import (
+    create_quality_sample_if_enabled,
+    locked_attempt_body_log,
+    validate_response_body,
+)
 from itime.ai.job_service import (
     ClaimedJob,
     clear_job_lease,
@@ -465,6 +473,7 @@ class ConversationWorkUnavailable(Exception):
 class ConversationWork:
     config: ProviderConfig
     messages: list[dict[str, str]]
+    request_body: dict
     generation: int
 
 
@@ -648,6 +657,7 @@ async def load_conversation_work(
         return ConversationWork(
             config=provider,
             messages=messages,
+            request_body=conversation_request_body(provider, messages),
             generation=generation.stream_generation,
         )
 
@@ -696,6 +706,13 @@ async def append_conversation_delta(
         )
         if message is None or message.status != "running":
             return False
+        body_log = await locked_attempt_body_log(
+            session,
+            job,
+            claim.attempt_number,
+        )
+        if body_log is None or body_log.status != "running":
+            return False
         content = message.content + text_delta
         if len(content) > 100_000:
             raise ConversationWorkUnavailable(
@@ -703,8 +720,11 @@ async def append_conversation_delta(
                 "AI 回复超过可处理大小，请缩小问题范围后重试。",
                 "validation",
             )
+        log_content = body_log.response_body + text_delta
+        validate_response_body(log_content)
         message.content = content
         message.updated_at = current
+        body_log.response_body = log_content
         job.lease_until = min(
             current + timedelta(seconds=lease_seconds),
             job.deadline_at,
@@ -728,6 +748,8 @@ async def complete_conversation_job(
     claim: ClaimedJob,
     generation_number: int,
     result: ConversationProviderResult,
+    *,
+    quality_sample_retention_days: int = 30,
 ) -> bool:
     current = now()
     async with database.transaction() as session:
@@ -773,6 +795,15 @@ async def complete_conversation_job(
         )
         if message is None or conversation is None or message.status != "running":
             return False
+        body_log = await locked_attempt_body_log(
+            session,
+            job,
+            claim.attempt_number,
+        )
+        if body_log is None or body_log.status != "running":
+            return False
+        validate_response_body(result.content)
+        body_log.response_body = result.content
         await finish_running_attempt(
             session,
             job,
@@ -810,6 +841,12 @@ async def complete_conversation_job(
         clear_job_lease(job)
         conversation.version += 1
         conversation.updated_at = current
+        await create_quality_sample_if_enabled(
+            session,
+            job,
+            body_log,
+            retention_days=quality_sample_retention_days,
+        )
         return True
 
 

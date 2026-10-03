@@ -272,6 +272,20 @@ def test_expired_media_cleanup_and_expired_job_sweep(database_url, client):
         database = Database(Settings(database_url=database_url, environment="test"))
         try:
             assert await cleanup_expired_media(database) == 1
+            terminal = await claim_next_job(database)
+            assert terminal is not None
+            assert terminal.terminal_error_code == "ai_job_deadline_exceeded"
+            assert (
+                await reject_or_retry_job(
+                    database,
+                    terminal,
+                    error_code=terminal.terminal_error_code,
+                    error_message=terminal.terminal_error_message,
+                    error_stage=terminal.terminal_error_stage,
+                    retryable=False,
+                )
+                == "timed_out"
+            )
             assert await claim_next_job(database) is None
         finally:
             await database.close()
