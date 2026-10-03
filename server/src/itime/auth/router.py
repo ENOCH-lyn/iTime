@@ -17,6 +17,7 @@ from itime.auth.session import (
     authorized,
     check_user,
     create_session,
+    invalid_credentials,
     public_user,
     session_result,
     set_session_cookie,
@@ -84,10 +85,6 @@ EMAIL_RESULT = {
     "status": "accepted",
     "message": "如果此邮箱需要处理，我们会发送邮件。请检查收件箱和垃圾邮件。",
 }
-
-
-def invalid_credentials() -> AppError:
-    return AppError("invalid_credentials", "邮箱或密码不正确。", status=401)
 
 
 def invalid_token() -> AppError:

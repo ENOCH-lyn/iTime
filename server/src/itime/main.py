@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from itime import __version__
+from itime.account_deletion.router import router as account_deletion_router
 from itime.admin.management import router as admin_management_router
 from itime.admin.router import router as admin_auth_router
 from itime.ai.admin_cost_router import router as admin_ai_cost_router
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_handlers(app)
     app.add_middleware(RequestEnvelope, settings=settings)
     app.include_router(auth_router)
+    app.include_router(account_deletion_router)
     app.include_router(admin_auth_router)
     app.include_router(admin_management_router)
     app.include_router(admin_ai_config_router)

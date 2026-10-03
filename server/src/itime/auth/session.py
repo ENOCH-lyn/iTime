@@ -25,6 +25,10 @@ def unauthenticated() -> AppError:
     return AppError("unauthenticated", "登录已过期或已退出，请重新登录。", status=401)
 
 
+def invalid_credentials() -> AppError:
+    return AppError("invalid_credentials", "邮箱或密码不正确。", status=401)
+
+
 def check_user(user: User) -> None:
     if user.status != "active":
         raise AppError("account_suspended", "账号已停用，请联系管理员。", status=403)

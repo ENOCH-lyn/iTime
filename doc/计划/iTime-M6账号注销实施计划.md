@@ -356,7 +356,7 @@ git commit -m "feat: 停止注销账号在途工作"
 - Modify: `server/src/itime/main.py`
 - Test: `server/tests/test_account_deletion_api.py`
 
-- [ ] **Step 1: 写申请失败和成功测试**
+- [x] **Step 1: 写申请失败和成功测试**
 
 覆盖：
 
@@ -382,7 +382,7 @@ class AccountDeletionRequest(Input):
         return value.strip().lower() if isinstance(value, str) else value
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -391,7 +391,7 @@ uv run pytest -q tests/test_account_deletion_api.py -k request
 
 Expected: FAIL，路由尚未注册。
 
-- [ ] **Step 3: 实现申请服务**
+- [x] **Step 3: 实现申请服务**
 
 把 `invalid_credentials` 从 `auth/router.py` 移到 `auth/session.py` 供登录和注销恢复共同使用；
 在 `account_deletion/service.py` 增加 `revoke_all_sessions(session, owner_id, at)`，以单条
@@ -447,7 +447,7 @@ async def request_account_deletion(
 
 真实实现把重复约束冲突转为稳定 `account_deletion_pending`，不回显 SQL。
 
-- [ ] **Step 4: 注册路由和 cookie 清理**
+- [x] **Step 4: 注册路由和 cookie 清理**
 
 ```python
 @router.post("", status_code=202)
@@ -472,7 +472,7 @@ async def request_deletion(
 路由前缀为 `/api/v1/account-deletion`，在 `main.py` 注册。成功响应不包含邮箱、密码摘要、
 subject digest 或 lease。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server

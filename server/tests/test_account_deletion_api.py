@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import ANY
 from uuid import UUID, uuid4
 
@@ -22,7 +23,9 @@ from itime.data_export.service import (
     complete_export,
 )
 from itime.database import Database
+from itime.errors import AppError
 from tests.conftest import isolated_database, psycopg_url
+from tests.test_tasks import PASSWORD, browser, create_account, task_payload
 
 pytestmark = pytest.mark.integration
 
@@ -837,3 +840,261 @@ def test_workers_only_claim_active_accounts(admin_url):
                 """,
                 (blocked_owner,),
             ).fetchone() == (0,)
+
+
+def request_payload(email: str, *, password: str = PASSWORD) -> dict:
+    return {
+        "operation_id": str(uuid4()),
+        "email_confirmation": email,
+        "current_password": password,
+    }
+
+
+def login_existing(client, email: str, *, device_name: str) -> None:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": device_name,
+        },
+    )
+    assert response.status_code == 200, response.text
+    client.headers["x-csrf-token"] = response.json()["csrf_token"]
+
+
+def test_request_account_deletion_requires_auth_csrf_and_confirmation(
+    client,
+    live_server,
+    database_url,
+):
+    endpoint = "/api/v1/account-deletion"
+    email, owner_id = create_account(client, database_url)
+
+    with browser(live_server) as anonymous:
+        unauthorized = anonymous.post(endpoint, json=request_payload(email))
+        assert unauthorized.status_code == 401
+
+    csrf = client.headers.pop("x-csrf-token")
+    invalid_csrf = client.post(endpoint, json=request_payload(email))
+    assert invalid_csrf.status_code == 403
+    assert invalid_csrf.json()["error"]["code"] == "invalid_csrf"
+    client.headers["x-csrf-token"] = csrf
+
+    wrong_password = client.post(
+        endpoint,
+        json=request_payload(email, password="Wrong-password-456"),
+    )
+    assert wrong_password.status_code == 401
+    assert wrong_password.json()["error"]["code"] == "invalid_credentials"
+    assert email not in wrong_password.text
+
+    mismatch = client.post(
+        endpoint,
+        json=request_payload("different@example.com"),
+    )
+    assert mismatch.status_code == 400
+    assert mismatch.json()["error"]["code"] == "account_confirmation_mismatch"
+    assert email not in mismatch.text
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT status FROM users WHERE id=%s",
+            (owner_id,),
+        ).fetchone() == ("active",)
+        assert connection.execute(
+            "SELECT count(*) FROM account_deletions WHERE user_id=%s",
+            (owner_id,),
+        ).fetchone() == (0,)
+
+
+def test_request_account_deletion_revokes_devices_and_preserves_durable_data(
+    client,
+    live_server,
+    database_url,
+):
+    endpoint = "/api/v1/account-deletion"
+    email, owner_id = create_account(client, database_url)
+    task = client.post("/api/v1/tasks", json=task_payload()).json()["task"]
+
+    with browser(live_server) as second:
+        login_existing(second, email, device_name="第二台设备")
+        operation_id = str(uuid4())
+        response = client.post(
+            endpoint,
+            json={
+                "operation_id": operation_id,
+                "email_confirmation": f"  {email.upper()}  ",
+                "current_password": PASSWORD,
+            },
+        )
+        assert response.status_code == 202, response.text
+        body = response.json()
+        requested_at = datetime.fromisoformat(
+            body["deletion"]["requested_at"].replace("Z", "+00:00")
+        )
+        purge_after = datetime.fromisoformat(
+            body["deletion"]["purge_after"].replace("Z", "+00:00")
+        )
+        assert purge_after - requested_at == timedelta(days=7)
+        assert body["operation_id"] == operation_id
+        assert body["deletion"]["status"] == "pending"
+        assert body["deletion"]["can_cancel"]
+        assert body["saved"] == "saved"
+        assert set(body["stopped"]) == {
+            "ai_jobs",
+            "exports",
+            "subscription_refreshes",
+            "focus_sessions",
+            "emails",
+            "temporary_media",
+        }
+        assert body["stopped"]["emails"] == 1
+        assert email not in response.text
+        assert "subject_digest" not in response.text
+        assert "test-password-hash" not in response.text
+        assert "Max-Age=0" in response.headers["set-cookie"]
+
+        assert client.get("/api/v1/auth/me").status_code == 401
+        assert second.get("/api/v1/auth/me").status_code == 401
+        assert (
+            second.post("/api/v1/tasks", json=task_payload()).status_code
+            == 401
+        )
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            """
+            SELECT status, auth_epoch, management_version
+            FROM users WHERE id=%s
+            """,
+            (owner_id,),
+        ).fetchone() == ("pending_deletion", 1, 2)
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM device_sessions
+            WHERE user_id=%s AND revoked_at IS NOT NULL
+            """,
+            (owner_id,),
+        ).fetchone() == (2,)
+        assert connection.execute(
+            "SELECT count(*) FROM tasks WHERE id=%s AND owner_id=%s",
+            (task["id"], owner_id),
+        ).fetchone() == (1,)
+        deletion = connection.execute(
+            """
+            SELECT status, operation_id, purge_after-requested_at,
+                   length(subject_digest), request_id
+            FROM account_deletions
+            WHERE user_id=%s
+            """,
+            (owner_id,),
+        ).fetchone()
+        assert deletion[:4] == (
+            "pending",
+            UUID(operation_id),
+            timedelta(days=7),
+            64,
+        )
+        assert len(deletion[4]) == 36
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM security_events
+            WHERE user_id=%s AND action='account_deletion_requested'
+            """,
+            (owner_id,),
+        ).fetchone() == (1,)
+
+
+def test_request_account_deletion_protects_admin_accounts(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "UPDATE users SET is_admin=true WHERE id=%s",
+            (owner_id,),
+        )
+    response = client.post(
+        "/api/v1/account-deletion",
+        json=request_payload(email),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "admin_account_protected"
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM account_deletions WHERE user_id=%s",
+            (owner_id,),
+        ).fetchone() == (0,)
+
+
+def test_concurrent_request_account_deletion_creates_one_job(
+    client,
+    database_url,
+):
+    from itime.account_deletion.schemas import AccountDeletionRequest
+    from itime.account_deletion.service import request_account_deletion
+    from itime.auth.security import Security
+
+    email, owner_text = create_account(client, database_url)
+    owner_id = UUID(owner_text)
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        password_hash = connection.execute(
+            "SELECT password_hash FROM users WHERE id=%s",
+            (owner_id,),
+        ).fetchone()[0]
+
+    settings = Settings(database_url=database_url, environment="test")
+    database = Database(settings)
+    state = SimpleNamespace(
+        database=database,
+        security=Security(settings),
+    )
+
+    async def request_once():
+        request = SimpleNamespace(
+            app=SimpleNamespace(state=state),
+            state=SimpleNamespace(request_id=str(uuid4())),
+        )
+        return await request_account_deletion(
+            request,
+            user_id=owner_id,
+            password_hash=password_hash,
+            data=AccountDeletionRequest(
+                operation_id=uuid4(),
+                email_confirmation=email,
+                current_password=PASSWORD,
+            ),
+        )
+
+    async def exercise():
+        results = await asyncio.gather(
+            request_once(),
+            request_once(),
+            return_exceptions=True,
+        )
+        await database.close()
+        return results
+
+    results = asyncio.run(exercise())
+    successes = [item for item in results if isinstance(item, dict)]
+    conflicts = [item for item in results if isinstance(item, AppError)]
+    assert len(successes) == 1
+    assert len(conflicts) == 1
+    assert conflicts[0].code == "account_deletion_pending"
+    assert conflicts[0].saved == "saved"
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM account_deletions
+            WHERE user_id=%s AND status='pending'
+            """,
+            (owner_id,),
+        ).fetchone() == (1,)
