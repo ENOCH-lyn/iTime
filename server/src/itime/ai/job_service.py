@@ -30,6 +30,8 @@ class ClaimedJob:
     input_media_id: UUID | None
     conversation_id: UUID | None
     planning_snapshot_id: UUID | None
+    review_session_id: UUID | None
+    review_snapshot_id: UUID | None
     lease_id: UUID
     attempt_number: int
     deadline_at: datetime
@@ -49,6 +51,7 @@ def job_result(job: AIJob) -> dict:
         "id": job.id,
         "capability": job.capability,
         "conversation_id": job.conversation_id,
+        "review_session_id": job.review_session_id,
         "status": job.status,
         "input_summary": {
             key: value
@@ -278,6 +281,8 @@ async def claim_next_job(
                     input_media_id=job.input_media_id,
                     conversation_id=job.conversation_id,
                     planning_snapshot_id=job.planning_snapshot_id,
+                    review_session_id=job.review_session_id,
+                    review_snapshot_id=job.review_snapshot_id,
                     lease_id=lease_id,
                     attempt_number=job.attempt_count,
                     deadline_at=job.deadline_at,
@@ -322,6 +327,8 @@ async def claim_next_job(
                 input_media_id=job.input_media_id,
                 conversation_id=job.conversation_id,
                 planning_snapshot_id=job.planning_snapshot_id,
+                review_session_id=job.review_session_id,
+                review_snapshot_id=job.review_snapshot_id,
                 lease_id=lease_id,
                 attempt_number=job.attempt_count,
                 deadline_at=job.deadline_at,
@@ -519,7 +526,7 @@ def append_planning_job_event(
     *,
     payload: dict,
 ) -> AIJobEvent | None:
-    if job.capability != "planning" or (
+    if job.capability not in {"planning", "review"} or (
         job.conversation_id is not None and payload.get("status") == "running"
     ):
         return None

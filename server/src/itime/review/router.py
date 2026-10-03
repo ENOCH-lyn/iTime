@@ -5,7 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request, Response
 
 from itime.auth.security import now
-from itime.auth.session import authorized
+from itime.auth.session import authorized, check_ai_access
+from itime.review.job_service import (
+    enqueue_review_question,
+    enqueue_review_report,
+)
 from itime.review.memory_service import (
     create_memory,
     list_memories,
@@ -24,11 +28,14 @@ from itime.review.schemas import (
     MemoryUpdateInput,
     ReviewCreateInput,
     ReviewFactsUpdateInput,
+    ReviewQuestionGenerationInput,
+    ReviewReportGenerationInput,
 )
 from itime.review.service import (
     create_or_get_review,
     list_reviews,
     review_detail,
+    review_report_detail,
     update_review_facts,
 )
 
@@ -97,6 +104,55 @@ async def save_review_facts(
             review_id,
             data,
             current_time=current_time,
+        )
+
+
+@router.post("/reviews/{review_id}/questions", status_code=202)
+async def create_review_question(
+    review_id: UUID,
+    data: ReviewQuestionGenerationInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        check_ai_access(identity.user)
+        return await enqueue_review_question(
+            identity.session,
+            identity.user.id,
+            review_id,
+            data,
+            timeout_seconds=request.app.state.settings.ai_job_timeout_seconds,
+        )
+
+
+@router.post("/reviews/{review_id}/reports", status_code=202)
+async def create_review_report(
+    review_id: UUID,
+    data: ReviewReportGenerationInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        check_ai_access(identity.user)
+        return await enqueue_review_report(
+            identity.session,
+            identity.user.id,
+            review_id,
+            data,
+            timeout_seconds=request.app.state.settings.ai_job_timeout_seconds,
+        )
+
+
+@router.get("/reviews/{review_id}/reports/{version}")
+async def get_review_report(
+    review_id: UUID,
+    version: int,
+    request: Request,
+) -> dict:
+    async with authorized(request) as identity:
+        return await review_report_detail(
+            identity.session,
+            identity.user.id,
+            review_id,
+            version,
         )
 
 

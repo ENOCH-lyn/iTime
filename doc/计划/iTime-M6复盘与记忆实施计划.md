@@ -330,7 +330,7 @@ git commit -m "feat: 校验复盘 AI 结构化输出"
 - Modify: `server/src/itime/ai/usage.py`
 - Test: `server/tests/test_review_worker.py`
 
-- [ ] **Step 1: 写作业事务失败测试**
+- [x] **Step 1: 写作业事务失败测试**
 
 覆盖问题接单、首轮空回答、后续答案保存、三轮上限、报告生成/重生成、单会话活动作业、账号总并发、额度预留、失败/取消释放、成功结算、两个 Worker 争抢、租约失效、重试、事实变化后仍完成旧快照、重复终态不重复报告/扣额。
 
@@ -343,23 +343,23 @@ assert snapshot["report_version"] == 1
 assert snapshot["ledger_count"] == 1
 ```
 
-- [ ] **Step 2: 运行 Worker 测试确认失败**
+- [x] **Step 2: 运行 Worker 测试确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_review_worker.py`
 
 Expected: FAIL，作业接单和 Worker 分发尚不存在。
 
-- [ ] **Step 3: 实现接单和工作加载**
+- [x] **Step 3: 实现接单和工作加载**
 
 问题或报告接单事务依次锁会话、账号 AI 容量和配置，保存可选答案，构建 `ReviewInputSnapshot`，计算请求预算，写 `AIJob`、初始事件、额度预留和操作结果。
 
 Worker 加载时复核作业租约、配置、快照和当前记忆状态；已删除或暂停记忆导致上下文变化时，使用当前有效记忆重建请求并更新技术正文，而不把删除内容发送到供应商。
 
-- [ ] **Step 4: 实现成功、失败和取消终态**
+- [x] **Step 4: 实现成功、失败和取消终态**
 
 问题成功写一个助手消息并增加 `question_count`；报告成功在会话行锁内分配版本，写 `ReviewReportVersion` 和合法 `MemoryProposal`。同一事务调用 `finish_running_attempt`、`settle_success`、`create_quality_sample_if_enabled` 并写作业终态事件。失败/超时/取消使用现有预留释放合同。
 
-- [ ] **Step 5: 接入通用 Worker**
+- [x] **Step 5: 接入通用 Worker**
 
 在 `ai.worker` 增加 `_process_review`，并在正常分发与领取时终态错误分发两处处理 `review`。`AIJob` 结果为：
 
@@ -368,13 +368,13 @@ Worker 加载时复核作业租约、配置、快照和当前记忆状态；已�
 {"resource_type": "review_report", "report_id": "...", "version": 2, "review_session_id": "..."}
 ```
 
-- [ ] **Step 6: 运行 Worker、额度和治理回归**
+- [x] **Step 6: 运行 Worker、额度和治理回归**
 
 Run: `cd server && uv run pytest -q tests/test_review_worker.py tests/test_quota_service.py tests/test_ai_governance_lifecycle.py tests/test_ai_jobs.py`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add server/src/itime/review server/src/itime/ai/job_service.py \

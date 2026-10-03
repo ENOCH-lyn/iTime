@@ -14,6 +14,7 @@ from itime.calendar.models import UserTimeSettings
 from itime.errors import AppError
 from itime.execution.models import DifficultyRecord, FocusSession
 from itime.planning.models import Plan, PlanVersion, ScheduledBlock
+from itime.review.models import ReviewInputSnapshot, ReviewMessage, ReviewSession
 from itime.tasks.models import Task, TaskOccurrenceState
 
 MAX_FACTS_PER_GROUP = 200
@@ -269,3 +270,76 @@ async def collect_review_facts(
         },
     }
     return facts, sha256(_stable_json(facts)).hexdigest(), start, end
+
+
+async def build_review_snapshot(
+    session: AsyncSession,
+    review: ReviewSession,
+    *,
+    purpose: str,
+    generation_instruction: str,
+    current_time: datetime,
+) -> ReviewInputSnapshot:
+    facts, facts_sha256, start, end = await collect_review_facts(
+        session,
+        review.owner_id,
+        review.activity_date,
+        current_time=current_time,
+    )
+    messages = list(
+        await session.scalars(
+            select(ReviewMessage)
+            .where(
+                ReviewMessage.owner_id == review.owner_id,
+                ReviewMessage.review_session_id == review.id,
+            )
+            .order_by(ReviewMessage.sequence)
+        )
+    )
+    snapshot = ReviewInputSnapshot(
+        owner_id=review.owner_id,
+        review_session_id=review.id,
+        purpose=purpose,
+        activity_date=review.activity_date,
+        time_zone=review.time_zone,
+        activity_started_at=start,
+        activity_ended_at=end,
+        session_input_revision=review.input_revision,
+        facts_sha256=facts_sha256,
+        facts=facts,
+        user_context={
+            "supplemental_facts": review.supplemental_facts,
+            "messages": [
+                {
+                    "source_key": f"review_message:{message.id}",
+                    "role": message.role,
+                    "content": message.content,
+                }
+                for message in messages
+            ],
+        },
+        memory_context=[],
+        generation_instruction=generation_instruction,
+        created_at=current_time,
+    )
+    session.add(snapshot)
+    await session.flush()
+    return snapshot
+
+
+def review_snapshot_payload(snapshot: ReviewInputSnapshot) -> dict[str, Any]:
+    return {
+        "purpose": snapshot.purpose,
+        "activity_date": snapshot.activity_date.isoformat(),
+        "time_zone": snapshot.time_zone,
+        "activity_window": {
+            "start": snapshot.activity_started_at.isoformat(),
+            "end": snapshot.activity_ended_at.isoformat(),
+        },
+        "session_input_revision": snapshot.session_input_revision,
+        "facts_sha256": snapshot.facts_sha256,
+        "facts": snapshot.facts,
+        "user_context": snapshot.user_context,
+        "memory_context": snapshot.memory_context,
+        "generation_instruction": snapshot.generation_instruction,
+    }

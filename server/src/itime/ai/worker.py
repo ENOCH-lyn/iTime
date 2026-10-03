@@ -54,6 +54,17 @@ from itime.planning.provider import (
     PlanningProviderError,
     stream_planning_reply,
 )
+from itime.review.job_service import (
+    ReviewWorkUnavailable,
+    complete_review_job,
+    load_review_work,
+    reject_or_retry_review_job,
+)
+from itime.review.provider import (
+    ReviewGenerationSuperseded,
+    ReviewProviderError,
+    stream_review_reply,
+)
 
 logger = logging.getLogger("itime.ai")
 
@@ -341,6 +352,84 @@ async def _process_planning(
     )
 
 
+async def _process_review(
+    database: Database,
+    settings: Settings,
+    cipher: Fernet,
+    claim: ClaimedJob,
+) -> None:
+    try:
+        work = await load_review_work(database, claim)
+    except ReviewWorkUnavailable as exc:
+        await reject_or_retry_review_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=False,
+        )
+        return
+    if not await prepare_attempt_body_log(database, claim, work.request_body):
+        return
+
+    remaining = (claim.deadline_at - now()).total_seconds()
+    if remaining <= 0:
+        await reject_or_retry_review_job(
+            database,
+            claim,
+            error_code="ai_job_deadline_exceeded",
+            error_message="AI 作业已超过总等待时间，请重新生成。",
+            error_stage="deadline",
+            retryable=False,
+        )
+        return
+
+    async def accept_delta(_: str) -> bool:
+        return True
+
+    async def mark_started() -> bool:
+        return await mark_provider_request_started(database, claim)
+
+    try:
+        provider_result = await _with_lease_heartbeat(
+            database,
+            claim,
+            settings,
+            stream_review_reply(
+                work.config,
+                settings,
+                cipher,
+                messages=work.messages,
+                purpose=work.purpose,
+                timeout_seconds=remaining,
+                on_delta=accept_delta,
+                on_request_started=mark_started,
+            ),
+        )
+    except (JobLeaseLost, ReviewGenerationSuperseded):
+        return
+    except ReviewProviderError as exc:
+        await reject_or_retry_review_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=exc.retryable,
+            provider_request_id=exc.provider_request_id,
+            http_status=exc.http_status,
+            provider_usage=exc.usage,
+        )
+        return
+    await complete_review_job(
+        database,
+        claim,
+        provider_result,
+        quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+    )
+
+
 async def process_one(database: Database, settings: Settings) -> bool:
     claim = await claim_next_job(
         database,
@@ -371,6 +460,16 @@ async def process_one(database: Database, settings: Settings) -> bool:
                 error_stage=claim.terminal_error_stage or "worker",
                 retryable=False,
             )
+        elif claim.capability == "review":
+            await reject_or_retry_review_job(
+                database,
+                claim,
+                error_code=claim.terminal_error_code,
+                error_message=claim.terminal_error_message
+                or "AI 作业未能完成，请重新生成。",
+                error_stage=claim.terminal_error_stage or "worker",
+                retryable=False,
+            )
         else:
             await reject_or_retry_job(
                 database,
@@ -391,6 +490,8 @@ async def process_one(database: Database, settings: Settings) -> bool:
         await _process_conversation(database, settings, cipher, claim)
     elif claim.capability == "planning":
         await _process_planning(database, settings, cipher, claim)
+    elif claim.capability == "review":
+        await _process_review(database, settings, cipher, claim)
     else:
         await reject_or_retry_job(
             database,

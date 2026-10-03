@@ -24,6 +24,29 @@ class ReviewFactsUpdateInput(OperationInput):
         return value.strip()
 
 
+class ReviewQuestionGenerationInput(OperationInput):
+    expected_version: int = Field(ge=1)
+    answer: str | None = Field(default=None, max_length=8000)
+
+    @field_validator("answer")
+    @classmethod
+    def clean_answer(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
+class ReviewReportGenerationInput(OperationInput):
+    expected_version: int = Field(ge=1)
+    instruction: str = Field(default="", max_length=2000)
+
+    @field_validator("instruction")
+    @classmethod
+    def clean_instruction(cls, value: str) -> str:
+        return value.strip()
+
+
 class MemoryFields(Input):
     kind: MemoryKind
     title: str = Field(min_length=1, max_length=120)

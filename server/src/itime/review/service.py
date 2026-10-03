@@ -11,6 +11,8 @@ from itime.calendar.service import activity_day_at
 from itime.errors import AppError
 from itime.review.fact_service import collect_review_facts
 from itime.review.models import (
+    MemoryProposal,
+    ReviewAnnotation,
     ReviewInputSnapshot,
     ReviewMessage,
     ReviewReportVersion,
@@ -59,6 +61,45 @@ def report_summary(report: ReviewReportVersion) -> dict:
         "summary": report.summary,
         "input_snapshot_id": report.input_snapshot_id,
         "created_at": report.created_at,
+    }
+
+
+def annotation_result(annotation: ReviewAnnotation) -> dict:
+    return {
+        "id": annotation.id,
+        "content": annotation.content,
+        "version": annotation.version,
+        "created_at": annotation.created_at,
+        "updated_at": annotation.updated_at,
+    }
+
+
+def memory_proposal_result(proposal: MemoryProposal) -> dict:
+    return {
+        "id": proposal.id,
+        "position": proposal.position,
+        "kind": proposal.kind,
+        "title": proposal.title,
+        "content": proposal.content,
+        "rationale": proposal.rationale,
+        "status": proposal.status,
+        "confirmed_at": proposal.confirmed_at,
+        "rejected_at": proposal.rejected_at,
+        "version": proposal.version,
+        "created_at": proposal.created_at,
+        "updated_at": proposal.updated_at,
+    }
+
+
+def report_result(report: ReviewReportVersion) -> dict:
+    return {
+        **report_summary(report),
+        "facts": report.facts,
+        "user_statements": report.user_statements,
+        "insights": report.insights,
+        "next_actions": report.next_actions,
+        "uncertainties": report.uncertainties,
+        "source_job_id": report.source_job_id,
     }
 
 
@@ -365,6 +406,66 @@ async def list_reviews(
                 "before_id": page[-1].id,
             }
             if len(rows) > limit
+            else None
+        ),
+    }
+
+
+async def review_report_detail(
+    session: AsyncSession,
+    owner_id: UUID,
+    review_id: UUID,
+    version: int,
+) -> dict:
+    await owned_review(session, owner_id, review_id)
+    report = await session.scalar(
+        select(ReviewReportVersion).where(
+            ReviewReportVersion.owner_id == owner_id,
+            ReviewReportVersion.review_session_id == review_id,
+            ReviewReportVersion.version == version,
+        )
+    )
+    if report is None:
+        raise AppError(
+            "review_report_not_found",
+            "未找到此复盘报告版本。",
+            status=404,
+        )
+    annotations = list(
+        await session.scalars(
+            select(ReviewAnnotation)
+            .where(
+                ReviewAnnotation.owner_id == owner_id,
+                ReviewAnnotation.report_version_id == report.id,
+                ReviewAnnotation.deleted_at.is_(None),
+            )
+            .order_by(ReviewAnnotation.created_at, ReviewAnnotation.id)
+        )
+    )
+    proposals = list(
+        await session.scalars(
+            select(MemoryProposal)
+            .where(
+                MemoryProposal.owner_id == owner_id,
+                MemoryProposal.report_version_id == report.id,
+            )
+            .order_by(MemoryProposal.position, MemoryProposal.id)
+        )
+    )
+    snapshot = await session.get(ReviewInputSnapshot, report.input_snapshot_id)
+    return {
+        "report": report_result(report),
+        "annotations": [annotation_result(item) for item in annotations],
+        "memory_proposals": [memory_proposal_result(item) for item in proposals],
+        "snapshot": (
+            {
+                "activity_date": snapshot.activity_date,
+                "time_zone": snapshot.time_zone,
+                "session_input_revision": snapshot.session_input_revision,
+                "facts_sha256": snapshot.facts_sha256,
+                "created_at": snapshot.created_at,
+            }
+            if snapshot is not None
             else None
         ),
     }
