@@ -33,12 +33,20 @@ async function register(page: Page, address: string) {
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
 }
+async function expectAIHome(page: Page) {
+  await expect(page).toHaveURL('/ai')
+  if ((page.viewportSize()?.width ?? 0) <= 700) {
+    await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
+  } else {
+    await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
+  }
+}
 async function login(page: Page, address: string, secret = password) {
   await page.goto('/login')
   await page.getByLabel('邮箱', { exact: true }).fill(address)
   await page.getByLabel('密码', { exact: true }).fill(secret)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  await expectAIHome(page)
 }
 async function account(page: Page, request: APIRequestContext) {
   const address = email()
@@ -89,7 +97,7 @@ test('注册校验、真实邮件验证、登录与刷新保持身份', async ({
   await expect(page.getByRole('heading', { name: '邮箱已验证' })).toBeVisible()
   await login(page, address)
   await page.reload()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  await expectAIHome(page)
   const timeSettings = await page.evaluate(async () => {
     const response = await fetch('/api/v1/time-settings')
     return response.json()
@@ -169,7 +177,7 @@ test('改密保留及撤销其他会话，当前会话轮换后继续操作', as
     await page.getByRole('button', { name: '更新密码', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('其他设备的登录已保留')
     await second.reload()
-    await expect(second.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+    await expectAIHome(second)
     await page.getByLabel('当前密码', { exact: true }).fill(replacement)
     await page.getByLabel('新密码', { exact: true }).fill(password)
     await page.getByLabel('确认新密码', { exact: true }).fill(password)
@@ -222,7 +230,7 @@ test('断网保留输入，恢复网络后完成真实登录', async ({ page, re
   await screenshot(page, info, 'offline')
   await context.setOffline(false)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  await expectAIHome(page)
 })
 
 test('多标签改密遇到旧身份响应延迟，后续写入仍使用新会话', async ({ page, request, context }) => {
@@ -292,7 +300,7 @@ test('账号服务初次不可达可恢复，超时不显示虚假成功', async
     await expect(page.getByLabel('密码', { exact: true })).toHaveValue(password)
   } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  await expectAIHome(page)
 })
 
 test('主题、字号、键盘焦点、视口布局与无障碍检查', async ({ page, request }, info) => {
@@ -335,5 +343,5 @@ test('主题、字号、键盘焦点、视口布局与无障碍检查', async ({
   await page.goto('/does-not-exist')
   await expect(page.getByRole('heading', { name: '这个页面不在这里' })).toBeVisible()
   await page.getByRole('link', { name: '返回 iTime' }).click()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  await expectAIHome(page)
 })

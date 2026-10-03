@@ -78,9 +78,59 @@ class FakeAIHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length))
         prompt = json.dumps(body.get("messages", []), ensure_ascii=False)
+        if body.get("stream") is True:
+            user_messages = [
+                message.get("content", "")
+                for message in body.get("messages", [])
+                if message.get("role") == "user"
+            ]
+            user_prompt = str(user_messages[-1] if user_messages else "")
+            if "触发失败" in user_prompt:
+                encoded = json.dumps({"error": "private-upstream-body"}).encode()
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
+            parts = (
+                ["已收到这条消息。", "取消后不应出现。"]
+                if "取消测试" in user_prompt
+                else ["先把今天最重要的事情列出来。", " 然后为第一项留出一段完整时间。"]
+            )
+            pause = 1.5 if "取消测试" in user_prompt else (
+                0.6 if "离页恢复" in user_prompt else 0.12
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.send_header("x-request-id", "playwright-fake-chat")
+            self.end_headers()
+            try:
+                for part in parts:
+                    payload = json.dumps(
+                        {
+                            "choices": [
+                                {"index": 0, "delta": {"content": part}}
+                            ]
+                        },
+                        ensure_ascii=False,
+                    )
+                    self.wfile.write(f"data: {payload}\n\n".encode())
+                    self.wfile.flush()
+                    time.sleep(pause)
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except OSError:
+                pass
+            self.close_connection = True
+            return
         content = (
             '{"marker":"09:00"}'
             if "synthetic vision endpoint check" in prompt
+            else "ITIME_CHAT_OK"
+            if "synthetic text endpoint check" in prompt
             else json.dumps(
                 {
                     "items": [
@@ -322,31 +372,37 @@ async def seed_admins(
                     "recovery_code": recovery,
                 }
             result.append(entry)
-        current = now()
         async with database.transaction() as session:
-            state = await session.get(
-                AIConfigCapability,
-                "calendar_screenshot",
-                with_for_update=True,
-            )
-            config = AIConfigVersion(
-                capability="calendar_screenshot",
-                version=state.next_version,
-                endpoint_url=ai_endpoint,
-                model="vision-test-model",
-                api_key_ciphertext=security.ai_cipher.encrypt(b"playwright-ai-key"),
-                timeout_seconds=10,
-                max_output_tokens=4096,
-                status="published",
-                last_test_id=uuid4(),
-                last_test_started_at=current,
-                last_test_completed_at=current,
-                published_at=current,
-            )
-            state.next_version += 1
-            session.add(config)
-            await session.flush()
-            state.current_version_id = config.id
+            for capability, model in (
+                ("calendar_screenshot", "vision-test-model"),
+                ("conversation", "chat-test-model"),
+            ):
+                current = now()
+                state = await session.get(
+                    AIConfigCapability,
+                    capability,
+                    with_for_update=True,
+                )
+                config = AIConfigVersion(
+                    capability=capability,
+                    version=state.next_version,
+                    endpoint_url=ai_endpoint,
+                    model=model,
+                    api_key_ciphertext=security.ai_cipher.encrypt(
+                        b"playwright-ai-key"
+                    ),
+                    timeout_seconds=10,
+                    max_output_tokens=4096,
+                    status="published",
+                    last_test_id=uuid4(),
+                    last_test_started_at=current,
+                    last_test_completed_at=current,
+                    published_at=current,
+                )
+                state.next_version += 1
+                session.add(config)
+                await session.flush()
+                state.current_version_id = config.id
         return result
     finally:
         await database.close()

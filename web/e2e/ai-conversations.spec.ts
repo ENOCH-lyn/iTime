@@ -1,0 +1,237 @@
+import AxeBuilder from '@axe-core/playwright'
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+
+const password = 'Valid-ai-conversation-ui-password-123'
+const evidence = '/tmp/itime-ui-evidence'
+const runtimeErrors = new WeakMap<Page, string[]>()
+
+async function screenshot(page: Page, info: TestInfo, name: string) {
+  await mkdir(evidence, { recursive: true })
+  await page.screenshot({
+    path: `${evidence}/${info.project.name}-ai-conversation-${name}.png`,
+    fullPage: true,
+  })
+}
+
+async function mailLink(request: APIRequestContext, address: string) {
+  let id = ''
+  await expect.poll(async () => {
+    const response = await request.get(
+      `http://127.0.0.1:58025/api/v1/search?query=${encodeURIComponent(`to:${address}`)}`,
+    )
+    const result = await response.json()
+    id = result.messages.find((message: { Subject: string }) =>
+      message.Subject.includes('验证邮箱'))?.ID ?? ''
+    return id
+  }, { timeout: 12_000 }).not.toBe('')
+  const message = await (
+    await request.get(`http://127.0.0.1:58025/api/v1/message/${id}`)
+  ).json()
+  return message.Text.match(
+    /http:\/\/localhost:4173\/verify-email#token=[A-Za-z0-9_-]{43}/,
+  )[0] as string
+}
+
+async function account(page: Page, request: APIRequestContext) {
+  const address = `ai-chat-ui-${randomUUID()}@example.com`
+  await page.goto('/register')
+  await page.getByLabel('邮箱', { exact: true }).fill(address)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByLabel('确认密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '创建账号', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
+  await page.goto(await mailLink(request, address))
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '验证邮箱', exact: true }).click()
+  await page.getByRole('link', { name: '前往登录' }).click()
+  await page.getByLabel('邮箱', { exact: true }).fill(address)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL('/ai')
+  await expect(page).toHaveTitle('AI 对话 · iTime')
+}
+
+function watchRuntime(page: Page) {
+  const errors: string[] = []
+  runtimeErrors.set(page, errors)
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (
+      ['error', 'warning'].includes(message.type())
+      && !message.text().includes('Failed to load resource')
+    ) errors.push(message.text())
+  })
+  page.on('response', response => {
+    if (response.url().includes('/api/v1/') && response.status() >= 500) {
+      errors.push(`${response.status()} ${response.url()}`)
+    }
+  })
+}
+
+async function newConversation(page: Page) {
+  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '新对话', exact: true })).toBeVisible()
+}
+
+function conversationButton(page: Page, title: string) {
+  return page.locator('.conversation-select').filter({ hasText: title })
+}
+
+async function returnToConversationList(page: Page) {
+  const back = page.getByRole('button', { name: '返回会话列表', exact: true })
+  if (await back.isVisible()) await back.click()
+}
+
+async function send(page: Page, content: string) {
+  await page.getByLabel('消息', { exact: true }).fill(content)
+  await page.getByRole('button', { name: '发送消息', exact: true }).click()
+  await expect(
+    page.getByRole('list', { name: '会话消息' }).getByText(content, { exact: true }),
+  ).toBeVisible()
+}
+
+test.beforeEach(async ({ page }) => watchRuntime(page))
+test.afterEach(async ({ page }) => {
+  expect(runtimeErrors.get(page)).toEqual([])
+})
+
+test('多会话生成、改名、归档和恢复保持持久状态', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  if ((page.viewportSize()?.width ?? 0) <= 700) {
+    await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
+  } else {
+    await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
+  }
+  await newConversation(page)
+  const firstPrompt = '帮我整理今天的学习安排'
+  await page.getByLabel('消息', { exact: true }).fill(firstPrompt)
+  await page.getByLabel('消息', { exact: true }).press('Control+Enter')
+  const messageList = page.getByRole('list', { name: '会话消息' })
+  await expect(messageList.getByText(firstPrompt, { exact: true })).toBeVisible()
+  await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
+  await expect(messageList.getByText('然后为第一项留出一段完整时间。')).toBeVisible()
+  await expect(page.getByText('正在生成')).toHaveCount(0)
+
+  await returnToConversationList(page)
+  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '新对话', exact: true })).toBeVisible()
+  await returnToConversationList(page)
+  await page.getByRole('button', { name: '重命名 新对话' }).click()
+  const rename = page.getByRole('dialog', { name: '重命名会话' })
+  await rename.getByLabel('会话名称', { exact: true }).fill('论文讨论')
+  await rename.getByRole('button', { name: '保存名称', exact: true }).click()
+  await conversationButton(page, '论文讨论').click()
+  await expect(page.getByRole('heading', { name: '论文讨论', exact: true })).toBeVisible()
+
+  await returnToConversationList(page)
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '归档 论文讨论' }).click()
+  if ((page.viewportSize()?.width ?? 0) <= 700) {
+    await expect(page.getByRole('button', { name: '已归档', exact: true })).toBeVisible()
+  } else {
+    await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
+  }
+  await page.getByRole('button', { name: '已归档', exact: true }).click()
+  await expect(conversationButton(page, '论文讨论')).toBeVisible()
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '重新打开 论文讨论' }).click()
+  const visibleStatus = (page.viewportSize()?.width ?? 0) <= 700
+    ? page.locator('.conversation-navigation-status')
+    : page.locator('.ai-workspace-status')
+  await expect(visibleStatus.getByText('会话已重新打开。')).toBeVisible()
+  await page.getByRole('button', { name: '进行中', exact: true }).click()
+  await conversationButton(page, '帮我整理今天的学习安排').click()
+  await expect(messageList.getByText(firstPrompt, { exact: true })).toBeVisible()
+  await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'multi-session')
+
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.goto('/ai')
+    await conversationButton(page, '帮我整理今天的学习安排').click()
+    await expect(
+      page.getByRole('list', { name: '会话消息' }).getByText(firstPrompt, { exact: true }),
+    ).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, '320-large-dark')
+  }
+})
+
+test('离开页面后作业继续并从服务端恢复完整回复', async ({
+  page,
+  request,
+}) => {
+  await account(page, request)
+  await newConversation(page)
+  const prompt = '离页恢复：请帮我安排今天'
+  await send(page, prompt)
+  await expect(
+    page.getByRole('list', { name: '会话消息' })
+      .getByText('先把今天最重要的事情列出来。'),
+  ).toBeVisible()
+  const conversationId = new URL(page.url()).searchParams.get('conversation')
+  expect(conversationId).toBeTruthy()
+
+  await returnToConversationList(page)
+  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await expect(page).toHaveURL('/tasks')
+  await page.getByRole('link', { name: 'AI', exact: true }).click()
+  await conversationButton(page, prompt).click()
+  const restoredMessages = page.getByRole('list', { name: '会话消息' })
+  await expect(
+    restoredMessages.getByText('然后为第一项留出一段完整时间。'),
+  ).toBeVisible()
+  await expect(restoredMessages.getByText(prompt, { exact: true })).toHaveCount(1)
+
+  const messages = await (
+    await page.request.get(
+      `/api/v1/ai/conversations/${conversationId}/messages?limit=50`,
+    )
+  ).json()
+  expect(messages.items).toHaveLength(2)
+  expect(messages.items[1].job.attempt_count).toBe(1)
+})
+
+test('取消保留已生成片段，失败状态可重新发送', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  await newConversation(page)
+  await send(page, '取消测试')
+  await expect(
+    page.getByRole('list', { name: '会话消息' })
+      .getByText('已收到这条消息。', { exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '取消生成', exact: true }).click()
+  await expect(page.getByText('已取消，以上内容可能不完整')).toBeVisible()
+  await page.waitForTimeout(1800)
+  await expect(page.getByText('取消后不应出现。')).toHaveCount(0)
+
+  await returnToConversationList(page)
+  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await send(page, '触发失败')
+  await expect(page.getByText('AI 服务暂时不可用，系统会自动重试。'))
+    .toBeVisible({ timeout: 15_000 })
+  await page.getByRole('button', { name: '重新发送', exact: true }).click()
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('触发失败')
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'cancel-and-failure')
+})

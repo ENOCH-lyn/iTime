@@ -112,7 +112,11 @@ async function registerAndLogin(page: Page, request: APIRequestContext, email: s
   await page.getByLabel('邮箱', { exact: true }).fill(email)
   await page.getByLabel('密码', { exact: true }).fill(userPassword)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
+  if ((page.viewportSize()?.width ?? 0) <= 700) {
+    await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
+  } else {
+    await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
+  }
 }
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
@@ -215,7 +219,10 @@ test('AI 冻结保留手动账号访问，停用账号立即撤销会话', async
     await page.getByRole('button', { name: '确认修改', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('AI 访问已冻结')
     await userPage.reload()
-    await expect(userPage.getByText('此账号的 AI 功能已暂停')).toBeVisible()
+    const visibleRestriction = userPage.locator('.status:visible').filter({
+      hasText: '此账号的 AI 功能已暂停',
+    })
+    await expect(visibleRestriction).toBeVisible()
     await screenshot(page, info, 'user-ai-frozen')
 
     await row.getByRole('button', { name: '停用账号', exact: true }).click()
@@ -231,13 +238,13 @@ test('AI 冻结保留手动账号访问，停用账号立即撤销会话', async
     await userPage.getByLabel('邮箱', { exact: true }).fill(email)
     await userPage.getByLabel('密码', { exact: true }).fill(userPassword)
     await userPage.getByRole('button', { name: '登录', exact: true }).click()
-    await expect(userPage.getByText('此账号的 AI 功能已暂停')).toBeVisible()
+    await expect(visibleRestriction).toBeVisible()
 
     await row.getByRole('button', { name: '恢复 AI', exact: true }).click()
     await page.getByRole('button', { name: '确认修改', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('AI 访问已恢复')
     await userPage.reload()
-    await expect(userPage.getByText('此账号的 AI 功能已暂停')).toHaveCount(0)
+    await expect(visibleRestriction).toHaveCount(0)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   } finally {
     await userContext.close()
@@ -287,7 +294,7 @@ test('管理列表可从网络失败和版本冲突恢复并适配窄屏', async
   await screenshot(page, info, 'registration-320')
 })
 
-test('创建、测试、发布并回滚截图识别配置', async ({ page }, info) => {
+test('分别创建、测试和发布截图与对话配置', async ({ page }, info) => {
   const data = await bootstrap(info)
   await loginAdmin(page, data.active['ai-config']!, data.password)
   await page.goto('/admin/ai')
@@ -328,4 +335,24 @@ test('创建、测试、发布并回滚截图识别配置', async ({ page }, inf
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await page.evaluate(() => scrollTo(0, 0))
   await screenshot(page, info, 'ai-config-published')
+
+  await page.locator('.ai-capability-switch label').filter({
+    hasText: '全局对话',
+  }).click()
+  await expect(page.getByRole('heading', { name: '全局对话配置' })).toBeVisible()
+  const chatModel = `chat-ui-${info.project.name}-${randomUUID().slice(0, 8)}`
+  await page.getByLabel('OpenAI 兼容端点', { exact: true }).fill(data.ai_endpoint)
+  await page.getByLabel('模型', { exact: true }).fill(chatModel)
+  await page.getByLabel('API Key', { exact: true }).fill(`sk-chat-ui-${randomUUID()}`)
+  await page.getByLabel('单次超时（秒）', { exact: true }).fill('10')
+  await page.getByLabel('最大输出 Token', { exact: true }).fill('2048')
+  await page.getByRole('button', { name: '保存新版本', exact: true }).click()
+  const chatRow = page.locator('.ai-config-list li').filter({ hasText: chatModel })
+  await expect(chatRow.getByText('草稿', { exact: true })).toBeVisible()
+  await chatRow.getByRole('button', { name: '测试', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已通过合成文本测试')
+  await chatRow.getByRole('button', { name: '发布', exact: true }).click()
+  await expect(chatRow.getByText('当前发布', { exact: true })).toBeVisible()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'chat-config-published')
 })
