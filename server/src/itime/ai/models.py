@@ -209,7 +209,8 @@ class TemporaryMedia(Base):
             name="deletion_state",
         ),
         CheckConstraint(
-            "deletion_reason IS NULL OR deletion_reason IN ('confirmed', 'expired')",
+            "deletion_reason IS NULL OR deletion_reason IN "
+            "('confirmed', 'expired', 'account_deletion')",
             name="deletion_reason",
         ),
         UniqueConstraint("id", "owner_id", name="uq_temporary_media_id_owner"),

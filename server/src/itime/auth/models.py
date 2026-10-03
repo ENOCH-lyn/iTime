@@ -23,7 +23,10 @@ from itime.database import Base
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'suspended')", name="status"),
+        CheckConstraint(
+            "status IN ('active', 'suspended', 'pending_deletion')",
+            name="status",
+        ),
         CheckConstraint("ai_access IN ('allowed', 'frozen')", name="ai_access"),
         CheckConstraint("email = lower(email)", name="normalized_email"),
         Index("ix_users_created", "created_at", "id"),

@@ -49,7 +49,7 @@ Web：
 - Modify: `server/tests/test_planning_models.py`
 - Create: `server/tests/test_account_deletion_models.py`
 
-- [ ] **Step 1: 写迁移和约束失败测试**
+- [x] **Step 1: 写迁移和约束失败测试**
 
 测试在独立 PostgreSQL 数据库中：
 
@@ -96,7 +96,7 @@ def test_account_deletion_migration_constraints_and_downgrade(admin_url):
 - 有任意注销记录时降级拒绝；删除记录后可降到 `0028_sync_feed` 再升级。
 - 临时媒体 `deletion_reason=account_deletion` 合法。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -107,7 +107,7 @@ uv run pytest -q tests/test_account_deletion_models.py
 
 Expected: FAIL，迁移和模型不存在。
 
-- [ ] **Step 3: 实现 ORM**
+- [x] **Step 3: 实现 ORM**
 
 `AccountDeletion` 固定核心字段：
 
@@ -143,7 +143,7 @@ class AccountDeletion(Base):
 `User.status` 检查与类型扩展到 `pending_deletion`；`TemporaryMedia.deletion_reason` 扩展
 `account_deletion`。
 
-- [ ] **Step 4: 实现迁移**
+- [x] **Step 4: 实现迁移**
 
 迁移 revision 为 `0029_account_deletions`，down revision 为 `0028_sync_feed`。upgrade 顺序：
 
@@ -164,7 +164,7 @@ END $$;
 
 然后删除表并恢复 `0028` 的两个检查约束。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
