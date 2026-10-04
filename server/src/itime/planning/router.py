@@ -32,8 +32,10 @@ from itime.planning.schemas import (
     PlanningContextQuery,
     PlanningGenerationInput,
     ProposalActionInput,
+    ResolvePlanSourceConflictsInput,
 )
 from itime.planning.snapshot_service import planning_context
+from itime.planning.source_conflict_service import resolve_source_conflicts
 from itime.tasks.service import replay_operation, validate_cursor
 
 router = APIRouter(prefix="/api/v1", tags=["AI 规划"])
@@ -140,6 +142,21 @@ async def create_manual_version(
         )
 
 
+@router.post("/plans/{plan_id}/source-conflicts/resolve")
+async def resolve_plan_source_conflicts(
+    plan_id: UUID,
+    data: ResolvePlanSourceConflictsInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await resolve_source_conflicts(
+            identity.session,
+            identity.user.id,
+            plan_id,
+            data,
+        )
+
+
 @router.get("/plans/{plan_id}")
 async def get_plan(
     plan_id: UUID,
@@ -164,7 +181,7 @@ async def get_planning_blocks(
     end: date,
 ) -> dict:
     async with authorized(request) as identity:
-        items, time_zone = await read_current_plan_blocks(
+        items, time_zone, source_conflicts = await read_current_plan_blocks(
             identity.session,
             identity.user.id,
             start,
@@ -175,6 +192,7 @@ async def get_planning_blocks(
             "end": end,
             "time_zone": time_zone,
             "items": items,
+            "source_conflicts": source_conflicts,
         }
 
 

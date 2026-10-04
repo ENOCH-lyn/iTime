@@ -79,6 +79,20 @@ class ProposalActionInput(Input):
     expected_proposal_version: int = Field(ge=1)
 
 
+class ResolvePlanSourceConflictsInput(Input):
+    operation_id: UUID
+    expected_plan_version: int = Field(ge=1)
+    conflict_ids: list[UUID] = Field(min_length=1, max_length=100)
+    resolution: Literal["kept"]
+
+    @field_validator("conflict_ids")
+    @classmethod
+    def unique_conflict_ids(cls, values: list[UUID]) -> list[UUID]:
+        if len(values) != len(set(values)):
+            raise ValueError("计划来源冲突不能重复")
+        return values
+
+
 class ManualPlanBlockInput(Input):
     task_id: UUID
     occurrence_key: str | None = Field(default=None, min_length=1, max_length=120)

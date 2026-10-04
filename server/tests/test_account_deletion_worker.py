@@ -110,6 +110,10 @@ def seed_personal_data(
     invitation_id = uuid4()
     target_event_id = uuid4()
     config_id = uuid4()
+    plan_id = uuid4()
+    plan_version_id = uuid4()
+    source_conflict_id = uuid4()
+    week_start = current.date() - timedelta(days=current.weekday())
     config_version = connection.execute(
         """
         UPDATE ai_config_capabilities
@@ -203,6 +207,51 @@ def seed_personal_data(
             b"private-encrypted-url",
             "a" * 64,
             current + timedelta(hours=1),
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO plans (
+            id, owner_id, week_start_date, time_zone,
+            current_version_id, version
+        ) VALUES (%s, %s, %s, 'UTC', %s, 1)
+        """,
+        (plan_id, owner_id, week_start, plan_version_id),
+    )
+    connection.execute(
+        """
+        INSERT INTO plan_versions (
+            id, plan_id, owner_id, version, source, scope,
+            target_date, density, buffer_minutes,
+            availability_start, availability_end, summary,
+            assumptions, input_revision
+        ) VALUES (
+            %s, %s, %s, 1, 'manual', 'week',
+            %s, 'balanced', 0, '08:00', '22:00',
+            '待删除计划', '[]'::jsonb, 0
+        )
+        """,
+        (plan_version_id, plan_id, owner_id, week_start),
+    )
+    connection.execute(
+        """
+        INSERT INTO plan_source_conflicts (
+            id, owner_id, plan_id, plan_version_id, source_id,
+            source_generation, status, changes, affected_block_ids,
+            details_limited, version, detected_at
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            1, 'open', '[{"kind":"removed"}]'::jsonb, '[]'::jsonb,
+            false, 1, %s
+        )
+        """,
+        (
+            source_conflict_id,
+            owner_id,
+            plan_id,
+            plan_version_id,
+            source_id,
+            current,
         ),
     )
     connection.execute(
@@ -412,6 +461,8 @@ def test_two_workers_purge_due_account_and_leave_minimal_receipts(admin_url):
                 "data_export_jobs",
                 "focus_sessions",
                 "memories",
+                "plan_source_conflicts",
+                "plans",
                 "projects",
                 "sync_states",
                 "tasks",

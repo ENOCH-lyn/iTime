@@ -24,6 +24,11 @@ from itime.planning.models import (
 )
 from itime.planning.schemas import ManualPlanVersionInput, PlanningRequestFields
 from itime.planning.snapshot_service import lock_planning_revision, planning_context
+from itime.planning.source_conflict_service import (
+    open_source_conflict_summaries,
+    open_source_conflict_summary,
+    resolve_replanned_conflicts,
+)
 from itime.planning.validation import (
     NormalizedBlock,
     NormalizedPlan,
@@ -116,7 +121,11 @@ def plan_version_result(
     }
 
 
-def plan_result(plan: Plan, current_version: dict) -> dict:
+def plan_result(
+    plan: Plan,
+    current_version: dict,
+    source_conflicts: dict[str, Any] | None = None,
+) -> dict:
     return {
         "id": str(plan.id),
         "week_start_date": plan.week_start_date.isoformat(),
@@ -125,6 +134,9 @@ def plan_result(plan: Plan, current_version: dict) -> dict:
         "current_version_id": str(plan.current_version_id),
         "version": plan.version,
         "current_version": current_version,
+        "source_conflicts": source_conflicts
+        if source_conflicts is not None
+        else {"open_count": 0, "overlap_count": 0, "items": []},
         "created_at": _datetime_result(plan.created_at),
         "updated_at": _datetime_result(plan.updated_at),
     }
@@ -151,7 +163,17 @@ async def read_week_plan(
         plan,
         version=version,
     )
-    return plan_result(plan, selected_version)
+    source_conflicts = (
+        await open_source_conflict_summary(
+            session,
+            owner_id,
+            plan.current_version_id,
+            plan.version,
+        )
+        if version is None or version == plan.version
+        else None
+    )
+    return plan_result(plan, selected_version, source_conflicts)
 
 
 async def list_week_plans(
@@ -195,6 +217,14 @@ async def list_week_plans(
         owner_id,
         list(versions),
     )
+    source_conflicts = await open_source_conflict_summaries(
+        session,
+        owner_id,
+        {
+            version.id: version.version
+            for version in versions.values()
+        },
+    )
     return [
         plan_result(
             plan,
@@ -203,6 +233,7 @@ async def list_week_plans(
                 blocks.get(plan.current_version_id, []),
                 unscheduled.get(plan.current_version_id, []),
             ),
+            source_conflicts.get(plan.current_version_id),
         )
         for plan in plans
     ]
@@ -226,7 +257,17 @@ async def read_plan(
         plan,
         version=version,
     )
-    return plan_result(plan, selected_version)
+    source_conflicts = (
+        await open_source_conflict_summary(
+            session,
+            owner_id,
+            plan.current_version_id,
+            plan.version,
+        )
+        if version is None or version == plan.version
+        else None
+    )
+    return plan_result(plan, selected_version, source_conflicts)
 
 
 async def read_plan_history(
@@ -272,7 +313,7 @@ async def read_current_plan_blocks(
     owner_id: UUID,
     start: date,
     end: date,
-) -> tuple[list[dict], str]:
+) -> tuple[list[dict], str, dict[str, Any]]:
     _validate_block_range(start, end)
     settings = await session.get(UserTimeSettings, owner_id)
     if settings is None:
@@ -319,6 +360,40 @@ async def read_current_plan_blocks(
             )
         ).all()
     )
+    plan_rows = list(
+        (
+            await session.execute(
+                select(Plan, PlanVersion)
+                .join(
+                    PlanVersion,
+                    and_(
+                        PlanVersion.id == Plan.current_version_id,
+                        PlanVersion.plan_id == Plan.id,
+                        PlanVersion.owner_id == Plan.owner_id,
+                    ),
+                )
+                .where(
+                    Plan.owner_id == owner_id,
+                    Plan.week_start_date < end,
+                    Plan.week_start_date >= start - timedelta(days=6),
+                )
+                .order_by(Plan.week_start_date, Plan.id)
+            )
+        ).all()
+    )
+    source_conflicts = await open_source_conflict_summaries(
+        session,
+        owner_id,
+        {version.id: version.version for _, version in plan_rows},
+    )
+    conflict_items = [
+        item
+        for _, version in plan_rows
+        for item in source_conflicts.get(
+            version.id,
+            {"items": []},
+        )["items"]
+    ]
     return (
         [
             {
@@ -328,10 +403,25 @@ async def read_current_plan_blocks(
                 "plan_version_id": str(version.id),
                 "plan_version": version.version,
                 "plan_source": version.source,
+                "source_conflict_count": sum(
+                    str(block.id) in conflict["affected_block_ids"]
+                    for conflict in source_conflicts.get(
+                        version.id,
+                        {"items": []},
+                    )["items"]
+                ),
             }
             for block, version, plan in rows
         ],
         settings.time_zone,
+        {
+            "open_count": len(conflict_items),
+            "overlap_count": sum(
+                bool(item["affected_block_ids"])
+                for item in conflict_items
+            ),
+            "items": conflict_items,
+        },
     )
 
 
@@ -601,6 +691,12 @@ async def create_plan_version(
     ]
     session.add_all([*blocks, *unscheduled_items])
     await session.flush()
+    await resolve_replanned_conflicts(
+        session,
+        owner_id,
+        previous_version_id,
+        current,
+    )
     emit_change(
         session,
         owner_id,

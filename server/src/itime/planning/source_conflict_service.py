@@ -6,9 +6,10 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.auth.security import now
 from itime.calendar.models import CalendarSource
 from itime.calendar.subscription_projection import query_subscription_occurrences
 from itime.errors import AppError
@@ -18,11 +19,17 @@ from itime.planning.models import (
     PlanVersion,
     ScheduledBlock,
 )
+from itime.planning.schemas import ResolvePlanSourceConflictsInput
 from itime.planning.snapshot_service import lock_planning_revision
-from itime.tasks.service import emit_change
+from itime.tasks.service import (
+    emit_change,
+    replay_operation,
+    save_operation,
+)
 
 MAX_CONFLICT_OCCURRENCES = 2000
 MAX_CURRENT_OR_FUTURE_PLANS = 60
+RESOLVE_SOURCE_CONFLICTS_SCOPE = "planning.source_conflicts.resolve"
 
 
 @dataclass(frozen=True)
@@ -237,6 +244,21 @@ async def open_source_conflict_summary(
     plan_version_id: UUID,
     plan_version: int,
 ) -> dict[str, Any]:
+    summaries = await open_source_conflict_summaries(
+        session,
+        owner_id,
+        {plan_version_id: plan_version},
+    )
+    return summaries.get(plan_version_id, _empty_summary())
+
+
+async def open_source_conflict_summaries(
+    session: AsyncSession,
+    owner_id: UUID,
+    plan_versions: dict[UUID, int],
+) -> dict[UUID, dict[str, Any]]:
+    if not plan_versions:
+        return {}
     rows = list(
         (
             await session.execute(
@@ -250,25 +272,163 @@ async def open_source_conflict_summary(
                 )
                 .where(
                     PlanSourceConflict.owner_id == owner_id,
-                    PlanSourceConflict.plan_version_id == plan_version_id,
+                    PlanSourceConflict.plan_version_id.in_(plan_versions),
                     PlanSourceConflict.status == "open",
                 )
                 .order_by(
+                    PlanSourceConflict.plan_version_id,
                     PlanSourceConflict.detected_at.desc(),
                     PlanSourceConflict.id,
                 )
             )
         ).all()
     )
-    items = [
-        source_conflict_result(conflict, source_name, plan_version)
-        for conflict, source_name in rows
-    ]
+    items_by_version: dict[UUID, list[dict[str, Any]]] = {}
+    for conflict, source_name in rows:
+        items_by_version.setdefault(conflict.plan_version_id, []).append(
+            source_conflict_result(
+                conflict,
+                source_name,
+                plan_versions[conflict.plan_version_id],
+            )
+        )
     return {
-        "open_count": len(items),
-        "overlap_count": sum(bool(item["affected_block_ids"]) for item in items),
-        "items": items,
+        version_id: _summary(items_by_version.get(version_id, []))
+        for version_id in plan_versions
     }
+
+
+async def resolve_source_conflicts(
+    session: AsyncSession,
+    owner_id: UUID,
+    plan_id: UUID,
+    data: ResolvePlanSourceConflictsInput,
+) -> dict[str, Any]:
+    scope = f"{RESOLVE_SOURCE_CONFLICTS_SCOPE}:{plan_id}"
+    await _advisory_lock(
+        session,
+        f"plan-source-conflicts:{owner_id}:{data.operation_id}",
+    )
+    replay = await replay_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+    )
+    if replay is not None:
+        return replay
+
+    await lock_planning_revision(session, owner_id, write=True)
+    plan = await session.scalar(
+        select(Plan)
+        .where(Plan.id == plan_id, Plan.owner_id == owner_id)
+        .with_for_update()
+    )
+    if plan is None:
+        raise AppError("plan_not_found", "未找到此周计划。", status=404)
+    if plan.version != data.expected_plan_version:
+        raise AppError(
+            "plan_source_conflict_plan_changed",
+            "当前计划版本已变化，请重新读取来源冲突。",
+            status=409,
+            retryable=True,
+            details={"current_plan_version": plan.version},
+        )
+
+    conflicts = list(
+        await session.scalars(
+            select(PlanSourceConflict)
+            .where(
+                PlanSourceConflict.owner_id == owner_id,
+                PlanSourceConflict.plan_id == plan.id,
+                PlanSourceConflict.plan_version_id == plan.current_version_id,
+                PlanSourceConflict.id.in_(data.conflict_ids),
+            )
+            .order_by(PlanSourceConflict.id)
+            .with_for_update()
+        )
+    )
+    if len(conflicts) != len(data.conflict_ids):
+        raise AppError(
+            "plan_source_conflict_not_found",
+            "未找到当前计划的来源冲突。",
+            status=404,
+        )
+    if any(conflict.status != "open" for conflict in conflicts):
+        raise AppError(
+            "plan_source_conflict_changed",
+            "来源冲突已在其他页面或设备处理，请重新读取。",
+            status=409,
+            retryable=True,
+            details={"current_plan_version": plan.version},
+        )
+
+    resolved_at = now()
+    for conflict in conflicts:
+        conflict.status = "resolved"
+        conflict.resolution = data.resolution
+        conflict.resolved_at = resolved_at
+        conflict.version += 1
+    plan.updated_at = resolved_at
+    emit_change(
+        session,
+        owner_id,
+        "plan",
+        plan.id,
+        "updated",
+        plan.version,
+    )
+    await session.flush()
+    summary = await open_source_conflict_summary(
+        session,
+        owner_id,
+        plan.current_version_id,
+        plan.version,
+    )
+    result = {
+        "operation_id": str(data.operation_id),
+        "plan_id": str(plan.id),
+        "plan_version": plan.version,
+        "source_conflicts": summary,
+    }
+    save_operation(
+        session,
+        owner_id,
+        data.operation_id,
+        scope,
+        data,
+        result,
+    )
+    await session.flush()
+    return result
+
+
+async def resolve_replanned_conflicts(
+    session: AsyncSession,
+    owner_id: UUID,
+    plan_version_id: UUID | None,
+    resolved_at: datetime,
+) -> int:
+    if plan_version_id is None:
+        return 0
+    conflicts = list(
+        await session.scalars(
+            select(PlanSourceConflict)
+            .where(
+                PlanSourceConflict.owner_id == owner_id,
+                PlanSourceConflict.plan_version_id == plan_version_id,
+                PlanSourceConflict.status == "open",
+            )
+            .with_for_update()
+        )
+    )
+    for conflict in conflicts:
+        conflict.status = "resolved"
+        conflict.resolution = "replanned"
+        conflict.resolved_at = resolved_at
+        conflict.version += 1
+    return len(conflicts)
 
 
 def source_conflict_result(
@@ -293,6 +453,24 @@ def source_conflict_result(
         "detected_at": _datetime_text(conflict.detected_at),
         "resolved_at": _datetime_text(conflict.resolved_at),
     }
+
+
+def _summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "open_count": len(items),
+        "overlap_count": sum(bool(item["affected_block_ids"]) for item in items),
+        "items": items,
+    }
+
+
+def _empty_summary() -> dict[str, Any]:
+    return _summary([])
+
+
+async def _advisory_lock(session: AsyncSession, key: str) -> None:
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0)))
+    )
 
 
 async def _source_occurrences(
