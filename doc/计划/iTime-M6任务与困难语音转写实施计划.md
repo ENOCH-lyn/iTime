@@ -15,6 +15,7 @@
 新增文件：
 
 - `server/src/itime/migrations/versions/0035_voice_transcriptions.py`：能力、配置计价、媒体、作业、成本和临时结果迁移。
+- `server/src/itime/migrations/versions/0036_transcription_quota_usage.py`：允许额度预留与账本记录服务端实测音频用量来源。
 - `server/src/itime/ai/audio_validation.py`：严格 PCM WAV 解析、时长计算和内容哈希。
 - `server/src/itime/ai/transcription_schemas.py`：purpose、resolve 输入和临时结果输出合同。
 - `server/src/itime/ai/transcription_router.py`：上传、列表、详情和解决 API。
@@ -411,6 +412,9 @@ git commit -m "feat: 接收并恢复语音转写作业"
 - Modify: `server/src/itime/ai/cost_service.py`
 - Modify: `server/src/itime/ai/usage.py`
 - Modify: `server/src/itime/ai/governance_service.py`
+- Create: `server/src/itime/migrations/versions/0036_transcription_quota_usage.py`
+- Modify: `server/src/itime/quota/models.py`
+- Modify: `server/src/itime/quota/service.py`
 - Test: `server/tests/test_voice_transcription_worker.py`
 - Test: `server/tests/test_ai_provider_cost_models.py`
 - Test: `server/tests/test_admin_provider_costs.py`
@@ -951,7 +955,7 @@ Expected: wheel 与 sdist 构建成功。
 
 Run: `cd server && uv run alembic upgrade head`
 
-Expected: 开发库位于 `0035_voice_transcriptions (head)`。
+Expected: 开发库位于 `0036_transcription_quota_usage (head)`。
 
 Run: `cd server && uv run python -m itime.ai.worker --once`
 

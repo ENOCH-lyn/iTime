@@ -13,8 +13,13 @@ from itime.ai.models import (
     AIJobConfigRoute,
     AIProviderCost,
 )
-from itime.ai.pricing import token_cost_breakdown
-from itime.ai.usage import ESTIMATOR_VERSION, estimate_usage, normalize_provider_usage
+from itime.ai.pricing import audio_duration_cost, token_cost_breakdown
+from itime.ai.usage import (
+    ESTIMATOR_VERSION,
+    estimate_usage,
+    normalize_provider_usage,
+    normalize_transcription_usage,
+)
 from itime.auth.security import now
 from itime.database import Database
 
@@ -96,80 +101,142 @@ async def add_provider_cost(
         else None
     )
 
-    if attempt.provider_started_at is None:
-        usage_source = "not_sent"
+    billing_basis = (
+        "audio_minute" if job.capability == "transcription" else "token"
+    )
+    audio_duration_ms = None
+    audio_price = None
+    audio_cost = None
+    if billing_basis == "audio_minute":
+        duration_value = job.input_summary.get("duration_ms")
+        if (
+            isinstance(duration_value, bool)
+            or not isinstance(duration_value, int)
+            or not 250 <= duration_value <= 60_000
+        ):
+            raise ValueError("transcription job is missing valid audio duration")
+        audio_duration_ms = duration_value
+        usage_source = (
+            "not_sent"
+            if attempt.provider_started_at is None
+            else "measured"
+        )
         estimation_reason = None
         estimator_version = None
         input_tokens = 0
         cached_input_tokens = 0
         output_tokens = 0
         total_tokens = 0
-        usage_details: dict = {}
-    else:
-        usage = normalize_provider_usage(provider_usage)
-        if usage is not None:
-            usage_source = "provider"
-            estimation_reason = None
-            estimator_version = None
-        else:
-            usage_source = "estimated"
-            estimation_reason = (
-                "missing_usage" if provider_usage is None else "invalid_usage"
-            )
-            estimator_version = ESTIMATOR_VERSION
-            usage = estimate_usage(
-                body_log.request_body if body_log is not None else {},
-                body_log.response_body if body_log is not None else "",
-                capability=job.capability,
-                input_summary=job.input_summary,
-            )
-        input_tokens = usage.input_tokens
-        cached_input_tokens = usage.cached_input_tokens
-        output_tokens = usage.output_tokens
-        total_tokens = usage.total_tokens
-        usage_details = usage.details
-
-    prices = (
-        config.input_price_nanos_per_million_tokens if config is not None else None,
-        (
-            config.cached_input_price_nanos_per_million_tokens
-            if config is not None
-            else None
-        ),
-        config.output_price_nanos_per_million_tokens if config is not None else None,
-    )
-    if (
-        config is not None
-        and config.price_currency is not None
-        and all(price is not None for price in prices)
-    ):
-        input_price, cached_input_price, output_price = prices
-        assert input_price is not None
-        assert cached_input_price is not None
-        assert output_price is not None
-        (
-            input_cost,
-            cached_input_cost,
-            output_cost,
-            total_cost,
-        ) = token_cost_breakdown(
-            input_tokens=input_tokens,
-            cached_input_tokens=cached_input_tokens,
-            output_tokens=output_tokens,
-            input_price=input_price,
-            cached_input_price=cached_input_price,
-            output_price=output_price,
-        )
-        price_currency = config.price_currency
-    else:
+        usage_details = normalize_transcription_usage(provider_usage)
         input_price = None
         cached_input_price = None
         output_price = None
         input_cost = None
         cached_input_cost = None
         output_cost = None
-        total_cost = None
-        price_currency = None
+        if (
+            config is not None
+            and config.pricing_basis == "audio_minute"
+            and config.price_currency is not None
+            and config.audio_price_nanos_per_minute is not None
+        ):
+            price_currency = config.price_currency
+            audio_price = config.audio_price_nanos_per_minute
+            audio_cost = (
+                0
+                if attempt.provider_started_at is None
+                else audio_duration_cost(audio_duration_ms, audio_price)
+            )
+            total_cost = audio_cost
+        else:
+            price_currency = None
+            total_cost = None
+    else:
+        if attempt.provider_started_at is None:
+            usage_source = "not_sent"
+            estimation_reason = None
+            estimator_version = None
+            input_tokens = 0
+            cached_input_tokens = 0
+            output_tokens = 0
+            total_tokens = 0
+            usage_details = {}
+        else:
+            usage = normalize_provider_usage(provider_usage)
+            if usage is not None:
+                usage_source = "provider"
+                estimation_reason = None
+                estimator_version = None
+            else:
+                usage_source = "estimated"
+                estimation_reason = (
+                    "missing_usage"
+                    if provider_usage is None
+                    else "invalid_usage"
+                )
+                estimator_version = ESTIMATOR_VERSION
+                usage = estimate_usage(
+                    body_log.request_body if body_log is not None else {},
+                    body_log.response_body if body_log is not None else "",
+                    capability=job.capability,
+                    input_summary=job.input_summary,
+                )
+            input_tokens = usage.input_tokens
+            cached_input_tokens = usage.cached_input_tokens
+            output_tokens = usage.output_tokens
+            total_tokens = usage.total_tokens
+            usage_details = usage.details
+
+        prices = (
+            (
+                config.input_price_nanos_per_million_tokens
+                if config is not None
+                else None
+            ),
+            (
+                config.cached_input_price_nanos_per_million_tokens
+                if config is not None
+                else None
+            ),
+            (
+                config.output_price_nanos_per_million_tokens
+                if config is not None
+                else None
+            ),
+        )
+        if (
+            config is not None
+            and config.pricing_basis == "token"
+            and config.price_currency is not None
+            and all(price is not None for price in prices)
+        ):
+            input_price, cached_input_price, output_price = prices
+            assert input_price is not None
+            assert cached_input_price is not None
+            assert output_price is not None
+            (
+                input_cost,
+                cached_input_cost,
+                output_cost,
+                total_cost,
+            ) = token_cost_breakdown(
+                input_tokens=input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                output_tokens=output_tokens,
+                input_price=input_price,
+                cached_input_price=cached_input_price,
+                output_price=output_price,
+            )
+            price_currency = config.price_currency
+        else:
+            input_price = None
+            cached_input_price = None
+            output_price = None
+            input_cost = None
+            cached_input_cost = None
+            output_cost = None
+            total_cost = None
+            price_currency = None
 
     cost = AIProviderCost(
         id=uuid4(),
@@ -186,13 +253,17 @@ async def add_provider_cost(
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         usage_details=usage_details,
+        billing_basis=billing_basis,
+        audio_duration_ms=audio_duration_ms,
         price_currency=price_currency,
         input_price_nanos_per_million_tokens=input_price,
         cached_input_price_nanos_per_million_tokens=cached_input_price,
         output_price_nanos_per_million_tokens=output_price,
+        audio_price_nanos_per_minute=audio_price,
         input_cost_nanos=input_cost,
         cached_input_cost_nanos=cached_input_cost,
         output_cost_nanos=output_cost,
+        audio_cost_nanos=audio_cost,
         total_cost_nanos=total_cost,
         created_at=now(),
     )

@@ -113,6 +113,99 @@ def seed_voice_job(
     return job_id
 
 
+def seed_measured_quota_settlement(
+    connection,
+    *,
+    owner_id: UUID,
+    job_id: UUID,
+    provider_cost_id: UUID,
+) -> None:
+    policy_id = uuid4()
+    daily_id = uuid4()
+    reservation_id = uuid4()
+    with connection.transaction():
+        connection.execute(
+            "UPDATE ai_jobs SET quota_mode='user' WHERE id=%s",
+            (job_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_quota_policy_versions (
+                id, version, currency, daily_allowance_nanos,
+                reservation_estimator_version, status, published_at
+            ) VALUES (
+                %s, 1, 'CNY', 1000000,
+                'reservation-audio-duration-v1', 'published', now()
+            )
+            """,
+            (policy_id,),
+        )
+        connection.execute(
+            """
+            UPDATE ai_quota_policy_state
+            SET current_version_id=%s, next_version=2, updated_at=now()
+            WHERE id=1
+            """,
+            (policy_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_daily_allowances (
+                id, owner_id, activity_date, window_start_at,
+                window_end_at, time_zone, policy_version_id,
+                currency, base_amount_nanos
+            ) VALUES (
+                %s, %s, current_date,
+                now() - interval '1 hour', now() + interval '23 hours',
+                'UTC', %s, 'CNY', 1000000
+            )
+            """,
+            (daily_id, owner_id, policy_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_quota_reservations (
+                id, job_id, owner_id, daily_allowance_id,
+                status, reserved_nanos, estimator_version,
+                accepted_at, terminal_at, actual_cost_nanos,
+                charged_nanos, platform_overage_nanos, usage_source,
+                provider_cost_id
+            ) VALUES (
+                %s, %s, %s, %s, 'settled', 100000,
+                'reservation-audio-duration-v1', now(), now(),
+                100000, 100000, 0, 'measured', %s
+            )
+            """,
+            (
+                reservation_id,
+                job_id,
+                owner_id,
+                daily_id,
+                provider_cost_id,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_quota_ledger_entries (
+                id, owner_id, daily_allowance_id, reservation_id,
+                job_id, provider_cost_id, kind, delta_nanos,
+                currency, usage_source
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                'usage_charge', -100000, 'CNY', 'measured'
+            )
+            """,
+            (
+                uuid4(),
+                owner_id,
+                daily_id,
+                reservation_id,
+                job_id,
+                provider_cost_id,
+            ),
+        )
+
+
 def test_voice_transcription_migration_models_and_constraints(admin_url):
     with isolated_database(admin_url) as database_url:
         with psycopg.connect(
@@ -121,7 +214,7 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
         ) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone() == ("0035_voice_transcriptions",)
+            ).fetchone() == ("0036_transcription_quota_usage",)
             assert connection.execute(
                 """
                 SELECT capability, next_version, current_version_id
@@ -132,6 +225,22 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
             assert connection.execute(
                 "SELECT to_regclass('voice_transcriptions')"
             ).fetchone() == ("voice_transcriptions",)
+            quota_usage_constraints = connection.execute(
+                """
+                SELECT conrelid::regclass::text, pg_get_constraintdef(oid)
+                FROM pg_constraint
+                WHERE conname IN (
+                    'ck_ai_quota_reservations_usage_source',
+                    'ck_ai_quota_ledger_entries_usage_source'
+                )
+                ORDER BY conrelid::regclass::text
+                """
+            ).fetchall()
+            assert len(quota_usage_constraints) == 2
+            assert all(
+                "'measured'::character varying" in definition
+                for _table_name, definition in quota_usage_constraints
+            )
 
             owner_id = seed_user(connection, "owner")
             other_id = seed_user(connection, "other")
@@ -261,6 +370,7 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
                 """,
                 (uuid4(), job_id, owner_id, lease_id),
             )
+            provider_cost_id = uuid4()
             connection.execute(
                 """
                 INSERT INTO ai_provider_costs (
@@ -276,7 +386,13 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
                     'audio_minute', 1000, 'CNY', 6000000, 100000, 100000
                 )
                 """,
-                (uuid4(), job_id, owner_id),
+                (provider_cost_id, job_id, owner_id),
+            )
+            seed_measured_quota_settlement(
+                connection,
+                owner_id=owner_id,
+                job_id=job_id,
+                provider_cost_id=provider_cost_id,
             )
             invalid_media_id = seed_voice_media(connection, owner_id)
             invalid_job_id = seed_voice_job(
@@ -343,6 +459,13 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
         assert "voice_transcriptions" in Base.metadata.tables
         migrate(database_url, "check")
 
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            migrate(database_url, "downgrade", "0035_voice_transcriptions")
+        assert (
+            "cannot downgrade 0036_transcription_quota_usage"
+            in error.value.stderr
+        )
+
         with psycopg.connect(
             psycopg_url(database_url),
             autocommit=True,
@@ -354,6 +477,27 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
             connection.execute(
                 "DELETE FROM ai_config_versions WHERE capability='transcription'"
             )
+        migrate(database_url, "downgrade", "0035_voice_transcriptions")
+        with psycopg.connect(psycopg_url(database_url)) as connection:
+            assert connection.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone() == ("0035_voice_transcriptions",)
+            quota_usage_constraints = connection.execute(
+                """
+                SELECT pg_get_constraintdef(oid)
+                FROM pg_constraint
+                WHERE conname IN (
+                    'ck_ai_quota_reservations_usage_source',
+                    'ck_ai_quota_ledger_entries_usage_source'
+                )
+                """
+            ).fetchall()
+            assert len(quota_usage_constraints) == 2
+            assert all(
+                "'measured'::character varying" not in definition
+                for (definition,) in quota_usage_constraints
+            )
+        migrate(database_url, "upgrade", "head")
         migrate(database_url, "downgrade", "0034_calendar_lifecycle")
         with psycopg.connect(psycopg_url(database_url)) as connection:
             assert connection.execute(

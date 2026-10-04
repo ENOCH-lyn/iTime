@@ -13,7 +13,11 @@ from itime.ai.models import (
     AIJobConfigRoute,
     AIProviderCost,
 )
-from itime.ai.pricing import format_currency_nanos, format_price_per_million
+from itime.ai.pricing import (
+    format_currency_nanos,
+    format_price_per_million,
+    format_price_per_minute,
+)
 from itime.ai.schemas import Capability
 from itime.auth.models import User
 from itime.tasks.service import validate_cursor
@@ -28,7 +32,7 @@ AttemptStatus = Literal[
     "cancelled",
     "abandoned",
 ]
-UsageSource = Literal["provider", "estimated", "not_sent"]
+UsageSource = Literal["provider", "estimated", "measured", "not_sent"]
 
 
 def cost_result(
@@ -38,38 +42,72 @@ def cost_result(
     config: AIConfigVersion,
     owner_email: str,
 ) -> dict:
-    pricing = (
-        {
+    if (
+        cost.billing_basis == "audio_minute"
+        and cost.price_currency is not None
+        and cost.audio_price_nanos_per_minute is not None
+    ):
+        pricing = {
             "currency": cost.price_currency,
-            "input_per_million_tokens": format_price_per_million(
-                cost.input_price_nanos_per_million_tokens
-            ),
-            "cached_input_per_million_tokens": format_price_per_million(
-                cost.cached_input_price_nanos_per_million_tokens
-            ),
-            "output_per_million_tokens": format_price_per_million(
-                cost.output_price_nanos_per_million_tokens
+            "audio_per_minute": format_price_per_minute(
+                cost.audio_price_nanos_per_minute
             ),
         }
-        if cost.price_currency is not None
-        and cost.input_price_nanos_per_million_tokens is not None
-        and cost.cached_input_price_nanos_per_million_tokens is not None
-        and cost.output_price_nanos_per_million_tokens is not None
-        else None
-    )
-    amounts = (
-        {
-            "input": format_currency_nanos(cost.input_cost_nanos),
-            "cached_input": format_currency_nanos(cost.cached_input_cost_nanos),
-            "output": format_currency_nanos(cost.output_cost_nanos),
-            "total": format_currency_nanos(cost.total_cost_nanos),
+        amounts = (
+            {
+                "audio": format_currency_nanos(cost.audio_cost_nanos),
+                "total": format_currency_nanos(cost.total_cost_nanos),
+            }
+            if cost.audio_cost_nanos is not None
+            and cost.total_cost_nanos is not None
+            else None
+        )
+        usage = {
+            "audio_duration_ms": cost.audio_duration_ms,
+            "details": cost.usage_details,
         }
-        if cost.input_cost_nanos is not None
-        and cost.cached_input_cost_nanos is not None
-        and cost.output_cost_nanos is not None
-        and cost.total_cost_nanos is not None
-        else None
-    )
+    else:
+        pricing = (
+            {
+                "currency": cost.price_currency,
+                "input_per_million_tokens": format_price_per_million(
+                    cost.input_price_nanos_per_million_tokens
+                ),
+                "cached_input_per_million_tokens": format_price_per_million(
+                    cost.cached_input_price_nanos_per_million_tokens
+                ),
+                "output_per_million_tokens": format_price_per_million(
+                    cost.output_price_nanos_per_million_tokens
+                ),
+            }
+            if cost.price_currency is not None
+            and cost.input_price_nanos_per_million_tokens is not None
+            and cost.cached_input_price_nanos_per_million_tokens is not None
+            and cost.output_price_nanos_per_million_tokens is not None
+            else None
+        )
+        amounts = (
+            {
+                "input": format_currency_nanos(cost.input_cost_nanos),
+                "cached_input": format_currency_nanos(
+                    cost.cached_input_cost_nanos
+                ),
+                "output": format_currency_nanos(cost.output_cost_nanos),
+                "total": format_currency_nanos(cost.total_cost_nanos),
+            }
+            if cost.input_cost_nanos is not None
+            and cost.cached_input_cost_nanos is not None
+            and cost.output_cost_nanos is not None
+            and cost.total_cost_nanos is not None
+            else None
+        )
+        usage = {
+            "input_tokens": cost.input_tokens,
+            "cached_input_tokens": cost.cached_input_tokens,
+            "output_tokens": cost.output_tokens,
+            "total_tokens": cost.total_tokens,
+            "details": cost.usage_details,
+        }
     return {
         "id": cost.id,
         "job_id": cost.job_id,
@@ -88,15 +126,10 @@ def cost_result(
         "error_stage": attempt.error_stage,
         "provider_started_at": cost.provider_started_at,
         "usage_source": cost.usage_source,
+        "billing_basis": cost.billing_basis,
         "estimation_reason": cost.estimation_reason,
         "estimator_version": cost.estimator_version,
-        "usage": {
-            "input_tokens": cost.input_tokens,
-            "cached_input_tokens": cost.cached_input_tokens,
-            "output_tokens": cost.output_tokens,
-            "total_tokens": cost.total_tokens,
-            "details": cost.usage_details,
-        },
+        "usage": usage,
         "pricing": pricing,
         "amounts": amounts,
         "created_at": cost.created_at,

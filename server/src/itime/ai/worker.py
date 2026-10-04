@@ -34,6 +34,17 @@ from itime.ai.screenshot_provider import (
     ScreenshotProviderError,
     recognize_screenshot,
 )
+from itime.ai.transcription_provider import (
+    TranscriptionGenerationSuperseded,
+    TranscriptionProviderError,
+    transcribe_audio,
+)
+from itime.ai.transcription_service import (
+    TranscriptionWorkUnavailable,
+    complete_transcription_job,
+    load_transcription_work,
+    reject_or_retry_transcription_job,
+)
 from itime.auth.security import now
 from itime.calendar.screenshot_service import (
     ScreenshotWorkUnavailable,
@@ -266,6 +277,87 @@ async def _process_conversation(
     )
 
 
+async def _process_transcription(
+    database: Database,
+    settings: Settings,
+    cipher: Fernet,
+    claim: ClaimedJob,
+) -> None:
+    try:
+        work = await load_transcription_work(
+            database,
+            cipher,
+            claim,
+        )
+    except TranscriptionWorkUnavailable as exc:
+        await reject_or_retry_transcription_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=False,
+        )
+        return
+    if not await prepare_attempt_body_log(database, claim, work.request_body):
+        return
+
+    remaining = (claim.deadline_at - now()).total_seconds()
+    if remaining <= 0:
+        await reject_or_retry_transcription_job(
+            database,
+            claim,
+            error_code="ai_job_deadline_exceeded",
+            error_message="语音转写已超过总等待时间，请重新录制。",
+            error_stage="deadline",
+            retryable=False,
+        )
+        return
+
+    async def mark_started() -> bool:
+        return await mark_provider_request_started(database, claim)
+
+    try:
+        provider_result = await _with_lease_heartbeat(
+            database,
+            claim,
+            settings,
+            transcribe_audio(
+                work.config,
+                settings,
+                cipher,
+                audio=work.audio,
+                filename=work.filename,
+                timeout_seconds=remaining,
+                on_request_started=mark_started,
+            ),
+        )
+    except (JobLeaseLost, TranscriptionGenerationSuperseded):
+        return
+    except TranscriptionProviderError as exc:
+        await reject_or_retry_transcription_job(
+            database,
+            claim,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_stage=exc.stage,
+            retryable=exc.retryable,
+            provider_request_id=exc.provider_request_id,
+            http_status=exc.http_status,
+            provider_usage=exc.usage,
+        )
+        return
+    finally:
+        work = None
+
+    await complete_transcription_job(
+        database,
+        claim,
+        provider_result,
+        quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+    )
+
+
 async def _process_planning(
     database: Database,
     settings: Settings,
@@ -470,6 +562,16 @@ async def process_one(database: Database, settings: Settings) -> bool:
                 error_stage=claim.terminal_error_stage or "worker",
                 retryable=False,
             )
+        elif claim.capability == "transcription":
+            await reject_or_retry_transcription_job(
+                database,
+                claim,
+                error_code=claim.terminal_error_code,
+                error_message=claim.terminal_error_message
+                or "语音转写未能完成，请重新录制。",
+                error_stage=claim.terminal_error_stage or "worker",
+                retryable=False,
+            )
         else:
             await reject_or_retry_job(
                 database,
@@ -492,6 +594,8 @@ async def process_one(database: Database, settings: Settings) -> bool:
         await _process_planning(database, settings, cipher, claim)
     elif claim.capability == "review":
         await _process_review(database, settings, cipher, claim)
+    elif claim.capability == "transcription":
+        await _process_transcription(database, settings, cipher, claim)
     else:
         await reject_or_retry_job(
             database,

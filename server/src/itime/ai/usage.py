@@ -12,6 +12,7 @@ ALLOWED_DETAIL_KEYS = {
     "reasoning_tokens",
     "rejected_prediction_tokens",
 }
+MAX_PROVIDER_AUDIO_DURATION_SECONDS = 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,33 @@ def normalize_provider_usage(value: object) -> NormalizedUsage | None:
         total_tokens=total_tokens,
         details=details,
     )
+
+
+def normalize_transcription_usage(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    details: dict[str, int | float] = {}
+    duration = value.get("duration")
+    if (
+        not isinstance(duration, bool)
+        and isinstance(duration, (int, float))
+        and math.isfinite(duration)
+        and 0 <= duration <= MAX_PROVIDER_AUDIO_DURATION_SECONDS
+    ):
+        details["provider_duration_seconds"] = duration
+
+    usage = value.get("usage")
+    if not isinstance(usage, dict):
+        return details
+    for canonical, aliases in (
+        ("input_tokens", ("input_tokens", "prompt_tokens")),
+        ("output_tokens", ("output_tokens", "completion_tokens")),
+        ("total_tokens", ("total_tokens",)),
+    ):
+        count = _first_count(usage, *aliases)
+        if count is not None:
+            details[canonical] = count
+    return details
 
 
 def _estimated_text_tokens(text: str) -> int:

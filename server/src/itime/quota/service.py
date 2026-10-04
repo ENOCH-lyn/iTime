@@ -508,7 +508,11 @@ async def settle_success(
         provider_cost.job_id != job.id
         or provider_cost.owner_id != job.owner_id
         or provider_cost.attempt_status != "succeeded"
-        or provider_cost.usage_source not in {"provider", "estimated"}
+        or provider_cost.usage_source not in {
+            "provider",
+            "estimated",
+            "measured",
+        }
         or provider_cost.price_currency is None
         or provider_cost.total_cost_nanos is None
     ):

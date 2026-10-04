@@ -191,7 +191,8 @@ class AIQuotaReservation(Base):
             name="estimator_version",
         ),
         CheckConstraint(
-            "usage_source IS NULL OR usage_source IN ('provider', 'estimated')",
+            "usage_source IS NULL OR "
+            "usage_source IN ('provider', 'estimated', 'measured')",
             name="usage_source",
         ),
         CheckConstraint(
@@ -363,7 +364,8 @@ class AIQuotaLedgerEntry(Base):
         ),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
         CheckConstraint(
-            "usage_source IS NULL OR usage_source IN ('provider', 'estimated')",
+            "usage_source IS NULL OR "
+            "usage_source IN ('provider', 'estimated', 'measured')",
             name="usage_source",
         ),
         CheckConstraint(

@@ -140,6 +140,100 @@ def seed_provider_costs(database_url: str, owner_id: str) -> str:
     return str(job_id)
 
 
+def seed_audio_provider_cost(database_url: str, owner_id: str) -> str:
+    config_id = uuid4()
+    media_id = uuid4()
+    job_id = uuid4()
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        version = connection.execute(
+            """
+            UPDATE ai_config_capabilities
+            SET next_version=next_version + 1, updated_at=now()
+            WHERE capability='transcription'
+            RETURNING next_version - 1
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO ai_config_versions (
+                id, capability, version, endpoint_url, model,
+                api_key_ciphertext, timeout_seconds, max_output_tokens,
+                pricing_basis, price_currency,
+                audio_price_nanos_per_minute, status
+            ) VALUES (
+                %s, 'transcription', %s, 'https://ai.example.com/v1',
+                'audio-cost-model', %s, 60, NULL,
+                'audio_minute', 'CNY', 120000000, 'draft'
+            )
+            """,
+            (config_id, version, b"encrypted-key"),
+        )
+        connection.execute(
+            """
+            INSERT INTO temporary_media (
+                id, owner_id, purpose, original_filename, content_type,
+                content_sha256, byte_size, width, height,
+                duration_ms, sample_rate_hz, channel_count,
+                sample_width_bits, encrypted_content, expires_at
+            ) VALUES (
+                %s, %s, 'voice_transcription', 'cost.wav', 'audio/wav',
+                %s, 48044, NULL, NULL, 1500, 16000, 1, 16,
+                %s, now() + interval '1 day'
+            )
+            """,
+            (media_id, owner_id, "d" * 64, b"encrypted-audio"),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_jobs (
+                id, owner_id, capability, config_version_id, input_media_id,
+                status, input_summary, output, attempt_count, max_attempts,
+                available_at, deadline_at, finished_at
+            ) VALUES (
+                %s, %s, 'transcription', %s, %s, 'succeeded',
+                '{"purpose":"task_title","duration_ms":1500}',
+                '{"resource_type":"voice_transcription"}',
+                1, 3, now(), now() + interval '3 minutes', now()
+            )
+            """,
+            (job_id, owner_id, config_id, media_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_job_attempts (
+                id, job_id, owner_id, attempt_number, lease_id, status,
+                provider_request_id, http_status, provider_started_at,
+                started_at, finished_at
+            ) VALUES (
+                %s, %s, %s, 1, %s, 'succeeded',
+                'transcription-cost', 200, now(), now(), now()
+            )
+            """,
+            (uuid4(), job_id, owner_id, uuid4()),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_provider_costs (
+                id, job_id, owner_id, attempt_number, attempt_status,
+                provider_started_at, usage_source, input_tokens,
+                cached_input_tokens, output_tokens, total_tokens,
+                usage_details, billing_basis, audio_duration_ms,
+                price_currency, audio_price_nanos_per_minute,
+                audio_cost_nanos, total_cost_nanos
+            ) VALUES (
+                %s, %s, %s, 1, 'succeeded', now(), 'measured',
+                0, 0, 0, 0, '{"provider_duration_seconds":1.7}',
+                'audio_minute', 1500, 'CNY', 120000000, 3000000, 3000000
+            )
+            """,
+            (uuid4(), job_id, owner_id),
+        )
+    return str(job_id)
+
+
 def test_admin_lists_filters_and_paginates_provider_costs(
     client,
     live_server,
@@ -207,3 +301,38 @@ def test_admin_lists_filters_and_paginates_provider_costs(
     )
     assert invalid_cursor.status_code == 400
     assert invalid_cursor.json()["error"]["code"] == "invalid_cursor"
+
+
+def test_admin_displays_audio_duration_pricing_without_token_fields(
+    client,
+    database_url,
+):
+    email, owner_id = create_account(client, database_url)
+    setup_admin(client, database_url)
+    job_id = seed_audio_provider_cost(database_url, owner_id)
+
+    response = client.get(
+        "/api/v1/admin/provider-costs",
+        params={
+            "capability": "transcription",
+            "usage_source": "measured",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
+    assert item["job_id"] == job_id
+    assert item["owner"]["email"] == email
+    assert item["billing_basis"] == "audio_minute"
+    assert item["usage"] == {
+        "audio_duration_ms": 1500,
+        "details": {"provider_duration_seconds": 1.7},
+    }
+    assert item["pricing"] == {
+        "currency": "CNY",
+        "audio_per_minute": "0.12",
+    }
+    assert item["amounts"] == {
+        "audio": "0.003",
+        "total": "0.003",
+    }

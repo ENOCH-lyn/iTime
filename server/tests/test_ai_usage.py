@@ -6,7 +6,11 @@ from itime.ai.pricing import (
     parse_price_per_million,
     token_cost_breakdown,
 )
-from itime.ai.usage import estimate_usage, normalize_provider_usage
+from itime.ai.usage import (
+    estimate_usage,
+    normalize_provider_usage,
+    normalize_transcription_usage,
+)
 
 
 def test_price_conversion_and_aggregate_rounding_are_exact():
@@ -94,6 +98,36 @@ def test_provider_usage_aliases_and_invalid_values():
             "prompt_tokens_details": {"cached_tokens": 11},
         }
     ) is None
+
+
+def test_transcription_usage_keeps_only_bounded_reconciliation_fields():
+    assert normalize_transcription_usage(
+        {
+            "duration": 1.25,
+            "text": "不得进入成本详情",
+            "usage": {
+                "prompt_tokens": 7,
+                "completion_tokens": 9,
+                "total_tokens": 16,
+                "private_field": "discard",
+            },
+            "private_field": "discard",
+        }
+    ) == {
+        "provider_duration_seconds": 1.25,
+        "input_tokens": 7,
+        "output_tokens": 9,
+        "total_tokens": 16,
+    }
+    assert normalize_transcription_usage(
+        {
+            "duration": float("inf"),
+            "usage": {
+                "input_tokens": -1,
+                "output_tokens": True,
+            },
+        }
+    ) == {}
 
 
 def test_estimator_marks_text_and_screenshot_inputs():

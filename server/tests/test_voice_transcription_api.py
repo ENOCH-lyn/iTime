@@ -138,6 +138,10 @@ def publish_transcription_route(
     *,
     primary_price: int = 60_000_000,
     fallback_price: int | None = 120_000_000,
+    primary_endpoint: str = "https://transcribe.example.com/v1",
+    fallback_endpoint: str = "https://transcribe-fallback.example.com/v1",
+    primary_timeout_seconds: int = 30,
+    fallback_timeout_seconds: int = 30,
 ) -> tuple[str, str | None]:
     settings = Settings(database_url=database_url, environment="test")
     cipher = Fernet(
@@ -158,15 +162,17 @@ def publish_transcription_route(
                 status, last_test_id, last_test_started_at,
                 last_test_completed_at, published_at
             ) VALUES (
-                %s, 'transcription', 1, 'https://transcribe.example.com/v1',
-                'transcribe-primary', %s, 30, NULL,
+                %s, 'transcription', 1, %s,
+                'transcribe-primary', %s, %s, NULL,
                 'audio_minute', 'CNY', %s,
                 'published', %s, now(), now(), now()
             )
             """,
             (
                 primary_id,
+                primary_endpoint,
                 cipher.encrypt(b"transcription-primary-key"),
+                primary_timeout_seconds,
                 primary_price,
                 uuid4(),
             ),
@@ -181,16 +187,17 @@ def publish_transcription_route(
                     audio_price_nanos_per_minute, status, last_test_id,
                     last_test_started_at, last_test_completed_at
                 ) VALUES (
-                    %s, 'transcription', 2,
-                    'https://transcribe-fallback.example.com/v1',
-                    'transcribe-fallback', %s, 30, NULL,
+                    %s, 'transcription', 2, %s,
+                    'transcribe-fallback', %s, %s, NULL,
                     'audio_minute', 'CNY', %s,
                     'tested', %s, now(), now()
                 )
                 """,
                 (
                     fallback_id,
+                    fallback_endpoint,
                     cipher.encrypt(b"transcription-fallback-key"),
+                    fallback_timeout_seconds,
                     fallback_price,
                     uuid4(),
                 ),
