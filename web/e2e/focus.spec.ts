@@ -347,22 +347,32 @@ test('开放状态冲突保留队列并可基于服务器版本重新应用', as
   page,
   request,
   context,
+  browser,
 }) => {
   await account(page, request)
   await startFreeFocus(page, '冲突重放验证')
-  const second = await context.newPage()
+  const secondContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    storageState: await context.storageState(),
+  })
+  const second = await secondContext.newPage()
   watchRuntime(second)
   try {
     await second.goto('/focus')
     await expect(second.getByText('进行中', { exact: true })).toBeVisible()
-    await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+    await page.route('**/api/v1/sync/changes?**', route =>
       route.abort('connectionreset'))
     await second.getByRole('button', { name: '暂停' }).click()
     await expect(second.getByText('已暂停', { exact: true })).toBeVisible()
 
+    await page.route('**/api/v1/focus-sessions/*/transitions', route =>
+      route.abort('connectionreset'))
     await page.getByRole('button', { name: '结束' }).click()
+    await expect.poll(() => queuedFocusOperationCount(page)).toBe(1)
     await expect(page.getByText('1 项待同步')).toBeVisible()
+
     await page.unroute('**/api/v1/focus-sessions/*/transitions')
+    await page.unroute('**/api/v1/sync/changes?**')
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await expect(page.getByRole('heading', { name: '同步冲突' })).toBeVisible()
     await expect(page.getByText('1 项待同步')).toBeVisible()
@@ -371,7 +381,7 @@ test('开放状态冲突保留队列并可基于服务器版本重新应用', as
     await expect(page.getByText('已结束', { exact: true })).toBeVisible()
   } finally {
     expect(runtimeErrors.get(second)).toEqual([])
-    await second.close()
+    await secondContext.close()
   }
 })
 
