@@ -86,12 +86,15 @@ RECURRENCE-ID 修订。投影新增 `subscription_master_event_id`，单次例�
 | `id / owner_id` | 稳定 ID 与本人归属 |
 | `master_event_id` | 订阅主事件组合外键 |
 | `source_occurrence_key` | 来源 occurrence 稳定 key |
+| `original_start_at / original_end_at` | 创建时原 occurrence 的 UTC 半开区间，用于有界查询 |
+| `original_all_day` | 创建时原 occurrence 是否为全天 |
 | `action` | `cancelled / moved / overridden` |
 | `moved_all_day` | 移动结果是否为全天 |
 | `moved_start_date / moved_end_date` | 本地开始日期与排他结束日期 |
 | `moved_starts_at / moved_ends_at` | 定时移动的墙上时刻；全天移动为 null |
 | `moved_time_zone` | 创建移动时使用的 IANA 时区 |
 | `moved_ambiguous_offset_minutes` | 夏令时重复时刻的明确 UTC offset |
+| `moved_start_at / moved_end_at` | 校验后固化的 UTC 半开区间，用于冲突和移入范围查询 |
 | `override_*` | 单次名称、说明、地点和占用覆盖 |
 | `version` | 例外自身乐观版本 |
 | `created_at / updated_at` | 审计时间 |
@@ -107,11 +110,13 @@ RECURRENCE-ID 修订。投影新增 `subscription_master_event_id`，单次例�
 - 非 `moved` 动作的移动字段全部为空；
 - `overridden` 至少有一个覆盖字段，名称非空；其他动作不携带覆盖字段；
 - `version >= 1`，key 非空且最长 512 字符。
+- 原始 UTC 区间始终完整且结束晚于开始；移动 UTC 区间只在 `moved` 时存在并保持同样约束。
 
 索引覆盖：
 
 - `owner_id + master_event_id + source_occurrence_key`；
-- `owner_id + moved_start_date + master_event_id` 的 `action='moved'` 部分索引，用于移入范围查询。
+- `owner_id + original_start_at + master_event_id`；
+- `owner_id + moved_start_at + master_event_id` 的 `action='moved'` 部分索引，用于移入范围查询。
 
 迁移同时：
 
@@ -168,10 +173,11 @@ DELETE /api/v1/calendar/subscriptions/{source_id}/exceptions/{exception_id}
 
 ## 6. 查询、移动与容量
 
-`query_subscription_occurrences()` 一次加载本人范围内来源事件、字段覆盖和订阅例外：
+`query_subscription_occurrences()` 先展开来源，再按有界条件加载订阅例外：
 
-- 正常展开时按稳定 key 查找并应用例外；
-- 额外查询移动日期落入当前范围的例外，并加载对应主事件；
+- 正常展开最多得到 2000 个 `(master_event_id, source_occurrence_key)`，再按这些组合键精确查询
+  例外，不扫描账号全部历史例外；
+- 额外按 `moved_start_at < query_end AND moved_end_at > query_start` 查询移入范围的例外；
 - 对移入范围的例外，从 key 还原原始日期/时刻，并用当前 RRULE/RDATE/EXDATE 验证它仍是来源
   occurrence；同一结果只输出一次；
 - 来源规则暂时不再包含该 key 时，例外保留为 dormant，不自行生成孤立日程；若后续来源再次
@@ -218,10 +224,10 @@ DELETE /api/v1/calendar/subscriptions/{source_id}/exceptions/{exception_id}
 - 每次实际创建、更新、删除发出 `calendar_exception` 事件，并随来源版本变化发出
   `calendar_source` 事件。无变化更新不增版、不发事件。
 - 本人 JSON 导出在 `calendar.subscription_exceptions` 保存完整字段；ICS 导出把来源规则、本地字段
-  覆盖和单次例外合成最终 VEVENT/RECURRENCE-ID，取消写 EXDATE 或 CANCELLED 修订，移动和内容
-  覆盖写独立 RECURRENCE-ID 项。
-- CSV 日历行输出最终可见 occurrence 语义，不泄露订阅 URL 查询参数、内部 UID、租约或操作
-  去重内容。
+  覆盖和单次例外合成最终 VEVENT/RECURRENCE-ID，取消写 CANCELLED 修订，移动和内容覆盖写最终
+  RECURRENCE-ID 项，并跳过被本地例外取代的来源修订。
+- CSV 日历分类增加 `kind=subscription_exception` 数据行，保留可恢复的动作、来源 key 和本地字段，
+  不泄露订阅 URL 查询参数、内部 UID、租约或操作去重内容。
 - 删除订阅来源或账号时通过组合外键级联删除例外；账号注销完成后显式测试 owner 行为 0，删除
   回执不保留例外正文。
 
