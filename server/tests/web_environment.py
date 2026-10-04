@@ -552,6 +552,8 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
         with self.lock:
             count = self.counts.get(self.path, 0) + 1
             self.counts[self.path] = count
+        if scenario == "slow-delete" and count == 1:
+            time.sleep(5)
         if scenario == "failure" and count > 1:
             self.send_response(503)
             self.end_headers()

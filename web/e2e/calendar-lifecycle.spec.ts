@@ -1,11 +1,14 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { promisify } from 'node:util'
 
 const password = 'Valid-calendar-lifecycle-password-123'
 const evidence = '/tmp/itime-ui-evidence'
 const runtimeErrors = new WeakMap<Page, string[]>()
+const execFileAsync = promisify(execFile)
 
 async function bootstrap(info: TestInfo) {
   const path = process.env.ITIME_E2E_BOOTSTRAP_FILE
@@ -70,6 +73,15 @@ async function account(page: Page, request: APIRequestContext) {
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL('/ai')
+  return address
+}
+
+async function login(page: Page, address: string) {
+  await page.goto('/login')
+  await page.getByLabel('邮箱', { exact: true }).fill(address)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL('/ai')
 }
 
 async function csrf(page: Page) {
@@ -78,7 +90,15 @@ async function csrf(page: Page) {
   return (await response.json()).csrf_token as string
 }
 
-async function createSeries(page: Page, date: string) {
+async function createSeries(
+  page: Page,
+  date: string,
+  fields: Partial<{
+    name: string
+    description: string
+    location: string
+  }> = {},
+) {
   const token = await csrf(page)
   const response = await page.request.post('/api/v1/calendar/series', {
     headers: { 'X-CSRF-Token': token },
@@ -86,9 +106,9 @@ async function createSeries(page: Page, date: string) {
       operation_id: randomUUID(),
       kind: 'fixed',
       term_id: null,
-      name: '回收测试安排',
-      description: '删除后可恢复',
-      location: '图书馆',
+      name: fields.name ?? '回收测试安排',
+      description: fields.description ?? '删除后可恢复',
+      location: fields.location ?? '图书馆',
       busy: true,
       time_zone: null,
       start_date: date,
@@ -132,6 +152,7 @@ async function createSubscription(
   origin: string,
   scenario: string,
   name: string,
+  secret = 'hidden',
 ) {
   const token = await csrf(page)
   const response = await page.request.post('/api/v1/calendar/subscriptions', {
@@ -139,7 +160,7 @@ async function createSubscription(
     data: {
       operation_id: randomUUID(),
       name,
-      url: `${origin}/calendar/${randomUUID()}/private.ics?scenario=${scenario}&token=hidden`,
+      url: `${origin}/calendar/${randomUUID()}/private.ics?scenario=${scenario}&token=${encodeURIComponent(secret)}`,
       refresh_interval_minutes: 60,
     },
   })
@@ -154,6 +175,38 @@ async function createSubscription(
     return subscription?.refresh_status
   }, { timeout: 15_000 }).toBe('idle')
   return subscription!
+}
+
+async function exportArchiveText(page: Page, token: string) {
+  const created = await page.request.post('/api/v1/data-exports', {
+    headers: { 'X-CSRF-Token': token },
+    data: { operation_id: randomUUID() },
+  })
+  expect(created.status()).toBe(202)
+  const exportId = (await created.json()).job.id as string
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/data-exports?limit=20')
+    const body = await response.json()
+    return body.jobs.find(
+      (item: { id: string; status: string }) => item.id === exportId,
+    )?.status
+  }, { timeout: 20_000 }).toBe('succeeded')
+  const download = await page.request.get(
+    `/api/v1/data-exports/${exportId}/download`,
+    { headers: { 'X-CSRF-Token': token } },
+  )
+  expect(download.ok()).toBeTruthy()
+  const path = `/tmp/itime-calendar-lifecycle-${randomUUID()}.zip`
+  await writeFile(path, await download.body())
+  try {
+    const result = await execFileAsync('unzip', ['-p', path], {
+      encoding: 'utf8',
+      maxBuffer: 20 * 1024 * 1024,
+    })
+    return result.stdout
+  } finally {
+    await unlink(path)
+  }
 }
 
 async function setTimeZone(page: Page, value: string) {
@@ -286,7 +339,11 @@ async function trashSeries(
     },
   })
   expect(response.ok()).toBeTruthy()
-  return (await response.json()).series as typeof series
+  return (await response.json()).series as {
+    id: string
+    version: number
+    purge_after: string | null
+  }
 }
 
 async function restoreSeries(
@@ -801,4 +858,369 @@ test('恢复订阅与当前计划重叠时仅提示复核且不移动计划', as
   await expect(page.locator('.plan-block').getByText(/11:15.*11:45/)).toBeVisible()
   expect((await new AxeBuilder({ page }).include('.plan-source-conflicts').analyze()).violations)
     .toEqual([])
+})
+
+test('真实清理仅处理到期对象且敏感内容不再出现在页面、API 和导出', async ({
+  page,
+  request,
+  browser,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', '真实 worker 流程只需执行一套隔离环境')
+  test.setTimeout(120_000)
+  const date = futureDate(20)
+  const recoverableDate = addDays(date, 2)
+  const sensitiveSeriesName = `到期私人安排 ${randomUUID()}`
+  const sensitiveLocation = `私人地点 ${randomUUID()}`
+  const sensitiveSourceName = `到期私人订阅 ${randomUUID()}`
+  const sensitiveToken = `private-token-${randomUUID()}`
+  const address = await account(page, request)
+  const token = await csrf(page)
+  const dueSeries = await createSeries(page, date, {
+    name: sensitiveSeriesName,
+    description: '到期后必须从导出中消失的说明',
+    location: sensitiveLocation,
+  })
+  const recoverable = await createSeries(page, recoverableDate, {
+    name: '未到期可恢复安排',
+    description: '清理进程不能误删',
+    location: '保留地点',
+  })
+  const source = await createSubscription(
+    page,
+    (await bootstrap(info)).calendar_origin,
+    'basic',
+    sensitiveSourceName,
+    sensitiveToken,
+  )
+
+  const deleteOperationId = randomUUID()
+  let interceptDelete = true
+  await page.route(`**/api/v1/calendar/series/${dueSeries.id}`, async route => {
+    if (interceptDelete && route.request().method() === 'DELETE') {
+      interceptDelete = false
+      const response = await route.fetch()
+      expect(response.ok()).toBeTruthy()
+      await route.abort('connectionreset')
+      return
+    }
+    await route.continue()
+  })
+  const lostResponse = await page.evaluate(async values => {
+    try {
+      await fetch(`/api/v1/calendar/series/${values.id}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': values.csrf,
+        },
+        body: JSON.stringify({
+          operation_id: values.operationId,
+          expected_version: values.version,
+        }),
+      })
+      return false
+    } catch {
+      return true
+    }
+  }, {
+    id: dueSeries.id,
+    csrf: token,
+    operationId: deleteOperationId,
+    version: dueSeries.version,
+  })
+  expect(lostResponse).toBe(true)
+  await page.unroute(`**/api/v1/calendar/series/${dueSeries.id}`)
+
+  const trashedBeforeReplay = await (
+    await page.request.get('/api/v1/calendar/series?lifecycle=trashed&limit=100')
+  ).json()
+  const deletedSeries = trashedBeforeReplay.items.find(
+    (item: { id: string }) => item.id === dueSeries.id,
+  )
+  expect(deletedSeries).toBeTruthy()
+  const replay = await page.request.delete(
+    `/api/v1/calendar/series/${dueSeries.id}`,
+    {
+      headers: { 'X-CSRF-Token': token },
+      data: {
+        operation_id: deleteOperationId,
+        expected_version: dueSeries.version,
+      },
+    },
+  )
+  expect(replay.ok()).toBeTruthy()
+  expect((await replay.json()).series.purge_after).toBe(deletedSeries.purge_after)
+
+  const recoverableDeleted = await trashSeries(page, recoverable)
+  const deletedSource = await trashSubscription(page, source)
+  await goCalendar(page, date)
+  await page.getByRole('button', { name: '日历回收站', exact: true }).click()
+  const trash = page.getByRole('dialog', { name: '日历回收站' })
+  await expect(
+    trash.getByRole('button', { name: new RegExp(sensitiveSeriesName) }),
+  ).toBeVisible()
+  await expect(
+    trash.getByRole('button', {
+      name: '查看安排 未到期可恢复安排',
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  const expired = await page.request.post(
+    '/api/__test/calendar-lifecycle-expire',
+    {
+      headers: { 'X-CSRF-Token': token },
+      data: {
+        series_ids: [dueSeries.id],
+        source_ids: [source.id],
+      },
+    },
+  )
+  expect(expired.ok()).toBeTruthy()
+  expect(await expired.json()).toEqual({
+    status: 'expired',
+    series_count: 1,
+    source_count: 1,
+  })
+  await trash.getByRole('button', { name: '刷新日历回收站' }).click()
+  await expect(
+    trash.getByRole('button', { name: new RegExp(sensitiveSeriesName) }),
+  ).toBeVisible()
+  const cleaned = await page.request.post(
+    '/api/__test/calendar-lifecycle-cleanup',
+    { headers: { 'X-CSRF-Token': token } },
+  )
+  expect(cleaned.ok()).toBeTruthy()
+  await trash.getByRole('button', { name: '刷新日历回收站' }).click()
+  await expect(trash.getByText(sensitiveSeriesName, { exact: true })).toHaveCount(0)
+  await expect(
+    trash.getByRole('button', {
+      name: '查看安排 未到期可恢复安排',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await trash.locator('.calendar-trash-scope label').filter({
+    hasText: '订阅',
+  }).click()
+  await expect(trash.getByText(sensitiveSourceName, { exact: true })).toHaveCount(0)
+  await expect(trash.getByText('回收站中没有订阅。', { exact: true })).toBeVisible()
+
+  const purgedSeries = await page.request.get(
+    `/api/v1/calendar/series/${dueSeries.id}`,
+  )
+  expect(purgedSeries.status()).toBe(410)
+  expect(JSON.stringify(await purgedSeries.json())).not.toContain(sensitiveSeriesName)
+  expect(JSON.stringify(await purgedSeries.json())).not.toContain(sensitiveLocation)
+  const purgedSource = await page.request.get(
+    `/api/v1/calendar/subscriptions/${source.id}`,
+  )
+  expect(purgedSource.status()).toBe(410)
+  expect(JSON.stringify(await purgedSource.json())).not.toContain(sensitiveSourceName)
+  expect(JSON.stringify(await purgedSource.json())).not.toContain(sensitiveToken)
+
+  const restorePurgedSeries = await page.request.post(
+    `/api/v1/calendar/series/${dueSeries.id}/restore`,
+    {
+      headers: { 'X-CSRF-Token': token },
+      data: {
+        operation_id: randomUUID(),
+        expected_version: deletedSeries.version,
+      },
+    },
+  )
+  expect(restorePurgedSeries.status()).toBe(410)
+  const restorePurgedSource = await page.request.post(
+    `/api/v1/calendar/subscriptions/${source.id}/restore`,
+    {
+      headers: { 'X-CSRF-Token': token },
+      data: {
+        operation_id: randomUUID(),
+        expected_version: deletedSource.version,
+      },
+    },
+  )
+  expect(restorePurgedSource.status()).toBe(410)
+  const expiredReplay = await page.request.delete(
+    `/api/v1/calendar/series/${dueSeries.id}`,
+    {
+      headers: { 'X-CSRF-Token': token },
+      data: {
+        operation_id: deleteOperationId,
+        expected_version: dueSeries.version,
+      },
+    },
+  )
+  expect(expiredReplay.status()).toBe(409)
+  expect((await expiredReplay.json()).error.code).toBe('operation_result_expired')
+
+  const lifecycleResponses = await Promise.all([
+    page.request.get('/api/v1/calendar/series?lifecycle=active&limit=100'),
+    page.request.get('/api/v1/calendar/series?lifecycle=trashed&limit=100'),
+    page.request.get('/api/v1/calendar/subscriptions?lifecycle=active'),
+    page.request.get('/api/v1/calendar/subscriptions?lifecycle=trashed'),
+  ])
+  const lifecycleText = JSON.stringify(
+    await Promise.all(lifecycleResponses.map(response => response.json())),
+  )
+  for (const secret of [
+    sensitiveSeriesName,
+    sensitiveLocation,
+    sensitiveSourceName,
+    sensitiveToken,
+  ]) {
+    expect(lifecycleText).not.toContain(secret)
+    expect(await page.locator('body').textContent()).not.toContain(secret)
+  }
+  const archive = await exportArchiveText(page, token)
+  for (const secret of [
+    sensitiveSeriesName,
+    sensitiveLocation,
+    sensitiveSourceName,
+    sensitiveToken,
+  ]) expect(archive).not.toContain(secret)
+
+  await trash.locator('.calendar-trash-scope label').filter({
+    hasText: '安排',
+  }).click()
+  await trash.getByRole('button', {
+    name: '恢复未到期可恢复安排',
+    exact: true,
+  }).click()
+  await expect(trash.getByText('安排已恢复到日历。', { exact: true })).toBeVisible()
+  await trash.getByRole('button', {
+    name: '关闭日历回收站',
+    exact: true,
+  }).click()
+  await page.getByLabel('跳转日期').fill(recoverableDate)
+  await expect(await eventButton(page, recoverableDate, '未到期可恢复安排'))
+    .toBeVisible()
+  await page.goto('/ai')
+  await goCalendar(page, recoverableDate)
+  await page.getByRole('button', { name: '日历回收站', exact: true }).click()
+  await expect(
+    page.getByRole('dialog', { name: '日历回收站' })
+      .getByText('回收站中没有安排。', { exact: true }),
+  ).toBeVisible()
+  await screenshot(page, info, 'purged')
+
+  const secondContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  watchRuntime(second)
+  try {
+    await login(second, address)
+    await goCalendar(second, recoverableDate)
+    await expect(
+      await eventButton(second, recoverableDate, '未到期可恢复安排'),
+    ).toBeVisible()
+    await second.getByRole('button', { name: '日历回收站', exact: true }).click()
+    await expect(
+      second.getByRole('dialog', { name: '日历回收站' })
+        .getByText('回收站中没有安排。', { exact: true }),
+    ).toBeVisible()
+    expect(runtimeErrors.get(second)).toEqual([])
+  } finally {
+    await secondContext.close()
+  }
+  expect(recoverableDeleted.purge_after).not.toBeNull()
+})
+
+test('删除刷新中的订阅会拒绝迟到结果并允许用户明确恢复', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', '受控慢上游流程只需执行一套隔离环境')
+  test.setTimeout(90_000)
+  const { calendar_origin: origin } = await bootstrap(info)
+  await account(page, request)
+  await goCalendar(page, '2026-10-06')
+  await page.getByRole('button', { name: '导入日历', exact: true }).click()
+  const imports = page.getByRole('dialog', { name: '导入日历' })
+  await imports.locator('.import-mode-switch label').filter({
+    hasText: '订阅 URL',
+  }).click()
+  await imports.getByLabel('名称', { exact: true }).first().fill('慢响应删除来源')
+  await imports.getByLabel('ICS 订阅地址').fill(
+    `${origin}/calendar/${randomUUID()}/private.ics?scenario=slow-delete&token=late-secret`,
+  )
+  await imports.getByLabel('刷新周期（分钟）').first().fill('60')
+  await imports.getByRole('button', { name: '创建订阅', exact: true }).click()
+  await expect(
+    imports.getByText('订阅已创建，首次刷新已进入队列。', { exact: true }),
+  ).toBeVisible()
+  let source: SubscriptionSummary | undefined
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/calendar/subscriptions')
+    const body = await response.json()
+    source = body.items.find(
+      (item: SubscriptionSummary) => item.name === '慢响应删除来源',
+    )
+    return source?.refresh_status
+  }).toBe('running')
+
+  page.once('dialog', dialog => dialog.accept())
+  await imports.getByRole('button', {
+    name: '移到回收站',
+    exact: true,
+  }).click()
+  await expect(
+    imports.getByText('订阅已移到回收站，将保留 30 天。'),
+  ).toBeVisible()
+  await imports.getByRole('button', { name: '完成', exact: true }).click()
+  await page.waitForTimeout(5_500)
+
+  const active = await (
+    await page.request.get('/api/v1/calendar/subscriptions?lifecycle=active')
+  ).json()
+  expect(active.items.some(
+    (item: SubscriptionSummary) => item.id === source!.id,
+  )).toBe(false)
+  const trashed = await (
+    await page.request.get('/api/v1/calendar/subscriptions?lifecycle=trashed')
+  ).json()
+  expect(trashed.items).toContainEqual(expect.objectContaining({
+    id: source!.id,
+    refresh_status: 'idle',
+    event_count: 0,
+  }))
+  const detail = await (
+    await page.request.get(`/api/v1/calendar/subscriptions/${source!.id}`)
+  ).json()
+  expect(detail.subscription.lifecycle).toBe('trashed')
+  expect(detail.events).toHaveLength(0)
+  expect(detail.refreshes[0].status).toBe('stale')
+  const occurrences = await page.request.get(
+    '/api/v1/calendar/occurrences?start=2026-10-06&end=2026-10-07',
+  )
+  expect(JSON.stringify(await occurrences.json())).not.toContain('订阅课程')
+
+  await page.getByRole('button', { name: '日历回收站', exact: true }).click()
+  const trash = page.getByRole('dialog', { name: '日历回收站' })
+  await trash.locator('.calendar-trash-scope label').filter({
+    hasText: '订阅',
+  }).click()
+  await expect(
+    trash.getByRole('heading', { name: '慢响应删除来源', exact: true }),
+  ).toBeVisible()
+  await trash.getByRole('button', {
+    name: '恢复慢响应删除来源',
+    exact: true,
+  }).click()
+  await expect(
+    trash.getByText('订阅已恢复并重新进入刷新队列。', { exact: true }),
+  ).toBeVisible()
+  await trash.getByRole('button', {
+    name: '关闭日历回收站',
+    exact: true,
+  }).click()
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/calendar/subscriptions')
+    const body = await response.json()
+    return body.items.find(
+      (item: SubscriptionSummary) => item.id === source!.id,
+    )?.refresh_status
+  }, { timeout: 15_000 }).toBe('idle')
+  await page.getByLabel('跳转日期').fill('2026-10-06')
+  await expect(await eventButton(page, '2026-10-06', '订阅课程')).toBeVisible()
+  await screenshot(page, info, 'subscription-restored')
 })

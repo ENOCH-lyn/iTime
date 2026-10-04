@@ -1248,7 +1248,7 @@ Expected: 回收站主流程在三种视口通过，跨设备同步专项通过�
 - Modify: `server/tests/test_calendar_lifecycle.py`
 - Modify: `server/tests/test_calendar_lifecycle_cleanup.py`
 
-- [ ] **Step 1: 扩展真实 E2E 环境**
+- [x] **Step 1: 扩展真实 E2E 环境**
 
 `web_environment.py` 为每个 Playwright project 启动：
 
@@ -1261,7 +1261,7 @@ Expected: 回收站主流程在三种视口通过，跨设备同步专项通过�
 清理入口只允许当前隔离库，不能连接开发库；进程退出时终止所有 worker、删除临时文件和测试
 数据库。
 
-- [ ] **Step 2: 增加到期与故障恢复浏览器场景**
+- [x] **Step 2: 增加到期与故障恢复浏览器场景**
 
 通过受控测试 API 或测试数据库辅助把当前账号对象期限推进到过去，再从页面触发/等待一次清理，
 验证：
@@ -1273,7 +1273,7 @@ Expected: 回收站主流程在三种视口通过，跨设备同步专项通过�
 - 订阅上游超时期间删除，迟到响应不会使来源重新出现在日历；
 - 页面重载、离开再进入和另一浏览器上下文保持权威状态。
 
-- [ ] **Step 3: 执行专项服务与受影响浏览器回归**
+- [x] **Step 3: 执行专项服务与受影响浏览器回归**
 
 ```bash
 cd server
@@ -1299,7 +1299,7 @@ pnpm exec playwright test e2e/calendar-lifecycle.spec.ts \
 
 Expected: 所有专项服务测试、生产构建和受影响 Chromium 三视口流程通过。
 
-- [ ] **Step 4: 人工检查视觉证据**
+- [x] **Step 4: 人工检查视觉证据**
 
 查看：
 
@@ -1314,7 +1314,7 @@ Expected: 所有专项服务测试、生产构建和受影响 Chromium 三视口
 确认无空白画面、标题/URL/日期裁切、文字重叠、按钮移位、不可见焦点或根级横向滚动。截图只作
 本地证据，不提交仓库。
 
-- [ ] **Step 5: 提交真实 E2E 与环境扩展**
+- [x] **Step 5: 提交真实 E2E 与环境扩展**
 
 ```bash
 git add web/e2e/calendar-lifecycle.spec.ts \

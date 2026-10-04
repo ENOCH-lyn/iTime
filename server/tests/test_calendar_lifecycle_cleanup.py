@@ -4,7 +4,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -18,7 +18,12 @@ from tests.conftest import psycopg_url
 from tests.test_calendar_additions import addition_payload
 from tests.test_calendar_exceptions import exception_payload
 from tests.test_calendar_lifecycle import trash_series, trash_subscription
-from tests.test_calendar_series import create_account, create_series, recurrence
+from tests.test_calendar_series import (
+    browser,
+    create_account,
+    create_series,
+    recurrence,
+)
 from tests.test_calendar_subscriptions import (
     FakeFetcher,
     create_subscription,
@@ -91,7 +96,12 @@ def test_cleanup_redacts_series_and_preserves_tombstone(
     )
     assert added.status_code == 201
     series = added.json()["series"]
-    deleted = trash_series(client, series)
+    delete_operation_id = uuid4()
+    deleted = trash_series(
+        client,
+        series,
+        operation_id=delete_operation_id,
+    )
     assert deleted.status_code == 200
 
     with psycopg.connect(
@@ -116,6 +126,15 @@ def test_cleanup_redacts_series_and_preserves_tombstone(
     assert client.get(
         f"/api/v1/calendar/series/{series['id']}"
     ).status_code == 410
+    replay = trash_series(
+        client,
+        series,
+        operation_id=delete_operation_id,
+    )
+    assert replay.status_code == 409
+    assert replay.json()["error"]["code"] == "operation_result_expired"
+    assert "需要彻底清理的安排" not in replay.text
+    assert "私人地点" not in replay.text
     with psycopg.connect(psycopg_url(database_url)) as connection:
         tombstone = connection.execute(
             """
@@ -400,3 +419,58 @@ def test_cleanup_failure_rolls_back_and_worker_once_runs(
             "SELECT purged_at IS NOT NULL FROM calendar_series WHERE id=%s",
             (UUID(series["id"]),),
         ).fetchone() == (True,)
+
+
+def test_web_control_expires_only_owned_items_and_runs_real_worker(
+    client,
+    live_server,
+    database_url,
+):
+    create_account(client, database_url, time_zone="UTC")
+    owned = create_series(client, name="受控到期安排")["series"]
+    assert trash_series(client, owned).status_code == 200
+
+    with browser(live_server) as other:
+        create_account(other, database_url, time_zone="UTC")
+        hidden = create_series(other, name="其他账号安排")["series"]
+        assert trash_series(other, hidden).status_code == 200
+
+        mixed = client.post(
+            "/api/__test/calendar-lifecycle-expire",
+            json={
+                "series_ids": [owned["id"], hidden["id"]],
+                "source_ids": [],
+            },
+        )
+        assert mixed.status_code == 404
+        assert mixed.json()["error"]["code"] == "test_calendar_item_not_found"
+
+        with psycopg.connect(psycopg_url(database_url)) as connection:
+            assert connection.execute(
+                "SELECT purge_after > now() FROM calendar_series WHERE id=%s",
+                (UUID(owned["id"]),),
+            ).fetchone() == (True,)
+
+        expired = client.post(
+            "/api/__test/calendar-lifecycle-expire",
+            json={
+                "series_ids": [owned["id"]],
+                "source_ids": [],
+            },
+        )
+        assert expired.status_code == 200, expired.text
+        assert expired.json() == {
+            "status": "expired",
+            "series_count": 1,
+            "source_count": 0,
+        }
+        cleaned = client.post("/api/__test/calendar-lifecycle-cleanup")
+        assert cleaned.status_code == 200, cleaned.text
+        assert cleaned.json() == {"status": "completed"}
+
+        assert client.get(
+            f"/api/v1/calendar/series/{owned['id']}"
+        ).status_code == 410
+        assert other.get(
+            f"/api/v1/calendar/series/{hidden['id']}"
+        ).status_code == 200
