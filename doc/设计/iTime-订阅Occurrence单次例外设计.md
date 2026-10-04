@@ -121,7 +121,8 @@ RECURRENCE-ID 修订。投影新增 `subscription_master_event_id`，单次例�
 迁移同时：
 
 - 为新表建立 `bump_planning_input_revision()` 触发器；
-- 继续复用 `change_events.entity_type='calendar_exception'`，该事件只承担无正文失效通知；
+- 例外变化递增 `CalendarSource.version` 并复用 `calendar_source` 无正文失效事件，与既有订阅字段
+  覆盖保持同一同步聚合边界；
 - 回滚前若存在订阅例外则拒绝，避免静默丢失用户修改；空表回滚时清理对应幂等结果和 change
   event。
 
@@ -156,7 +157,7 @@ DELETE /api/v1/calendar/subscriptions/{source_id}/exceptions/{exception_id}
 2. 锁定 `CalendarSource`，校验本人来源及 `expected_source_version`；
 3. 锁定并解析主事件，验证 occurrence key 确实属于当前来源规则或现有本地例外；
 4. 创建、更新或删除例外；
-5. 来源版本递增，写 `calendar_exception` 和 `calendar_source` 无正文同步事件；
+5. 来源版本递增，写 `calendar_source` 无正文同步事件；
 6. flush 后按最终投影返回该 occurrence 的冲突。
 
 不存在和跨账号统一返回 404。稳定错误包括：
@@ -221,8 +222,8 @@ DELETE /api/v1/calendar/subscriptions/{source_id}/exceptions/{exception_id}
 - 新表的 INSERT/UPDATE/DELETE 触发 planning input revision，使后续提案读取最终本地投影。
 - 用户主动修改不会创建“来源刷新冲突”记录；若已有开放来源冲突，其历史仍保留，用户可在规划页
   明确保留或重新生成。
-- 每次实际创建、更新、删除发出 `calendar_exception` 事件，并随来源版本变化发出
-  `calendar_source` 事件。无变化更新不增版、不发事件。
+- 每次实际创建、更新、删除递增来源版本并发出 `calendar_source` 事件；无变化更新不增版、不发
+  事件。
 - 本人 JSON 导出在 `calendar.subscription_exceptions` 保存完整字段；ICS 导出把来源规则、本地字段
   覆盖和单次例外合成最终 VEVENT/RECURRENCE-ID，取消写 CANCELLED 修订，移动和内容覆盖写最终
   RECURRENCE-ID 项，并跳过被本地例外取代的来源修订。
@@ -262,5 +263,11 @@ Web：
 
 ## 11. 实现状态
 
-当前为已确认实现设计，代码和动态验证尚未完成。完成后只按实际执行结果更新本节、需求追踪、
-测试用例、验收清单和 Web 实施记录。
+迁移 `0032_subscription_exceptions`、`calendar/subscription_exception_service.py`、订阅投影和
+写 API 已实现独立例外模型、两阶段有界查询、来源版本并发控制、planning revision、同步、本人
+JSON/CSV/ICS 导出及账号级联。`CalendarOccurrencePanel.vue` 已提供订阅单次取消、重置、定时/
+全天移动、内容覆盖和来源管理入口；来源取消后明确显示本地移动仍保留。
+
+服务端专项覆盖约束、DST、移入范围、RID、刷新保留、来源取消、跨账号、并发、幂等、冲突、
+导出和注销；Chromium 覆盖 desktop、mobile、tablet 以及 320px 深色大字号。实际命令和结果见
+[Web 实施与验证](../验收/iTime-Web实施与验证.md)。

@@ -1,6 +1,7 @@
 # iTime M3 订阅 Occurrence 单次例外实施计划
 
-当前进度：设计已冻结，等待按本计划实施和动态验证。
+当前进度：全部任务已实现、验证并提交；实际命令与结果见
+[Web 实施与验证](../验收/iTime-Web实施与验证.md)。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -67,7 +68,7 @@ Web：
 - Create: `server/tests/test_calendar_subscription_exception_models.py`
 - Modify: `server/tests/test_planning_models.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 创建 `test_calendar_subscription_exception_models.py`，升级 head 后写入主事件和最小合法取消例外：
 
@@ -102,7 +103,7 @@ connection.execute(
 - 新表 INSERT/UPDATE/DELETE 各使 planning revision 增加一次；
 - 有数据时拒绝降级，清空后可降到 `0031_plan_source_conflicts` 再升级。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -112,7 +113,7 @@ uv run pytest -q tests/test_calendar_subscription_exception_models.py \
 
 Expected: FAIL，迁移、ORM 和触发表尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 模型字段固定为：
 
@@ -155,9 +156,9 @@ AFTER INSERT OR UPDATE OR DELETE ON calendar_subscription_exceptions
 FOR EACH ROW EXECUTE FUNCTION bump_planning_input_revision()
 ```
 
-降级先检查表为空，再删除该触发器、`calendar_exceptions.subscription.%` 幂等结果、索引和表。
+降级先检查表为空，再删除该触发器、`calendar_subscription_exceptions.%` 幂等结果、索引和表。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
@@ -188,7 +189,7 @@ Expected: 专项测试、迁移 current/check、回滚往返和 Ruff 均通过�
 - Modify: `server/tests/test_calendar_subscriptions.py`
 - Modify: `server/tests/test_plan_source_conflicts.py`
 
-- [ ] **Step 1: 写真实 HTTP/worker 失败测试**
+- [x] **Step 1: 写真实 HTTP/worker 失败测试**
 
 测试用现有 `FakeFetcher` 和真实 worker 创建 DAILY、全天及 RECURRENCE-ID 来源，先断言：
 
@@ -224,7 +225,7 @@ assert created.json()["occurrence"]["busy"] is False
 - 双创建、更新/删除竞争只有一个成功；
 - 304、失败刷新不改变例外。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -234,7 +235,7 @@ uv run pytest -q tests/test_calendar_subscription_exceptions.py \
 
 Expected: 新接口 404 或新字段缺失；既有用例仍通过。
 
-- [ ] **Step 3: 增加输入模型和领域服务**
+- [x] **Step 3: 增加输入模型和领域服务**
 
 `subscription_schemas.py` 定义：
 
@@ -282,7 +283,7 @@ class SubscriptionExceptionDelete(OperationInput):
 字段覆盖。移动输入通过 `resolve_local_interval()` 计算并固化 UTC；全天区间用
 `datetime.combine(date, time.min, ZoneInfo(zone)).astimezone(UTC)`。
 
-- [ ] **Step 4: 改造订阅投影为两阶段有界加载**
+- [x] **Step 4: 改造订阅投影为两阶段有界加载**
 
 第一阶段产生来源候选并记录：
 
@@ -314,7 +315,7 @@ moved = select(CalendarSubscriptionException).where(
 应用后输出 `source_version`、`subscription_master_event_id`、`source_status` 及现有
 `exception_id/version/action`。移入范围记录先验证 key 仍属于当前来源规则；使用集合去重。
 
-- [ ] **Step 5: 实现创建、更新、重置 API**
+- [x] **Step 5: 实现创建、更新、重置 API**
 
 三个路由都按以下锁序：
 
@@ -335,14 +336,14 @@ if source.version != data.expected_source_version:
 ```python
 source.version += 1
 source.updated_at = current
-emit_change(session, owner_id, "calendar_exception", exception.id, action, version)
 emit_change(session, owner_id, "calendar_source", source.id, "updated", source.version)
 ```
 
-DELETE 的 change event action 使用 `deleted`，entity version 使用删除前版本加一。flush 后读取最终
-occurrence 和冲突；任何读取/容量错误让事务整体回滚。
+实际实现沿用订阅聚合边界，只发出 `calendar_source`；新表触发 planning revision，无需再发一条
+重复的 `calendar_exception` 事件。flush 后读取最终 occurrence 和冲突；任何读取/容量错误让
+事务整体回滚。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
@@ -374,7 +375,7 @@ git commit -m "feat: 支持订阅单次例外"
 - Modify: `server/tests/test_sync_event_coverage.py`
 - Modify: `server/tests/test_account_deletion_worker.py`
 
-- [ ] **Step 1: 写生命周期失败测试**
+- [x] **Step 1: 写生命周期失败测试**
 
 创建三类订阅例外后断言：
 
@@ -394,10 +395,10 @@ assert {
 - 取消含 `STATUS:CANCELLED`，移动含本地时段，覆盖含最终字段；
 - 不含 URL 查询参数、加密 URL、内部 lease、operation request/response。
 
-同步断言创建、更新、删除各有一个 `calendar_exception` 和一个 `calendar_source` 事件，重放和无变化
-更新不重复。注销 worker 完成后新表 owner 行为 0，控制账号不变。
+同步断言创建、更新、删除各有一个 `calendar_source` 事件，重放和无变化更新不重复。注销
+worker 完成后新表 owner 行为 0，控制账号不变。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -408,7 +409,7 @@ uv run pytest -q tests/test_data_export_snapshot.py \
 
 Expected: 快照键、CSV/ICS 修订及显式级联断言失败。
 
-- [ ] **Step 3: 增加 JSON 和 CSV 白名单**
+- [x] **Step 3: 增加 JSON 和 CSV 白名单**
 
 `collect_export_snapshot()` 新增：
 
@@ -433,7 +434,7 @@ Expected: 快照键、CSV/ICS 修订及显式级联断言失败。
 `_calendar_rows()` 为每条例外追加 `kind=subscription_exception` 行，`parent_id` 使用
 `master_event_id`，状态使用 action，标题/说明/地点只写本地覆盖值。
 
-- [ ] **Step 4: 合成最终 ICS 修订**
+- [x] **Step 4: 合成最终 ICS 修订**
 
 `_subscription_events()` 先以 `(master_event_id, source_occurrence_key)` 建例外映射。来源 detached
 事件若被本地例外取代则跳过；本地例外生成同源 UID 的最终 `RECURRENCE-ID`：
@@ -452,7 +453,7 @@ else:
 字段按“来源主事件 -> 来源 detached -> 字段覆盖 -> 单次覆盖”合并。解析异常只追加稳定 warning，
 不把整个导出作业伪装成功但漏报。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
@@ -478,7 +479,7 @@ git commit -m "feat: 导出并清理订阅单次例外"
 - Modify: `web/src/calendar.css`
 - Modify: `web/e2e/calendar-subscriptions.spec.ts`
 
-- [ ] **Step 1: 编写失败的真实 Chromium 流程**
+- [x] **Step 1: 编写失败的真实 Chromium 流程**
 
 扩展受控 ICS scenario，所有业务操作通过可见 UI 完成：
 
@@ -502,7 +503,7 @@ await expect(page.getByText('已恢复当前来源安排')).toBeVisible()
 - 桌面、平板、手机都跑主流程，desktop 另跑 320×700 最大字号深色；
 - axe、键盘、焦点恢复、console/pageerror、API 500 和根级横向溢出。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
@@ -512,7 +513,7 @@ pnpm exec playwright test e2e/calendar-subscriptions.spec.ts \
 
 Expected: 三个项目因订阅详情只有“管理来源与本地覆盖”而失败。
 
-- [ ] **Step 3: 增加前端类型和 API**
+- [x] **Step 3: 增加前端类型和 API**
 
 `CalendarOccurrence` 增加：
 
@@ -574,7 +575,7 @@ export async function resetSubscriptionOccurrenceException(
 创建使用 master ID/key/source version，更新使用 `exception_id/version`，重置使用 DELETE。任何必需
 ID 缺失时抛出 `calendar_subscription_occurrence_not_editable`。
 
-- [ ] **Step 4: 改造详情交互**
+- [x] **Step 4: 改造详情交互**
 
 `CalendarOccurrencePanel.vue` 让 `runCalendarAction()` 按来源类型调用对应 API。订阅 action 区固定
 为：
@@ -600,15 +601,15 @@ ID 缺失时抛出 `calendar_subscription_occurrence_not_editable`。
 `emit('changed', '来源已变化，已重新读取日历；请确认后重试。', 0)` 重读 occurrence 后允许用户
 使用新 source version 再提交。
 
-- [ ] **Step 5: 同步刷新和样式**
+- [x] **Step 5: 同步刷新和样式**
 
-`CalendarPage.vue` 的 `useSyncRefresh()` 继续接受 `calendar_exception` 和 `calendar_source`。详情重读
-后按稳定完整 occurrence key 恢复选中项；若移动到当前范围外则关闭详情并显示成功状态。
+`CalendarPage.vue` 的 `useSyncRefresh()` 继续接受 `calendar_source`。详情重读后按稳定完整
+occurrence key 恢复选中项；若移动到当前范围外则关闭详情并显示成功状态。
 
 `calendar.css` 为来源取消/本地保留提示、全天日期输入和操作换行增加稳定 grid/min-width；不新增
 嵌套卡片和说明型页面文案。
 
-- [ ] **Step 6: 构建、专项验证并提交**
+- [x] **Step 6: 构建、专项验证并提交**
 
 ```bash
 cd web
@@ -638,7 +639,7 @@ Expected: Vue 生产构建和 desktop/mobile/tablet 专项均通过。
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/计划/iTime-M3订阅Occurrence单次例外实施计划.md`
 
-- [ ] **Step 1: 执行迁移和服务端受影响回归**
+- [x] **Step 1: 执行迁移和服务端受影响回归**
 
 ```bash
 cd server
@@ -658,10 +659,10 @@ uv run ruff check .
 uv build --no-sources
 ```
 
-Expected: head 为 `0032_calendar_subscription_exceptions`；全部受影响测试、Ruff 和 sdist/wheel 构建
+Expected: head 为 `0032_subscription_exceptions`；全部受影响测试、Ruff 和 sdist/wheel 构建
 通过。
 
-- [ ] **Step 2: 执行前端受影响回归**
+- [x] **Step 2: 执行前端受影响回归**
 
 ```bash
 cd web
@@ -673,7 +674,7 @@ pnpm exec playwright test e2e/calendar-subscriptions.spec.ts \
 
 Expected: 订阅、日历、规划、同步、导出和注销在适用三视口通过。
 
-- [ ] **Step 3: 执行完整回归**
+- [x] **Step 3: 执行完整回归**
 
 ```bash
 cd server
@@ -685,7 +686,7 @@ pnpm test:e2e
 
 Expected: 服务端全量和 Chromium 全量通过；只允许测试文件中已说明的非桌面 skip。
 
-- [ ] **Step 4: 核对真实运行态与视觉证据**
+- [x] **Step 4: 核对真实运行态与视觉证据**
 
 ```bash
 curl --fail --silent http://127.0.0.1:8000/api/ready
@@ -697,7 +698,7 @@ git diff --check
 最大字号深色截图，确认无重叠、截断或横向滚动。检查前端 console 为 0 个未预期错误，并查询本地
 PostgreSQL 确认 `itime_test_%` 测试库残留为 0。
 
-- [ ] **Step 5: 同步实际状态并提交**
+- [x] **Step 5: 同步实际状态并提交**
 
 只在真实命令完成后填写测试数量、耗时、截图和限制。更新追踪矩阵，把“订阅 occurrence 的用户
 单次例外尚未实现”改为实际结果；Edge、真机、正式第三方来源兼容性和未完成的其他首版范围继续

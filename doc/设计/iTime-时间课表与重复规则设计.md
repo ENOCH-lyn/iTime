@@ -266,4 +266,26 @@
 - 已知 UID/RID 的坏项目或冲突重复项保留旧基线并显示项目错误；存在无法识别 UID 的事件时不执行缺失取消。来源主事件缺失/取消保留刷新前历史 occurrence，未来标记 `source_cancelled`；RID 缺失恢复未来主事件投影，RID 移动和取消优先于主事件。
 - `POST/GET/PUT /api/v1/calendar/subscriptions`、刷新、暂停、恢复和事件字段覆盖 API 均按账号隔离并使用操作幂等。名称、说明、地点和占用字段可本地覆盖，来源变化显示旧来源值、新来源值和本地值，逐字段重置后恢复来源值。
 
-`CalendarImportDialog.vue` 已增加“订阅 URL”模式，接入来源创建、状态轮询、手动刷新、暂停/恢复、设置修改、失败保旧、刷新记录、来源事件分页、本地字段覆盖及逐字段重置。订阅 occurrence 详情提供返回来源管理的入口并隐藏通用系列写操作。迁移 `0031_plan_source_conflicts`、规划冲突服务及规划/日历页面已实现来源更新后的当前计划复核、真实重叠块提示、明确保留和重新生成入口；刷新不自动改写计划。真实浏览器证据见[Web 实施与验证](../验收/iTime-Web实施与验证.md)。订阅 occurrence 的用户单次例外仍待统一例外 API 补齐。
+`CalendarImportDialog.vue` 已增加“订阅 URL”模式，接入来源创建、状态轮询、手动刷新、暂停/恢复、设置修改、失败保旧、刷新记录、来源事件分页、本地字段覆盖及逐字段重置。订阅 occurrence 详情提供返回来源管理的入口并隐藏通用系列写操作。迁移 `0031_plan_source_conflicts`、规划冲突服务及规划/日历页面已实现来源更新后的当前计划复核、真实重叠块提示、明确保留和重新生成入口；刷新不自动改写计划。真实浏览器证据见[Web 实施与验证](../验收/iTime-Web实施与验证.md)。
+
+## 18. 已实现订阅 occurrence 单次例外合同
+
+迁移 `0032_subscription_exceptions`、`calendar/subscription_exception_service.py` 和订阅投影已实现
+独立 `CalendarSubscriptionException`：
+
+- 以订阅主事件 ID 与 `DATE / FLOATING / INSTANT` 来源 occurrence key 唯一定位，不把只读来源
+  物化为可编辑 `CalendarSeries`。
+- 来源主事件、来源 RECURRENCE-ID、字段级覆盖和用户单次例外按固定顺序投影；来源刷新不删除
+  本地例外。单次取消不占用，移动使用固化本地墙上时段和 UTC 区间，内容覆盖只改变明确字段。
+- 本地移动即使来源后来取消仍保持 scheduled，并同时返回 `source_status=source_cancelled`；删除
+  例外后恢复当前来源修订和字段覆盖，不使用伪内容覆盖模拟恢复。
+- 正常查询只按最多 2000 个展开 key 精确读取例外，另以移动 UTC 区间索引补入原日期在范围外的
+  occurrence；当前来源规则移除 key 时例外休眠，key 再出现后恢复。
+- 创建、更新和重置 API 使用来源版本、例外版本及 `operation_id`，按来源锁与 refresh worker
+  串行；实际变化触发 planning revision 和 `calendar_source` 同步失效。
+- 本人 JSON、CSV 和 ICS 导出保留例外；ICS 用最终 RECURRENCE-ID 覆盖来源修订。来源和账号删除
+  通过组合外键级联清理。
+
+`CalendarOccurrencePanel.vue` 已提供订阅单次取消、调整时间、覆盖内容、重置为来源及来源管理；
+全天移动使用排他结束日期，定时移动保留 DST offset 选择。真实服务和三视口 Chromium 证据见
+[Web 实施与验证](../验收/iTime-Web实施与验证.md)。

@@ -100,4 +100,11 @@
 
 迁移 `0015_calendar_subscriptions` 与 `server/src/itime/calendar/subscription_*.py` 已实现受限抓取、加密 URL、来源事件修订、持久化租约 worker、字段覆盖和统一 occurrence 投影。服务端专项测试覆盖 200/304/失败保旧、UID/RID 更新取消、缺失取消、无限重复、陈旧结果、网络期间无数据库事务及迁移回退。
 
-`CalendarSubscriptionManager.vue` 已接入创建、刷新、暂停/恢复、设置、失败保旧、刷新记录、来源事件分页、字段覆盖、来源差异和逐字段重置；订阅 occurrence 详情不会误用通用系列编辑 API。迁移 `0031_plan_source_conflicts` 及 `planning/source_conflict_service.py` 已把成功来源修订接入当前计划复核：只比较未来调度投影，记录实际重叠块，不改写计划；用户可查看来源时段、保留当前计划或按最新来源重新生成，失败/304/纯文本变化不新增冲突。订阅事件的用户单次例外 API 尚未实现。
+`CalendarSubscriptionManager.vue` 已接入创建、刷新、暂停/恢复、设置、失败保旧、刷新记录、来源事件分页、字段覆盖、来源差异和逐字段重置；订阅 occurrence 详情不会误用通用系列编辑 API。迁移 `0031_plan_source_conflicts` 及 `planning/source_conflict_service.py` 已把成功来源修订接入当前计划复核：只比较未来调度投影，记录实际重叠块，不改写计划；用户可查看来源时段、保留当前计划或按最新来源重新生成，失败/304/纯文本变化不新增冲突。
+
+迁移 `0032_subscription_exceptions`、`subscription_exception_service.py` 和
+`CalendarOccurrencePanel.vue` 已补齐用户单次例外。用户可取消、移动或覆盖一个订阅 occurrence，
+也可删除例外恢复当前来源；本地移动支持定时/全天、跨日和 DST 校验，原日期不在查询范围时仍可
+按移动后时段投影。来源刷新与例外写入共享来源锁和版本，来源取消后本地移动继续保留并明确显示
+来源状态。新对象已接入 planning revision、`calendar_source` 同步失效、本人 JSON/CSV/ICS
+导出和账号级联清理，实际证据见[Web 实施与验证](../验收/iTime-Web实施与验证.md)。

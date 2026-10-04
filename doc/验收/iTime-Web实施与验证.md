@@ -1421,3 +1421,66 @@ Browser 插件在 `http://localhost:5173` 真实完成临时账号登录和 AI�
 `GET /api/ready`、`http://localhost:5173/plans` 和 `/calendar` 均返回 200，
 `itime_test_%` 数据库残留为 0。`REQ-CAL-03` 的首版范围已完成；订阅 occurrence 用户单次例外、
 任务/困难语音与 AI 校对、正式 Edge/实体设备、性能和生产部署仍未完成或验证。
+
+## M3-R：订阅 occurrence 单次例外
+
+对应 Git 提交：`5b2dc0d`、`dada25b`、`2b4c703`、`ff4d11f`、`c9b3c5a`、`ef7fef6`、
+`bce18a6`。专项设计见
+[订阅 Occurrence 单次例外设计](../设计/iTime-订阅Occurrence单次例外设计.md)，实际代码为迁移
+`0032_subscription_exceptions`、`server/src/itime/calendar/subscription_exception_service.py`、
+订阅投影/API、本人导出和账号注销接入，以及
+`web/src/components/CalendarOccurrencePanel.vue` 和
+`web/e2e/calendar-subscriptions.spec.ts`。
+
+已实现：
+
+- `CalendarSubscriptionException` 以订阅主事件和稳定来源 occurrence key 唯一定位，组合外键
+  约束本人归属。支持单次取消、定时/全天移动和名称/说明/地点/占用覆盖；DELETE 重置真正恢复
+  当前来源，不使用伪覆盖。
+- 来源主事件、来源 RECURRENCE-ID、字段级本地覆盖和单次例外按固定顺序投影。来源刷新不改写
+  例外；来源取消后，本地移动仍保持 scheduled，并单独返回
+  `source_status=source_cancelled` 供界面解释。
+- 普通查询先按最多 2000 个已展开组合 key 精确加载例外，再按移动 UTC 区间索引补入原日期不在
+  当前范围的实例；来源规则暂时移除 key 时例外休眠，不生成孤立安排。
+- 创建、更新和重置使用 `operation_id`、来源版本及例外版本。例外写入和订阅 worker 都先锁
+  `CalendarSource`；双会话创建、来源刷新和更新/重置竞争不会产生重复或最后写入覆盖。
+- 实际变化递增来源版本并发出 `calendar_source` 无正文同步事件；新表触发 planning input
+  revision。本人 JSON 保存全部例外字段，CSV 增加例外行，ICS 用最终 RECURRENCE-ID 覆盖来源
+  修订；账号注销通过外键级联清理。
+- 统一日历详情为订阅实例提供取消、调整时间、覆盖内容、重置为来源和来源管理。全天移动使用
+  排他结束日期；来源取消但本地移动保留时显示明确来源状态。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit、受控 ICS HTTP 来源、真实
+订阅 worker、生产构建预览和 Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 迁移模型与 planning trigger 专项 | **9 passed** | 0032 升降级、CHECK、唯一键、组合所有权外键、级联及 revision |
+| 订阅例外服务专项 | **4 passed** | 取消/重置、定时/全天移动、覆盖、DST、RID、刷新保留、来源取消、跨账号、并发和幂等 |
+| 日历、订阅、规划输入受影响服务组合 | **50 passed in 53.93s** | 统一投影、冲突链接、既有系列/例外/补课、来源计划冲突 |
+| 导出、同步和注销生命周期组合 | **15 passed in 13.20s** | JSON/CSV/ICS、无正文来源事件及账号级联 |
+| `cd server && uv run pytest -q` | **507 passed in 415.27s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `cd server && uv run alembic current`、`check` | `0032_subscription_exceptions (head)`，无模型漂移 | 开发库迁移与 ORM 一致性 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 订阅例外专项 Chromium | **3 passed in 33.0s** | 取消、重置、移动、刷新保留与来源取消 × 三视口；desktop 含全天及 320px |
+| `calendar-subscriptions.spec.ts` | **12 passed in 1.7m** | 订阅既有与新增流程全量三视口 |
+| 受影响 Chromium | **62 passed**；并行高负载下 1 个既有 tablet 规划提示超时，空载复跑 **1 passed** | 注销、订阅、日历、导出、规划、同步 |
+| `cd web && pnpm test:e2e` | **229 passed, 2 skipped in 12.5m** | 231 项收集；两项仍为 public-links 非桌面深度场景 |
+
+真实浏览器流程从注册、邮件验证、时区设置和受控 ICS URL 创建开始；三个视口依次取消并重置同一
+occurrence，再把它移动到新日期。来源下一代改名后本地移动保持，来源随后整体取消后仍显示
+“来源已取消，本地移动仍保留”。desktop 另把来源全天事件移动为新的全天日期区间，并在
+320×700 深色最大字号下复核最终详情。
+
+三个视口均检查 axe、控制台、API 500、Vite 错误层和根级横向溢出。截图位于
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-calendar-subscription-occurrence-exception.png`
+及
+`/tmp/itime-ui-evidence/desktop-calendar-subscription-occurrence-exception-320-dark-large.png`，
+已人工检查无内容重叠、裁切、空白画面或按钮溢出。本会话未暴露 Browser 插件工具，因此按前端
+测试规范使用仓库 Playwright 完成渲染和交互验证。
+
+收口时开发 API 已按当前代码重启，`GET /api/ready` 返回 200；Vite `/calendar` 可访问，
+`itime_test_%` 数据库残留为 0。订阅 occurrence 单次例外的首版范围已完成；任务/困难语音与 AI
+校对、其他对象单项回收、正式第三方订阅兼容性、Edge/实体设备、性能和生产部署仍未完成或验证。
