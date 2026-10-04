@@ -16,6 +16,7 @@ import CalendarNavigation from '../components/CalendarNavigation.vue'
 import CalendarOccurrencePanel from '../components/CalendarOccurrencePanel.vue'
 import CalendarSeriesDialog from '../components/CalendarSeriesDialog.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
+import CalendarTrashDialog from '../components/CalendarTrashDialog.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import { api, failure, type Failure } from '../lib/api'
 import {
@@ -75,6 +76,8 @@ const pageSuccess = ref('')
 const importOpen = ref(false)
 const subscriptionTarget = ref<{ sourceId: string; eventId: string | null } | null>(null)
 const settingsOpen = ref(false)
+const trashOpen = ref(false)
+const trashDialog = ref<InstanceType<typeof CalendarTrashDialog> | null>(null)
 const seriesOpen = ref(false)
 const editingSeries = ref<CalendarSeries | null>(null)
 const splittingOccurrence = ref<CalendarOccurrence | null>(null)
@@ -88,6 +91,7 @@ const showCancelled = ref(true)
 let loadRevision = 0
 let anchorTouched = validDate(routeDate)
 let importOpener: HTMLElement | null = null
+let trashOpener: HTMLElement | null = null
 
 function parseLocalDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
@@ -246,7 +250,8 @@ useSyncRefresh(
   ],
   async () => {
     await Promise.all([refreshMetadata(), loadOccurrences()])
-    if (settingsOpen.value || seriesOpen.value || importOpen.value) {
+    if (trashOpen.value) await trashDialog.value?.refresh(true)
+    if (settingsOpen.value || seriesOpen.value || importOpen.value || trashOpen.value) {
       pageSuccess.value = '其他设备有更新；当前编辑内容已保留。'
     }
   },
@@ -464,6 +469,30 @@ async function closeImport() {
   )?.focus()
 }
 
+async function openTrash() {
+  trashOpener = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
+  importOpen.value = false
+  subscriptionTarget.value = null
+  settingsOpen.value = false
+  seriesOpen.value = false
+  await nextTick()
+  trashOpen.value = true
+}
+
+async function closeTrash() {
+  const opener = trashOpener
+  trashOpener = null
+  trashOpen.value = false
+  await nextTick()
+  if (opener?.isConnected && opener.offsetParent !== null) {
+    opener.focus()
+    return
+  }
+  document.querySelector<HTMLElement>('[data-calendar-trash-trigger]')?.focus()
+}
+
 async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
   if (!occurrence.series_id) return
   pageError.value = null
@@ -524,6 +553,10 @@ async function onSeriesSaved(message: string, conflictCount: number) {
   await onCalendarChanged(message, conflictCount)
 }
 
+async function onTrashChanged(message: string) {
+  await onCalendarChanged(message, 0)
+}
+
 async function logout() {
   if (pendingLogout.value || !confirmDiscardPendingOperations()) return
   pendingLogout.value = true
@@ -559,6 +592,7 @@ watch(pageError, value => {
       :term-count="terms.length"
       @create-series="openCreate"
       @open-import="openImport"
+      @open-trash="openTrash"
       @open-settings="settingsOpen = true"
       @logout="logout"
     />
@@ -704,6 +738,12 @@ watch(pageError, value => {
       :initial-date="anchor"
       @close="seriesOpen = false"
       @saved="onSeriesSaved"
+    />
+    <CalendarTrashDialog
+      ref="trashDialog"
+      :open="trashOpen"
+      @close="closeTrash"
+      @changed="onTrashChanged"
     />
   </div>
 </template>

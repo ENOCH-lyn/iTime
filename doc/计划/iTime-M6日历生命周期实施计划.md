@@ -1123,7 +1123,7 @@ Expected: 生产构建、直接删除流程和既有桌面日历流程通过。
 - Modify: `web/e2e/calendar-lifecycle.spec.ts`
 - Modify: `web/e2e/sync.spec.ts`
 
-- [ ] **Step 1: 写回收、恢复和跨设备失败测试**
+- [x] **Step 1: 写回收、恢复和跨设备失败测试**
 
 浏览器流程：
 
@@ -1149,7 +1149,7 @@ await expect(page.getByText('安排已恢复到日历。')).toBeVisible()
 - desktop、mobile、tablet、320×700 最大字号深色、键盘、粗指针、减少动效、axe、控制台、
   API 500、Vite 错误层和根级横向溢出。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
@@ -1160,7 +1160,7 @@ pnpm exec playwright test e2e/sync.spec.ts --project=desktop \
 
 Expected: FAIL，导航入口和回收对话框尚不存在。
 
-- [ ] **Step 3: 实现 `CalendarTrashDialog`**
+- [x] **Step 3: 实现 `CalendarTrashDialog`**
 
 组件公开合同：
 
@@ -1180,7 +1180,7 @@ API，未知结果继续复用原 operation ID。
 首次加载失败显示原因、保存状态、请求编号和重试；已有列表刷新失败保留旧内容。恢复成功移除
 该项、显示状态并 `emit('changed', message)`；对话框关闭后焦点回到导航按钮。
 
-- [ ] **Step 4: 接入导航和页面刷新**
+- [x] **Step 4: 接入导航和页面刷新**
 
 `CalendarNavigation` 导入 `Trash2`，新增：
 
@@ -1205,7 +1205,7 @@ openTrash: []
 `calendar_series/calendar_source` 的 `deleted/restored/purged` 动作到达时刷新活动日历和打开的
 回收列表。任一管理对话框打开时不重复弹层；关闭后恢复触发按钮焦点。
 
-- [ ] **Step 5: 完成响应式样式**
+- [x] **Step 5: 完成响应式样式**
 
 桌面使用最大 880px 对话框和两列摘要/详情；840px 以下单列，600px 以下全屏内部滚动。
 列表行和操作区使用稳定网格，不嵌套卡片。固定：
@@ -1224,7 +1224,7 @@ openTrash: []
 
 320px 最大字号下分段控件和按钮允许换行，但图标按钮保持 44px 触控尺寸。
 
-- [ ] **Step 6: 三视口验证并提交**
+- [x] **Step 6: 三视口验证并提交**
 
 ```bash
 cd web

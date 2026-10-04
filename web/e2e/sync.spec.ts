@@ -146,6 +146,49 @@ async function makeTaskRecurring(
   expect(response.ok()).toBeTruthy()
 }
 
+async function createCalendarSeries(page: Page, csrf: string, date: string) {
+  const response = await page.request.post('/api/v1/calendar/series', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: {
+      operation_id: randomUUID(),
+      kind: 'fixed',
+      term_id: null,
+      name: '跨设备回收安排',
+      description: '由同步事件刷新日历与回收站',
+      location: '同步测试地点',
+      busy: true,
+      time_zone: null,
+      start_date: date,
+      starts_at: '13:00:00',
+      ends_at: '14:00:00',
+      end_day_offset: 0,
+      start_period_number: null,
+      end_period_number: null,
+      ambiguous_utc_offset_minutes: null,
+      recurrence: {
+        frequency: 'none',
+        interval: 1,
+        weekdays: [],
+        month: null,
+        day_of_month: null,
+        until: null,
+        count: null,
+        week_numbers: [],
+      },
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return (await response.json()).series as {
+    id: string
+    version: number
+  }
+}
+
+async function jumpToDate(page: Page, date: string) {
+  await page.goto(`/calendar?date=${date}`)
+  await expect(page.getByText('正在读取日历…')).toHaveCount(0)
+}
+
 test('offline cache is encrypted and never hides an HTTP failure', async ({
   page,
   request,
@@ -304,6 +347,67 @@ test('cross-device task refresh and offline step queue converge', async ({
       const current = (await response.json()).task
       return current.steps[0].completed
     }).toBe(true)
+  } finally {
+    await secondContext.close()
+  }
+})
+
+test('calendar lifecycle sync refreshes an open trash dialog and restored calendar', async ({
+  page,
+  request,
+  browser,
+}) => {
+  const session = await account(page, request)
+  const date = futureDate(12)
+  const series = await createCalendarSeries(page, session.csrf_token, date)
+  await jumpToDate(page, date)
+  await expect(page.getByRole('button', { name: /跨设备回收安排/ })).toBeVisible()
+
+  const secondContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  watchRuntime(second)
+  try {
+    await login(second, session.email)
+    await jumpToDate(second, date)
+    await expect(second.getByLabel(/同步：已同步/)).toBeVisible({
+      timeout: 8_000,
+    })
+    await second.getByRole('button', {
+      name: '日历回收站',
+      exact: true,
+    }).click()
+    const trash = second.getByRole('dialog', { name: '日历回收站' })
+    await expect(trash.getByText('回收站中没有安排。', { exact: true })).toBeVisible()
+
+    const removed = await page.request.delete(
+      `/api/v1/calendar/series/${series.id}`,
+      {
+        headers: { 'X-CSRF-Token': session.csrf_token },
+        data: {
+          operation_id: randomUUID(),
+          expected_version: series.version,
+        },
+      },
+    )
+    expect(removed.ok()).toBeTruthy()
+    await expect(
+      trash.getByRole('heading', {
+        name: '跨设备回收安排',
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 5_000 })
+    await expect(
+      page.getByRole('button', { name: /跨设备回收安排/ }),
+    ).toHaveCount(0, { timeout: 5_000 })
+
+    await trash.getByRole('button', {
+      name: '恢复跨设备回收安排',
+      exact: true,
+    }).click()
+    await expect(
+      page.getByRole('button', { name: /跨设备回收安排/ }),
+    ).toBeVisible({ timeout: 5_000 })
+    expect(runtimeErrors.get(second)).toEqual([])
   } finally {
     await secondContext.close()
   }

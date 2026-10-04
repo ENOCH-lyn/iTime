@@ -335,7 +335,10 @@ async function loadSubscriptions(silent = false) {
     subscriptions.value = items
     const selected = items.find(item => item.id === selectedSourceId.value)
     if (selected && detail.value) syncSubscription(selected)
-    if (!silent) retryAction.value = null
+    if (!silent) {
+      error.value = null
+      retryAction.value = null
+    }
     return true
   } catch (reason) {
     if (revision !== listRevision) return false
@@ -667,6 +670,10 @@ async function trashCurrentSubscription() {
     action: 'delete',
   })
   deleteOperation = operationId(deleteOperation, fingerprint)
+  pollRevision += 1
+  listRevision += 1
+  detailRevision += 1
+  stopPolling()
   pending.value = 'delete'
   try {
     await trashCalendarSubscription(subscription, deleteOperation.id)

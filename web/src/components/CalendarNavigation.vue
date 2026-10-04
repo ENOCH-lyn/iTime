@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { CalendarClock, FileUp, LogOut, Plus, SlidersHorizontal } from 'lucide-vue-next'
+import {
+  CalendarClock,
+  FileUp,
+  LogOut,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-vue-next'
 import ProductNavigation from './ProductNavigation.vue'
 
 defineProps<{
@@ -12,6 +19,7 @@ defineProps<{
 const emit = defineEmits<{
   createSeries: []
   openImport: []
+  openTrash: []
   openSettings: []
   logout: []
 }>()
@@ -31,6 +39,9 @@ const emit = defineEmits<{
       </button>
       <button type="button" class="nav-link" data-calendar-import-trigger @click="emit('openImport')">
         <FileUp :size="18" aria-hidden="true" />导入日历
+      </button>
+      <button type="button" class="nav-link" data-calendar-trash-trigger @click="emit('openTrash')">
+        <Trash2 :size="18" aria-hidden="true" />日历回收站
       </button>
       <button type="button" class="nav-link" @click="emit('openSettings')">
         <SlidersHorizontal :size="18" aria-hidden="true" />时间与学期
