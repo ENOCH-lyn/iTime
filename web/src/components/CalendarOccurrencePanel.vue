@@ -3,6 +3,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarPlus,
   CalendarClock,
   CheckCircle2,
   CircleSlash2,
@@ -24,6 +25,7 @@ import {
   type CalendarOccurrence,
 } from '../lib/calendar'
 import {
+  createTaskMakeup,
   rescheduleTaskOccurrence,
   syncTaskOccurrenceStepCompletion,
   updateTaskOccurrenceStatus,
@@ -47,7 +49,7 @@ const emit = defineEmits<{
   openSubscription: [sourceId: string, eventId: string]
 }>()
 
-type Action = 'none' | 'move' | 'override' | 'makeup' | 'task-move'
+type Action = 'none' | 'move' | 'override' | 'makeup' | 'task-move' | 'task-makeup'
 
 const action = ref<Action>('none')
 const pending = ref(false)
@@ -59,6 +61,7 @@ const move = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0
 const override = reactive({ name: '', description: '', location: '', busy: true })
 const makeup = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0 | 1 })
 const taskMove = reactive({ date: '', time: '' })
+const taskMakeup = reactive({ date: '', time: '' })
 const taskDetail = ref<TaskDetail | null>(null)
 const localCompletedStepIds = ref<string[]>([])
 let taskDetailRevision = 0
@@ -70,6 +73,10 @@ const canSplit = computed(() => (
   occurrence.value?.occurrence_type === 'base'
   && occurrence.value.source_type !== 'subscription'
   && props.recurring
+))
+const canCreateTaskMakeup = computed(() => (
+  task.value?.kind === 'base'
+  && taskDetail.value?.schedule.recurrence.frequency !== 'none'
 ))
 
 watch(() => props.item?.id, () => {
@@ -165,6 +172,10 @@ function begin(next: Action) {
   if (next === 'task-move' && task.value) {
     taskMove.date = task.value.due_date
     taskMove.time = task.value.due_time?.slice(0, 5) ?? ''
+  }
+  if (next === 'task-makeup' && task.value) {
+    taskMakeup.date = task.value.due_date
+    taskMakeup.time = task.value.due_time?.slice(0, 5) ?? ''
   }
   action.value = next
   error.value = null
@@ -465,6 +476,66 @@ async function saveTaskMove() {
     pending.value = false
   }
 }
+
+async function saveTaskMakeup() {
+  if (!task.value || !taskDetail.value || pending.value) return
+  const dueTime = task.value.due_kind === 'datetime'
+    ? taskMakeup.time
+    : null
+  if (!taskMakeup.date || (task.value.due_kind === 'datetime' && !dueTime)) {
+    error.value = localFailure(
+      task.value.due_kind === 'datetime'
+        ? '请填写完整的补做日期与时刻。'
+        : '请选择补做日期。',
+    )
+    await nextTick()
+    document.querySelector<HTMLElement>('.occurrence-panel .error-status')?.focus()
+    return
+  }
+  const expectedTaskVersion = Math.max(
+    task.value.task_version,
+    taskDetail.value.version,
+  )
+  const fingerprint = JSON.stringify({
+    task: task.value.task_id,
+    source: task.value.occurrence_key,
+    version: expectedTaskVersion,
+    date: taskMakeup.date,
+    time: dueTime,
+    offset: selectedOffset.value,
+  })
+  pending.value = true
+  error.value = null
+  try {
+    const result = await createTaskMakeup(
+      task.value,
+      expectedTaskVersion,
+      operationId(fingerprint),
+      taskMakeup.date,
+      dueTime,
+      selectedOffset.value,
+    )
+    taskDetail.value = result.task
+    operation.value = null
+    action.value = 'none'
+    emit('changed', '补做任务已创建，原实例保持不变。', 0)
+  } catch (reason) {
+    const requestFailure = failure(reason)
+    error.value = requestFailure
+    candidateOffsets.value = requestFailure.details?.candidate_offsets_minutes ?? []
+    if (requestFailure.code === 'task_version_conflict') {
+      try {
+        taskDetail.value = await getTask(task.value.task_id)
+      } catch {
+        // Keep the original conflict and the user's draft for a later retry.
+      }
+    }
+    await nextTick()
+    document.querySelector<HTMLElement>('.occurrence-panel .error-status')?.focus()
+  } finally {
+    pending.value = false
+  }
+}
 </script>
 
 <template>
@@ -541,6 +612,10 @@ async function saveTaskMove() {
           <div v-if="plan">
             <dt>计划版本</dt>
             <dd>第 {{ plan.plan_version }} 版</dd>
+          </div>
+          <div v-if="task?.kind === 'makeup' && task.makeup_for_key">
+            <dt>来源</dt>
+            <dd>关联补做 · 原实例 {{ task.makeup_for_key.slice(0, 10) }}</dd>
           </div>
         </dl>
 
@@ -646,12 +721,16 @@ async function saveTaskMove() {
             <button type="button" class="button secondary" :disabled="pending" @click="begin('task-move')">
               调整截止日期
             </button>
+            <button v-if="canCreateTaskMakeup" type="button" class="button secondary"
+              :disabled="pending" @click="begin('task-makeup')">
+              <CalendarPlus :size="17" aria-hidden="true" />安排补做
+            </button>
             <RouterLink to="/tasks" class="text-button">前往任务</RouterLink>
           </div>
         </template>
 
         <form v-if="action === 'move'" class="occurrence-action-form" @submit.prevent="saveMove">
-          <h3>调整本次时间</h3>
+          <h2>调整本次时间</h2>
           <div class="field"><label for="move-date">日期</label><input id="move-date" v-model="move.date" type="date" /></div>
           <div class="calendar-form-grid">
             <div class="field"><label for="move-start">开始</label><input id="move-start" v-model="move.startsAt" type="time" /></div>
@@ -669,7 +748,7 @@ async function saveTaskMove() {
         </form>
 
         <form v-else-if="action === 'override'" class="occurrence-action-form" @submit.prevent="saveOverride">
-          <h3>覆盖本次内容</h3>
+          <h2>覆盖本次内容</h2>
           <div class="field"><label for="override-name">名称</label><input id="override-name" v-model="override.name" maxlength="200" /></div>
           <div class="field"><label for="override-location">地点</label><input id="override-location" v-model="override.location" maxlength="300" /></div>
           <div class="field"><label for="override-description">说明</label><textarea id="override-description" v-model="override.description" rows="3" maxlength="20000"></textarea></div>
@@ -678,7 +757,7 @@ async function saveTaskMove() {
         </form>
 
         <form v-else-if="action === 'makeup'" class="occurrence-action-form" @submit.prevent="saveMakeup">
-          <h3>安排关联补课</h3>
+          <h2>安排关联补课</h2>
           <div class="field"><label for="makeup-date">日期</label><input id="makeup-date" v-model="makeup.date" type="date" /></div>
           <div class="calendar-form-grid">
             <div class="field"><label for="makeup-start">开始</label><input id="makeup-start" v-model="makeup.startsAt" type="time" /></div>
@@ -696,7 +775,7 @@ async function saveTaskMove() {
         </form>
 
         <form v-else-if="action === 'task-move'" class="occurrence-action-form" @submit.prevent="saveTaskMove">
-          <h3>调整任务截止日期</h3>
+          <h2>调整任务截止日期</h2>
           <div class="field"><label for="task-move-date">日期</label><input id="task-move-date" v-model="taskMove.date" type="date" /></div>
           <div class="field"><label for="task-move-time">时刻 <span class="muted">可选</span></label><input id="task-move-time" v-model="taskMove.time" type="time" /></div>
           <div v-if="candidateOffsets.length" class="field">
@@ -707,6 +786,30 @@ async function saveTaskMove() {
             </select>
           </div>
           <div class="dialog-actions"><button type="button" class="button secondary" @click="action = 'none'">取消</button><button class="button" :disabled="pending">保存改期</button></div>
+        </form>
+
+        <form v-else-if="action === 'task-makeup'" class="occurrence-action-form" @submit.prevent="saveTaskMakeup">
+          <h2>安排关联补做</h2>
+          <p class="section-empty">新实例会关联到本次任务，原实例状态保持不变。</p>
+          <div class="field">
+            <label for="task-makeup-date">补做日期</label>
+            <input id="task-makeup-date" v-model="taskMakeup.date" type="date" required />
+          </div>
+          <div v-if="task?.due_kind === 'datetime'" class="field">
+            <label for="task-makeup-time">补做时刻</label>
+            <input id="task-makeup-time" v-model="taskMakeup.time" type="time" required />
+          </div>
+          <div v-if="candidateOffsets.length" class="field">
+            <label for="task-makeup-offset">重复时刻的 UTC 偏移</label>
+            <select id="task-makeup-offset" v-model.number="selectedOffset">
+              <option :value="null" disabled>请选择这次使用的时间点</option>
+              <option v-for="offset in candidateOffsets" :key="offset" :value="offset">{{ offsetLabel(offset) }}</option>
+            </select>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="button secondary" @click="action = 'none'">取消</button>
+            <button class="button" :disabled="pending">{{ pending ? '正在创建…' : '创建补做' }}</button>
+          </div>
         </form>
       </div>
     </template>

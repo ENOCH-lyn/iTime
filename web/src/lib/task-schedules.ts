@@ -190,3 +190,24 @@ export async function rescheduleTaskOccurrence(
     'PUT',
   )
 }
+
+export async function createTaskMakeup(
+  occurrence: TaskOccurrence,
+  expectedTaskVersion: number,
+  operationId: string,
+  dueDate: string,
+  dueTime: string | null,
+  ambiguousUtcOffsetMinutes: number | null = null,
+) {
+  return api<{ operation_id: string; task: TaskDetail; occurrence: TaskOccurrence }>(
+    `/tasks/${occurrence.task_id}/occurrences/makeup`,
+    {
+      operation_id: operationId,
+      expected_task_version: expectedTaskVersion,
+      original_occurrence_key: occurrence.occurrence_key,
+      due_date: dueDate,
+      due_time: dueTime,
+      ambiguous_utc_offset_minutes: ambiguousUtcOffsetMinutes,
+    },
+  )
+}

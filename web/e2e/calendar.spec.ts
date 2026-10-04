@@ -155,7 +155,12 @@ async function eventButton(page: Page, date: string, text: string) {
   return day.getByRole('button').filter({ hasText: text })
 }
 
-async function createTaskWithDueDate(page: Page, title: string, date: string) {
+async function createTaskWithDueDate(
+  page: Page,
+  title: string,
+  date: string,
+  recurring = false,
+) {
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   await page.getByLabel('任务名称', { exact: true }).fill(title)
   await page.getByRole('button', { name: '创建任务', exact: true }).first().click()
@@ -163,6 +168,11 @@ async function createTaskWithDueDate(page: Page, title: string, date: string) {
   await page.getByLabel('截止类型').selectOption('datetime')
   await page.getByLabel('截止日期', { exact: true }).fill(date)
   await page.getByLabel('截止时刻', { exact: true }).fill('18:30')
+  if (recurring) {
+    await page.getByLabel('重复方式').selectOption('daily')
+    await page.getByLabel('共').check()
+    await page.getByLabel('重复次数').fill('3')
+  }
   await page.getByRole('button', { name: '保存日期与重复', exact: true }).click()
   await expect(page.getByText('日期与重复设置已保存。')).toBeVisible()
 }
@@ -285,6 +295,87 @@ test('学期课程、固定安排和任务截止在统一日历中展示并标�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(await page.locator('vite-error-overlay').count()).toBe(0)
   await screenshot(page, info, 'unified-month')
+})
+
+test('重复任务实例可创建关联补做并独立完成', async ({
+  page,
+  request,
+}, info) => {
+  const start = futureDateBeforeWeekEnd(14)
+  const makeupDate = addDays(start, 1)
+  await account(page, request)
+  await createTaskWithDueDate(page, '重复任务补做测试', start, true)
+  await goCalendar(page, start)
+
+  await (await eventButton(page, start, '重复任务补做测试')).click()
+  const panel = page.locator('.occurrence-panel')
+  await panel.getByRole('button', { name: '安排补做', exact: true }).click()
+  await panel.getByLabel('补做日期').fill(makeupDate)
+  await panel.getByLabel('补做时刻').fill('20:15')
+  await screenshot(page, info, 'task-makeup-form')
+  await panel.getByRole('button', { name: '创建补做', exact: true }).click()
+  await expect(panel.getByText('补做任务已创建，原实例保持不变。')).toBeVisible()
+
+  const initialResponse = await page.request.get(
+    `/api/v1/task-occurrences?start=${start}&end=${addDays(makeupDate, 1)}`,
+  )
+  expect(initialResponse.ok()).toBeTruthy()
+  const initialItems = (await initialResponse.json()).items as Array<{
+    occurrence_key: string
+    kind: 'base' | 'makeup'
+    due_date: string
+    due_time: string | null
+    status: 'open' | 'completed' | 'skipped'
+    makeup_for_key: string | null
+  }>
+  const original = initialItems.find(item => item.kind === 'base' && item.due_date === start)
+  const makeup = initialItems.find(item => item.kind === 'makeup')
+  expect(original).toBeTruthy()
+  expect(makeup).toMatchObject({
+    due_date: makeupDate,
+    due_time: '20:15:00',
+    status: 'open',
+    makeup_for_key: original?.occurrence_key,
+  })
+
+  if ((page.viewportSize()?.width ?? 0) <= 840) {
+    await page.getByRole('button', { name: '返回日历' }).click()
+  }
+  await (await eventButton(page, makeupDate, '20:15')).click()
+  await expect(panel.getByText(`关联补做 · 原实例 ${start}`, { exact: true })).toBeVisible()
+  await expect(panel.getByRole('button', { name: '安排补做', exact: true })).toHaveCount(0)
+  await panel.getByRole('button', { name: '标为完成', exact: true }).click()
+  await expect(panel.getByText('任务实例已完成。')).toBeVisible()
+
+  const completedResponse = await page.request.get(
+    `/api/v1/task-occurrences?start=${start}&end=${addDays(makeupDate, 1)}`,
+  )
+  expect(completedResponse.ok()).toBeTruthy()
+  const completedItems = (await completedResponse.json()).items as typeof initialItems
+  expect(completedItems.find(item => item.occurrence_key === original?.occurrence_key)?.status)
+    .toBe('open')
+  expect(completedItems.find(item => item.kind === 'makeup')?.status).toBe('completed')
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.locator('vite-error-overlay').count()).toBe(0)
+  await screenshot(page, info, 'task-makeup-completed')
+
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.reload()
+    await page.getByLabel('跳转日期').fill(start)
+    await (await eventButton(page, start, '18:30')).click()
+    await panel.getByRole('button', { name: '安排补做', exact: true }).click()
+    await expect(panel.getByRole('heading', { name: '安排关联补做' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'task-makeup-form-320-large-dark')
+  }
 })
 
 test('单次取消、调课、关联补课及补课恢复均保留原系列', async ({
