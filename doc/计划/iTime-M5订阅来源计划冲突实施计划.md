@@ -1,6 +1,9 @@
 # iTime M5 订阅来源计划冲突实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+当前进度：全部任务已实现、验证并提交；实际命令与结果见
+[Web 实施与验证](../验收/iTime-Web实施与验证.md)。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在 ICS 订阅成功更新未来固定安排时，为受影响的已确认当前计划创建可审计、可同步、可
 处理的来源冲突，并在规划页和统一日历提供完整恢复入口。
@@ -54,7 +57,7 @@ Web：
 - Modify: `server/src/itime/planning/models.py`
 - Create: `server/tests/test_plan_source_conflict_models.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 升级 head 后断言 `plan_source_conflicts` 存在，并以真实 UUID 写入最小合法记录。覆盖非法状态、
 resolution/state 不一致、非数组 JSON、超过 2000 个 changes、超过 100 个 block ID、负代次和
@@ -76,7 +79,7 @@ with pytest.raises(CheckViolation):
 断言 `(plan_version_id, source_id, source_generation)` 唯一；删除测试账号后记录级联为 0；空表可
 降到 `0030_public_task_links` 再升级。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -85,7 +88,7 @@ uv run pytest -q tests/test_plan_source_conflict_models.py
 
 Expected: FAIL，迁移和 ORM 尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 模型固定为：
 
@@ -112,7 +115,7 @@ class PlanSourceConflict(Base):
 迁移同时创建 owner/status/detected、plan-version/status 和 source/generation 索引；组合外键约束
 owner 与计划版本、来源归属。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
@@ -140,7 +143,7 @@ Expected: 模型专项、迁移往返、Alembic 漂移和 Ruff 均通过。
 - Create: `server/tests/test_plan_source_conflicts.py`
 - Modify: `server/tests/test_calendar_subscriptions.py`
 
-- [ ] **Step 1: 写真实 worker 失败测试**
+- [x] **Step 1: 写真实 worker 失败测试**
 
 测试先创建账号、UTC 时间设置、任务和当前手工计划，再创建订阅并运行真实
 `process_one()`。首个来源事件避开计划块；下一代把事件移动到计划块时断言：
@@ -164,7 +167,7 @@ assert current_plan["blocks"] == original_blocks
 - 同内容重试不重复；来源再次变化把旧记录处理为 `superseded`。
 - 单周投影超过 2000 时来源仍成功，记录 `details_limited=true`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -174,7 +177,7 @@ uv run pytest -q tests/test_plan_source_conflicts.py \
 
 Expected: 新专项因缺少 `source_conflicts` 失败；既有订阅用例保持通过。
 
-- [ ] **Step 3: 增加单来源投影**
+- [x] **Step 3: 增加单来源投影**
 
 `query_subscription_occurrences()` 增加可选 `source_id`，查询条件固定归属：
 
@@ -190,7 +193,7 @@ if source_id is not None:
 
 既有调用不传时行为不变；新服务只读取当前 claim 的来源。
 
-- [ ] **Step 4: 实现前后快照与差异**
+- [x] **Step 4: 实现前后快照与差异**
 
 `source_conflict_service.py` 定义不可变的基线值：
 
@@ -215,14 +218,14 @@ class PlanConflictBaseline:
 JSON 快照只含用户可见名称、日期/时刻、时区、UTC 起止、busy、状态和 event ID，不含 UID、URL
 或正文。
 
-- [ ] **Step 5: 原子接入来源刷新**
+- [x] **Step 5: 原子接入来源刷新**
 
 `apply_subscription_snapshot()` 在任何事件修改前调用 `capture_source_plan_baselines()`；完成来源
 事件变更并 `flush()` 后，仅在 `changed_count > 0` 时调用
 `record_source_plan_conflicts()`。来源更新、规划 revision trigger、冲突和 `plan` change event
 同事务提交；失败回滚全部。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
@@ -253,7 +256,7 @@ git commit -m "feat: 检测订阅来源计划冲突"
 - Modify: `server/tests/test_data_export_snapshot.py`
 - Modify: `server/tests/test_account_deletion_worker.py`
 
-- [ ] **Step 1: 写 API、并发和生命周期失败测试**
+- [x] **Step 1: 写 API、并发和生命周期失败测试**
 
 覆盖：
 
@@ -278,7 +281,7 @@ assert resolved.json()["source_conflicts"]["open_count"] == 0
 导出快照断言 `planning.source_conflicts` 含历史状态但不含 URL、UID、lease；账号注销 worker
 完成后该表 owner 行为 0。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -289,7 +292,7 @@ uv run pytest -q tests/test_plan_source_conflicts.py \
 
 Expected: API、版本解决和导出断言失败。
 
-- [ ] **Step 3: 实现处理输入和服务**
+- [x] **Step 3: 实现处理输入和服务**
 
 `schemas.py` 增加：
 
@@ -313,7 +316,7 @@ class ResolvePlanSourceConflictsInput(Input):
 Plan 行锁和 conflict 行锁。只接受当前版本开放记录，更新
 `status/resolution/resolved_at/version`，更新 `plan.updated_at` 并发出 `plan` change event。
 
-- [ ] **Step 4: 把状态接入读取和新版本**
+- [x] **Step 4: 把状态接入读取和新版本**
 
 - `planning_context.current_plan` 和 `Plan.current_version` 返回
   `{open_count, overlap_count, items}`。
@@ -323,19 +326,19 @@ Plan 行锁和 conflict 行锁。只接受当前版本开放记录，更新
 - 路由增加 `POST /plans/{plan_id}/source-conflicts/resolve`，返回 operation ID、当前计划版本和
   最新 summary。
 
-- [ ] **Step 5: 接入本人导出和账号删除**
+- [x] **Step 5: 接入本人导出和账号删除**
 
 `collect_export_snapshot()` 在 `planning` 分类增加按 `detected_at,id` 排序的
 `source_conflicts`。账号删除依赖组合外键级联；测试显式核对，避免仅凭数据库设计推断完成。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
 uv run pytest -q tests/test_plan_source_conflicts.py \
   tests/test_plan_versions.py tests/test_planning_api.py \
   tests/test_data_export_snapshot.py tests/test_account_deletion_worker.py \
-  tests/test_sync_api.py
+  tests/test_sync_feed.py tests/test_sync_event_coverage.py
 uv run ruff check src/itime/planning src/itime/data_export/snapshot.py \
   tests/test_plan_source_conflicts.py tests/test_plan_versions.py \
   tests/test_data_export_snapshot.py tests/test_account_deletion_worker.py
@@ -356,7 +359,7 @@ git commit -m "feat: 支持处理计划来源冲突"
 - Modify: `web/src/calendar.css`
 - Modify: `web/e2e/calendar-subscriptions.spec.ts`
 
-- [ ] **Step 1: 编写失败的真实 Chromium 流程**
+- [x] **Step 1: 编写失败的真实 Chromium 流程**
 
 扩展受控 ICS 服务，使同一 URL 可依次返回初始、移动、取消和失败版本。通过 HTTP 创建任务和手工
 计划，但所有冲突查看与处理必须走可见 UI：
@@ -376,7 +379,7 @@ await expect(page.getByText(/与 1 个计划块重叠/)).toBeVisible()
 每个 Playwright 项目执行核心链路；desktop 另切 320×700、最大字号和深色，执行 axe、键盘、
 根级横向溢出、控制台和截图检查。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
@@ -386,7 +389,7 @@ pnpm exec playwright test e2e/calendar-subscriptions.spec.ts \
 
 Expected: desktop、mobile、tablet 均因缺少来源冲突提示失败。
 
-- [ ] **Step 3: 增加类型和处理 API**
+- [x] **Step 3: 增加类型和处理 API**
 
 `plans.ts` 增加 `PlanSourceConflictChange`、`PlanSourceConflict`、
 `PlanSourceConflictSummary`，并扩展 `PlanningCurrentPlan`、`Plan` 与 block response。
@@ -410,7 +413,7 @@ export async function keepPlanAfterSourceChanges(
 }
 ```
 
-- [ ] **Step 4: 实现规划页恢复交互**
+- [x] **Step 4: 实现规划页恢复交互**
 
 当前计划预览顶部渲染不嵌套卡片的 `section.plan-source-conflicts`：
 
@@ -421,7 +424,7 @@ export async function keepPlanAfterSourceChanges(
 - `RefreshCw`“按最新来源重新生成”切到整周并保留当前任务选择；用户显式生成，提案确认后旧冲突
   才消失。
 
-- [ ] **Step 5: 实现日历范围和块级提示**
+- [x] **Step 5: 实现日历范围和块级提示**
 
 `CalendarPage.vue` 读取 blocks 响应的 `source_conflicts`，顶部显示范围摘要；URL query 初始化
 anchor 并在数据加载后调用既有 `openSubscription(source,event)`。合并计划块时：
@@ -433,7 +436,7 @@ conflict: item.source_conflict_count > 0
 `CalendarOccurrencePanel.vue` 对命中的计划块显示来源变化说明和进入规划页按钮；无实际重叠的
 复核不标红所有计划块。
 
-- [ ] **Step 6: 构建、专项验证并提交**
+- [x] **Step 6: 构建、专项验证并提交**
 
 ```bash
 cd web
@@ -463,7 +466,7 @@ Expected: 构建通过，专项在 desktop、mobile、tablet 共 3 项通过。
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/计划/iTime-M5订阅来源计划冲突实施计划.md`
 
-- [ ] **Step 1: 执行迁移与服务端受影响回归**
+- [x] **Step 1: 执行迁移与服务端受影响回归**
 
 ```bash
 cd server
@@ -482,7 +485,7 @@ uv build --no-sources
 
 Expected: 迁移为 `0031_plan_source_conflicts`，专项和受影响测试、Ruff、服务包构建均通过。
 
-- [ ] **Step 2: 执行前端受影响回归**
+- [x] **Step 2: 执行前端受影响回归**
 
 ```bash
 cd web
@@ -494,7 +497,7 @@ pnpm exec playwright test e2e/calendar-subscriptions.spec.ts \
 
 Expected: 订阅、规划、日历、同步、导出和注销场景在适用三视口通过。
 
-- [ ] **Step 3: 执行全量回归**
+- [x] **Step 3: 执行全量回归**
 
 ```bash
 cd server
@@ -506,7 +509,7 @@ pnpm test:e2e
 
 Expected: 服务端全量和 Chromium 全量通过；仅允许测试文件中已说明的 desktop-only skip。
 
-- [ ] **Step 4: 核对运行态和视觉证据**
+- [x] **Step 4: 核对运行态和视觉证据**
 
 ```bash
 curl --fail --silent http://127.0.0.1:8000/api/ready
@@ -519,7 +522,7 @@ git diff --check
 截图；确认无内容重叠、截断或根级横向滚动。查询本地 PostgreSQL，确认 `itime_test_%` 测试库残留
 为 0。
 
-- [ ] **Step 5: 同步实际状态并提交**
+- [x] **Step 5: 同步实际状态并提交**
 
 只有在命令真实执行后，才把数量、耗时、截图和限制写入验收文档。`REQ-CAL-03` 可标记本批范围
 完成，但订阅 occurrence 单次例外、任务/困难语音、Edge、真机、性能和生产部署仍保持未完成。

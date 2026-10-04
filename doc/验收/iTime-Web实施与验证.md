@@ -1355,5 +1355,69 @@ Browser 插件也在 `http://localhost:5173` 真实完成注册、邮件验证�
 EventEmitter listener 上限，不是应用脚本。该临时账号已从本地开发库清理。
 
 收口时 `GET /api/ready` 与 `http://localhost:5173/calendar` 均返回 200，`itime_test_%` 测试
-数据库残留为 0。任务实例补做的首版 Web 范围已完成；任务/困难语音与 AI 校对、来源更新后的已
-确认计划专门冲突提示、正式 Edge/实体设备、性能和生产部署仍未完成或验证。
+数据库残留为 0。任务实例补做的首版 Web 范围已完成；任务/困难语音与 AI 校对、正式
+Edge/实体设备、性能和生产部署仍未完成或验证。
+
+## M5-E：订阅来源更新后的已确认计划冲突
+
+对应 Git 提交：`abcd2d3`、`0cb2b60`、`7080bcd`、`82daba6`、`7910377`、`5b4adcd`、
+`9c115c2`。专项
+设计见[订阅来源计划冲突设计](../设计/iTime-订阅来源计划冲突设计.md)，实际代码为迁移
+`0031_plan_source_conflicts`、`server/src/itime/planning/source_conflict_service.py`、订阅
+刷新/计划 API/导出集成，以及 `web/src/pages/{PlansPage,CalendarPage}.vue` 和对应测试。
+
+已实现：
+
+- 订阅 worker 在同一事务和 planning revision 锁内比较当前/未来计划周的来源更新前后投影。
+  新增、移动、取消或占用状态变化创建来源级复核记录；名称、说明、地点、304、刷新失败和本地
+  `busy=false` 不制造调度冲突。
+- `PlanSourceConflict` 按当前计划版本、来源和成功代次唯一，保存有界前后时段与实际重叠块；
+  同来源后续变化 supersede 旧开放记录，容量超限保存不伪造明细的保守复核状态。
+- 来源更新不改写计划块或计划版本。`POST
+  /api/v1/plans/{plan_id}/source-conflicts/resolve` 以稳定操作 ID、当前计划版本和精确冲突 ID
+  幂等确认“保留当前计划”；新整周计划版本把旧记录标记为已重排。
+- 冲突创建和处理复用 `plan` 同步事件；当前计划、范围计划块和本人 JSON 导出返回同一事实。
+  账号注销通过 owner/plan/source 组合外键级联清理，不把来源 URL、UID、ICS 正文或租约写入
+  冲突记录。
+- 规划页显示来源、代次、检出时间、前后时段、实际重叠数量、进入日历、按最新来源重新生成和
+  保留当前计划；统一日历显示范围提示，只给真正重叠的计划块标记冲突，并可按 query 直接打开
+  对应订阅来源。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit、受控 ICS HTTP 来源、
+真实订阅 worker、生产构建预览和 Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 迁移/模型专项 | **15 passed in 55.13s** | 0031 升降级、约束、ORM、同步/导出/注销 head 兼容 |
+| 来源冲突与既有订阅/规划输入专项 | **22 passed in 17.34s** | 移动、取消、失败、覆盖、容量、投影与 worker |
+| 处理 API、版本、同步、导出和注销受影响回归 | **61 passed in 54.83s** | 幂等、跨账号、并发、新版本、change feed、JSON 导出与级联 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `cd server && uv run pytest -q` | **499 passed in 398.28s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 来源冲突专项 Chromium | **3 passed in 36.2s** | 保留与重新生成完整处理流程 × desktop、mobile、tablet |
+| 订阅、日历、规划受影响 Chromium | **30 passed in 2.5m** | 三页面全部三视口回归 |
+| `cd web && pnpm test:e2e` | **226 passed, 2 skipped** | 228 项收集；全量状态 `passed`，两项仍为 public-links 非桌面深度场景 |
+
+真实浏览器流程从注册、邮件验证、时区设置、ICS URL 创建和当前计划创建开始；来源第二代把
+11:00—12:00 移到 09:30—10:30 后，三个视口均看到“第 1 版计划没有被自动改动”、前后时段和
+一个实际重叠块。从提示进入日历可直接打开来源，计划块详情显示来源重叠；明确保留后提示消失且
+服务端计划版本和块内容不变。来源第三代取消后重新出现“未与计划块重叠”的复核提示；三个视口
+随后均从该提示显式重新生成、确认第 2 版并验证旧冲突消失。
+
+每个视口检查 axe、控制台、Vite 错误层和根级横向溢出；desktop 另在 320×700 最大字号深色下
+检查。截图位于
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-calendar-subscription-plan-source-conflict.png`
+及
+`/tmp/itime-ui-evidence/desktop-calendar-subscription-plan-source-conflict-320-dark-large.png`，
+已人工检查无内容重叠、裁切或空白画面。
+
+Browser 插件在 `http://localhost:5173` 真实完成临时账号登录和 AI→规划导航；页面标题为
+“规划 · iTime”，主内容非空，无 Vite 覆盖层、横向溢出或控制台错误。插件截图调用因
+`IDE Command timeout` 未取得证据，视觉结论只采用上述 Playwright 截图；临时账号随后从本地
+开发库删除。
+
+收口时 Alembic 为 `0031_plan_source_conflicts (head)` 且 `alembic check` 无漂移，
+`GET /api/ready`、`http://localhost:5173/plans` 和 `/calendar` 均返回 200，
+`itime_test_%` 数据库残留为 0。`REQ-CAL-03` 的首版范围已完成；订阅 occurrence 用户单次例外、
+任务/困难语音与 AI 校对、正式 Edge/实体设备、性能和生产部署仍未完成或验证。

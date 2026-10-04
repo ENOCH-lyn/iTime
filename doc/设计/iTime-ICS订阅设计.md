@@ -100,4 +100,4 @@
 
 迁移 `0015_calendar_subscriptions` 与 `server/src/itime/calendar/subscription_*.py` 已实现受限抓取、加密 URL、来源事件修订、持久化租约 worker、字段覆盖和统一 occurrence 投影。服务端专项测试覆盖 200/304/失败保旧、UID/RID 更新取消、缺失取消、无限重复、陈旧结果、网络期间无数据库事务及迁移回退。
 
-`CalendarSubscriptionManager.vue` 已接入创建、刷新、暂停/恢复、设置、失败保旧、刷新记录、来源事件分页、字段覆盖、来源差异和逐字段重置；订阅 occurrence 详情不会误用通用系列编辑 API。订阅事件的用户单次例外 API 尚未实现；计划冲突标记仍等待规划模块，当前只返回统一日历冲突。
+`CalendarSubscriptionManager.vue` 已接入创建、刷新、暂停/恢复、设置、失败保旧、刷新记录、来源事件分页、字段覆盖、来源差异和逐字段重置；订阅 occurrence 详情不会误用通用系列编辑 API。迁移 `0031_plan_source_conflicts` 及 `planning/source_conflict_service.py` 已把成功来源修订接入当前计划复核：只比较未来调度投影，记录实际重叠块，不改写计划；用户可查看来源时段、保留当前计划或按最新来源重新生成，失败/304/纯文本变化不新增冲突。订阅事件的用户单次例外 API 尚未实现。
