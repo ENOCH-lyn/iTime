@@ -13,6 +13,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Timer,
+  Trash2,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { ApiError, failure, localFailure, type Failure } from '../lib/api'
@@ -22,6 +23,7 @@ import {
   resetSubscriptionOccurrenceException,
   saveOccurrenceException,
   saveSubscriptionOccurrenceException,
+  trashCalendarSeries,
   updateCalendarAddition,
   type CalendarDisplayItem,
   type CalendarOccurrence,
@@ -338,6 +340,47 @@ async function resetSubscriptionOccurrence() {
       'changed',
       '本次订阅安排已恢复为当前来源内容。',
       result.conflicts.items.length,
+    )
+  } catch (reason) {
+    error.value = failure(reason)
+    await nextTick()
+    document.querySelector<HTMLElement>('.occurrence-panel .error-status')?.focus()
+  } finally {
+    pending.value = false
+  }
+}
+
+async function trashCurrentSeries() {
+  const current = occurrence.value
+  if (
+    !current?.series_id
+    || current.series_version === null
+    || pending.value
+    || !window.confirm(
+      '删除后安排会立即从普通日历隐藏，并在回收站保留 30 天。已有计划和复盘历史不会改写。',
+    )
+  ) return
+  error.value = null
+  const fingerprint = JSON.stringify({
+    action: 'trash-series',
+    seriesId: current.series_id,
+    version: current.series_version,
+  })
+  pending.value = true
+  try {
+    await trashCalendarSeries(
+      {
+        id: current.series_id,
+        version: current.series_version,
+      },
+      operationId(fingerprint),
+    )
+    operation.value = null
+    emit('close')
+    emit(
+      'changed',
+      '安排已移到回收站，将保留 30 天。已有计划未被改写。',
+      0,
     )
   } catch (reason) {
     error.value = failure(reason)
@@ -844,6 +887,10 @@ async function saveTaskMakeup() {
               <button v-if="canSplit" type="button" class="text-button" :disabled="pending"
                 @click="emit('splitSeries', occurrence)">
                 修改本次及以后
+              </button>
+              <button type="button" class="text-button danger-text" :disabled="pending"
+                @click="trashCurrentSeries">
+                <Trash2 :size="16" aria-hidden="true" />移到回收站
               </button>
             </div>
           </template>

@@ -548,6 +548,10 @@
   margin-top: 12px;
 }
 
+.series-actions .danger-text {
+  color: var(--error);
+}
+
 .occurrence-action-form {
   gap: 16px;
   margin-top: 24px;

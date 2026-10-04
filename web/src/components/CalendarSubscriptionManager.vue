@@ -21,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Trash2,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
@@ -31,6 +32,7 @@ import {
   pauseCalendarSubscription,
   refreshCalendarSubscription,
   resumeCalendarSubscription,
+  trashCalendarSubscription,
   updateCalendarSubscription,
   updateCalendarSubscriptionOverride,
   type CalendarSubscription,
@@ -40,6 +42,7 @@ import {
   type SubscriptionEventFields,
   type SubscriptionOverrideField,
 } from '../lib/calendar-subscriptions'
+import { syncStatus } from '../lib/sync'
 
 const props = defineProps<{
   active: boolean
@@ -52,7 +55,7 @@ const emit = defineEmits<{
   'target-consumed': []
 }>()
 
-type PendingAction = 'create' | 'update' | 'refresh' | 'lifecycle' | 'override'
+type PendingAction = 'create' | 'update' | 'refresh' | 'lifecycle' | 'delete' | 'override'
 type RetryAction =
   | 'list'
   | 'detail'
@@ -60,6 +63,7 @@ type RetryAction =
   | 'update'
   | 'refresh'
   | 'lifecycle'
+  | 'delete'
   | 'override'
   | 'events'
   | null
@@ -156,6 +160,7 @@ let createOperation: Operation | null = null
 let updateOperation: Operation | null = null
 let refreshOperation: Operation | null = null
 let lifecycleOperation: Operation | null = null
+let deleteOperation: Operation | null = null
 let overrideOperation: Operation | null = null
 let lastOverrideUpdate: CalendarSubscriptionOverrideUpdate | null = null
 let lastOverrideResetField: SubscriptionOverrideField | null = null
@@ -305,6 +310,7 @@ function resetSourceEditor(subscription: CalendarSubscription) {
   editValues.url = ''
   editValues.refreshIntervalMinutes = subscription.refresh_interval_minutes
   updateOperation = null
+  deleteOperation = null
   sourceConflict.value = null
 }
 
@@ -636,6 +642,50 @@ async function setLifecycle(
       lifecycleOperation = null
       await prepareSourceConflict(action)
     }
+    await focusError()
+  } finally {
+    pending.value = null
+  }
+}
+
+async function trashCurrentSubscription() {
+  const subscription = currentSubscription.value
+  if (!subscription || pending.value) return
+  const pendingNote = syncStatus.pending_count
+    ? `当前设备还有 ${syncStatus.pending_count} 项操作待同步。`
+    : '当前设备没有待同步操作。'
+  const refreshNote = ['queued', 'running'].includes(subscription.refresh_status)
+    ? '当前刷新会停止，迟到结果不会保存。'
+    : '当前没有进行中的刷新。'
+  if (!window.confirm(
+    `删除后订阅会立即从普通日历隐藏，并在回收站保留 30 天。\n${pendingNote}\n${refreshNote}`,
+  )) return
+  clearFeedback()
+  const fingerprint = JSON.stringify({
+    sourceId: subscription.id,
+    version: subscription.version,
+    action: 'delete',
+  })
+  deleteOperation = operationId(deleteOperation, fingerprint)
+  pending.value = 'delete'
+  try {
+    await trashCalendarSubscription(subscription, deleteOperation.id)
+    deleteOperation = null
+    subscriptions.value = subscriptions.value.filter(
+      item => item.id !== subscription.id,
+    )
+    selectedSourceId.value = ''
+    selectedEvent.value = null
+    detail.value = null
+    stopPolling()
+    success.value = '订阅已移到回收站，将保留 30 天。已有计划未被改写。'
+    emit('changed', success.value)
+  } catch (reason) {
+    const currentError = failure(reason)
+    error.value = currentError
+    retryAction.value = currentError.code === 'calendar_subscription_version_conflict'
+      ? 'detail'
+      : 'delete'
     await focusError()
   } finally {
     pending.value = null
@@ -1072,6 +1122,9 @@ async function retryFailure() {
     case 'lifecycle':
       await setLifecycle(lastLifecycleAction.value)
       break
+    case 'delete':
+      await trashCurrentSubscription()
+      break
     case 'override':
       if (lastOverrideUpdate) {
         await submitOverride(lastOverrideUpdate, lastOverrideResetField)
@@ -1289,6 +1342,11 @@ onBeforeUnmount(() => {
                 :disabled="!!pending" @click="setLifecycle('resume')">
                 <CirclePlay :size="17" aria-hidden="true" />
                 {{ pending === 'lifecycle' ? '正在处理…' : '恢复' }}
+              </button>
+              <button type="button" class="button danger subscription-delete-button"
+                :disabled="!!pending" @click="trashCurrentSubscription">
+                <Trash2 :size="17" aria-hidden="true" />
+                {{ pending === 'delete' ? '正在删除…' : '移到回收站' }}
               </button>
             </div>
 

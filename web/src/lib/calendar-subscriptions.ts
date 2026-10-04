@@ -1,4 +1,5 @@
 import { api } from './api'
+import type { CalendarLifecycle, CalendarLifecycleFields } from './calendar'
 
 export type SubscriptionLifecycleStatus = 'active' | 'paused'
 export type SubscriptionRefreshStatus = 'idle' | 'queued' | 'running' | 'error'
@@ -19,7 +20,7 @@ export interface SubscriptionError {
   message: string
 }
 
-export interface CalendarSubscription {
+export interface CalendarSubscription extends CalendarLifecycleFields {
   id: string
   name: string
   url_display: string
@@ -137,9 +138,11 @@ interface SubscriptionEventResponse {
   event: CalendarSubscriptionEvent
 }
 
-export async function listCalendarSubscriptions() {
+export async function listCalendarSubscriptions(
+  lifecycle: Exclude<CalendarLifecycle, 'purged'> = 'active',
+) {
   return (await api<{ items: CalendarSubscription[] }>(
-    '/calendar/subscriptions',
+    `/calendar/subscriptions?lifecycle=${lifecycle}`,
   )).items
 }
 
@@ -220,6 +223,33 @@ export async function resumeCalendarSubscription(
   operationId: string = crypto.randomUUID(),
 ) {
   return setCalendarSubscriptionLifecycle(subscription, 'resume', operationId)
+}
+
+export async function trashCalendarSubscription(
+  subscription: Pick<CalendarSubscription, 'id' | 'version'>,
+  operationId: string = crypto.randomUUID(),
+) {
+  return (await api<SubscriptionResponse>(
+    `/calendar/subscriptions/${subscription.id}`,
+    {
+      operation_id: operationId,
+      expected_version: subscription.version,
+    },
+    'DELETE',
+  )).subscription
+}
+
+export async function restoreCalendarSubscription(
+  subscription: Pick<CalendarSubscription, 'id' | 'version'>,
+  operationId: string = crypto.randomUUID(),
+) {
+  return (await api<SubscriptionResponse>(
+    `/calendar/subscriptions/${subscription.id}/restore`,
+    {
+      operation_id: operationId,
+      expected_version: subscription.version,
+    },
+  )).subscription
 }
 
 export async function updateCalendarSubscriptionOverride(

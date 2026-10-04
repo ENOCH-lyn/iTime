@@ -33,7 +33,17 @@ export interface Term {
   updated_at: string
 }
 
-export interface CalendarSeries {
+export type CalendarLifecycle = 'active' | 'trashed' | 'purged'
+
+export interface CalendarLifecycleFields {
+  lifecycle: CalendarLifecycle
+  deleted_at: string | null
+  purge_after: string | null
+  purged_at: string | null
+  trash_remaining_days: number | null
+}
+
+export interface CalendarSeries extends CalendarLifecycleFields {
   id: string
   kind: 'course' | 'fixed'
   term_id: string | null
@@ -334,11 +344,13 @@ export async function replaceTermPeriods(
   }, 'PUT')).term
 }
 
-export async function listSeries() {
+export async function listSeries(
+  lifecycle: Exclude<CalendarLifecycle, 'purged'> = 'active',
+) {
   const items: CalendarSeries[] = []
   let cursor: { before_time: string; before_id: string } | null = null
   do {
-    const params = new URLSearchParams({ limit: '100' })
+    const params = new URLSearchParams({ limit: '100', lifecycle })
     if (cursor) {
       params.set('before_time', cursor.before_time)
       params.set('before_id', cursor.before_id)
@@ -355,6 +367,33 @@ export async function listSeries() {
 
 export async function getSeries(id: string) {
   return (await api<{ series: CalendarSeries }>(`/calendar/series/${id}`)).series
+}
+
+export async function trashCalendarSeries(
+  series: Pick<CalendarSeries, 'id' | 'version'>,
+  operationId: string = crypto.randomUUID(),
+) {
+  return (await api<{ operation_id: string; series: CalendarSeries }>(
+    `/calendar/series/${series.id}`,
+    {
+      operation_id: operationId,
+      expected_version: series.version,
+    },
+    'DELETE',
+  )).series
+}
+
+export async function restoreCalendarSeries(
+  series: Pick<CalendarSeries, 'id' | 'version'>,
+  operationId: string = crypto.randomUUID(),
+) {
+  return (await api<{ operation_id: string; series: CalendarSeries }>(
+    `/calendar/series/${series.id}/restore`,
+    {
+      operation_id: operationId,
+      expected_version: series.version,
+    },
+  )).series
 }
 
 export async function saveSeries(

@@ -975,11 +975,10 @@ Expected: 规划、复盘、同步与导出专项全部通过，ZIP 可真实解
 - Modify: `web/src/lib/calendar-subscriptions.ts`
 - Modify: `web/src/components/CalendarOccurrencePanel.vue`
 - Modify: `web/src/components/CalendarSubscriptionManager.vue`
-- Modify: `web/src/pages/CalendarPage.vue`
 - Modify: `web/src/calendar.css`
 - Modify: `web/e2e/calendar-lifecycle.spec.ts`
 
-- [ ] **Step 1: 写直接删除 UI 失败测试**
+- [x] **Step 1: 写直接删除 UI 失败测试**
 
 在新 spec 中真实注册并创建重复安排：
 
@@ -994,7 +993,7 @@ await expect(eventButton(page, targetDate, '回收测试安排')).toHaveCount(0)
 
 订阅流程断言暂停说明与删除说明不同，并确认删除请求完成后原来源事件立即从日历消失。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
@@ -1004,7 +1003,7 @@ pnpm exec playwright test e2e/calendar-lifecycle.spec.ts --project=desktop \
 
 Expected: FAIL，按钮和客户端 API 尚不存在。
 
-- [ ] **Step 3: 扩展 TypeScript 合同**
+- [x] **Step 3: 扩展 TypeScript 合同**
 
 两类对象增加：
 
@@ -1071,7 +1070,7 @@ export async function restoreCalendarSubscription(
 
 DELETE 请求继续通过 `api` 发送 JSON body 和 CSRF，不改成 query 参数。
 
-- [ ] **Step 4: 增加系列删除交互**
+- [x] **Step 4: 增加系列删除交互**
 
 `CalendarOccurrencePanel` 仅对非订阅 calendar occurrence 显示带 `Trash2` 的“移到回收站”。
 确认文案固定为：
@@ -1088,14 +1087,14 @@ emit('changed', '安排已移到回收站，将保留 30 天。已有计划未�
 
 错误继续交给 `StatusMessage`，版本冲突显示请求编号并允许重新读取，不关闭详情。
 
-- [ ] **Step 5: 区分订阅暂停与删除**
+- [x] **Step 5: 区分订阅暂停与删除**
 
 订阅详情动作区增加 `Trash2` 删除按钮。暂停说明保持“停止刷新、现有内容保留”，删除使用组件
 内原生 `<dialog>`，确认区显示 `syncStatus.pending_count` 和当前
 `detail.subscription.refresh_status`，明确“立即从日历隐藏、30 天内恢复”。删除中锁定对话框和
 动作，成功后关闭当前详情、刷新活动列表并把焦点移到状态消息。
 
-- [ ] **Step 6: 构建、专项验证并提交**
+- [x] **Step 6: 构建、专项验证并提交**
 
 ```bash
 cd web
@@ -1107,7 +1106,7 @@ pnpm exec playwright test e2e/calendar.spec.ts e2e/calendar-subscriptions.spec.t
 git add src/lib/calendar.ts src/lib/calendar-subscriptions.ts \
   src/components/CalendarOccurrencePanel.vue \
   src/components/CalendarSubscriptionManager.vue \
-  src/pages/CalendarPage.vue src/calendar.css \
+  src/calendar.css \
   e2e/calendar-lifecycle.spec.ts
 git commit -m "feat: 从日历回收安排与订阅"
 ```
