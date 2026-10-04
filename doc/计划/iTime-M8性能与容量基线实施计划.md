@@ -2035,10 +2035,11 @@ git commit -m "test: 验证负载下真实 Web 流程"
 Run:
 
 ```bash
-docker --context colima-itime-perf info --format 'CPUs={{.NCPU}} Memory={{.MemTotal}}'
+colima status --profile itime-perf --json
 ```
 
-Expected: CPU 为 2，内存不少于 4294967296 bytes。context 不存在时执行：
+Expected: JSON 中 `cpu` 为 2、`memory` 为 4294967296。Docker 会为虚拟机自身保留少量内存，
+因此不使用 `docker info` 的可分配字节数冒充 profile 配置值。context 不存在时执行：
 
 ```bash
 colima start --profile itime-perf --cpu 2 --memory 4 --disk 20
