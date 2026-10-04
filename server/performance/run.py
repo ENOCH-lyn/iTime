@@ -17,10 +17,12 @@ from typing import Any
 import httpx
 from cryptography.fernet import Fernet
 
+from itime import __version__
 from itime.config import Settings
 from itime.database import Database
 from performance.contracts import (
     SCENARIOS,
+    AccountCredential,
     GateResult,
     RunConfig,
     Scenario,
@@ -40,13 +42,31 @@ from performance.safety import (
     require_safe_cleanup,
     require_safe_run,
 )
-from performance.seed import seed_dataset
+from performance.seed import seed_dataset, write_private_credentials
+from performance.seed_core import SYNTHETIC_LOGIN_SECRET
 from performance.seed_verify import collect_invariants, verify_dataset
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "server"
+WEB = ROOT / "web"
 COMPOSE_FILE = ROOT / "compose.performance.yaml"
 HOST_GATEWAY_BIND = "0.0.0.0"  # noqa: S104
+HOST_ENVIRONMENT_KEYS = (
+    "CI",
+    "FORCE_COLOR",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "NO_COLOR",
+    "NODE_OPTIONS",
+    "PATH",
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "SHELL",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+)
 LIFECYCLE_STAGES = (
     "check-runtime",
     "start-postgres",
@@ -251,6 +271,7 @@ def _new_state(scenario_name: str, *, run_id: str | None = None) -> RunState:
     output_dir = OUTPUT_ROOT / active_run_id
     smtp_port = _available_port()
     upstream_port = _available_port()
+    web_port = _available_port()
     encryption_keys = [Fernet.generate_key().decode() for _ in range(4)]
     env = {
         **os.environ,
@@ -263,6 +284,7 @@ def _new_state(scenario_name: str, *, run_id: str | None = None) -> RunState:
         "ITIME_PERF_EXPORT_KEY": encryption_keys[3],
         "ITIME_PERF_UPSTREAM_SMTP_PORT": str(smtp_port),
         "ITIME_PERF_UPSTREAM_HTTP_PORT": str(upstream_port),
+        "ITIME_PERF_WEB_PORT": str(web_port),
         "ITIME_PERF_IMAGE_TAG": "local",
     }
     config = RunConfig(
@@ -317,6 +339,7 @@ def _start_process(
     command: list[str],
     *,
     cwd: Path = SERVER,
+    env: dict[str, str] | None = None,
 ) -> ManagedProcess:
     logs = state.config.output_dir / "logs"
     logs.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -326,7 +349,7 @@ def _start_process(
     process = subprocess.Popen(  # noqa: S603
         command,
         cwd=cwd,
-        env=state.env,
+        env=env or state.env,
         text=True,
         stdout=log_handle,
         stderr=log_handle,
@@ -339,7 +362,10 @@ def _start_process(
 
 def _stop_process(managed: ManagedProcess) -> None:
     if managed.process.poll() is None:
-        managed.process.send_signal(signal.SIGTERM)
+        try:
+            os.killpg(os.getpgid(managed.process.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             managed.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
@@ -351,14 +377,20 @@ def _stop_process(managed: ManagedProcess) -> None:
     managed.log_handle.close()
 
 
-def _wait_http(origin: str, process: ManagedProcess, *, timeout: float = 30) -> None:
+def _wait_http(
+    origin: str,
+    process: ManagedProcess,
+    *,
+    path: str = "/health",
+    timeout: float = 30,
+) -> None:
     deadline = time.monotonic() + timeout
     with httpx.Client(base_url=origin, timeout=2, trust_env=False) as client:
         while time.monotonic() < deadline:
             if process.process.poll() is not None:
                 raise RuntimeError(f"{process.name} 在就绪前退出")
             try:
-                response = client.get("/health")
+                response = client.get(path)
                 if response.status_code == 200:
                     return
             except httpx.TransportError:
@@ -393,14 +425,28 @@ def _locust_command(
     duration_seconds: int,
     prefix: str,
     user_classes: tuple[str, ...],
+    web_port: int | None = None,
 ) -> list[str]:
+    run_mode = (
+        ["--headless", "--only-summary"]
+        if web_port is None
+        else [
+            "--autostart",
+            "--autoquit",
+            "5",
+            "--web-host",
+            "127.0.0.1",
+            "--web-port",
+            str(web_port),
+        ]
+    )
     return [
         sys.executable,
         "-m",
         "locust",
         "-f",
         "performance/locustfile.py",
-        "--headless",
+        *run_mode,
         "--host",
         state.config.http_origin,
         "--users",
@@ -411,7 +457,6 @@ def _locust_command(
         f"{duration_seconds}s",
         "--csv",
         str(state.config.output_dir / prefix),
-        "--only-summary",
         *user_classes,
     ]
 
@@ -425,6 +470,114 @@ def _write_command_output(
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.write_text(result.stdout + result.stderr)
     os.chmod(path, 0o600)
+
+
+def _run_logged(
+    state: RunState,
+    name: str,
+    command: list[str],
+    *,
+    env: dict[str, str],
+    timeout: int,
+    cwd: Path,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        result = checked(command, env=env, timeout=timeout, cwd=cwd)
+    except subprocess.CalledProcessError as exc:
+        result = subprocess.CompletedProcess(
+            command,
+            exc.returncode,
+            exc.stdout or "",
+            exc.stderr or "",
+        )
+        _write_command_output(state, name, result)
+        raise RuntimeError(
+            f"{name} 失败，退出码 {exc.returncode}；详情见 logs/{name}.log"
+        ) from exc
+    _write_command_output(state, name, result)
+    return result
+
+
+def _host_environment() -> dict[str, str]:
+    return {
+        key: os.environ[key]
+        for key in HOST_ENVIRONMENT_KEYS
+        if key in os.environ
+    }
+
+
+def _browser_environment(
+    state: RunState,
+    *,
+    web_origin: str,
+    locust_pid: int,
+) -> dict[str, str]:
+    credentials = state.env.get(
+        "ITIME_PERF_BROWSER_CREDENTIALS",
+        state.env.get("ITIME_PERF_CREDENTIALS"),
+    )
+    if not credentials:
+        raise RuntimeError("浏览器性能验证缺少账号文件")
+    return {
+        **_host_environment(),
+        "ITIME_API_ORIGIN": state.config.http_origin,
+        "ITIME_PERF_WEB_ORIGIN": web_origin,
+        "ITIME_PERF_BROWSER_ACCOUNT_FILE": credentials,
+        "ITIME_PERF_RUN_MANIFEST_FILE": str(
+            state.config.output_dir / "manifest.json"
+        ),
+        "ITIME_PERF_LOCUST_PID": str(locust_pid),
+        "ITIME_PERF_BROWSER_LABEL": "chromium",
+        "ITIME_PERF_RUN_ID": state.config.run_id,
+    }
+
+
+def _edge_executable_path() -> str | None:
+    configured = os.environ.get(
+        "ITIME_PERF_EDGE_EXECUTABLE_PATH",
+        os.environ.get("ITIME_E2E_BROWSER_EXECUTABLE_PATH", ""),
+    )
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_file():
+            raise RuntimeError(f"指定的 Microsoft Edge 不存在：{path}")
+        return str(path)
+    candidates = (
+        Path.home()
+        / "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+    )
+    return next((str(path) for path in candidates if path.is_file()), None)
+
+
+def _require_process_alive(process: ManagedProcess, purpose: str) -> None:
+    return_code = process.process.poll()
+    if return_code is not None:
+        raise RuntimeError(f"{purpose} 提前退出，退出码 {return_code}")
+
+
+def _wait_for_locust_users(
+    process: ManagedProcess,
+    stats_origin: str,
+    *,
+    expected: int,
+    timeout: float = 30,
+) -> None:
+    deadline = time.monotonic() + timeout
+    with httpx.Client(base_url=stats_origin, timeout=2, trust_env=False) as client:
+        while time.monotonic() < deadline:
+            _require_process_alive(process, "UI 背景负载")
+            try:
+                response = client.get("/stats/requests")
+                if (
+                    response.status_code == 200
+                    and int(response.json().get("user_count", -1)) == expected
+                ):
+                    return
+            except (httpx.TransportError, ValueError):
+                pass
+            time.sleep(0.1)
+    raise TimeoutError(f"UI 背景负载未在 {timeout:g} 秒内达到 {expected} 用户")
 
 
 def _profile_for(state: RunState) -> SeedProfile:
@@ -486,6 +639,7 @@ def _stage_check_runtime(state: RunState) -> None:
         {
             "run_id": state.config.run_id,
             "scenario": state.scenario,
+            "service_version": __version__,
             "users": state.scenario_config.users if state.scenario_config else 0,
             "environment": "test",
             "commit": commit,
@@ -578,17 +732,37 @@ def _stage_seed(state: RunState) -> None:
         "http://host.docker.internal:"
         f"{state.env['ITIME_PERF_UPSTREAM_HTTP_PORT']}"
     )
+    seed = 20261005
     state.manifest = asyncio.run(
         seed_dataset(
             _settings(state),
             profile,
-            seed=20261005,
+            seed=seed,
             at=datetime.now(UTC),
             credentials_path=credentials,
             upstream_origin=upstream_origin,
         )
     )
     state.env["ITIME_PERF_CREDENTIALS"] = str(credentials)
+    if state.scenario == Scenario.UI_LOAD:
+        if profile.active_accounts >= profile.accounts:
+            raise RuntimeError("UI 性能场景需要至少一个无负载历史的浏览器账号")
+        browser_credentials = private_dir / "browser-account.json"
+        state.registered_paths.append(browser_credentials)
+        write_private_credentials(
+            browser_credentials,
+            (
+                AccountCredential(
+                    email=(
+                        f"perf-{profile.name}-{seed}-"
+                        f"{profile.active_accounts:03d}@performance.example.com"
+                    ),
+                    password=SYNTHETIC_LOGIN_SECRET,
+                    dataset="browser",
+                ),
+            ),
+        )
+        state.env["ITIME_PERF_BROWSER_CREDENTIALS"] = str(browser_credentials)
     state.env["ITIME_PERF_ANCHOR_DATE"] = datetime.now(UTC).date().isoformat()
     _write_json_atomic(
         state.config.output_dir / "seed-manifest.json",
@@ -753,19 +927,121 @@ def _formal_user_classes(state: RunState) -> tuple[str, ...]:
 def _stage_run_locust(state: RunState) -> None:
     assert state.scenario_config is not None
     try:
-        _run_locust(
-            state,
-            prefix="requests",
-            users=state.scenario_config.users,
-            spawn_rate=state.scenario_config.spawn_rate,
-            duration_seconds=state.scenario_config.duration_seconds,
-            user_classes=_formal_user_classes(state),
-        )
+        if state.scenario == Scenario.UI_LOAD:
+            _run_ui_load(state)
+        else:
+            _run_locust(
+                state,
+                prefix="requests",
+                users=state.scenario_config.users,
+                spawn_rate=state.scenario_config.spawn_rate,
+                duration_seconds=state.scenario_config.duration_seconds,
+                user_classes=_formal_user_classes(state),
+            )
     finally:
         for process in state.processes:
             if process.name == "sampler":
                 _stop_process(process)
                 break
+
+
+def _run_ui_load(state: RunState) -> None:
+    assert state.scenario_config is not None
+    preview: ManagedProcess | None = None
+    load: ManagedProcess | None = None
+    try:
+        web_port = int(state.env["ITIME_PERF_WEB_PORT"])
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError("UI 性能运行缺少有效的 ITIME_PERF_WEB_PORT") from exc
+    locust_port = _available_port()
+    web_origin = f"http://localhost:{web_port}"
+    preview_env = {
+        **_host_environment(),
+        "ITIME_API_ORIGIN": state.config.http_origin,
+    }
+    try:
+        _run_logged(
+            state,
+            "web-build",
+            ["pnpm", "build"],
+            env=preview_env,
+            timeout=300,
+            cwd=WEB,
+        )
+        preview = _start_process(
+            state,
+            "web-preview",
+            ["pnpm", "preview", "--port", str(web_port)],
+            cwd=WEB,
+            env=preview_env,
+        )
+        _wait_http(web_origin, preview, path="/api/ready")
+
+        state.env["ITIME_PERF_WORKLOAD"] = state.scenario
+        load = _start_process(
+            state,
+            "locust",
+            _locust_command(
+                state,
+                users=state.scenario_config.users,
+                spawn_rate=state.scenario_config.spawn_rate,
+                duration_seconds=state.scenario_config.duration_seconds,
+                prefix="requests",
+                user_classes=_formal_user_classes(state),
+                web_port=locust_port,
+            ),
+        )
+        _wait_for_locust_users(
+            load,
+            f"http://127.0.0.1:{locust_port}",
+            expected=state.scenario_config.users,
+        )
+        browser_env = _browser_environment(
+            state,
+            web_origin=web_origin,
+            locust_pid=load.process.pid,
+        )
+        _run_logged(
+            state,
+            "playwright-chromium",
+            ["pnpm", "test:e2e:performance"],
+            env=browser_env,
+            timeout=20 * 60,
+            cwd=WEB,
+        )
+        _require_process_alive(load, "UI 背景负载")
+
+        edge_env = {
+            **browser_env,
+            "ITIME_PERF_BROWSER_LABEL": "edge",
+        }
+        edge_path = _edge_executable_path()
+        if edge_path is None:
+            edge_env["ITIME_E2E_BROWSER_CHANNEL"] = "msedge"
+        else:
+            edge_env["ITIME_E2E_BROWSER_EXECUTABLE_PATH"] = edge_path
+        _run_logged(
+            state,
+            "playwright-edge",
+            [
+                "pnpm",
+                "exec",
+                "playwright",
+                "test",
+                "--config",
+                "playwright.performance.config.ts",
+                "--project=desktop",
+            ],
+            env=edge_env,
+            timeout=20 * 60,
+            cwd=WEB,
+        )
+        _require_process_alive(load, "UI 背景负载")
+    finally:
+        if load is not None:
+            _stop_process(load)
+        if preview is not None:
+            _stop_process(preview)
 
 
 def _stage_verify_invariants(state: RunState) -> None:
@@ -946,6 +1222,7 @@ def build_parser() -> argparse.ArgumentParser:
             "maintenance",
             "soak",
             "saturation",
+            "ui-load",
         ),
     )
     commands.add_parser("baseline")

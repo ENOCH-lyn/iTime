@@ -8,7 +8,8 @@
     "dev": "vite --host localhost",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host localhost",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:performance": "playwright test --config playwright.performance.config.ts"
   },
   "dependencies": {
     "lucide-vue-next": "^0.468.0",

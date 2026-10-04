@@ -117,6 +117,10 @@ class VerificationResult:
     violations: tuple[str, ...]
 
 
+def count_matches(actual: int, expected: int, *, allow_growth: bool) -> bool:
+    return actual >= expected if allow_growth else actual == expected
+
+
 async def verify_counts_and_invariants(
     database: Database,
     manifest: SeedManifest,
@@ -133,8 +137,7 @@ async def verify_counts_and_invariants(
                 continue
             actual = int(await session.scalar(text(query)) or 0)
             actual_counts[name] = actual
-            count_matches = actual >= expected if allow_growth else actual == expected
-            if not count_matches:
+            if not count_matches(actual, expected, allow_growth=allow_growth):
                 violations.append(f"{name} 计数不匹配：期望 {expected}，实际 {actual}")
 
         invariant_values = await collect_invariants(database, session=session)
@@ -153,14 +156,25 @@ async def verify_counts_and_invariants(
             )
             or 0
         )
-        if manifest.counts.get("tasks", 0) and active_task_owners != manifest.active_accounts:
+        if (
+            manifest.counts.get("tasks", 0)
+            and not count_matches(
+                active_task_owners,
+                manifest.active_accounts,
+                allow_growth=allow_growth,
+            )
+        ):
             violations.append(
                 "任务账号数量不匹配："
                 f"期望 {manifest.active_accounts}，实际 {active_task_owners}"
             )
         if (
             manifest.counts.get("change_events", 0)
-            and active_change_owners != manifest.active_accounts
+            and not count_matches(
+                active_change_owners,
+                manifest.active_accounts,
+                allow_growth=allow_growth,
+            )
         ):
             violations.append(
                 "同步事件账号数量不匹配："

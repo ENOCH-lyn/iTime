@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import performance.run as performance_run
-from performance.contracts import GateResult, RunConfig
+from performance.contracts import SCENARIOS, GateResult, RunConfig, Scenario
 
 
 def state(tmp_path: Path) -> performance_run.RunState:
@@ -110,10 +110,168 @@ def test_cli_contract_accepts_all_planned_commands():
         "maintenance",
         "soak",
         "saturation",
+        "ui-load",
     ):
         parsed = parser.parse_args(["scenario", scenario])
         assert parsed.command == "scenario"
         assert parsed.scenario == scenario
+
+
+def test_ui_load_contract_and_browser_environment_are_bounded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    scenario = SCENARIOS[Scenario.UI_LOAD]
+    assert scenario.users == 20
+    assert scenario.spawn_rate == 4
+    assert scenario.duration_seconds == 900
+    assert scenario.dataset == "standard"
+
+    run_state = state(tmp_path)
+    run_state.env = {
+        "ITIME_PERF_CREDENTIALS": str(tmp_path / "private" / "accounts.json"),
+        "ITIME_PERF_BROWSER_CREDENTIALS": str(
+            tmp_path / "private" / "browser-account.json"
+        ),
+        "ITIME_PERF_POSTGRES_PASSWORD": "must-not-reach-browser",
+        "ITIME_PERF_ENCRYPTION_KEY": "must-not-reach-browser",
+    }
+    monkeypatch.setenv("DATABASE_URL", "must-not-reach-browser")
+    monkeypatch.setenv("LARKSUITE_CLI_USER_ACCESS_TOKEN", "must-not-reach-browser")
+    browser_env = performance_run._browser_environment(
+        run_state,
+        web_origin="http://localhost:4174",
+        locust_pid=4321,
+    )
+
+    assert browser_env["ITIME_API_ORIGIN"] == run_state.config.http_origin
+    assert browser_env["ITIME_PERF_WEB_ORIGIN"] == "http://localhost:4174"
+    assert browser_env["ITIME_PERF_BROWSER_ACCOUNT_FILE"].endswith(
+        "/private/browser-account.json"
+    )
+    assert browser_env["ITIME_PERF_RUN_MANIFEST_FILE"] == str(
+        tmp_path / "manifest.json"
+    )
+    assert browser_env["ITIME_PERF_LOCUST_PID"] == "4321"
+    assert "ITIME_PERF_POSTGRES_PASSWORD" not in browser_env
+    assert "ITIME_PERF_ENCRYPTION_KEY" not in browser_env
+    assert "DATABASE_URL" not in browser_env
+    assert "LARKSUITE_CLI_USER_ACCESS_TOKEN" not in browser_env
+
+
+def test_ui_load_runs_browsers_while_background_load_is_alive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    run_state = state(tmp_path)
+    run_state.scenario = "ui-load"
+    run_state.scenario_config = SCENARIOS[Scenario.UI_LOAD]
+    run_state.env["ITIME_PERF_CREDENTIALS"] = str(
+        tmp_path / "private" / "accounts.json"
+    )
+    run_state.env["ITIME_PERF_WEB_PORT"] = "4174"
+    events: list[tuple] = []
+    ports = iter((8089,))
+
+    class FakeProcess:
+        def __init__(self, pid: int):
+            self.pid = pid
+
+        def poll(self):
+            return None
+
+    def start_process(
+        run_state,
+        name,
+        command,
+        *,
+        cwd=performance_run.SERVER,
+        env=None,
+    ):
+        events.append(("start", name, command, cwd, env))
+        return performance_run.ManagedProcess(
+            name,
+            FakeProcess(4321 if name == "locust" else 1234),
+            None,
+        )
+
+    def run_logged(run_state, name, command, *, env, timeout, cwd):
+        events.append(("checked", name, command, cwd, env, timeout))
+        return None
+
+    monkeypatch.setattr(performance_run, "_available_port", lambda: next(ports))
+    monkeypatch.setattr(performance_run, "_start_process", start_process)
+    monkeypatch.setattr(performance_run, "_run_logged", run_logged)
+    monkeypatch.setattr(
+        performance_run,
+        "_wait_http",
+        lambda origin, process, **kwargs: events.append(
+            ("wait-http", origin, process.name, kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        performance_run,
+        "_wait_for_locust_users",
+        lambda process, origin, **kwargs: events.append(
+            ("wait-users", process.name, origin, kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        performance_run,
+        "_require_process_alive",
+        lambda process, purpose: events.append(("alive", process.name, purpose)),
+    )
+    monkeypatch.setattr(
+        performance_run,
+        "_edge_executable_path",
+        lambda: "/Applications/Microsoft Edge",
+    )
+    monkeypatch.setattr(
+        performance_run,
+        "_stop_process",
+        lambda process: events.append(("stop", process.name)),
+    )
+
+    performance_run._run_ui_load(run_state)
+
+    names = [event[:2] for event in events]
+    assert names == [
+        ("checked", "web-build"),
+        ("start", "web-preview"),
+        ("wait-http", "http://localhost:4174"),
+        ("start", "locust"),
+        ("wait-users", "locust"),
+        ("checked", "playwright-chromium"),
+        ("alive", "locust"),
+        ("checked", "playwright-edge"),
+        ("alive", "locust"),
+        ("stop", "locust"),
+        ("stop", "web-preview"),
+    ]
+    locust_command = next(
+        event[2]
+        for event in events
+        if event[:2] == ("start", "locust")
+    )
+    assert "--autostart" in locust_command
+    assert "--headless" not in locust_command
+    assert locust_command[locust_command.index("--web-host") + 1] == "127.0.0.1"
+    chromium = next(
+        event
+        for event in events
+        if event[:2] == ("checked", "playwright-chromium")
+    )
+    edge = next(
+        event
+        for event in events
+        if event[:2] == ("checked", "playwright-edge")
+    )
+    assert chromium[2] == ["pnpm", "test:e2e:performance"]
+    assert chromium[4]["ITIME_PERF_BROWSER_LABEL"] == "chromium"
+    assert edge[2][-1] == "--project=desktop"
+    assert edge[4]["ITIME_E2E_BROWSER_EXECUTABLE_PATH"] == (
+        "/Applications/Microsoft Edge"
+    )
 
 
 @pytest.mark.performance

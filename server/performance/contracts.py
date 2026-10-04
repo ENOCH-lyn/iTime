@@ -69,6 +69,13 @@ SCENARIOS = {
         1800,
         "standard",
     ),
+    Scenario.UI_LOAD: ScenarioConfig(
+        Scenario.UI_LOAD,
+        20,
+        4,
+        900,
+        "standard",
+    ),
 }
 
 

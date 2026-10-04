@@ -18,7 +18,7 @@ import pytest
 from itime.config import Settings
 from performance.contracts import SeedProfile
 from performance.seed import seed_dataset
-from performance.seed_verify import verify_dataset
+from performance.seed_verify import count_matches, verify_dataset
 from tests.conftest import isolated_database, psycopg_url
 
 BASE_TIME = datetime(2026, 10, 5, 12, tzinfo=UTC)
@@ -99,6 +99,14 @@ def test_seed_profile_rejects_invalid_counts():
         SeedProfile.standard(tasks_per_active=1001)
     with pytest.raises(ValueError):
         SeedProfile.history(subscription_events_per_account=5001)
+
+
+def test_post_load_count_validation_allows_growth_but_never_loss():
+    assert count_matches(51, 50, allow_growth=True)
+    assert count_matches(50, 50, allow_growth=True)
+    assert not count_matches(49, 50, allow_growth=True)
+    assert count_matches(50, 50, allow_growth=False)
+    assert not count_matches(51, 50, allow_growth=False)
 
 
 @pytest.mark.integration
