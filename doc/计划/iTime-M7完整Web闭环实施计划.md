@@ -249,7 +249,7 @@ ITIME_E2E_BROWSER_EXECUTABLE_PATH="$HOME/Applications/Microsoft Edge.app/Content
 Expected: `1 passed`。若当前环境不能安装 Edge，证据必须明确记录“未执行”及原始原因，不得用
 Chromium 结果替代 Edge。
 
-- [ ] **Step 3: 执行静态、构建、专项与全量回归**
+- [x] **Step 3: 执行静态、构建、专项与全量回归**
 
 Run:
 
@@ -268,7 +268,16 @@ pnpm test:e2e
 Expected: 全部命令通过；测试结束后 `itime_test_%` 数据库、孤立 worker 和临时测试文件残留为
 0。
 
-- [ ] **Step 4: 更新需求和验收证据**
+实际结果（2026-10-04）：
+
+- 服务端 `ruff`、`uv build --no-sources` 通过，真实 PostgreSQL/HTTP 全量 **581 passed**。
+- 完整闭环 Chromium 三视口 **3 passed**，真实 Chrome 149 与 Edge 154 desktop 各 **1 passed**。
+- Web 生产构建通过；全量 Chromium 收集 297 项，**277 passed、20 个按设计跳过**，耗时
+  16.9 分钟。
+- 测试后 `itime_test_%` 数据库为 0，没有孤立 Playwright、`tests.web_environment` 或 4173
+  预览进程；开发 API 与 `/tasks` 均返回 200。
+
+- [x] **Step 4: 更新需求和验收证据**
 
 文档只把 `E2E-01` 和实际执行过的浏览器标为通过；保留以下真实缺口：
 
@@ -279,7 +288,7 @@ Expected: 全部命令通过；测试结束后 `itime_test_%` 数据库、孤立
 实施记录包含提交 SHA、测试日期、数据库/worker/浏览器环境、完整命令、通过数量、场景步骤、
 截图路径、失败及修复说明。
 
-- [ ] **Step 5: 提交 M7-A 证据**
+- [x] **Step 5: 提交 M7-A 证据**
 
 ```bash
 git add README.md doc/测试/iTime-测试方案与测试用例.md \

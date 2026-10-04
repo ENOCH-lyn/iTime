@@ -1,6 +1,6 @@
 # iTime 需求追踪矩阵
 
-版本：0.2；更新：2026-10-04。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、任务与困难语音转写、任务公开链接、日历系列与 ICS 订阅源生命周期、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出、通用同步及账号注销已有分模块动态证据；完整 Web 闭环尚未验收，实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
+版本：0.2；更新：2026-10-04。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、任务与困难语音转写、任务公开链接、日历系列与 ICS 订阅源生命周期、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出、通用同步及账号注销已有分模块动态证据；`E2E-01` 完整 Web 用户闭环已在 Chromium 三视口及真实 Chrome/Edge desktop 验收，实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
 
 下表的章节指[详细设计](../设计/iTime-详细设计文档.md)，页面对应 [designer](../../designer.md)，阶段对应[开发总计划](../计划/iTime-开发总计划.md)。已确认方向下的剩余细则以[问题清单](iTime-需求访谈问题清单.md)为准。
 
@@ -62,7 +62,7 @@
 
 | 需求 | 当前代码与证据 | 仍未完成 |
 | --- | --- | --- |
-| REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，AI、任务、规划、日历、专注、复盘、统计和设置从八项统一产品导航可达，设置内 `/account/data` 提供本人数据导出与账号注销，`/account/sync` 提供同步与离线工作区，`/calendar` 提供日历系列与 ICS 订阅源统一回收站；现有页面已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 学期、项目、AI 会话等其余独立对象的回收页面仍待后续模块；Edge/真机未验证 |
+| REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，AI、任务、规划、日历、专注、复盘、统计和设置从八项统一产品导航可达，设置内 `/account/data` 提供本人数据导出与账号注销，`/account/sync` 提供同步与离线工作区，`/calendar` 提供日历系列与 ICS 订阅源统一回收站；现有页面已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试，`web/e2e/full-user-journey.spec.ts` 还以独立第二端贯通注册、任务、AI 规划确认、日历、专注/困难、明确完成、复盘和统计，并在真实 Chrome 149 与 Edge 154 desktop 通过 | 学期、项目、AI 会话删除语义仍待确认且当前无删除旁路；全部页面 Edge、实体设备、正式模型质量、M8 性能/恢复及生产部署未验证 |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`、`web/src/lib/auth.ts`；服务端会话撤销、分页列表、并发授权、真实设备管理页面，以及显式退出或申请注销后的账号级游标、缓存和待传队列清理已动态验证；注销申请即时撤销全部设备，撤销时仅创建一个新会话 | 会话意外失效后的重新认证提示继续单独验证 |
 | REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks`、`0009_task_schedules`、`0016_task_lifecycle`、`0035_voice_transcriptions` 与 `0036_transcription_quota_usage`、任务工作区、日期编辑器、共享语音控件及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期/关联补做、未来拆分、手动归档、30 天任务回收站和任务名称语音校对均有可达 Web 入口，并通过真实 HTTP/PostgreSQL、AI worker 和三视口 Chromium 测试 | 多任务/属性语音解析不属于本模块；Edge/真机未验证 |

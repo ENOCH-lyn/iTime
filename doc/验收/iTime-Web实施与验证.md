@@ -1694,3 +1694,68 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 残留为 0；开发 API、AI worker、订阅/日历清理、公开链接、数据导出 worker 和 Vite 已按当前
 代码运行。任务/困难纯语音转写首版范围已完成；多任务/属性语音解析、正式第三方模型质量、
 真实 Edge/实体设备、M8 性能与备份恢复、生产部署仍未完成或验证。
+
+## M7-D：完整 Web 用户闭环与真实 Chrome/Edge 核心兼容
+
+对应 Git 提交：`dcc6891`、`56854a4`、`f8181b0`、`ad8dcf0`、`73586ab`、`23e4bee`、
+`1778c53`。实施计划见
+[M7 完整 Web 闭环实施计划](../计划/iTime-M7完整Web闭环实施计划.md)，核心场景位于
+`web/e2e/full-user-journey.spec.ts`；`web/playwright.config.ts` 保留默认仓库 Chromium，
+并支持显式选择本机浏览器 channel 或 executable path。
+
+已实现和验证的单一用户旅程：
+
+- 主端通过可见 UI 注册账号、读取真实 Mailpit 验证邮件并登录，设置 Asia/Shanghai 时区和
+  04:00 活动日；随后创建项目、60 分钟任务及两个步骤。
+- 第二个独立 BrowserContext 不复制主端 Cookie，重新登录同一账号并打开任务详情。主端生成
+  AI 日规划预览，确认后才写入第 1 版计划，并从统一日历的计划块进入专注。
+- 主端勾选步骤、记录一条困难并结束专注；页面先明确显示任务未完成，只有用户点击“完成任务”
+  后才写入完成事实。第二端在 5 秒上界内刷新到完成状态。
+- 主端复盘核对 1 个计划块、1 个完成任务、1 个专注条目和 1 条困难，补充事实后跳过追问并生成
+  第 1 版报告；第二端随后读取同一报告，并在统计页看到计划块、完成任务和专注会话各 1。
+- 全流程不拦截核心业务请求或伪造成功响应；随机测试库、真实 Uvicorn、Mailpit、AI worker 和
+  确定性 OpenAI 兼容上游共同提供服务端事实。每个视口检查 API 5xx、控制台异常、Vite 错误
+  层、根级横向溢出和 axe。
+
+完整场景在联调中发现并修复两个真实产品缺陷：
+
+1. 第二端已经打开的干净任务详情不会采用远端完成状态。`TaskEditor` 现在只接受严格更新的
+   服务端版本，同时保留本地脏草稿和离线投影版本；同步专项增加跨设备刷新回归。
+2. 本地任务草稿存在时，远端更新提示在手机布局中不可见。冲突提示改由任务编辑器的可见成功
+   状态区域承载，生命周期测试使用真实脏草稿复现并覆盖明确采用服务器版本。
+
+此外，专注开放状态冲突测试曾让同一 BrowserContext 的后台同步抢先刷新，无法稳定制造目标
+版本冲突。测试改为独立上下文，并在远端暂停完成前阻断主端同步，再重放本地结束操作；产品
+行为未因稳定测试而放宽。该场景连续 10 次通过，三视口专注专项 24 项通过。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18、Mailpit、隔离 Uvicorn/worker、生产构建预览及
+以下浏览器中执行：
+
+| 命令/环境 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `cd server && uv run pytest -q` | **581 passed in 501.89s** | 当前服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `pnpm exec playwright test e2e/full-user-journey.spec.ts` | **3 passed** | Chromium desktop、mobile、tablet 完整闭环 |
+| `ITIME_E2E_BROWSER_CHANNEL=chrome ... --project=desktop` | **1 passed** | Google Chrome **149.0.7827.54** 核心闭环 |
+| `ITIME_E2E_BROWSER_EXECUTABLE_PATH=...Microsoft Edge ... --project=desktop` | **1 passed** | Microsoft Edge **154.0.4258.53** 核心闭环 |
+| 完整闭环、同步与生命周期组合 | **30 passed** | 跨设备刷新、脏草稿提示和核心旅程 |
+| `cd web && pnpm test:e2e` | **277 passed, 20 skipped in 16.9m** | 297 项收集；三个 Chromium 视口全量回归 |
+
+20 个跳过项均为测试内显式限定 desktop 的到期清理、慢上游、浏览器麦克风故障及 320px 深度
+场景；相同业务的移动和平板主流程实际执行。完整闭环截图位于：
+
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-full-journey-review-complete.png`
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-full-journey-second-device-result.png`
+
+六张本轮全量回归截图已人工检查，主端复盘和独立第二端结果均非空，电脑、手机、平板没有内容
+重叠、裁切、按钮移位或根级横向溢出。Browser 插件未在当前环境提供，因此按前端测试规范使用
+仓库 Playwright；真实 Chrome/Edge 结果不是用内置 Chromium 替代。
+
+收口时 `itime_test_%` 数据库数量和名称列表均为 0，没有孤立 Playwright、
+`tests.web_environment` 或 4173 预览进程；`GET /api/ready` 与
+`http://localhost:5173/tasks` 均返回 200。`E2E-01` 和核心流程的 Chrome/Edge desktop
+兼容验证已完成；学期、项目、AI 会话删除语义仍待产品确认且当前无删除旁路。全部页面 Edge、
+实体设备、正式第三方模型质量、其他业务对象提案、M8 性能/容量/备份恢复及生产部署仍未完成，
+不能据此宣称 Web 首版已经发布。
