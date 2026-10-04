@@ -482,6 +482,10 @@ async def _current_plan_context(
     owner_id: UUID,
     week_start: date,
 ) -> dict | None:
+    from itime.planning.source_conflict_service import (
+        open_source_conflict_summary,
+    )
+
     plan = await session.scalar(
         select(Plan).where(
             Plan.owner_id == owner_id,
@@ -524,6 +528,12 @@ async def _current_plan_context(
             .order_by(PlanUnscheduledItem.position)
         )
     )
+    source_conflicts = await open_source_conflict_summary(
+        session,
+        owner_id,
+        version.id,
+        version.version,
+    )
     return {
         "id": str(plan.id),
         "version_id": str(version.id),
@@ -544,6 +554,7 @@ async def _current_plan_context(
         "unscheduled_items": [
             _unscheduled_item_result(item) for item in unscheduled
         ],
+        "source_conflicts": source_conflicts,
     }
 
 

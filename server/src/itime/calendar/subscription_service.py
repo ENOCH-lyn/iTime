@@ -23,6 +23,10 @@ from itime.calendar.subscription_parser import SubscriptionSnapshot
 from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
+from itime.planning.source_conflict_service import (
+    capture_source_plan_baselines,
+    record_source_plan_conflicts,
+)
 from itime.tasks.service import emit_change
 
 MAX_SUBSCRIPTION_EVENTS_PER_OWNER = 5000
@@ -440,6 +444,12 @@ async def apply_subscription_snapshot(
         refresh = await _locked_refresh(session, claim.refresh_id)
         if subscription is None or refresh is None:
             return False
+        plan_baselines = await capture_source_plan_baselines(
+            session,
+            claim.owner_id,
+            claim.source_id,
+            current,
+        )
         events = list(
             await session.scalars(
                 select(CalendarSubscriptionEvent)
@@ -596,6 +606,16 @@ async def apply_subscription_snapshot(
                 cancelled_count += 1
 
         semantic_change = changed_count > 0
+        if semantic_change and plan_baselines:
+            await session.flush()
+            await record_source_plan_conflicts(
+                session,
+                claim.owner_id,
+                source,
+                generation,
+                plan_baselines,
+                current,
+            )
         subscription.refresh_status = "idle"
         subscription.next_refresh_at = _next_successful_refresh(
             subscription.source_id,

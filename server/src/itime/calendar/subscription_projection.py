@@ -23,12 +23,18 @@ async def query_subscription_occurrences(
     query_start: datetime,
     query_end: datetime,
     remaining_limit: int,
+    source_id: UUID | None = None,
 ) -> list[dict]:
+    statement = select(CalendarSubscriptionEvent).where(
+        CalendarSubscriptionEvent.owner_id == owner_id
+    )
+    if source_id is not None:
+        statement = statement.where(
+            CalendarSubscriptionEvent.source_id == source_id
+        )
     events = list(
         await session.scalars(
-            select(CalendarSubscriptionEvent)
-            .where(CalendarSubscriptionEvent.owner_id == owner_id)
-            .order_by(
+            statement.order_by(
                 CalendarSubscriptionEvent.source_id,
                 CalendarSubscriptionEvent.uid,
                 CalendarSubscriptionEvent.recurrence_id,
