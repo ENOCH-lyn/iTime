@@ -149,3 +149,42 @@ class SeedManifest:
             "active_accounts": self.active_accounts,
             "counts": dict(sorted(self.counts.items())),
         }
+
+
+@dataclass(frozen=True)
+class RequestStat:
+    name: str
+    count: int
+    p50_ms: float
+    p95_ms: float
+    p99_ms: float
+    failures: int
+
+
+@dataclass(frozen=True)
+class RequestFailure:
+    name: str
+    status_code: int
+    error_code: str
+    count: int
+
+
+@dataclass(frozen=True)
+class ResourceSummary:
+    cpu_mean_ratio: float
+    cpu_peak_over_90_seconds: int
+    memory_peak_ratio: float
+    memory_growth_ratio: float
+    database_connection_peak_ratio: float
+    blocked_over_two_seconds: int
+    pool_timeouts: int
+    server_5xx: int
+    sampling_gap_seconds: int
+
+
+@dataclass(frozen=True)
+class GateResult:
+    scenario: str
+    passed: bool
+    failures: tuple[str, ...]
+    warnings: tuple[str, ...]
