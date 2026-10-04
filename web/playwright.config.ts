@@ -12,7 +12,17 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   outputDir: '/tmp/itime-ui-results',
-  use: { baseURL: 'http://localhost:4173', trace: 'off', screenshot: 'only-on-failure' },
+  use: {
+    baseURL: 'http://localhost:4173',
+    trace: 'off',
+    screenshot: 'only-on-failure',
+    launchOptions: {
+      args: [
+        '--use-fake-device-for-media-stream',
+        '--use-fake-ui-for-media-stream',
+      ],
+    },
+  },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } } },
     { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },

@@ -90,14 +90,29 @@ export async function api<T>(
   } finally { window.clearTimeout(timer) }
 }
 
+export interface UploadApiOptions {
+  timeoutMs?: number
+  signal?: AbortSignal
+  timeoutMessage?: string
+  networkMessage?: string
+}
+
 export async function uploadApi<T>(
   path: string,
   file: File,
   operationId: string,
+  options: UploadApiOptions = {},
 ): Promise<T> {
   const requestId = crypto.randomUUID()
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 30_000)
+  let timedOut = false
+  const timer = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, options.timeoutMs ?? 30_000)
+  const externalAbort = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
+  else options.signal?.addEventListener('abort', externalAbort, { once: true })
   try {
     const response = await fetch(`/api/v1${path}`, {
       method: 'POST',
@@ -127,17 +142,25 @@ export async function uploadApi<T>(
     return result as T
   } catch (error) {
     if (error instanceof ApiError) throw error
+    const externallyAborted = options.signal?.aborted && !timedOut
     throw new ApiError({
-      code: controller.signal.aborted ? 'request_timeout' : 'network_error',
-      message: controller.signal.aborted
-        ? '文件处理超时。请检查导入历史后再重试。'
-        : '无法连接服务。文件尚未确认导入，请检查网络后重试。',
+      code: timedOut
+        ? 'request_timeout'
+        : externallyAborted
+          ? 'request_cancelled'
+          : 'network_error',
+      message: timedOut
+        ? (options.timeoutMessage ?? '文件处理超时。请检查导入历史后再重试。')
+        : externallyAborted
+          ? '上传已停止，请先检查服务端状态。'
+          : (options.networkMessage ?? '无法连接服务。文件尚未确认导入，请检查网络后重试。'),
       request_id: requestId,
       saved: 'unknown',
       retryable: true,
     })
   } finally {
     window.clearTimeout(timer)
+    options.signal?.removeEventListener('abort', externalAbort)
   }
 }
 

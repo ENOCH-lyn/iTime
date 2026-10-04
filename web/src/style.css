@@ -348,6 +348,25 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .audit-identifiers dd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .invitation-notice { padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--selected); font-size: .875rem; }
 .invitation-notice.missing-invitation { border-color: var(--notice-border); background: var(--notice-bg); }
+.voice-transcription-control { display: grid; min-width: 0; gap: 10px; padding: 14px 0 2px; border-top: 1px solid var(--border); }
+.voice-transcription-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.voice-transcription-copy { display: grid; min-width: 0; gap: 1px; }
+.voice-transcription-copy strong { font-size: .875rem; font-weight: 600; }
+.voice-transcription-copy span { color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.voice-capture-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 2px; min-width: 36px; min-height: 36px; }
+.voice-capture-actions .voice-record { color: var(--accent); background: var(--selected); }
+.voice-capture-actions .voice-stop { color: var(--error); background: var(--error-bg); }
+.voice-transcription-status { display: flex; min-height: 26px; min-width: 0; align-items: center; gap: 8px; color: var(--muted); font-size: .8125rem; line-height: 1.55; overflow-wrap: anywhere; }
+.voice-transcription-control > .status { margin: 0; padding: 12px; }
+.voice-transcription-draft { display: grid; min-width: 0; gap: 8px; }
+.voice-draft-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.voice-draft-label label { font-size: .8125rem; font-weight: 600; }
+.voice-draft-label span { color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.voice-draft-label span.over { color: var(--error); }
+.voice-transcription-draft textarea { width: 100%; min-width: 0; min-height: 88px; resize: vertical; padding: 10px 12px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--surface); color: var(--text); line-height: 1.55; }
+.voice-transcription-draft textarea:focus { border-color: var(--accent); }
+.voice-transcription-draft textarea[aria-invalid="true"] { border-color: var(--error); }
+.voice-draft-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .help-content { max-width: 760px; margin: 32px auto; padding: 24px; }
 .help-content section { padding: 32px 0; border-top: 1px solid var(--border); }
 .help-content section h2 { font-size: 1.125rem; margin-bottom: 12px; }
@@ -417,6 +436,7 @@ dialog p { font-size: .9375rem; color: var(--muted); }
   .account-deletion-dialog .dialog-actions .button { width: 100%; }
   .sync-intro .button { width: 100%; }
   .sync-metrics { grid-template-columns: 1fr; }
+  .voice-draft-actions .button { flex: 1 1 112px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spinning > svg, svg.spinning { animation: none; }

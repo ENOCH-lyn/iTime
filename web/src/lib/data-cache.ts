@@ -123,6 +123,7 @@ export function cacheableGet(path: string) {
     '/auth',
     '/admin',
     '/sync',
+    '/voice-transcriptions',
   ].some(prefix => path === prefix || path.startsWith(`${prefix}/`))
     && !path.endsWith('/download')
     && !path.includes('/events')
