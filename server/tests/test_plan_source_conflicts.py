@@ -16,13 +16,38 @@ from tests.test_calendar_subscriptions import (
     create_subscription,
     event,
     result,
-    run_worker,
+)
+from tests.test_calendar_subscriptions import (
+    run_worker as run_subscription_worker,
 )
 from tests.test_data_export_snapshot import read_snapshot
 from tests.test_planning_api import _manual_payload
 from tests.test_tasks import create_task
 
 pytestmark = pytest.mark.integration
+
+
+async def run_worker(database_url: str, fetcher) -> bool:
+    """Make the source created by this test win the global worker queue."""
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        source_id = connection.execute(
+            """
+            SELECT source_id
+            FROM calendar_subscriptions
+            WHERE lifecycle_status='active' AND refresh_status='queued'
+            ORDER BY created_at DESC, source_id DESC
+            LIMIT 1
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            UPDATE calendar_subscriptions
+            SET next_refresh_at=now() - interval '1 day'
+            WHERE source_id=%s
+            """,
+            (source_id,),
+        )
+    return await run_subscription_worker(database_url, fetcher)
 
 
 @pytest.fixture(autouse=True)
