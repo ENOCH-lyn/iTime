@@ -347,6 +347,22 @@ test('cross-device task refresh and offline step queue converge', async ({
       const current = (await response.json()).task
       return current.steps[0].completed
     }).toBe(true)
+
+    const current = (
+      await (await page.request.get(`/api/v1/tasks/${task.id}`)).json()
+    ).task
+    const completed = await page.request.put(`/api/v1/tasks/${task.id}/completion`, {
+      headers: { 'X-CSRF-Token': session.csrf_token },
+      data: {
+        operation_id: randomUUID(),
+        expected_version: current.version,
+        completed: true,
+      },
+    })
+    expect(completed.ok()).toBeTruthy()
+    await expect(
+      second.getByRole('button', { name: '重新打开', exact: true }),
+    ).toBeVisible({ timeout: 5_000 })
   } finally {
     await secondContext.close()
   }

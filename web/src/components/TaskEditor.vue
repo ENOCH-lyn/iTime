@@ -139,6 +139,18 @@ watch([() => props.task?.id, () => props.creating, () => props.initialProjectId]
   latest.value = null
   operations.clear()
 }, { immediate: true })
+watch(() => props.task, task => {
+  if (
+    !task
+    || task.id !== working.value?.id
+    || task.version <= working.value.version
+    || dirty.value
+  ) return
+  working.value = task
+  resetFields(task)
+  latest.value = null
+  operations.clear()
+})
 watch(
   () => props.task?.links.map(link => [
     link.id,
