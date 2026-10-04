@@ -640,7 +640,7 @@ Expected: 订阅生命周期、真实 worker、计划冲突和既有订阅测试
 - Modify: `server/tests/test_calendar_imports.py`
 - Modify: `server/tests/test_account_deletion_worker.py`
 
-- [ ] **Step 1: 写清理失败测试**
+- [x] **Step 1: 写清理失败测试**
 
 构造到期与未到期系列、到期订阅、导入候选、例外、补课、订阅事件、覆盖、刷新、操作响应和
 计划来源冲突，调用：
@@ -665,7 +665,7 @@ assert result == {"series": 1, "sources": 1}
 - `python -m itime.calendar.cleanup_worker --once` 在独立进程真实退出 0；
 - 账号注销先锁用户时清理跳过，注销级联后不残留孤儿。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -675,7 +675,7 @@ uv run pytest -q tests/test_calendar_lifecycle_cleanup.py \
 
 Expected: FAIL，清理函数和 worker 尚不存在。
 
-- [ ] **Step 3: 实现系列到期清理**
+- [x] **Step 3: 实现系列到期清理**
 
 `expire_calendar_operation_responses` 复用现有 `UserOperation` 模式，按 scope 或 JSON 响应中的 UUID
 清空旧响应。
@@ -752,7 +752,7 @@ series.purged_at = current_time
 
 最后增加版本、更新时间并发送 `calendar_series/purged`。
 
-- [ ] **Step 4: 实现订阅来源到期清理**
+- [x] **Step 4: 实现订阅来源到期清理**
 
 先删除 `CalendarSubscriptionEvent` 和 `CalendarSubscriptionRefresh`；事件级覆盖和例外由外键
 级联。保留 `PlanSourceConflict`。订阅改为稳定墓碑：
@@ -783,7 +783,7 @@ source.purged_at = current_time
 
 增加来源/订阅版本并发送 `calendar_source/purged`。
 
-- [ ] **Step 5: 实现有界 worker 和账号锁顺序**
+- [x] **Step 5: 实现有界 worker 和账号锁顺序**
 
 `cleanup_expired_calendar_items` 的 SQL 同时连接 `User`，只领取 `status=active` 的对象，并以
 `User -> CalendarSeries/CalendarSource` 顺序 `FOR UPDATE SKIP LOCKED`，与账号注销的用户优先
@@ -817,7 +817,7 @@ async def run(*, once: bool = False) -> None:
         await database.close()
 ```
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server

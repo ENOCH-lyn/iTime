@@ -1,3 +1,4 @@
+import asyncio
 import os
 import socket
 import subprocess
@@ -16,6 +17,9 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from itime.calendar.import_parsers import parse_ics, parse_xlsx
+from itime.calendar.lifecycle_service import cleanup_expired_calendar_items
+from itime.config import Settings
+from itime.database import Database
 from itime.errors import AppError
 from tests.conftest import SERVER, LiveServer, isolated_database, migrate, psycopg_url
 from tests.test_calendar_series import create_account, login_account
@@ -672,6 +676,101 @@ def test_confirmation_rolls_back_every_selected_candidate_on_validation_failure(
         ).json()["items"]
         == []
     )
+
+
+def test_purged_imported_series_scrubs_candidate_and_allows_reimport(
+    import_client,
+    import_database_url,
+):
+    create_account(import_client, import_database_url)
+    contents = xlsx_bytes([xlsx_row("可重新导入的安排")])
+    uploaded = upload(import_client, "purge.xlsx", contents)
+    assert uploaded.status_code == 201
+    detail = import_client.get(
+        f"/api/v1/calendar/imports/{uploaded.json()['batch']['id']}"
+    ).json()
+    candidate = detail["candidates"][0]
+    confirmed = import_client.post(
+        f"/api/v1/calendar/imports/{detail['batch']['id']}/confirm",
+        json=confirm_payload(detail["batch"], [candidate]),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    series = confirmed.json()["outcomes"][0]["series"]
+    trashed = import_client.request(
+        "DELETE",
+        f"/api/v1/calendar/series/{series['id']}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": series["version"],
+        },
+    )
+    assert trashed.status_code == 200
+
+    with psycopg.connect(
+        psycopg_url(import_database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE calendar_series
+            SET deleted_at=now() - interval '31 days',
+                purge_after=now() - interval '1 day'
+            WHERE id=%s
+            """,
+            (series["id"],),
+        )
+
+    async def cleanup() -> dict[str, int]:
+        database = Database(
+            Settings(
+                database_url=import_database_url,
+                environment="test",
+            )
+        )
+        try:
+            return await cleanup_expired_calendar_items(database)
+        finally:
+            await database.close()
+
+    assert asyncio.run(cleanup())["series"] == 1
+    with psycopg.connect(psycopg_url(import_database_url)) as connection:
+        scrubbed = connection.execute(
+            """
+            SELECT
+                state, raw_data, draft, identity_key, content_fingerprint,
+                external_uid, external_recurrence_id,
+                confirmed_series_id, duplicate_series_id
+            FROM calendar_import_candidates
+            WHERE id=%s
+            """,
+            (candidate["id"],),
+        ).fetchone()
+        assert scrubbed == (
+            "skipped",
+            {},
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM calendar_import_identities
+            WHERE series_id=%s
+            """,
+            (series["id"],),
+        ).fetchone()[0] == 0
+
+    repeated = upload(import_client, "purge-again.xlsx", contents)
+    assert repeated.status_code == 201
+    repeated_detail = import_client.get(
+        f"/api/v1/calendar/imports/{repeated.json()['batch']['id']}"
+    ).json()
+    assert repeated_detail["candidates"][0]["state"] == "valid"
 
 
 def test_file_import_migration_round_trip_and_loss_guard(admin_url):
