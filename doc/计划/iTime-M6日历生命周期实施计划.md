@@ -235,6 +235,7 @@ Expected: 专项测试、迁移往返、head/check 和 Ruff 全部通过。
 - Modify: `server/src/itime/calendar/schemas.py`
 - Modify: `server/src/itime/calendar/series_service.py`
 - Modify: `server/src/itime/calendar/router.py`
+- Modify: `server/src/itime/calendar/import_service.py`
 - Modify: `server/src/itime/calendar/import_router.py`
 - Modify: `server/tests/test_calendar_lifecycle.py`
 - Modify: `server/tests/test_calendar_series.py`
@@ -242,7 +243,7 @@ Expected: 专项测试、迁移往返、head/check 和 Ruff 全部通过。
 - Modify: `server/tests/test_calendar_additions.py`
 - Modify: `server/tests/test_calendar_imports.py`
 
-- [ ] **Step 1: 写系列生命周期 API 失败测试**
+- [x] **Step 1: 写系列生命周期 API 失败测试**
 
 新增辅助函数：
 
@@ -281,7 +282,7 @@ def restore_series(client, series: dict, operation_id=None):
 - 回收对象拒绝更新、拆分、新增/编辑单次例外和补课；
 - 文件和截图导入产生的系列可以独立回收，订阅 occurrence 不能走系列接口。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -292,7 +293,7 @@ uv run pytest -q tests/test_calendar_lifecycle.py \
 
 Expected: FAIL，生命周期 schema、路由和过滤尚不存在。
 
-- [ ] **Step 3: 定义系列生命周期合同**
+- [x] **Step 3: 定义系列生命周期合同**
 
 `calendar/schemas.py` 增加：
 
@@ -348,7 +349,7 @@ def ensure_calendar_editable(item: CalendarSeries | CalendarSource) -> None:
 `locked_series(session, owner_id, series_id, *, editable: bool = True)` 默认调用
 `ensure_calendar_editable`；删除、恢复和回收详情传 `editable=False`。
 
-- [ ] **Step 4: 实现系列列表和写路由**
+- [x] **Step 4: 实现系列列表和写路由**
 
 `GET /calendar/series` 新增：
 
@@ -411,7 +412,7 @@ async def restore_calendar_series_route(
         )
 ```
 
-- [ ] **Step 5: 过滤所有普通系列读取**
+- [x] **Step 5: 过滤所有普通系列读取**
 
 `query_occurrences`、`find_series_conflicts`、移动例外补查和补课补查都增加活动生命周期过滤。
 `import_router.py` 在读取 `confirmed_series_id/duplicate_series_id` 时：
@@ -422,7 +423,7 @@ async def restore_calendar_series_route(
 
 所有现有系列写测试增加回收对象 409 断言，确保不是只在主更新接口过滤。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
@@ -431,13 +432,15 @@ uv run pytest -q tests/test_calendar_lifecycle.py \
   tests/test_calendar_additions.py tests/test_calendar_imports.py
 uv run ruff check src/itime/calendar/lifecycle_service.py \
   src/itime/calendar/schemas.py src/itime/calendar/series_service.py \
-  src/itime/calendar/router.py src/itime/calendar/import_router.py \
+  src/itime/calendar/router.py src/itime/calendar/import_service.py \
+  src/itime/calendar/import_router.py \
   tests/test_calendar_lifecycle.py tests/test_calendar_series.py \
   tests/test_calendar_exceptions.py tests/test_calendar_additions.py \
   tests/test_calendar_imports.py
 git add src/itime/calendar/lifecycle_service.py \
   src/itime/calendar/schemas.py src/itime/calendar/series_service.py \
-  src/itime/calendar/router.py src/itime/calendar/import_router.py \
+  src/itime/calendar/router.py src/itime/calendar/import_service.py \
+  src/itime/calendar/import_router.py \
   tests/test_calendar_lifecycle.py tests/test_calendar_series.py \
   tests/test_calendar_exceptions.py tests/test_calendar_additions.py \
   tests/test_calendar_imports.py

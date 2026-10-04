@@ -42,6 +42,7 @@ from itime.calendar.import_service import (
     term_name_map,
     validate_candidate,
 )
+from itime.calendar.lifecycle_service import ensure_calendar_editable
 from itime.calendar.models import (
     CalendarImportBatch,
     CalendarImportCandidate,
@@ -579,6 +580,7 @@ async def confirm_calendar_import(
                 )
                 if existing_series is None:
                     raise RuntimeError("calendar import identity target is missing")
+                ensure_calendar_editable(existing_series)
                 candidate.state = "duplicate"
                 candidate.duplicate_series_id = existing_series.id
                 candidate.identity_key = identity_key

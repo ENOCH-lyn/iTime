@@ -288,6 +288,8 @@ async def prepare_candidate_rows(
             select(CalendarSeries)
             .where(
                 CalendarSeries.owner_id == owner_id,
+                CalendarSeries.deleted_at.is_(None),
+                CalendarSeries.purged_at.is_(None),
                 func.lower(func.btrim(CalendarSeries.name)).in_(names),
             )
             .order_by(CalendarSeries.updated_at.desc(), CalendarSeries.id.desc())

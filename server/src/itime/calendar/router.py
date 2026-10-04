@@ -28,6 +28,16 @@ from itime.calendar.exception_service import (
     series_exceptions,
     validate_exception_fields,
 )
+from itime.calendar.lifecycle_service import (
+    ensure_calendar_editable,
+    ensure_calendar_readable,
+)
+from itime.calendar.lifecycle_service import (
+    restore_calendar_series as restore_calendar_series_item,
+)
+from itime.calendar.lifecycle_service import (
+    trash_calendar_series as trash_calendar_series_item,
+)
 from itime.calendar.models import (
     AcademicTerm,
     CalendarAddition,
@@ -44,6 +54,7 @@ from itime.calendar.schemas import (
     ExceptionUpdate,
     PeriodsReplace,
     SeriesCreate,
+    SeriesLifecycleInput,
     SeriesSplit,
     SeriesUpdate,
     TermCreate,
@@ -510,6 +521,7 @@ async def create_calendar_series(data: SeriesCreate, request: Request) -> dict:
 async def list_calendar_series(
     request: Request,
     kind: Literal["all", "course", "fixed"] = "all",
+    lifecycle: Literal["active", "trashed"] = "active",
     term_id: UUID | None = None,
     before_time: datetime | None = None,
     before_id: UUID | None = None,
@@ -529,6 +541,16 @@ async def list_calendar_series(
         statement = select(CalendarSeries).where(
             CalendarSeries.owner_id == identity.user.id
         )
+        if lifecycle == "active":
+            statement = statement.where(
+                CalendarSeries.deleted_at.is_(None),
+                CalendarSeries.purged_at.is_(None),
+            )
+        else:
+            statement = statement.where(
+                CalendarSeries.deleted_at.is_not(None),
+                CalendarSeries.purged_at.is_(None),
+            )
         if kind != "all":
             statement = statement.where(CalendarSeries.kind == kind)
         if term_id is not None:
@@ -580,7 +602,40 @@ async def get_calendar_series(series_id: UUID, request: Request) -> dict:
                 "未找到此日历系列。",
                 status=404,
             )
+        ensure_calendar_readable(series)
         return {"series": series_result(series)}
+
+
+@router.delete("/calendar/series/{series_id}")
+async def trash_calendar_series(
+    series_id: UUID,
+    data: SeriesLifecycleInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await trash_calendar_series_item(
+            identity.session,
+            identity.user.id,
+            series_id,
+            data,
+            current_time=now(),
+        )
+
+
+@router.post("/calendar/series/{series_id}/restore")
+async def restore_calendar_series(
+    series_id: UUID,
+    data: SeriesLifecycleInput,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await restore_calendar_series_item(
+            identity.session,
+            identity.user.id,
+            series_id,
+            data,
+            current_time=now(),
+        )
 
 
 @router.put("/calendar/series/{series_id}")
@@ -697,6 +752,7 @@ async def list_calendar_exceptions(series_id: UUID, request: Request) -> dict:
                 "未找到此日历系列。",
                 status=404,
             )
+        ensure_calendar_editable(series)
         exceptions = await series_exceptions(
             identity.session,
             identity.user.id,
@@ -930,6 +986,7 @@ async def list_calendar_additions(series_id: UUID, request: Request) -> dict:
                 "未找到此日历系列。",
                 status=404,
             )
+        ensure_calendar_editable(series)
         additions = await series_additions(
             identity.session,
             identity.user.id,

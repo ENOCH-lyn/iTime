@@ -9,6 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.calendar.addition_service import addition_occurrence_result
 from itime.calendar.exception_service import apply_exception
+from itime.calendar.lifecycle_service import (
+    calendar_lifecycle,
+    calendar_trash_remaining_days,
+    ensure_calendar_editable,
+    ensure_calendar_readable,
+)
 from itime.calendar.models import (
     AcademicTerm,
     CalendarAddition,
@@ -302,6 +308,11 @@ def series_result(series: CalendarSeries) -> dict:
         "end_period_number": series.end_period_number,
         "ambiguous_utc_offset_minutes": series.ambiguous_offset_minutes,
         "recurrence": recurrence_result(series),
+        "lifecycle": calendar_lifecycle(series),
+        "deleted_at": series.deleted_at,
+        "purge_after": series.purge_after,
+        "purged_at": series.purged_at,
+        "trash_remaining_days": calendar_trash_remaining_days(series),
         "version": series.version,
         "created_at": series.created_at,
         "updated_at": series.updated_at,
@@ -312,6 +323,8 @@ async def locked_series(
     session: AsyncSession,
     owner_id: UUID,
     series_id: UUID,
+    *,
+    editable: bool = True,
 ) -> CalendarSeries:
     series = await session.scalar(
         select(CalendarSeries)
@@ -323,6 +336,9 @@ async def locked_series(
     )
     if series is None:
         raise AppError("calendar_series_not_found", "未找到此日历系列。", status=404)
+    ensure_calendar_readable(series)
+    if editable:
+        ensure_calendar_editable(series)
     return series
 
 
@@ -547,6 +563,8 @@ async def query_occurrences(
         select(CalendarSeries)
         .where(
             CalendarSeries.owner_id == owner_id,
+            CalendarSeries.deleted_at.is_(None),
+            CalendarSeries.purged_at.is_(None),
             CalendarSeries.start_date < coarse_end,
             or_(
                 and_(
@@ -588,6 +606,8 @@ async def query_occurrences(
                 select(CalendarSeries).where(
                     CalendarSeries.owner_id == owner_id,
                     CalendarSeries.id.in_(missing_ids),
+                    CalendarSeries.deleted_at.is_(None),
+                    CalendarSeries.purged_at.is_(None),
                 )
             )
         )
@@ -700,6 +720,8 @@ async def find_series_conflicts(
             .where(
                 CalendarSeries.owner_id == owner_id,
                 CalendarSeries.id != candidate.id,
+                CalendarSeries.deleted_at.is_(None),
+                CalendarSeries.purged_at.is_(None),
                 CalendarSeries.start_date <= coarse_end,
                 or_(
                     and_(
@@ -743,6 +765,8 @@ async def find_series_conflicts(
                 select(CalendarSeries).where(
                     CalendarSeries.owner_id == owner_id,
                     CalendarSeries.id.in_(missing_ids),
+                    CalendarSeries.deleted_at.is_(None),
+                    CalendarSeries.purged_at.is_(None),
                 )
             )
         )

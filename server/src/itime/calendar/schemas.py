@@ -116,6 +116,10 @@ class SeriesUpdate(SeriesCreate):
     expected_version: int = Field(ge=1)
 
 
+class SeriesLifecycleInput(OperationInput):
+    expected_version: int = Field(ge=1)
+
+
 class ExceptionFields(Input):
     action: Literal["cancelled", "moved", "overridden"]
     moved_start_date: date | None = None
