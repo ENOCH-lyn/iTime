@@ -12,7 +12,7 @@ from itime.ai.conversation_models import (
     ConversationMessage,
 )
 from itime.ai.governance_models import UserPrivacySetting
-from itime.ai.models import AIJob, TemporaryMedia
+from itime.ai.models import AIJob, TemporaryMedia, VoiceTranscription
 from itime.auth.models import DeviceSession, SecurityEvent, User
 from itime.calendar.models import (
     AcademicTerm,
@@ -256,6 +256,45 @@ async def _job_rows(
         .order_by(AIJob.created_at, AIJob.id)
     )
     result = await connection.execute(statement)
+    return [
+        {key: export_value(value) for key, value in row.items()}
+        for row in result.mappings()
+    ]
+
+
+async def _voice_transcription_rows(
+    connection: AsyncConnection,
+    owner_id: UUID,
+    *,
+    snapshot_at: datetime,
+) -> list[dict[str, JSONValue]]:
+    fields = (
+        "id",
+        "job_id",
+        "purpose",
+        "transcript",
+        "transcript_sha256",
+        "language",
+        "resolution",
+        "ready_at",
+        "resolved_at",
+        "text_purged_at",
+        "expires_at",
+        "version",
+        "created_at",
+        "updated_at",
+    )
+    result = await connection.execute(
+        select(*_columns(VoiceTranscription, fields))
+        .where(
+            VoiceTranscription.owner_id == owner_id,
+            VoiceTranscription.expires_at > snapshot_at,
+        )
+        .order_by(
+            VoiceTranscription.created_at,
+            VoiceTranscription.id,
+        )
+    )
     return [
         {key: export_value(value) for key, value in row.items()}
         for row in result.mappings()
@@ -1373,6 +1412,10 @@ async def collect_export_snapshot(
                 "byte_size",
                 "width",
                 "height",
+                "duration_ms",
+                "sample_rate_hz",
+                "channel_count",
+                "sample_width_bits",
                 "expires_at",
                 "deleted_at",
                 "deletion_reason",
@@ -1380,7 +1423,17 @@ async def collect_export_snapshot(
             ),
             owner_id,
             order=("created_at", "id"),
-        )
+        ),
+        "voice_transcriptions": await _voice_transcription_rows(
+            connection,
+            owner_id,
+            snapshot_at=snapshot_at,
+        ),
+        "transcription_jobs": await _job_rows(
+            connection,
+            owner_id,
+            "transcription",
+        ),
     }
     return {
         "schema_version": EXPORT_SCHEMA_VERSION,

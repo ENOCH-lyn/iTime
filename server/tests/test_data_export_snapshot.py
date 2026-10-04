@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -205,6 +206,133 @@ def seed_export_facts(
     }
 
 
+def seed_export_transcriptions(
+    database_url: str,
+    owner_id: UUID,
+) -> tuple[str, str]:
+    config_id = uuid4()
+    current_id = uuid4()
+    expired_id = uuid4()
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        version = connection.execute(
+            """
+            UPDATE ai_config_capabilities
+            SET next_version=next_version + 1, updated_at=now()
+            WHERE capability='transcription'
+            RETURNING next_version - 1
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO ai_config_versions (
+                id, capability, version, endpoint_url, model,
+                api_key_ciphertext, timeout_seconds, max_output_tokens,
+                pricing_basis, price_currency,
+                audio_price_nanos_per_minute, status
+            ) VALUES (
+                %s, 'transcription', %s, 'https://ai.example.com/v1',
+                'export-transcription', %s, 60, NULL,
+                'audio_minute', 'CNY', 6000000, 'draft'
+            )
+            """,
+            (config_id, version, b"encrypted-key"),
+        )
+        for item_id, expired, transcript in (
+            (current_id, False, "仍在保留期内的转写"),
+            (expired_id, True, "已经过期且不能导出的转写"),
+        ):
+            media_id = uuid4()
+            job_id = uuid4()
+            connection.execute(
+                """
+                INSERT INTO temporary_media (
+                    id, owner_id, purpose, original_filename, content_type,
+                    content_sha256, byte_size, width, height,
+                    duration_ms, sample_rate_hz, channel_count,
+                    sample_width_bits, encrypted_content, expires_at,
+                    created_at
+                ) VALUES (
+                    %s, %s, 'voice_transcription', 'export.wav', 'audio/wav',
+                    %s, 32044, NULL, NULL, 1000, 16000, 1, 16,
+                    %s,
+                    CASE WHEN %s THEN now() - interval '1 hour'
+                         ELSE now() + interval '1 hour' END,
+                    CASE WHEN %s THEN now() - interval '2 hours'
+                         ELSE now() END
+                )
+                """,
+                (
+                    media_id,
+                    owner_id,
+                    hashlib.sha256(str(media_id).encode()).hexdigest(),
+                    b"private-encrypted-audio",
+                    expired,
+                    expired,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO ai_jobs (
+                    id, owner_id, capability, config_version_id,
+                    input_media_id, status, input_summary, output,
+                    available_at, deadline_at, finished_at, created_at,
+                    updated_at
+                ) VALUES (
+                    %s, %s, 'transcription', %s, %s, 'succeeded',
+                    '{"purpose":"task_title","duration_ms":1000}',
+                    %s::jsonb, now(), now() + interval '3 minutes', now(),
+                    CASE WHEN %s THEN now() - interval '2 hours'
+                         ELSE now() END,
+                    now()
+                )
+                """,
+                (
+                    job_id,
+                    owner_id,
+                    config_id,
+                    media_id,
+                    json.dumps(
+                        {
+                            "resource_type": "voice_transcription",
+                            "transcription_id": str(item_id),
+                        }
+                    ),
+                    expired,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO voice_transcriptions (
+                    id, owner_id, job_id, media_id, purpose,
+                    transcript, transcript_sha256, language, ready_at,
+                    expires_at, created_at, updated_at
+                ) VALUES (
+                    %s, %s, %s, %s, 'task_title',
+                    %s, %s, 'zh', now(),
+                    CASE WHEN %s THEN now() - interval '1 hour'
+                         ELSE now() + interval '1 hour' END,
+                    CASE WHEN %s THEN now() - interval '2 hours'
+                         ELSE now() END,
+                    now()
+                )
+                """,
+                (
+                    item_id,
+                    owner_id,
+                    job_id,
+                    media_id,
+                    transcript,
+                    hashlib.sha256(transcript.encode()).hexdigest(),
+                    expired,
+                    expired,
+                ),
+            )
+    return str(current_id), str(expired_id)
+
+
 def read_snapshot(settings: Settings, owner_id: UUID) -> dict:
     database = Database(settings)
 
@@ -382,6 +510,39 @@ def test_snapshot_includes_only_public_cancelled_deletion_history(
         "last_error_message",
     ):
         assert forbidden not in rendered
+
+
+def test_snapshot_exports_only_unexpired_transcription_text_and_no_audio(
+    client,
+    database_url,
+    settings,
+):
+    _, owner_id_value = create_account(client, database_url)
+    owner_id = UUID(owner_id_value)
+    current_id, expired_id = seed_export_transcriptions(
+        database_url,
+        owner_id,
+    )
+
+    payload = read_snapshot(settings, owner_id)
+
+    transcriptions = payload["media"]["voice_transcriptions"]
+    assert [item["id"] for item in transcriptions] == [current_id]
+    assert transcriptions[0]["transcript"] == "仍在保留期内的转写"
+    assert transcriptions[0]["purpose"] == "task_title"
+    assert [
+        item["capability"]
+        for item in payload["media"]["transcription_jobs"]
+    ] == ["transcription", "transcription"]
+    media = payload["media"]["temporary_media"]
+    assert {item["duration_ms"] for item in media} == {1000}
+    rendered = json.dumps(payload, ensure_ascii=False)
+    assert "private-encrypted-audio" not in rendered
+    assert "已经过期且不能导出的转写" not in rendered
+    assert expired_id not in {
+        item["id"] for item in transcriptions
+    }
+    assert not recursive_keys(payload) & FORBIDDEN_KEYS
 
 
 def test_snapshot_exports_calendar_trash_and_skips_purged_url_decryption(

@@ -17,12 +17,14 @@ from itime.ai.models import (
     AIJobConfigRoute,
     AIProviderCost,
     TemporaryMedia,
+    VoiceTranscription,
 )
 from itime.auth.models import User
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
 from itime.quota.service import release_reservation, settle_success
+from itime.tasks.models import UserOperation
 
 TERMINAL_JOB_STATES = {"succeeded", "failed", "timed_out", "cancelled"}
 JOB_EVENT_RETENTION = timedelta(days=7)
@@ -97,7 +99,52 @@ async def locked_job(
     return job
 
 
-async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
+async def _cancel_transcription_projection(
+    session: AsyncSession,
+    job: AIJob,
+    *,
+    current: datetime,
+    resolution: str,
+    media_reason: str,
+) -> None:
+    item = await session.scalar(
+        select(VoiceTranscription)
+        .where(
+            VoiceTranscription.job_id == job.id,
+            VoiceTranscription.owner_id == job.owner_id,
+        )
+        .with_for_update()
+    )
+    if item is None:
+        return
+    media = await session.scalar(
+        select(TemporaryMedia)
+        .where(
+            TemporaryMedia.id == item.media_id,
+            TemporaryMedia.owner_id == item.owner_id,
+        )
+        .with_for_update()
+    )
+    if item.resolution == "pending":
+        item.resolution = resolution
+        item.transcript = None
+        item.transcript_sha256 = None
+        item.language = None
+        item.resolved_at = current
+        item.text_purged_at = current
+        item.updated_at = current
+        item.version += 1
+    if media is not None:
+        delete_media(media, reason=media_reason)
+
+
+async def cancel_job(
+    session: AsyncSession,
+    job: AIJob,
+    *,
+    transcription_resolution: str = "discarded",
+    transcription_media_reason: str = "cancelled",
+) -> bool:
     if job.status in TERMINAL_JOB_STATES:
         return False
     current = now()
@@ -109,6 +156,14 @@ async def cancel_job(session: AsyncSession, job: AIJob) -> bool:
     job.finished_at = current
     job.updated_at = current
     job.version += 1
+    if job.capability == "transcription":
+        await _cancel_transcription_projection(
+            session,
+            job,
+            current=current,
+            resolution=transcription_resolution,
+            media_reason=transcription_media_reason,
+        )
     message_id = (
         await session.scalar(
             select(ChatGeneration.response_message_id).where(
@@ -150,7 +205,11 @@ async def cancel_active_ai_jobs_for_owner(
     )
     cancelled = 0
     for job in jobs:
-        if not await cancel_job(session, job):
+        if not await cancel_job(
+            session,
+            job,
+            transcription_media_reason="account_deletion",
+        ):
             continue
         await cancel_conversation_projection(session, job)
         await release_reservation(
@@ -669,6 +728,89 @@ async def clear_temporary_media_for_account_deletion(
     return len(media_rows)
 
 
+async def purge_voice_transcriptions_for_account_deletion(
+    session: AsyncSession,
+    owner_id: UUID,
+    at: datetime,
+) -> None:
+    job_ids = list(
+        await session.scalars(
+            select(VoiceTranscription.job_id)
+            .where(VoiceTranscription.owner_id == owner_id)
+            .order_by(VoiceTranscription.job_id)
+        )
+    )
+    if not job_ids:
+        return
+    list(
+        await session.scalars(
+            select(AIJob)
+            .where(
+                AIJob.owner_id == owner_id,
+                AIJob.id.in_(job_ids),
+            )
+            .order_by(AIJob.id)
+            .with_for_update()
+        )
+    )
+    items = list(
+        await session.scalars(
+            select(VoiceTranscription)
+            .where(VoiceTranscription.owner_id == owner_id)
+            .order_by(VoiceTranscription.job_id)
+            .with_for_update()
+        )
+    )
+    media_ids = [item.media_id for item in items]
+    media_rows = list(
+        await session.scalars(
+            select(TemporaryMedia)
+            .where(
+                TemporaryMedia.owner_id == owner_id,
+                TemporaryMedia.id.in_(media_ids),
+            )
+            .order_by(TemporaryMedia.id)
+            .with_for_update()
+        )
+    )
+    for item in items:
+        changed = False
+        if item.resolution == "pending":
+            item.resolution = "discarded"
+            item.resolved_at = at
+            item.text_purged_at = at
+            changed = True
+        if item.transcript is not None:
+            item.transcript = None
+            item.transcript_sha256 = None
+            item.language = None
+            item.text_purged_at = at
+            changed = True
+        if changed:
+            item.updated_at = at
+            item.version += 1
+    for media in media_rows:
+        if media.encrypted_content is not None:
+            media.encrypted_content = None
+            media.deleted_at = at
+            media.deletion_reason = "account_deletion"
+    await session.execute(
+        update(UserOperation)
+        .where(
+            UserOperation.owner_id == owner_id,
+            UserOperation.scope.startswith(
+                "voice_transcription.resolve:",
+                autoescape=True,
+            ),
+            UserOperation.response.is_not(None),
+        )
+        .values(
+            response=None,
+            response_purged_at=at,
+        )
+    )
+
+
 async def cleanup_expired_media(database: Database) -> int:
     current = now()
     async with database.transaction() as session:
@@ -677,6 +819,7 @@ async def cleanup_expired_media(database: Database) -> int:
                 select(TemporaryMedia)
                 .where(
                     TemporaryMedia.encrypted_content.is_not(None),
+                    TemporaryMedia.purpose != "voice_transcription",
                     TemporaryMedia.expires_at <= current,
                 )
                 .order_by(TemporaryMedia.expires_at, TemporaryMedia.id)

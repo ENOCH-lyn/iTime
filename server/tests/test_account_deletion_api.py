@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import ANY
@@ -127,6 +128,126 @@ def seed_screenshot_job(
         ),
     )
     return job_id, lease_id
+
+
+def seed_voice_transcription_jobs(
+    connection,
+    owner_id: UUID,
+    current: datetime,
+) -> tuple[UUID, UUID, list[UUID]]:
+    version = connection.execute(
+        """
+        UPDATE ai_config_capabilities
+        SET next_version=next_version + 1, updated_at=now()
+        WHERE capability='transcription'
+        RETURNING next_version - 1
+        """
+    ).fetchone()[0]
+    config_id = uuid4()
+    connection.execute(
+        """
+        INSERT INTO ai_config_versions (
+            id, capability, version, endpoint_url, model,
+            api_key_ciphertext, timeout_seconds, max_output_tokens,
+            pricing_basis, price_currency,
+            audio_price_nanos_per_minute, status
+        ) VALUES (
+            %s, 'transcription', %s, 'https://ai.example.com/v1',
+            'deletion-transcription', %s, 60, NULL,
+            'audio_minute', 'CNY', 6000000, 'draft'
+        )
+        """,
+        (config_id, version, b"encrypted-key"),
+    )
+    job_ids: list[UUID] = []
+    media_ids: list[UUID] = []
+    for index, status in enumerate(("queued", "succeeded")):
+        media_id = uuid4()
+        job_id = uuid4()
+        item_id = uuid4()
+        media_ids.append(media_id)
+        job_ids.append(job_id)
+        connection.execute(
+            """
+            INSERT INTO temporary_media (
+                id, owner_id, purpose, original_filename, content_type,
+                content_sha256, byte_size, width, height,
+                duration_ms, sample_rate_hz, channel_count,
+                sample_width_bits, encrypted_content, expires_at
+            ) VALUES (
+                %s, %s, 'voice_transcription', %s, 'audio/wav',
+                %s, 32044, NULL, NULL, 1000, 16000, 1, 16,
+                %s, %s + interval '1 day'
+            )
+            """,
+            (
+                media_id,
+                owner_id,
+                f"deletion-{index}.wav",
+                str(index) * 64,
+                b"encrypted-audio",
+                current,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_jobs (
+                id, owner_id, capability, config_version_id,
+                input_media_id, status, input_summary, output,
+                available_at, deadline_at, finished_at
+            ) VALUES (
+                %s, %s, 'transcription', %s, %s, %s,
+                '{"purpose":"task_title","duration_ms":1000}',
+                CASE WHEN %s='succeeded'
+                     THEN %s::jsonb ELSE NULL END,
+                %s, %s + interval '10 minutes',
+                CASE WHEN %s='succeeded' THEN %s ELSE NULL END
+            )
+            """,
+            (
+                job_id,
+                owner_id,
+                config_id,
+                media_id,
+                status,
+                status,
+                json.dumps(
+                    {
+                        "resource_type": "voice_transcription",
+                        "transcription_id": str(item_id),
+                    }
+                ),
+                current,
+                current,
+                status,
+                current,
+            ),
+        )
+        transcript = "注销前临时转写" if status == "succeeded" else None
+        connection.execute(
+            """
+            INSERT INTO voice_transcriptions (
+                id, owner_id, job_id, media_id, purpose,
+                transcript, transcript_sha256, language, ready_at,
+                expires_at
+            ) VALUES (
+                %s, %s, %s, %s, 'task_title',
+                %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                item_id,
+                owner_id,
+                job_id,
+                media_id,
+                transcript,
+                "a" * 64 if transcript is not None else None,
+                "zh" if transcript is not None else None,
+                current if transcript is not None else None,
+                current + timedelta(days=1),
+            ),
+        )
+    return job_ids[0], job_ids[1], media_ids
 
 
 def seed_running_conversation_job(
@@ -485,6 +606,15 @@ def test_quiesce_account_stops_transient_work_and_rejects_late_results(
                 owner_id,
                 screenshot_config,
             )
+            (
+                active_transcription_job_id,
+                completed_transcription_job_id,
+                voice_media_ids,
+            ) = seed_voice_transcription_jobs(
+                connection,
+                owner_id,
+                current,
+            )
             running_export_id, export_lease_id, succeeded_export_id = (
                 seed_export_jobs(connection, owner_id, current)
             )
@@ -507,12 +637,12 @@ def test_quiesce_account_stops_transient_work_and_rejects_late_results(
                     owner_id,
                     requested_at=current,
                 )
-            assert summary.ai_jobs == 2
+            assert summary.ai_jobs == 3
             assert summary.exports == 2
             assert summary.subscription_refreshes == 1
             assert summary.focus_sessions == 1
             assert summary.emails == 1
-            assert summary.temporary_media == 1
+            assert summary.temporary_media == 3
             assert summary.public_links == 0
 
             conversation_claim = ClaimedJob(
@@ -653,6 +783,43 @@ def test_quiesce_account_stops_transient_work_and_rejects_late_results(
             )
             assert connection.execute(
                 """
+                SELECT id, status
+                FROM ai_jobs
+                WHERE id IN (%s, %s)
+                ORDER BY id
+                """,
+                (
+                    active_transcription_job_id,
+                    completed_transcription_job_id,
+                ),
+            ).fetchall() == sorted(
+                [
+                    (active_transcription_job_id, "cancelled"),
+                    (completed_transcription_job_id, "succeeded"),
+                ],
+                key=lambda row: row[0],
+            )
+            assert connection.execute(
+                """
+                SELECT resolution, transcript, transcript_sha256,
+                       language, text_purged_at
+                FROM voice_transcriptions
+                WHERE job_id IN (%s, %s)
+                ORDER BY job_id
+                """,
+                (
+                    active_transcription_job_id,
+                    completed_transcription_job_id,
+                ),
+            ).fetchall() == sorted(
+                [
+                    ("discarded", None, None, None, ANY),
+                    ("discarded", None, None, None, ANY),
+                ],
+                key=lambda row: str(row),
+            )
+            assert connection.execute(
+                """
                 SELECT status, artifact_ciphertext
                 FROM data_export_jobs
                 WHERE id=%s
@@ -717,14 +884,21 @@ def test_quiesce_account_stops_transient_work_and_rejects_late_results(
                 """,
                 (owner_id,),
             ).fetchone() == (None, ANY, "account_deletion")
-            assert connection.execute(
+            media_rows = connection.execute(
                 """
-                SELECT encrypted_content, deletion_reason
+                SELECT id, encrypted_content, deletion_reason
                 FROM temporary_media
                 WHERE owner_id=%s
+                ORDER BY id
                 """,
                 (owner_id,),
-            ).fetchone() == (None, "account_deletion")
+            ).fetchall()
+            assert len(media_rows) == 3
+            assert {row[0] for row in media_rows} >= set(voice_media_ids)
+            assert all(
+                row[1:] == (None, "account_deletion")
+                for row in media_rows
+            )
             assert connection.execute(
                 """
                 SELECT count(*) FROM ai_quota_ledger_entries

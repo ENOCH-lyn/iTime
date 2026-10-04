@@ -1,9 +1,11 @@
 import hashlib
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.ai.audio_validation import validate_voice_wav
 from itime.ai.governance_service import (
@@ -13,6 +15,7 @@ from itime.ai.governance_service import (
 )
 from itime.ai.job_service import (
     ClaimedJob,
+    cancel_job,
     clear_job_lease,
     delete_media,
     finish_running_attempt,
@@ -28,10 +31,12 @@ from itime.ai.transcription_provider import (
     TranscriptionProviderResult,
     transcription_log_request_body,
 )
+from itime.ai.transcription_schemas import VoiceTranscriptionResolveInput
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
 from itime.quota.service import release_reservation, settle_success
+from itime.tasks.models import UserOperation
 
 
 class TranscriptionWorkUnavailable(Exception):
@@ -422,3 +427,285 @@ async def reject_or_retry_transcription_job(
             delete_media(media, reason="expired")
         clear_job_lease(job)
         return status
+
+
+async def lock_transcription_graph(
+    session: AsyncSession,
+    owner_id: UUID,
+    transcription_id: UUID,
+) -> tuple[AIJob, VoiceTranscription, TemporaryMedia]:
+    job_id = await session.scalar(
+        select(VoiceTranscription.job_id).where(
+            VoiceTranscription.id == transcription_id,
+            VoiceTranscription.owner_id == owner_id,
+        )
+    )
+    if job_id is None:
+        raise AppError(
+            "voice_transcription_not_found",
+            "未找到此语音转写。",
+            status=404,
+        )
+    job = await session.scalar(
+        select(AIJob)
+        .where(
+            AIJob.id == job_id,
+            AIJob.owner_id == owner_id,
+            AIJob.capability == "transcription",
+        )
+        .with_for_update()
+    )
+    item = await session.scalar(
+        select(VoiceTranscription)
+        .where(
+            VoiceTranscription.id == transcription_id,
+            VoiceTranscription.owner_id == owner_id,
+            VoiceTranscription.job_id == job_id,
+        )
+        .with_for_update()
+    )
+    media = (
+        await session.scalar(
+            select(TemporaryMedia)
+            .where(
+                TemporaryMedia.id == item.media_id,
+                TemporaryMedia.owner_id == owner_id,
+            )
+            .with_for_update()
+        )
+        if item is not None
+        else None
+    )
+    if job is None or item is None or media is None:
+        raise AppError(
+            "voice_transcription_state_invalid",
+            "语音转写状态不完整，请保留请求编号并联系管理员。",
+            status=503,
+            saved="unknown",
+        )
+    return job, item, media
+
+
+def _purge_transcript(
+    item: VoiceTranscription,
+    *,
+    current: datetime,
+) -> None:
+    item.transcript = None
+    item.transcript_sha256 = None
+    item.language = None
+    item.text_purged_at = current
+
+
+async def _expire_locked_transcription(
+    session: AsyncSession,
+    job: AIJob,
+    item: VoiceTranscription,
+    media: TemporaryMedia,
+    *,
+    current: datetime,
+) -> None:
+    if job.status in {"queued", "running"}:
+        await finish_running_attempt(
+            session,
+            job,
+            status="timed_out",
+            error_code="voice_transcription_expired",
+            error_stage="retention",
+        )
+        job.status = "timed_out"
+        job.output = None
+        job.error_code = "voice_transcription_expired"
+        job.error_message = "语音转写已超过 24 小时，请重新录制。"
+        job.finished_at = current
+        job.updated_at = current
+        job.version += 1
+        await release_reservation(
+            session,
+            job=job,
+            reason="timed_out",
+        )
+        clear_job_lease(job)
+    changed = False
+    if item.resolution == "pending":
+        item.resolution = "expired"
+        item.resolved_at = current
+        changed = True
+    if item.transcript is not None or item.text_purged_at is None:
+        _purge_transcript(item, current=current)
+        changed = True
+    if changed:
+        item.updated_at = current
+        item.version += 1
+    delete_media(media, reason="expired")
+    await session.execute(
+        update(UserOperation)
+        .where(
+            UserOperation.owner_id == item.owner_id,
+            UserOperation.scope == f"voice_transcription.resolve:{item.id}",
+            UserOperation.response.is_not(None),
+        )
+        .values(
+            response=None,
+            response_purged_at=current,
+        )
+    )
+
+
+async def resolve_transcription(
+    session: AsyncSession,
+    owner_id: UUID,
+    transcription_id: UUID,
+    data: VoiceTranscriptionResolveInput,
+) -> tuple[VoiceTranscription, AIJob]:
+    job, item, media = await lock_transcription_graph(
+        session,
+        owner_id,
+        transcription_id,
+    )
+    current = now()
+    if item.expires_at <= current:
+        await _expire_locked_transcription(
+            session,
+            job,
+            item,
+            media,
+            current=current,
+        )
+        return item, job
+    if item.resolution != "pending":
+        return item, job
+    if item.version != data.expected_version:
+        raise AppError(
+            "voice_transcription_version_conflict",
+            "语音转写状态已变化，请刷新后重试。",
+            status=409,
+            details={"current_version": item.version},
+        )
+
+    if data.action == "accept":
+        if (
+            job.status != "succeeded"
+            or item.transcript is None
+            or item.transcript_sha256 is None
+            or item.ready_at is None
+        ):
+            raise AppError(
+                "voice_transcription_not_ready",
+                "转写尚未完成，暂时不能应用。",
+                status=409,
+                retryable=job.status in {"queued", "running"},
+            )
+        if data.transcript_sha256 != item.transcript_sha256:
+            raise AppError(
+                "voice_transcription_changed",
+                "转写内容已变化，请确认最新结果后重试。",
+                status=409,
+                details={"current_version": item.version},
+            )
+        item.resolution = "accepted"
+        item.resolved_at = current
+        item.updated_at = current
+        item.version += 1
+        delete_media(media, reason="accepted")
+        return item, job
+
+    if job.status in {"queued", "running"}:
+        changed = await cancel_job(
+            session,
+            job,
+            transcription_resolution="discarded",
+            transcription_media_reason="discarded",
+        )
+        if changed:
+            await release_reservation(
+                session,
+                job=job,
+                reason="cancelled",
+            )
+    else:
+        item.resolution = "discarded"
+        item.resolved_at = current
+        _purge_transcript(item, current=current)
+        item.updated_at = current
+        item.version += 1
+        delete_media(media, reason="discarded")
+    return item, job
+
+
+async def cleanup_expired_transcriptions(
+    database: Database,
+    *,
+    limit: int = 100,
+) -> int:
+    if not 1 <= limit <= 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    current = now()
+    async with database.transaction() as session:
+        candidates = list(
+            (
+                await session.execute(
+                    select(
+                        VoiceTranscription.id,
+                        VoiceTranscription.job_id,
+                    )
+                    .where(
+                        VoiceTranscription.expires_at <= current,
+                        (
+                            (VoiceTranscription.resolution == "pending")
+                            | VoiceTranscription.transcript.is_not(None)
+                        ),
+                    )
+                    .order_by(
+                        VoiceTranscription.expires_at,
+                        VoiceTranscription.id,
+                    )
+                    .limit(limit)
+                )
+            ).all()
+        )
+
+    processed = 0
+    for transcription_id, job_id in candidates:
+        async with database.transaction() as session:
+            job = await session.scalar(
+                select(AIJob)
+                .where(
+                    AIJob.id == job_id,
+                    AIJob.capability == "transcription",
+                )
+                .with_for_update(skip_locked=True)
+            )
+            if job is None:
+                continue
+            item = await session.scalar(
+                select(VoiceTranscription)
+                .where(
+                    VoiceTranscription.id == transcription_id,
+                    VoiceTranscription.job_id == job.id,
+                )
+                .with_for_update()
+            )
+            if item is None or item.expires_at > current or (
+                item.resolution != "pending" and item.transcript is None
+            ):
+                continue
+            media = await session.scalar(
+                select(TemporaryMedia)
+                .where(
+                    TemporaryMedia.id == item.media_id,
+                    TemporaryMedia.owner_id == item.owner_id,
+                )
+                .with_for_update()
+            )
+            if media is None:
+                continue
+            await _expire_locked_transcription(
+                session,
+                job,
+                item,
+                media,
+                current=current,
+            )
+            processed += 1
+    return processed

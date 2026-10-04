@@ -15,8 +15,10 @@ from itime.ai.routing_service import (
 )
 from itime.ai.transcription_schemas import (
     TranscriptionPurpose,
+    VoiceTranscriptionResolveInput,
     VoiceTranscriptionUploadOperation,
 )
+from itime.ai.transcription_service import resolve_transcription
 from itime.auth.security import now
 from itime.auth.session import authorized, check_ai_access
 from itime.errors import AppError
@@ -408,3 +410,41 @@ async def get_voice_transcription(
                 status=404,
             )
         return transcription_with_job(*row)
+
+
+@router.post("/{transcription_id}/resolve")
+async def resolve_voice_transcription(
+    transcription_id: UUID,
+    data: VoiceTranscriptionResolveInput,
+    request: Request,
+) -> dict:
+    scope = f"voice_transcription.resolve:{transcription_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        item, job = await resolve_transcription(
+            identity.session,
+            identity.user.id,
+            transcription_id,
+            data,
+        )
+        result = {
+            "operation_id": data.operation_id,
+            **transcription_with_job(item, job),
+        }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result

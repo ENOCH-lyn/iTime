@@ -41,6 +41,7 @@ from itime.ai.transcription_provider import (
 )
 from itime.ai.transcription_service import (
     TranscriptionWorkUnavailable,
+    cleanup_expired_transcriptions,
     complete_transcription_job,
     load_transcription_work,
     reject_or_retry_transcription_job,
@@ -623,6 +624,7 @@ async def run(*, once: bool = False) -> None:
     try:
         while True:
             try:
+                await cleanup_expired_transcriptions(database)
                 await cleanup_expired_media(database)
                 await cleanup_expired_job_events(database)
                 found = await process_one(database, settings)

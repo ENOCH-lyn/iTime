@@ -5,22 +5,25 @@ import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 
+import httpx
 import psycopg
 import pytest
 
+from itime.ai import transcription_service
 from itime.ai.worker import process_one
 from itime.config import Settings
 from itime.database import Database
 from tests import test_voice_transcription_api as api_support
 from tests.conftest import psycopg_url
 from tests.test_audio_validation import wav_bytes
-from tests.test_calendar_series import create_account
+from tests.test_calendar_series import create_account, login_account
 
 transcription_database_url = api_support.transcription_database_url
 transcription_live_server = api_support.transcription_live_server
@@ -204,6 +207,30 @@ def make_due(database_url: str, job_id: str) -> None:
             """,
             (job_id,),
         )
+
+
+def resolve(
+    client,
+    item: dict,
+    *,
+    action: str,
+    operation_id=None,
+    expected_version: int | None = None,
+    transcript_sha256: str | None = None,
+):
+    return client.post(
+        f"/api/v1/voice-transcriptions/{item['id']}/resolve",
+        json={
+            "operation_id": str(operation_id or uuid4()),
+            "expected_version": expected_version or item["version"],
+            "action": action,
+            "transcript_sha256": (
+                transcript_sha256
+                if action == "accept"
+                else None
+            ),
+        },
+    )
 
 
 def test_worker_posts_multipart_falls_back_and_settles_successful_route(
@@ -398,6 +425,379 @@ def test_worker_posts_multipart_falls_back_and_settles_successful_route(
             fallback_id,
             fallback_id,
         ]
+
+
+def test_accept_is_replayable_deletes_audio_and_keeps_text_until_expiry(
+    transcription_client,
+    transcription_database_url,
+    transcription_upstream,
+):
+    create_account(
+        transcription_client,
+        transcription_database_url,
+    )
+    state, origin = transcription_upstream
+    state.reset("success")
+    api_support.publish_transcription_route(
+        transcription_database_url,
+        fallback_price=None,
+        primary_endpoint=f"{origin}/v1",
+    )
+    accepted = api_support.upload(transcription_client, wav_bytes()).json()
+    assert run_worker_once(transcription_database_url)
+    ready = transcription_client.get(
+        "/api/v1/voice-transcriptions/"
+        + accepted["transcription"]["id"]
+    ).json()["transcription"]
+    operation_id = uuid4()
+
+    stale = resolve(
+        transcription_client,
+        ready,
+        action="accept",
+        expected_version=ready["version"] - 1,
+        transcript_sha256=ready["transcript_sha256"],
+    )
+    assert stale.status_code == 409
+    assert (
+        stale.json()["error"]["code"]
+        == "voice_transcription_version_conflict"
+    )
+    changed = resolve(
+        transcription_client,
+        ready,
+        action="accept",
+        transcript_sha256="0" * 64,
+    )
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "voice_transcription_changed"
+
+    response = resolve(
+        transcription_client,
+        ready,
+        action="accept",
+        operation_id=operation_id,
+        transcript_sha256=ready["transcript_sha256"],
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["operation_id"] == str(operation_id)
+    assert body["transcription"]["resolution"] == "accepted"
+    assert body["transcription"]["transcript"] == "周五前完成论文提纲"
+    replay = resolve(
+        transcription_client,
+        ready,
+        action="accept",
+        operation_id=operation_id,
+        transcript_sha256=ready["transcript_sha256"],
+    )
+    assert replay.json() == body
+    conflicting = resolve(
+        transcription_client,
+        ready,
+        action="discard",
+    )
+    assert conflicting.status_code == 200
+    assert conflicting.json()["transcription"]["resolution"] == "accepted"
+    with psycopg.connect(
+        psycopg_url(transcription_database_url)
+    ) as connection:
+        assert connection.execute(
+            """
+            SELECT encrypted_content, deletion_reason
+            FROM temporary_media
+            WHERE id=(SELECT media_id FROM voice_transcriptions WHERE id=%s)
+            """,
+            (ready["id"],),
+        ).fetchone() == (None, "accepted")
+
+    with psycopg.connect(
+        psycopg_url(transcription_database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE voice_transcriptions
+            SET created_at=now() - interval '2 days',
+                expires_at=now() - interval '1 day'
+            WHERE id=%s
+            """,
+            (ready["id"],),
+        )
+    assert run_transcription_cleanup(transcription_database_url) == 1
+    expired = transcription_client.get(
+        f"/api/v1/voice-transcriptions/{ready['id']}"
+    ).json()["transcription"]
+    assert expired["resolution"] == "accepted"
+    assert expired["transcript"] is None
+    assert expired["transcript_sha256"] is None
+    assert expired["text_purged_at"] is not None
+    with psycopg.connect(
+        psycopg_url(transcription_database_url)
+    ) as connection:
+        stored_operation = connection.execute(
+            """
+            SELECT response, response_purged_at
+            FROM user_operations
+            WHERE operation_id=%s
+            """,
+            (operation_id,),
+        ).fetchone()
+        assert stored_operation[0] is None
+        assert stored_operation[1] is not None
+    purged_replay = resolve(
+        transcription_client,
+        ready,
+        action="accept",
+        operation_id=operation_id,
+        transcript_sha256=ready["transcript_sha256"],
+    )
+    assert purged_replay.status_code == 409
+    assert purged_replay.json()["error"]["code"] == "operation_result_expired"
+
+
+def test_discard_cancels_active_job_and_is_owner_scoped(
+    transcription_client,
+    transcription_database_url,
+    transcription_upstream,
+):
+    _, owner_id = create_account(
+        transcription_client,
+        transcription_database_url,
+    )
+    _state, origin = transcription_upstream
+    api_support.publish_transcription_route(
+        transcription_database_url,
+        fallback_price=None,
+        primary_endpoint=f"{origin}/v1",
+    )
+    accepted = api_support.upload(transcription_client, wav_bytes()).json()
+    item = accepted["transcription"]
+
+    response = resolve(
+        transcription_client,
+        item,
+        action="discard",
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["transcription"]["resolution"] == "discarded"
+    assert body["transcription"]["transcript"] is None
+    assert body["transcription"]["text_purged_at"] is not None
+    assert body["job"]["status"] == "cancelled"
+    with psycopg.connect(
+        psycopg_url(transcription_database_url)
+    ) as connection:
+        assert connection.execute(
+            """
+            SELECT encrypted_content, deletion_reason
+            FROM temporary_media
+            WHERE id=(SELECT media_id FROM voice_transcriptions WHERE id=%s)
+            """,
+            (item["id"],),
+        ).fetchone() == (None, "discarded")
+        assert connection.execute(
+            """
+            SELECT status, release_reason
+            FROM ai_quota_reservations WHERE job_id=%s
+            """,
+            (accepted["job"]["id"],),
+        ).fetchone() == ("released", "cancelled")
+        assert connection.execute(
+            "SELECT count(*) FROM ai_quota_ledger_entries WHERE owner_id=%s",
+            (owner_id,),
+        ).fetchone()[0] == 0
+    assert not run_worker_once(transcription_database_url)
+
+
+def test_concurrent_accept_and_discard_leave_one_resolution(
+    transcription_database_url,
+    transcription_live_server,
+    transcription_upstream,
+):
+    with httpx.Client(
+        base_url=transcription_live_server.origin,
+        timeout=15,
+        trust_env=False,
+    ) as setup:
+        email, _owner_id = create_account(
+            setup,
+            transcription_database_url,
+        )
+        _state, origin = transcription_upstream
+        api_support.publish_transcription_route(
+            transcription_database_url,
+            fallback_price=None,
+            primary_endpoint=f"{origin}/v1",
+        )
+        accepted = api_support.upload(setup, wav_bytes()).json()
+        assert run_worker_once(transcription_database_url)
+        ready = setup.get(
+            "/api/v1/voice-transcriptions/"
+            + accepted["transcription"]["id"]
+        ).json()["transcription"]
+
+    with ExitStack() as stack:
+        clients = [
+            stack.enter_context(
+                httpx.Client(
+                    base_url=transcription_live_server.origin,
+                    timeout=15,
+                    trust_env=False,
+                )
+            )
+            for _ in range(2)
+        ]
+        for client in clients:
+            login_account(client, email)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            accept_future = pool.submit(
+                resolve,
+                clients[0],
+                ready,
+                action="accept",
+                transcript_sha256=ready["transcript_sha256"],
+            )
+            discard_future = pool.submit(
+                resolve,
+                clients[1],
+                ready,
+                action="discard",
+            )
+            responses = [accept_future.result(), discard_future.result()]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    resolutions = {
+        response.json()["transcription"]["resolution"]
+        for response in responses
+    }
+    assert len(resolutions) == 1
+    assert resolutions <= {"accepted", "discarded"}
+
+
+def run_transcription_cleanup(database_url: str) -> int:
+    async def execute() -> int:
+        database = Database(
+            Settings(database_url=database_url, environment="test")
+        )
+        try:
+            return await transcription_service.cleanup_expired_transcriptions(
+                database
+            )
+        finally:
+            await database.close()
+
+    return asyncio.run(execute())
+
+
+def test_two_cleanup_workers_expire_each_transcription_once(
+    transcription_client,
+    transcription_database_url,
+    transcription_upstream,
+):
+    create_account(
+        transcription_client,
+        transcription_database_url,
+    )
+    state, origin = transcription_upstream
+    state.reset("success", "success")
+    api_support.publish_transcription_route(
+        transcription_database_url,
+        fallback_price=None,
+        primary_endpoint=f"{origin}/v1",
+    )
+    first = api_support.upload(transcription_client, wav_bytes()).json()
+    assert run_worker_once(transcription_database_url)
+    second = api_support.upload(transcription_client, wav_bytes()).json()
+    assert run_worker_once(transcription_database_url)
+    first_ready = transcription_client.get(
+        "/api/v1/voice-transcriptions/"
+        + first["transcription"]["id"]
+    ).json()["transcription"]
+    accepted = resolve(
+        transcription_client,
+        first_ready,
+        action="accept",
+        transcript_sha256=first_ready["transcript_sha256"],
+    )
+    assert accepted.status_code == 200
+    queued = api_support.upload(transcription_client, wav_bytes()).json()
+    item_ids = [
+        first["transcription"]["id"],
+        second["transcription"]["id"],
+        queued["transcription"]["id"],
+    ]
+    with psycopg.connect(
+        psycopg_url(transcription_database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE voice_transcriptions
+            SET created_at=now() - interval '2 days',
+                expires_at=now() - interval '1 day'
+            WHERE id = ANY(%s::uuid[])
+            """,
+            (item_ids,),
+        )
+        connection.execute(
+            """
+            UPDATE temporary_media
+            SET expires_at=now() - interval '1 day'
+            WHERE id IN (
+                SELECT media_id FROM voice_transcriptions
+                WHERE id = ANY(%s::uuid[])
+            )
+            """,
+            (item_ids,),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        counts = list(
+            pool.map(
+                run_transcription_cleanup,
+                [transcription_database_url] * 2,
+            )
+        )
+    assert sum(counts) == 3
+    with psycopg.connect(
+        psycopg_url(transcription_database_url)
+    ) as connection:
+        rows = connection.execute(
+            """
+            SELECT transcription.id, transcription.resolution,
+                   transcription.transcript, transcription.text_purged_at,
+                   job.status, media.encrypted_content, media.deletion_reason
+            FROM voice_transcriptions AS transcription
+            JOIN ai_jobs AS job ON job.id=transcription.job_id
+            JOIN temporary_media AS media ON media.id=transcription.media_id
+            WHERE transcription.id = ANY(%s::uuid[])
+            ORDER BY transcription.id
+            """,
+            (item_ids,),
+        ).fetchall()
+        by_id = {str(row[0]): row[1:] for row in rows}
+        assert by_id[first["transcription"]["id"]][0] == "accepted"
+        assert by_id[first["transcription"]["id"]][1] is None
+        assert by_id[second["transcription"]["id"]][0] == "expired"
+        assert by_id[second["transcription"]["id"]][1] is None
+        assert by_id[queued["transcription"]["id"]][0] == "expired"
+        assert by_id[queued["transcription"]["id"]][3] == "timed_out"
+        assert all(row[2] is not None for row in by_id.values())
+        assert by_id[first["transcription"]["id"]][4:] == (
+            None,
+            "accepted",
+        )
+        assert by_id[second["transcription"]["id"]][4:] == (
+            None,
+            "expired",
+        )
+        assert by_id[queued["transcription"]["id"]][4:] == (
+            None,
+            "expired",
+        )
 
 
 @pytest.mark.parametrize(
@@ -671,6 +1071,8 @@ def test_cancelled_request_cannot_publish_late_transcript(
     assert result["job"]["status"] == "cancelled"
     assert result["job"]["output"] is None
     assert result["transcription"]["transcript"] is None
+    assert result["transcription"]["resolution"] == "discarded"
+    assert result["transcription"]["text_purged_at"] is not None
     with psycopg.connect(
         psycopg_url(transcription_database_url)
     ) as connection:
@@ -688,6 +1090,14 @@ def test_cancelled_request_cannot_publish_late_transcript(
             """,
             (job_id,),
         ).fetchone() == ("released", "cancelled")
+        assert connection.execute(
+            """
+            SELECT encrypted_content, deletion_reason
+            FROM temporary_media
+            WHERE id=(SELECT input_media_id FROM ai_jobs WHERE id=%s)
+            """,
+            (job_id,),
+        ).fetchone() == (None, "cancelled")
 
 
 def test_quality_opt_out_keeps_technical_log_without_sample(
