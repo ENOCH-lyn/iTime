@@ -144,14 +144,18 @@ export class BrowserVoiceRecorder implements VoiceRecorder {
         this.stopRejecter = reject
         this.worklet?.port.postMessage({ type: 'stop' })
         window.setTimeout(() => {
-          if (!this.stopRejecter) return
+          if (!this.stopRejecter || !this.stopResolver) return
           const rejectPending = this.stopRejecter
+          const resolvePending = this.stopResolver
           this.stopResolver = null
           this.stopRejecter = null
-          rejectPending(new VoiceRecorderError(
-            'audio_stop_failed',
-            '录音整理超时，请重新录制。',
-          ))
+          if (this.chunks.some(chunk => chunk.length > 0)) resolvePending()
+          else {
+            rejectPending(new VoiceRecorderError(
+              'audio_stop_failed',
+              '录音整理超时，请重新录制。',
+            ))
+          }
         }, 1_500)
       })
       if (generation !== this.generation) {

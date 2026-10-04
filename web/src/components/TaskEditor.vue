@@ -23,6 +23,7 @@ import {
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import TaskScheduleEditor from './TaskScheduleEditor.vue'
+import VoiceTranscriptionControl from './VoiceTranscriptionControl.vue'
 import { ApiError, failure, localFailure, type Failure } from '../lib/api'
 import { identity } from '../lib/auth'
 import { appendTaskOperation } from '../lib/sync-queue'
@@ -208,6 +209,16 @@ function clearMessages() {
   error.value = null
   success.value = ''
   latest.value = null
+}
+
+function replaceVoiceTitle(text: string) {
+  values.title = text
+  delete fieldErrors.title
+}
+
+function appendVoiceTitle(text: string) {
+  values.title = [values.title.trim(), text].filter(Boolean).join('\n')
+  delete fieldErrors.title
 }
 
 function parsedLabels() {
@@ -754,10 +765,21 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
         <section class="editor-section primary-fields">
           <div class="field">
             <label for="task-title">任务名称</label>
-            <input id="task-title" v-model="values.title" maxlength="200" :disabled="!!pendingAction"
+            <textarea id="task-title" v-model="values.title" class="task-title-input"
+              rows="1" maxlength="200" :disabled="!!pendingAction"
               :aria-invalid="!!fieldErrors.title" :aria-describedby="fieldErrors.title ? 'task-title-error' : undefined"
-              placeholder="例如：完成论文提纲" />
+              placeholder="例如：完成论文提纲"></textarea>
             <p v-if="fieldErrors.title" id="task-title-error" class="field-error">{{ fieldErrors.title }}</p>
+            <VoiceTranscriptionControl
+              v-if="editable"
+              purpose="task_title"
+              target-label="任务名称"
+              :field-limit="200"
+              :current-text="values.title"
+              :disabled="!!pendingAction"
+              @replace="replaceVoiceTitle"
+              @append="appendVoiceTitle"
+            />
           </div>
           <div class="field">
             <label for="task-description">正文 <span class="muted">可选</span></label>

@@ -726,6 +726,11 @@
   min-height: 44px;
 }
 
+.task-editor textarea.task-title-input {
+  min-height: 44px;
+  max-height: 112px;
+}
+
 .task-editor input:focus,
 .task-editor textarea:focus,
 .project-form input:focus,
@@ -734,6 +739,7 @@
 }
 
 .task-editor input[aria-invalid="true"],
+.task-editor textarea[aria-invalid="true"],
 .project-form input[aria-invalid="true"] {
   border-color: var(--error);
 }

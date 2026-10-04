@@ -655,6 +655,9 @@ onBeforeUnmount(() => {
         :disabled="disabled"
         :aria-invalid="replacementTooLong"
       />
+      <p v-if="replacementTooLong" class="field-error">
+        {{ targetLabel }}不能超过 {{ fieldLimit }} 个字符，请先缩短转写草稿。
+      </p>
       <p v-if="hasCurrentText && appendTooLong" class="field-error">
         追加后超过 {{ fieldLimit }} 个字符，请先缩短草稿或选择替换。
       </p>
