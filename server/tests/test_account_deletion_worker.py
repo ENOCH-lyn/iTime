@@ -103,6 +103,8 @@ def seed_personal_data(
     project_id = uuid4()
     task_id = uuid4()
     source_id = uuid4()
+    subscription_event_id = uuid4()
+    subscription_exception_id = uuid4()
     conversation_id = uuid4()
     focus_id = uuid4()
     memory_id = uuid4()
@@ -207,6 +209,37 @@ def seed_personal_data(
             b"private-encrypted-url",
             "a" * 64,
             current + timedelta(hours=1),
+        ),
+    )
+    connection.execute(
+        """
+        INSERT INTO calendar_subscription_events (
+            id, source_id, owner_id, uid, recurrence_id,
+            baseline, content_sha256, first_seen_generation,
+            last_seen_generation
+        ) VALUES (
+            %s, %s, %s, 'deletion-event', '',
+            '{}'::jsonb, %s, 1, 1
+        )
+        """,
+        (subscription_event_id, source_id, owner_id, "d" * 64),
+    )
+    connection.execute(
+        """
+        INSERT INTO calendar_subscription_exceptions (
+            id, owner_id, master_event_id, source_occurrence_key,
+            original_start_at, original_end_at, original_all_day,
+            action, version
+        ) VALUES (
+            %s, %s, %s, 'INSTANT:2026-10-06T09:00:00Z',
+            '2026-10-06T09:00:00Z', '2026-10-06T10:00:00Z',
+            false, 'cancelled', 1
+        )
+        """,
+        (
+            subscription_exception_id,
+            owner_id,
+            subscription_event_id,
         ),
     )
     connection.execute(
@@ -458,6 +491,7 @@ def test_two_workers_purge_due_account_and_leave_minimal_receipts(admin_url):
             assert populated_tables >= {
                 "ai_conversations",
                 "calendar_sources",
+                "calendar_subscription_exceptions",
                 "data_export_jobs",
                 "focus_sessions",
                 "memories",

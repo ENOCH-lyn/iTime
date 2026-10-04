@@ -60,6 +60,8 @@ def seed_export_facts(
 ) -> dict[str, str]:
     marker = f"owner-{uuid4().hex}"
     source_id = uuid4()
+    subscription_event_id = uuid4()
+    subscription_exception_id = uuid4()
     conversation_id = uuid4()
     focus_id = uuid4()
     memory_id = uuid4()
@@ -95,6 +97,57 @@ def seed_export_facts(
                 subscription_url_hmac(settings, subscription_url),
                 current + timedelta(hours=6),
             ),
+        )
+        connection.execute(
+            """
+            INSERT INTO calendar_subscription_events (
+                id, source_id, owner_id, uid, recurrence_id,
+                baseline, content_sha256, first_seen_generation,
+                last_seen_generation
+            ) VALUES (
+                %s, %s, %s, 'export-event', '',
+                %s::jsonb, %s, 1, 1
+            )
+            """,
+            (
+                subscription_event_id,
+                source_id,
+                owner_id,
+                json.dumps(
+                    {
+                        "name": marker,
+                        "description": "",
+                        "location": "",
+                        "busy": True,
+                        "status": "confirmed",
+                        "start": {
+                            "kind": "date-time",
+                            "semantic": "utc",
+                            "local": "2026-10-05T09:00:00",
+                            "time_zone": "UTC",
+                        },
+                        "duration": {"kind": "seconds", "value": 3600},
+                        "rrule": "FREQ=DAILY;COUNT=2",
+                        "rdates": [],
+                        "exdates": [],
+                    }
+                ),
+                "c" * 64,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO calendar_subscription_exceptions (
+                id, owner_id, master_event_id, source_occurrence_key,
+                original_start_at, original_end_at, original_all_day,
+                action, override_name, version
+            ) VALUES (
+                %s, %s, %s, 'INSTANT:2026-10-06T09:00:00Z',
+                '2026-10-06T09:00:00Z', '2026-10-06T10:00:00Z',
+                false, 'overridden', '本人单次名称', 1
+            )
+            """,
+            (subscription_exception_id, owner_id, subscription_event_id),
         )
         connection.execute(
             """
@@ -228,6 +281,37 @@ def test_snapshot_covers_user_data_and_excludes_secrets(
     assert payload["tasks"]["links"][0]["extracted_text"] == "导出网页正文"
     assert payload["tasks"]["links"][0]["content_sha256"] == "a" * 64
     assert payload["calendar"]["subscriptions"][0]["url"] == facts["subscription_url"]
+    assert payload["calendar"]["subscription_exceptions"] == [
+        {
+            "id": payload["calendar"]["subscription_exceptions"][0]["id"],
+            "master_event_id": payload["calendar"]["subscription_events"][0]["id"],
+            "source_occurrence_key": "INSTANT:2026-10-06T09:00:00Z",
+            "original_start_at": "2026-10-06T09:00:00Z",
+            "original_end_at": "2026-10-06T10:00:00Z",
+            "original_all_day": False,
+            "action": "overridden",
+            "moved_all_day": None,
+            "moved_start_date": None,
+            "moved_end_date": None,
+            "moved_starts_at": None,
+            "moved_ends_at": None,
+            "moved_time_zone": None,
+            "moved_ambiguous_offset_minutes": None,
+            "moved_start_at": None,
+            "moved_end_at": None,
+            "override_name": "本人单次名称",
+            "override_description": None,
+            "override_location": None,
+            "override_busy": None,
+            "version": 1,
+            "created_at": payload["calendar"]["subscription_exceptions"][0][
+                "created_at"
+            ],
+            "updated_at": payload["calendar"]["subscription_exceptions"][0][
+                "updated_at"
+            ],
+        }
+    ]
     assert payload["conversations"]["messages"][0]["content"] == facts["marker"]
     assert payload["execution"]["focus_sessions"][0]["title_snapshot"] == facts["marker"]
     assert payload["reviews"]["memories"][0]["content"] == f"{facts['marker']}-memory"

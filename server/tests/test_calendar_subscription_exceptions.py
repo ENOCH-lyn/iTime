@@ -2,7 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -116,6 +116,14 @@ def test_subscription_occurrence_cancel_move_reset_and_conflicts(
     assert target["subscription_master_event_id"] == target["subscription_event_id"]
     assert target["source_version"] == 2
     assert target["source_status"] == "scheduled"
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "DELETE FROM change_events WHERE owner_id=%s",
+            (owner_id,),
+        )
 
     cancel_operation = uuid4()
     cancelled_response = client.post(
@@ -249,6 +257,19 @@ def test_subscription_occurrence_cancel_move_reset_and_conflicts(
             """,
             (owner_id,),
         ).fetchone()[0] == 0
+        assert connection.execute(
+            """
+            SELECT entity_type, entity_id, action, entity_version
+            FROM change_events
+            WHERE owner_id=%s AND entity_type='calendar_source'
+            ORDER BY sequence
+            """,
+            (owner_id,),
+        ).fetchall() == [
+            ("calendar_source", UUID(source_id), "updated", 3),
+            ("calendar_source", UUID(source_id), "updated", 4),
+            ("calendar_source", UUID(source_id), "updated", 5),
+        ]
 
 
 def test_subscription_exception_survives_rid_change_and_source_cancellation(

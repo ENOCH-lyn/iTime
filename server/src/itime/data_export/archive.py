@@ -380,6 +380,132 @@ def _baseline_start(spec: dict) -> datetime | date:
     )
 
 
+def _subscription_occurrence_identity(value: str) -> datetime | date:
+    if value.startswith("DATE:"):
+        return _parse_date(value.removeprefix("DATE:"))
+    if value.startswith("FLOATING:"):
+        return datetime.fromisoformat(value.removeprefix("FLOATING:"))
+    if value.startswith("INSTANT:"):
+        return _parse_datetime(value.removeprefix("INSTANT:"))
+    raise ValueError("unsupported subscription occurrence key")
+
+
+def _subscription_effective_fields(
+    master: dict,
+    detached: dict | None,
+    overrides: dict[str, dict],
+) -> dict:
+    master_baseline = master["baseline"]
+    baseline = (
+        {**master_baseline, **detached["baseline"]}
+        if detached is not None and detached.get("baseline") is not None
+        else master_baseline
+    )
+    fields = {
+        key: baseline.get(key, master_baseline.get(key))
+        for key in ("name", "description", "location", "busy")
+    }
+    local_override = overrides.get(
+        detached["id"] if detached is not None else master["id"],
+        {},
+    )
+    fields.update(local_override)
+    return fields
+
+
+def _subscription_exception_event(
+    master: dict,
+    detached: dict | None,
+    exception: dict,
+    overrides: dict[str, dict],
+    snapshot_at: datetime,
+) -> Event:
+    original_start_at = _parse_datetime(exception["original_start_at"])
+    if (
+        detached is not None
+        and detached.get("missing_at") is not None
+        and original_start_at >= _parse_datetime(detached["missing_at"])
+    ):
+        detached = None
+    fields = _subscription_effective_fields(master, detached, overrides)
+    if exception["action"] == "overridden":
+        for field, key in (
+            ("name", "override_name"),
+            ("description", "override_description"),
+            ("location", "override_location"),
+            ("busy", "override_busy"),
+        ):
+            if exception.get(key) is not None:
+                fields[field] = exception[key]
+    recurrence_id = _subscription_occurrence_identity(
+        exception["source_occurrence_key"]
+    )
+    if exception["action"] == "moved":
+        if exception.get("moved_all_day"):
+            starts_at: datetime | date = _parse_date(
+                exception["moved_start_date"]
+            )
+            ends_at: datetime | date = _parse_date(
+                exception["moved_end_date"]
+            )
+        else:
+            starts_at = _local_datetime(
+                exception["moved_start_date"],
+                exception["moved_starts_at"],
+                exception["moved_time_zone"],
+            )
+            ends_at = _local_datetime(
+                exception["moved_end_date"],
+                exception["moved_ends_at"],
+                exception["moved_time_zone"],
+            )
+    elif detached is not None and detached.get("baseline") is not None:
+        baseline = {**master["baseline"], **detached["baseline"]}
+        starts_at = _baseline_start(baseline["start"])
+        duration = baseline["duration"]
+        ends_at = starts_at + timedelta(
+            **{
+                "days" if duration["kind"] == "days" else "seconds":
+                int(duration["value"])
+            }
+        )
+    else:
+        starts_at = _parse_datetime(exception["original_start_at"])
+        ends_at = _parse_datetime(exception["original_end_at"])
+    item = _event(
+        uid=f"subscription-{master['source_id']}-{master['uid']}@itime",
+        summary=fields.get("name") or "未命名安排",
+        snapshot_at=snapshot_at,
+        kind="calendar_subscription",
+        entity_id=exception["id"],
+        starts_at=starts_at,
+        ends_at=ends_at,
+        description=fields.get("description") or "",
+        location=fields.get("location") or "",
+    )
+    item.add("recurrence-id", recurrence_id)
+    item.add("x-itime-source-id", master["source_id"])
+    item.add("transp", "OPAQUE" if fields.get("busy", True) else "TRANSPARENT")
+    source_event = detached or master
+    source_cancelled = (
+        (source_event.get("baseline") or {}).get("status") == "cancelled"
+        or (
+            source_event.get("source_status") == "cancelled"
+            and (
+                source_event.get("cancelled_at") is None
+                or original_start_at
+                >= _parse_datetime(source_event["cancelled_at"])
+            )
+        )
+    )
+    if (
+        exception["action"] == "cancelled"
+        or (exception["action"] != "moved" and source_cancelled)
+    ):
+        item.add("status", "CANCELLED")
+    return item
+
+
 def _subscription_events(
     snapshot: dict,
     snapshot_at: datetime,
@@ -388,9 +514,36 @@ def _subscription_events(
         item["event_id"]: item["values"]
         for item in snapshot["calendar"]["subscription_overrides"]
     }
+    source_events = snapshot["calendar"]["subscription_events"]
+    masters = {
+        item["id"]: item
+        for item in source_events
+        if not item.get("recurrence_id")
+    }
+    masters_by_identity = {
+        (item["source_id"], item["uid"]): item
+        for item in masters.values()
+    }
+    detached_by_identity = {
+        (item["source_id"], item["uid"], item["recurrence_id"]): item
+        for item in source_events
+        if item.get("recurrence_id")
+    }
+    exceptions = snapshot["calendar"].get("subscription_exceptions", [])
+    replaced_keys = {
+        (item["master_event_id"], item["source_occurrence_key"])
+        for item in exceptions
+    }
     events: list[Event] = []
     warnings: list[dict[str, str]] = []
-    for source in snapshot["calendar"]["subscription_events"]:
+    for source in source_events:
+        master = masters_by_identity.get((source["source_id"], source["uid"]))
+        if (
+            source.get("recurrence_id")
+            and master is not None
+            and (master["id"], source["recurrence_id"]) in replaced_keys
+        ):
+            continue
         baseline = source.get("baseline")
         if (
             not isinstance(baseline, dict)
@@ -438,8 +591,17 @@ def _subscription_events(
                 location=fields.get("location") or "",
             )
             item.add("x-itime-source-id", source["source_id"])
+            item.add(
+                "transp",
+                "OPAQUE" if fields.get("busy", True) else "TRANSPARENT",
+            )
             if source.get("recurrence_id"):
-                item.add("recurrence-id", _baseline_start(baseline["start"]))
+                item.add(
+                    "recurrence-id",
+                    _subscription_occurrence_identity(
+                        source["recurrence_id"]
+                    ),
+                )
             elif baseline.get("rrule"):
                 item.add("rrule", vRecur.from_ical(baseline["rrule"]))
                 for name, values in (
@@ -454,6 +616,40 @@ def _subscription_events(
                 {
                     "code": "subscription_event_not_exported_to_ics",
                     "entity_id": source["id"],
+                }
+            )
+    for exception in exceptions:
+        master = masters.get(exception["master_event_id"])
+        if master is None or not isinstance(master.get("baseline"), dict):
+            warnings.append(
+                {
+                    "code": "subscription_exception_not_exported_to_ics",
+                    "entity_id": exception["id"],
+                }
+            )
+            continue
+        detached = detached_by_identity.get(
+            (
+                master["source_id"],
+                master["uid"],
+                exception["source_occurrence_key"],
+            )
+        )
+        try:
+            events.append(
+                _subscription_exception_event(
+                    master,
+                    detached,
+                    exception,
+                    overrides,
+                    snapshot_at,
+                )
+            )
+        except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError):
+            warnings.append(
+                {
+                    "code": "subscription_exception_not_exported_to_ics",
+                    "entity_id": exception["id"],
                 }
             )
     return events, warnings
@@ -640,6 +836,30 @@ def _calendar_csv(snapshot: dict) -> list[dict]:
             "source_type": "subscription",
         }
         for item in snapshot["calendar"]["subscription_events"]
+    )
+    rows.extend(
+        {
+            "kind": "subscription_exception",
+            "id": item["id"],
+            "parent_id": item["master_event_id"],
+            "title": item.get("override_name") or "",
+            "description": item.get("override_description") or "",
+            "location": item.get("override_location") or "",
+            "start_date": (
+                item.get("moved_start_date")
+                or item["original_start_at"][:10]
+            ),
+            "start_time": item.get("moved_starts_at") or "",
+            "end_time": (
+                item.get("moved_ends_at")
+                or item.get("moved_end_date")
+                or item["original_end_at"]
+            ),
+            "time_zone": item.get("moved_time_zone") or "",
+            "status": item["action"],
+            "source_type": "subscription",
+        }
+        for item in snapshot["calendar"].get("subscription_exceptions", [])
     )
     return rows
 

@@ -2,6 +2,7 @@ import codecs
 import csv
 import io
 import json
+from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import uuid4
 from zipfile import ZipFile
@@ -95,6 +96,7 @@ def sample_snapshot() -> dict:
             "subscription_refreshes": [],
             "subscription_events": [],
             "subscription_overrides": [],
+            "subscription_exceptions": [],
             "series": [
                 {
                     "id": str(uuid4()),
@@ -242,6 +244,149 @@ def test_archive_contains_verified_json_csv_ics_and_markdown():
         assert "整理 \\*任务\\*" in conversations
         assert "上午工作" in package.read("markdown/memories.md").decode()
         assert "敏感个人信息" in package.read("README.txt").decode()
+
+
+def test_archive_composes_subscription_occurrence_exceptions():
+    snapshot = sample_snapshot()
+    source_id = str(uuid4())
+    master_id = str(uuid4())
+    snapshot["calendar"]["subscription_events"] = [
+        {
+            "id": master_id,
+            "source_id": source_id,
+            "uid": "course",
+            "recurrence_id": "",
+            "baseline": {
+                "name": "来源课程",
+                "description": "来源说明",
+                "location": "来源教室",
+                "busy": True,
+                "status": "confirmed",
+                "start": {
+                    "kind": "datetime",
+                    "semantic": "utc",
+                    "local": "2026-10-05T09:00:00",
+                    "time_zone": "Asia/Shanghai",
+                    "utc": "2026-10-05T01:00:00Z",
+                },
+                "duration": {"kind": "seconds", "value": 3600},
+                "rrule": "FREQ=DAILY;COUNT=4",
+                "rdates": [],
+                "exdates": [],
+            },
+            "parse_status": "valid",
+            "source_status": "active",
+        }
+    ]
+    snapshot["calendar"]["subscription_overrides"] = [
+        {
+            "event_id": master_id,
+            "values": {"location": "本地系列地点"},
+            "source_values": {"location": "来源教室"},
+        }
+    ]
+
+    def exception(action: str, day: int, **changes):
+        values = {
+            "id": str(uuid4()),
+            "master_event_id": master_id,
+            "source_occurrence_key": (
+                f"INSTANT:2026-10-{day:02d}T01:00:00Z"
+            ),
+            "original_start_at": f"2026-10-{day:02d}T01:00:00Z",
+            "original_end_at": f"2026-10-{day:02d}T02:00:00Z",
+            "original_all_day": False,
+            "action": action,
+            "moved_all_day": None,
+            "moved_start_date": None,
+            "moved_end_date": None,
+            "moved_starts_at": None,
+            "moved_ends_at": None,
+            "moved_time_zone": None,
+            "moved_ambiguous_offset_minutes": None,
+            "moved_start_at": None,
+            "moved_end_at": None,
+            "override_name": None,
+            "override_description": None,
+            "override_location": None,
+            "override_busy": None,
+        }
+        values.update(changes)
+        return values
+
+    snapshot["calendar"]["subscription_exceptions"] = [
+        exception("cancelled", 6),
+        exception(
+            "moved",
+            7,
+            moved_all_day=False,
+            moved_start_date="2026-10-08",
+            moved_end_date="2026-10-08",
+            moved_starts_at="15:00:00",
+            moved_ends_at="16:00:00",
+            moved_time_zone="Asia/Shanghai",
+            moved_start_at="2026-10-08T07:00:00Z",
+            moved_end_at="2026-10-08T08:00:00Z",
+        ),
+        exception(
+            "overridden",
+            8,
+            override_name="本地单次名称",
+            override_description="本地单次说明",
+        ),
+    ]
+    archive = build_export_archive(
+        snapshot,
+        uuid4(),
+        ExportLimits(
+            max_uncompressed_bytes=1_000_000,
+            max_archive_bytes=500_000,
+        ),
+    )
+    with ZipFile(io.BytesIO(archive.content)) as package:
+        rows = list(
+            csv.DictReader(
+                io.StringIO(
+                    package.read("csv/calendar-events.csv").decode("utf-8-sig")
+                )
+            )
+        )
+        exception_rows = [
+            row for row in rows if row["kind"] == "subscription_exception"
+        ]
+        assert len(exception_rows) == 3
+        assert {row["status"] for row in exception_rows} == {
+            "cancelled",
+            "moved",
+            "overridden",
+        }
+
+        exported = Calendar.from_ical(package.read("calendar/itime.ics"))
+        events = [
+            item
+            for item in exported.walk("VEVENT")
+            if str(item.get("x-itime-kind")) == "calendar_subscription"
+        ]
+        assert len(events) == 4
+        detached = {
+            item.decoded("recurrence-id").astimezone(UTC): item
+            for item in events
+            if item.get("recurrence-id") is not None
+        }
+        cancelled = detached[datetime(2026, 10, 6, 1, tzinfo=UTC)]
+        assert str(cancelled.get("status")) == "CANCELLED"
+        moved = detached[datetime(2026, 10, 7, 1, tzinfo=UTC)]
+        assert moved.decoded("dtstart").astimezone(UTC) == datetime(
+            2026,
+            10,
+            8,
+            7,
+            tzinfo=UTC,
+        )
+        overridden = detached[datetime(2026, 10, 8, 1, tzinfo=UTC)]
+        assert str(overridden.get("summary")) == "本地单次名称"
+        assert str(overridden.get("description")) == "本地单次说明"
+        assert str(overridden.get("location")) == "本地系列地点"
 
 
 def test_archive_is_stable_and_rejects_size_limits():
