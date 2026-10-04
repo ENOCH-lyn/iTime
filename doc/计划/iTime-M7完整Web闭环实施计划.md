@@ -223,7 +223,7 @@ git commit -m "test: 验证完整 Web 用户闭环"
 - Modify: `doc/计划/iTime-开发总计划.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: 在真实 Chrome 重跑完整闭环**
+- [x] **Step 1: 在真实 Chrome 重跑完整闭环**
 
 Run:
 
@@ -235,14 +235,14 @@ ITIME_E2E_BROWSER_CHANNEL=chrome pnpm exec playwright test \
 
 Expected: `1 passed`，记录 Google Chrome 实际版本、视口和命令。
 
-- [ ] **Step 2: 在真实 Edge 重跑完整闭环**
+- [x] **Step 2: 在真实 Edge 重跑完整闭环**
 
-先用 `ls -d "/Applications/Microsoft Edge.app"` 确认本机状态。仅在本地测试环境安装浏览器，
-不改项目依赖；安装后运行：
+先检查系统和用户应用目录。仅在本地测试环境安装浏览器，不改项目依赖；用户级安装后运行：
 
 ```bash
 cd web
-ITIME_E2E_BROWSER_CHANNEL=msedge pnpm exec playwright test \
+ITIME_E2E_BROWSER_EXECUTABLE_PATH="$HOME/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" \
+  pnpm exec playwright test \
   e2e/full-user-journey.spec.ts --project=desktop
 ```
 

@@ -5,6 +5,7 @@ process.env.ITIME_E2E_BOOTSTRAP_FILE ??=
 
 const browserChannel = process.env.ITIME_E2E_BROWSER_CHANNEL
 const browserUse = browserChannel ? { channel: browserChannel } : {}
+const browserExecutablePath = process.env.ITIME_E2E_BROWSER_EXECUTABLE_PATH
 
 export default defineConfig({
   testDir: './e2e',
@@ -20,6 +21,9 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'only-on-failure',
     launchOptions: {
+      ...(browserExecutablePath
+        ? { executablePath: browserExecutablePath }
+        : {}),
       args: [
         '--use-fake-device-for-media-stream',
         '--use-fake-ui-for-media-stream',
