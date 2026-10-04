@@ -16,7 +16,7 @@
 已交付：
 
 1. AI 配置版本内的价格快照。
-2. 对话与截图 provider 的 usage 兼容解析。
+2. 文本/截图 provider 的 Token usage 兼容解析，以及转写服务返回时长的受限对账元数据。
 3. 每个实际 worker attempt 的平台成本事实。
 4. 真实 PostgreSQL、HTTP、重试、取消和租约竞态测试。
 
@@ -37,10 +37,12 @@
 
 新增价格字段：
 
+- `pricing_basis=token|audio_minute`，与能力互斥。
 - `price_currency`：三个大写 ASCII 字母；首版不假定固定币种。
 - `input_price_nanos_per_million_tokens`。
 - `cached_input_price_nanos_per_million_tokens`。
 - `output_price_nanos_per_million_tokens`。
+- `audio_price_nanos_per_minute`：仅 `transcription` 使用。
 
 金额以一币种单位的十亿分之一为最小存储单位，所有计算使用整数。后台 API 和 UI 使用每百万 Token 的十进制定价字符串，服务端精确转换为纳币种单位，不接受二进制浮点计算。缓存输入价格未单独填写时，在创建版本时物化为普通输入价格。
 
@@ -82,7 +84,7 @@ usage 有三种来源状态，计价状态与其分开：
 
 当 usage 可用或可估算、但绑定的旧配置没有价格时，来源仍为 `provider` 或 `estimated`，金额状态为“未定价”且金额保持 `NULL`。
 
-无效或缺失 usage 不能使已经校验通过的业务结果失败，也不能触发第二次模型调用。对话流请求发送 `stream_options.include_usage=true`，并接受 `[DONE]` 前 `choices=[]` 的 usage-only 事件；一次性 JSON 和截图响应读取顶层 usage。
+无效或缺失 usage 不能使已经校验通过的业务结果失败，也不能触发第二次模型调用。对话流请求发送 `stream_options.include_usage=true`，并接受 `[DONE]` 前 `choices=[]` 的 usage-only 事件；一次性 JSON 和截图响应读取顶层 usage。转写的用户结算只使用服务端校验 WAV 得到的 `duration_ms`，供应商返回时长仅作为受限对账详情，不覆盖计费事实。
 
 ## 4. 逐尝试成本事实
 
@@ -106,6 +108,15 @@ total_cost_nanos = ceil(numerator / 1_000_000)
 ```
 
 先汇总全部分量再向上取整，避免逐分量舍入放大。所有乘法在应用层检查 `BIGINT` 上限，数据库同时约束非负值和总额一致性。
+
+转写使用独立音频分钟分支：
+
+```text
+audio_cost_nanos =
+    ceil(audio_duration_ms * audio_price_nanos_per_minute / 60_000)
+```
+
+`AIProviderCost` 同时冻结 `billing_basis`、服务端实测时长和每分钟价格；Token 字段与音频字段互斥。
 
 ### 4.1 请求是否已经发出
 
@@ -140,7 +151,7 @@ worker 在端点策略、DNS 和密钥解密完成后、真正开始 HTTP 请求
 
 ## 6. 活动日、预留与成功结算
 
-已有 `activity_day_at()` 按用户 IANA 时区和当地 04:00 计算活动日。对话和截图接单必须冻结接单时的时间点、用户时区和边界分钟，不能在结算时使用用户后来修改的时区。
+已有 `activity_day_at()` 按用户 IANA 时区和当地 04:00 计算活动日。对话、截图和转写接单必须冻结接单时的时间点、用户时区和边界分钟，不能在结算时使用用户后来修改的时区。
 
 采用以下结算规则：
 
@@ -169,9 +180,9 @@ worker 在端点策略、DNS 和密钥解密完成后、真正开始 HTTP 请求
 接单按 `User → Conversation/TimeSettings → DailyAllowance → 新建 Job/Reservation`，终态按 `AIJob → 业务投影/Attempt/ProviderCost → Reservation → DailyAllowance → Ledger`，管理调整按 `管理员 → operation advisory lock → 普通目标 User → DailyAllowance → Adjustment/Ledger` 加锁。管理员账号不参与用户额度调整，避免两个管理员互为目标时形成锁环。任何路径都不得先锁额度再回头锁既有作业。接单、作业创建和预留同一事务；成功结果、provider cost、结算账本和业务结果同一事务；失败/取消终态与释放同一事务。
 
 预留估算使用独立版本：冻结完整 provider 请求，输入按保守 UTF-8/图像规则估算，输出按每条主备
-配置的 `max_output_tokens` 计价，再选择 `reserved_nanos` 最大者。现有终态 usage 估算器不能
-直接当作最大预算。未发布额度策略、主备任一配置未定价或币种不一致时拒绝新接单，不创建消息、
-媒体、作业或预留。
+配置的 `max_output_tokens` 计价；转写则按服务端实测音频时长和每条路由的分钟价格估算，再选择
+`reserved_nanos` 最大者。现有终态 usage 估算器不能直接当作最大预算。未发布额度策略、主备
+任一配置未定价或币种不一致时拒绝新接单，不创建消息、媒体、作业或预留。
 
 ## 7. API 与界面
 
@@ -181,6 +192,7 @@ worker 在端点策略、DNS 和密钥解密完成后、真正开始 HTTP 请求
 - 每百万普通输入 Token 价格。
 - 每百万缓存输入 Token 价格。
 - 每百万输出 Token 价格。
+- 转写能力的每分钟音频价格。
 - 是否已配置价格。
 
 Key 仍只返回已配置状态。价格字段属于不可变版本；修改价格需要创建、测试并发布新版本。配置历史显示价格和币种，避免管理员误把旧价格用于新作业。
@@ -199,7 +211,7 @@ Key 仍只返回已配置状态。价格字段属于不可变版本；修改价�
 
 - 价格字符串精确转换、九位小数上限、负数/溢出/非法币种。
 - 价格随配置版本不可变，发布和回滚不改写历史成本。
-- 流式 usage-only 块、拆帧、一次性 JSON、截图 usage 和字段别名。
+- 流式 usage-only 块、拆帧、一次性 JSON、截图 usage、转写时长和字段别名。
 - usage 缺失、非法和 `cached_input_tokens > input_tokens` 时结果仍成功但标为估算。
 - 成功、429 后切换备用、校验失败、超时、取消和租约失效各自产生正确 attempt 成本；配置、模型
   和冻结价格来自该 attempt 的 `AIJobConfigRoute`。
@@ -219,8 +231,9 @@ Key 仍只返回已配置状态。价格字段属于不可变版本；修改价�
 - 后台账本可按用户、活动日、类型和币种筛选；普通用户不可读取平台失败尝试成本。
 
 当前实现由迁移 `0019_ai_provider_costs`、`0020_ai_provider_cost_lifecycle`、
-`0021_ai_user_quota`、`0033_ai_fallback_routes`，
+`0021_ai_user_quota`、`0033_ai_fallback_routes`、`0035_voice_transcriptions` 与
+`0036_transcription_quota_usage`，
 `server/src/itime/ai/{pricing,usage,cost_service,routing_service}.py`、
-`server/src/itime/quota/`、截图/对话/规划/复盘四类接单与终态接入，以及用户
+`server/src/itime/quota/`、截图/转写/对话/规划/复盘五类接单与终态接入，以及用户
 `/account/quota`、后台 `/admin/costs` 和 `/admin/quota` 构成。供应商 usage 详情只保留白名单
 计数，不永久复制未知键名或正文。

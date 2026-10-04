@@ -1626,3 +1626,71 @@ Edge/实体设备、M8 性能/恢复和生产部署仍未完成或验证。
 0。日历生命周期首版范围已完成；学期、节次、项目、AI 会话等其他独立对象的回收、困难/任务
 语音与 AI 校对、正式第三方订阅兼容性、真实 Edge/实体设备、M8 性能与备份恢复删除重放、生产
 部署仍未完成或验证。
+
+## M6-I：任务名称与困难正文语音转写
+
+对应 Git 提交：`3e20ff7`、`d14bdb5`、`5c90161`、`4810ab1`、`e040986`、`cb076cd`、
+`c4bc9d8`、`96e9554`、`f489e00`、`ef6f94c`、`f25ff27`、`d3b0c7b`、`3e3768b`。专项设计见
+[任务与困难语音转写设计](../设计/iTime-任务与困难语音转写设计.md)，实际代码包括迁移
+`0035_voice_transcriptions` 与 `0036_transcription_quota_usage`、
+`server/src/itime/ai/{audio_validation,transcription_router,transcription_service,transcription_provider}.py`、
+通用 AI worker/额度/成本/治理接入，及
+`web/src/components/VoiceTranscriptionControl.vue`、
+`web/src/lib/{audio-recorder,pcm-wav,voice-transcriptions}.ts`。
+
+已实现：
+
+- 浏览器只在用户点击后请求麦克风，通过 AudioWorklet 连续混合声道并下采样为 16 kHz
+  单声道 PCM16；主线程仅组装规范 44 字节 WAV 头。录制最短 250 ms、最长 60 秒、最大 2 MiB，
+  60 秒自动停止；组件卸载、取消及设备中断会断开节点并停止全部媒体轨道，音频不写
+  localStorage、IndexedDB 或同步队列。
+- `POST /api/v1/voice-transcriptions` 在事务外校验和加密音频，再以本人 operation ID 幂等接单；
+  同一账号最多 3 个活动作业、10 分钟最多 20 次，部署级队列默认 500。查询按本人和 purpose
+  隔离，页面刷新或第二页面可恢复最近未解决结果。
+- 独立 `transcription` 配置使用 OpenAI 兼容 `/audio/transcriptions` multipart 调用，
+  支持合成 WAV 测试、发布、回滚和最多两个备用。429/503/网络/超时可切换，401/403、配置及
+  输出错误终止；作业租约和终态门禁拒绝取消后的晚到结果。
+- 音频成本按服务端实测 `duration_ms` 和冻结的每分钟价格向上取整。接单按主备最高价格预留，
+  成功只结算最终成功 attempt；失败和取消释放用户预留，已经发出的失败尝试仍记录平台成本。
+- 转写文字只进入独立可编辑草稿。任务名称和困难正文均由用户明确替换或追加，之后仍须使用原
+  业务保存动作；转写不会推断日期、项目、分类、情绪或自动创建业务对象。归档/回收站任务及
+  困难回收站不显示录音入口。
+- 应用或丢弃立即清除录音；失败、超时和取消终态清除无恢复价值的音频；未解决录音和临时文字
+  最迟 24 小时清理。本人导出仅包含未过期文字和安全元数据，账号注销优先取消作业并清理媒体。
+  技术正文日志和可关闭质量样本可保留规范化文字，但不保存音频字节。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18、真实 Uvicorn、AI worker、受控 OpenAI 兼容
+multipart 上游、Chromium 假麦克风和生产构建预览中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 语音转写服务专项组合 | **46 passed in 41.79s** | WAV、迁移、接单、worker、主备、成本、解决/清理与注销 |
+| 合成探针与配置定向复测 | **20 passed, 11 deselected in 9.52s** | 规范探针 WAV、转写配置创建/测试/发布 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run pytest -q` | **581 passed in 494.43s** | 当前服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `cd server && uv run alembic upgrade head/current/check` | `0036_transcription_quota_usage (head)`；无模型漂移 | 开发库迁移 |
+| `cd server && uv run python -m itime.ai.worker --once` | 通过 | 无待处理作业时正常退出并执行清理入口 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 语音转写专项 Chromium | **22 passed, 14 skipped in 1.7m** | 三视口主流程与 desktop 故障/恢复/60 秒/320px 深度场景 |
+| `cd web && pnpm exec playwright test --reporter=dot` | **274 passed, 20 skipped in 16.2m** | 294 项收集；最终状态 `passed` |
+
+真实浏览器覆盖任务和困难录音、编辑草稿、替换/追加、原字段并行编辑、业务保存失败保留文字、
+权限拒绝、重复录音、60 秒自动停止、组件卸载停止 track、同 operation ID 上传重放、第二页面
+恢复、处理中取消和晚到结果拒绝。desktop、mobile、tablet 均执行任务/困难主流程；desktop
+另执行故障矩阵与 320px 最大字号深色检查。各视口核对 axe、控制台、Vite 错误层和横向溢出。
+截图位于：
+
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-voice-transcription-task-ready.png`
+- `/tmp/itime-ui-evidence/desktop-voice-transcription-task-ready-320-large-dark.png`
+- `/tmp/itime-ui-evidence/desktop-admin-management-transcription-config-320-large-dark.png`
+
+截图已人工检查，无空白、重叠、裁切或按钮文字溢出。Browser 插件技能可用但当前运行时未暴露
+浏览器工具，因此按前端测试规范使用仓库 Playwright 完成渲染、交互、控制台和截图验证。
+
+收口时开发库为 `0036_transcription_quota_usage (head)` 且 `alembic check` 无模型漂移，
+一次性 AI worker 正常退出，`GET /api/ready` 返回 200，OpenAPI 包含三个语音转写路由，
+`http://localhost:5173/tasks` 返回 200，`itime_test_%` 数据库
+残留为 0；开发 API、AI worker、订阅/日历清理、公开链接、数据导出 worker 和 Vite 已按当前
+代码运行。任务/困难纯语音转写首版范围已完成；多任务/属性语音解析、正式第三方模型质量、
+真实 Edge/实体设备、M8 性能与备份恢复、生产部署仍未完成或验证。

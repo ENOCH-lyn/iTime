@@ -251,7 +251,8 @@ Web：
 ## 12. 实现状态
 
 已由迁移 `0033_ai_fallback_routes`、`server/src/itime/ai/routing_service.py`、管理路由 API、
-四类 AI 接单与 worker、成本/额度服务及 `web/src/components/AdminAISettings.vue` 完整实现。
+截图/转写/对话/规划/复盘五类 AI 接单与 worker、成本/额度服务及
+`web/src/components/AdminAISettings.vue` 完整实现。
 
 实际验证覆盖主配置加两个备用的保存、重排、清空、提升为主、乐观版本冲突和审计；作业路由在
 接单时冻结，429 后下一 attempt 使用备用模型和 Key，401 等非重试错误不切换，总截止时间不

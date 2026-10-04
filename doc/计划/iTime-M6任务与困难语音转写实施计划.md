@@ -60,7 +60,7 @@
 - Create: `server/src/itime/ai/transcription_schemas.py`
 - Test: `server/tests/test_voice_transcription_models.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 覆盖 `transcription` 能力种子、音频/图片媒体互斥、配置计价互斥、作业输入引用、
 `VoiceTranscription` 三方所有者外键、resolution 约束、成本计价分支和用户级联。
@@ -89,13 +89,13 @@ def test_voice_transcription_constraints_and_owner_links(database_url):
             )
 ```
 
-- [ ] **Step 2: 运行迁移测试并确认失败**
+- [x] **Step 2: 运行迁移测试并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_models.py`
 
 Expected: FAIL，缺少迁移、模型或 `transcription` 枚举。
 
-- [ ] **Step 3: 实现迁移和模型**
+- [x] **Step 3: 实现迁移和模型**
 
 迁移使用 revision `0035_voice_transcriptions`、down revision `0034_calendar_lifecycle`。模型合同：
 
@@ -125,13 +125,13 @@ class VoiceTranscription(Base):
 `pricing_basis`、`audio_price_nanos_per_minute`；`TemporaryMedia` 增加四个音频元数据字段；
 `AIProviderCost` 增加音频计价快照。迁移 downgrade 在存在转写数据时明确拒绝，避免静默丢数据。
 
-- [ ] **Step 4: 验证迁移和模型**
+- [x] **Step 4: 验证迁移和模型**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_models.py`
 
 Expected: PASS，包含 upgrade、约束、级联与有数据 downgrade 保护。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/migrations/versions/0035_voice_transcriptions.py \
@@ -147,7 +147,7 @@ git commit -m "feat: 建立语音转写数据合同"
 - Create: `server/src/itime/ai/audio_validation.py`
 - Create: `server/tests/test_audio_validation.py`
 
-- [ ] **Step 1: 写格式与边界失败测试**
+- [x] **Step 1: 写格式与边界失败测试**
 
 ```python
 @pytest.mark.parametrize(
@@ -175,13 +175,13 @@ def test_validate_voice_wav_rejects_noncanonical_pcm(
 另测 249/250 ms、60,000/60,001 ms、空文件、截断 data chunk、重复 data chunk、压缩格式、
 伪 MIME、伪扩展和 2 MiB 边界。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_audio_validation.py`
 
 Expected: FAIL，`itime.ai.audio_validation` 尚不存在。
 
-- [ ] **Step 3: 实现严格 RIFF/WAVE 校验**
+- [x] **Step 3: 实现严格 RIFF/WAVE 校验**
 
 ```python
 @dataclass(frozen=True)
@@ -222,13 +222,13 @@ def validate_voice_wav(
 解析器只接受一个 `fmt ` 和一个 `data` chunk，检查 RIFF 声明长度、块对齐、PCM code 1、
 byte rate、block align 和实际帧长度。
 
-- [ ] **Step 4: 运行单元测试与静态检查**
+- [x] **Step 4: 运行单元测试与静态检查**
 
 Run: `cd server && uv run pytest -q tests/test_audio_validation.py && uv run ruff check src/itime/ai/audio_validation.py tests/test_audio_validation.py`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/ai/audio_validation.py server/tests/test_audio_validation.py
@@ -248,7 +248,7 @@ git commit -m "feat: 校验临时语音录音"
 - Test: `server/tests/test_admin_quota_policy.py`
 - Test: `server/tests/test_ai_fallback_routing.py`
 
-- [ ] **Step 1: 写配置、测试、发布和路由失败测试**
+- [x] **Step 1: 写配置、测试、发布和路由失败测试**
 
 ```python
 def test_admin_can_test_and_publish_audio_priced_transcription(admin_client):
@@ -275,13 +275,13 @@ def test_admin_can_test_and_publish_audio_priced_transcription(admin_client):
 同时断言转写不能提交 Token 价格、文本能力不能提交音频价格、合成 WAV 发往
 `/audio/transcriptions`、备用币种/计价类型不一致被拒绝、已发布转写配置参与新额度策略校验。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_ai_config.py tests/test_admin_quota_policy.py tests/test_ai_fallback_routing.py`
 
 Expected: FAIL，当前 schema 和配置测试只支持 Token 计价与聊天端点。
 
-- [ ] **Step 3: 实现价格与配置分支**
+- [x] **Step 3: 实现价格与配置分支**
 
 ```python
 def audio_duration_cost(duration_ms: int, price_nanos_per_minute: int) -> int:
@@ -298,13 +298,13 @@ def audio_duration_cost(duration_ms: int, price_nanos_per_minute: int) -> int:
 `test_transcription_endpoint()`，发送仓库内固定合成语音，不复用聊天 JSON。路由完整性函数按
 capability 校验对应价格列。
 
-- [ ] **Step 4: 运行相关测试**
+- [x] **Step 4: 运行相关测试**
 
 Run: `cd server && uv run pytest -q tests/test_ai_config.py tests/test_admin_quota_policy.py tests/test_ai_fallback_routing.py tests/test_ai_usage.py`
 
 Expected: PASS，现有四类能力行为不变。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/ai/pricing.py server/src/itime/ai/schemas.py \
@@ -324,7 +324,7 @@ git commit -m "feat: 配置语音转写与按分钟价格"
 - Modify: `server/src/itime/config.py`
 - Test: `server/tests/test_voice_transcription_api.py`
 
-- [ ] **Step 1: 写接单 API 失败测试**
+- [x] **Step 1: 写接单 API 失败测试**
 
 ```python
 def test_transcription_upload_is_atomic_replayable_and_owner_scoped(
@@ -356,13 +356,13 @@ def test_transcription_upload_is_atomic_replayable_and_owner_scoped(
 另测未登录、AI 冻结、缺时区、无配置、额度不足、三活动作业、10 分钟 20 次、部署队列上限、
 异内容重放、另一账号读取和输入失败无数据库残留。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_api.py`
 
 Expected: FAIL，路由不存在。
 
-- [ ] **Step 3: 实现接单、列表和详情**
+- [x] **Step 3: 实现接单、列表和详情**
 
 ```python
 @router.post("", status_code=202)
@@ -388,13 +388,13 @@ async def create_voice_transcription(
 `estimate_audio_reservation_budget()` 按每条冻结路由的音频分钟价计算并取最大值；新增配置
 `ai_transcription_queue_limit=500`。列表默认只返回最近 20 条，支持 purpose、稳定游标和本人范围。
 
-- [ ] **Step 4: 验证 API**
+- [x] **Step 4: 验证 API**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_api.py tests/test_quota_service.py`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/ai/transcription_router.py server/src/itime/main.py \
@@ -419,7 +419,7 @@ git commit -m "feat: 接收并恢复语音转写作业"
 - Test: `server/tests/test_ai_provider_cost_models.py`
 - Test: `server/tests/test_admin_provider_costs.py`
 
-- [ ] **Step 1: 写真实上游和成本失败测试**
+- [x] **Step 1: 写真实上游和成本失败测试**
 
 ```python
 def test_worker_posts_multipart_and_settles_only_successful_route(
@@ -441,13 +441,13 @@ def test_worker_posts_multipart_and_settles_only_successful_route(
 测试同时断言 multipart 文件字节、固定路径、请求头不入日志、空/超长/控制字符结果、断连、
 慢响应、401、429、5xx、租约失效、取消晚到、质量开关和主备实际配置价格。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_worker.py tests/test_ai_provider_cost_models.py tests/test_admin_provider_costs.py`
 
 Expected: FAIL，worker 不识别 `transcription`。
 
-- [ ] **Step 3: 实现 provider 和 worker 分支**
+- [x] **Step 3: 实现 provider 和 worker 分支**
 
 ```python
 async def transcribe_audio(
@@ -474,13 +474,13 @@ async def transcribe_audio(
 `complete_transcription_job()` 在一个事务中校验正文、完成 attempt/body log/provider cost、
 结算额度、写临时文字并完成作业。失败路径在最终终态清媒体。
 
-- [ ] **Step 4: 验证 worker 与现有能力回归**
+- [x] **Step 4: 验证 worker 与现有能力回归**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_worker.py tests/test_ai_provider_cost_models.py tests/test_admin_provider_costs.py tests/test_ai_conversation_worker.py tests/test_planning_worker.py tests/test_review_worker.py`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/ai/transcription_provider.py \
@@ -507,7 +507,7 @@ git commit -m "feat: 执行并结算语音转写"
 - Test: `server/tests/test_data_export_snapshot.py`
 - Test: `server/tests/test_account_deletion_api.py`
 
-- [ ] **Step 1: 写生命周期失败测试**
+- [x] **Step 1: 写生命周期失败测试**
 
 ```python
 def test_accept_deletes_audio_but_keeps_text_until_fixed_expiry(case):
@@ -527,13 +527,13 @@ def test_accept_deletes_audio_but_keeps_text_until_fixed_expiry(case):
 另测 discard 取消活动作业、成功/取消竞态、重复解决、不同解决冲突、到期 worker 双实例、
 晚到结果、导出不含音频密文、注销申请立即清媒体。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_api.py tests/test_voice_transcription_worker.py tests/test_data_export_snapshot.py tests/test_account_deletion_api.py`
 
 Expected: FAIL，resolve 和结果清理尚未实现。
 
-- [ ] **Step 3: 实现统一解决和清理**
+- [x] **Step 3: 实现统一解决和清理**
 
 ```python
 async def resolve_transcription(session, owner_id, item_id, data):
@@ -559,13 +559,13 @@ async def resolve_transcription(session, owner_id, item_id, data):
 清理 worker 每批最多 100 条，以 `AIJob → VoiceTranscription → TemporaryMedia` 顺序处理。导出只
 增加临时结果白名单，不导出 `encrypted_content`。注销摘要继续统计统一临时媒体数量。
 
-- [ ] **Step 4: 验证生命周期**
+- [x] **Step 4: 验证生命周期**
 
 Run: `cd server && uv run pytest -q tests/test_voice_transcription_api.py tests/test_voice_transcription_worker.py tests/test_data_export_snapshot.py tests/test_account_deletion_api.py`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/src/itime/ai/transcription_router.py \
@@ -593,7 +593,7 @@ git commit -m "feat: 管理语音转写临时生命周期"
 - Test: `web/e2e/admin-management.spec.ts`
 - Test: `web/e2e/privacy-governance.spec.ts`
 
-- [ ] **Step 1: 扩展后台 E2E 失败断言**
+- [x] **Step 1: 扩展后台 E2E 失败断言**
 
 ```typescript
 await page.getByLabel('能力').getByText('语音转写').click()
@@ -605,13 +605,13 @@ await expect(page.getByText('音频 0.006 / 分钟')).toBeVisible()
 测试创建、合成测试、发布、回滚、备用顺序、字段互斥，以及成本/正文日志/质检筛选中的转写标签和
 音频时长。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd web && pnpm exec playwright test e2e/admin-management.spec.ts e2e/privacy-governance.spec.ts --project=desktop`
 
 Expected: FAIL，后台尚无语音转写能力。
 
-- [ ] **Step 3: 实现动态配置与成本展示**
+- [x] **Step 3: 实现动态配置与成本展示**
 
 ```typescript
 export type AIConfigCapability =
@@ -639,13 +639,13 @@ export type AIConfigPricing =
 `AdminAISettings` 在 capability 为 transcription 时隐藏 Token 和最大输出字段，显示每分钟音频
 价格；历史列表按 `pricing.basis` 展示。治理和成本组件补齐能力筛选与 `billing_basis` 分支。
 
-- [ ] **Step 4: 运行后台 UI 测试与构建**
+- [x] **Step 4: 运行后台 UI 测试与构建**
 
 Run: `cd web && pnpm exec playwright test e2e/admin-management.spec.ts e2e/privacy-governance.spec.ts --project=desktop && pnpm build`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/src/lib/admin-ai.ts web/src/lib/admin-costs.ts \
@@ -669,7 +669,7 @@ git commit -m "feat: 管理语音转写配置与成本"
 - Modify: `web/src/style.css`
 - Test: `web/e2e/voice-transcriptions.spec.ts`
 
-- [ ] **Step 1: 写控件状态失败测试**
+- [x] **Step 1: 写控件状态失败测试**
 
 ```typescript
 await page.getByRole('button', { name: '开始语音输入' }).click()
@@ -682,13 +682,13 @@ await expect(page.getByRole('button', { name: '替换当前内容' })).toBeVisib
 测试注入真实 MediaStream 假设备；同时覆盖权限拒绝、自动停止、组件卸载关闭 track、上传未知重放、
 取消、恢复、编辑草稿和超限阻断。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop`
 
 Expected: FAIL，共享控件尚不存在。
 
-- [ ] **Step 3: 实现 PCM/WAV 与录音状态机**
+- [x] **Step 3: 实现 PCM/WAV 与录音状态机**
 
 ```typescript
 export interface VoiceRecorder {
@@ -711,13 +711,13 @@ AudioWorklet 只输出 16 kHz mono PCM16 分片。组件拥有唯一活动 recor
 AbortController；卸载时终止全部资源。组件通过 props 接收 purpose、fieldLimit、currentText，
 通过 emits 输出 replace/append。
 
-- [ ] **Step 4: 验证共享控件和构建**
+- [x] **Step 4: 验证共享控件和构建**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop && pnpm build`
 
 Expected: 录音控件专项通过，TypeScript 无错误。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/public/pcm-recorder-worklet.js web/src/lib/audio-recorder.ts \
@@ -733,7 +733,7 @@ git commit -m "feat: 提供可恢复语音转写控件"
 - Modify: `web/src/components/TaskEditor.vue`
 - Test: `web/e2e/voice-transcriptions.spec.ts`
 
-- [ ] **Step 1: 写任务流程失败测试**
+- [x] **Step 1: 写任务流程失败测试**
 
 ```typescript
 await page.getByRole('button', { name: '新建任务' }).click()
@@ -748,13 +748,13 @@ await expect(page.getByText('尚未保存')).toBeVisible()
 另测已有标题替换/追加、转写期间继续编辑不被覆盖、200 字限制、创建失败保留文字、已归档和回收站
 不显示入口。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop -g "任务"`
 
 Expected: FAIL，任务编辑器尚未接入。
 
-- [ ] **Step 3: 接入任务表单**
+- [x] **Step 3: 接入任务表单**
 
 ```vue
 <VoiceTranscriptionControl
@@ -771,13 +771,13 @@ Expected: FAIL，任务编辑器尚未接入。
 应用后保持现有 dirty、operation ID、创建/更新和版本冲突行为；转写控件不得直接调用
 `createTask()` 或 `updateTask()`。
 
-- [ ] **Step 4: 验证任务语音流程**
+- [x] **Step 4: 验证任务语音流程**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop -g "任务"`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/src/components/TaskEditor.vue web/e2e/voice-transcriptions.spec.ts
@@ -790,7 +790,7 @@ git commit -m "feat: 通过语音填写任务名称"
 - Modify: `web/src/components/DifficultyPanel.vue`
 - Test: `web/e2e/voice-transcriptions.spec.ts`
 
-- [ ] **Step 1: 写困难流程失败测试**
+- [x] **Step 1: 写困难流程失败测试**
 
 ```typescript
 await page.getByRole('tab', { name: '困难' }).click()
@@ -805,13 +805,13 @@ await expect(page.getByText('不知道如何拆分这一章')).toBeVisible()
 另测关联当前专注、编辑已有困难、2000 字限制、可选分类/情绪不被推断、丢弃不创建困难、不自动
 进入 AI 对话。
 
-- [ ] **Step 2: 运行并确认失败**
+- [x] **Step 2: 运行并确认失败**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop -g "困难"`
 
 Expected: FAIL，困难表单尚未接入。
 
-- [ ] **Step 3: 接入困难表单**
+- [x] **Step 3: 接入困难表单**
 
 ```vue
 <VoiceTranscriptionControl
@@ -827,13 +827,13 @@ Expected: FAIL，困难表单尚未接入。
 切换回收站或重置表单时主动丢弃本地未解决控件状态，但不能静默取消已经提交到服务端的作业；用户
 重新进入记录范围时可恢复最近未解决结果。
 
-- [ ] **Step 4: 验证困难语音流程**
+- [x] **Step 4: 验证困难语音流程**
 
 Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts --project=desktop -g "困难"`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/src/components/DifficultyPanel.vue web/e2e/voice-transcriptions.spec.ts
@@ -850,7 +850,7 @@ git commit -m "feat: 通过语音记录困难"
 - Modify: `web/playwright.config.ts`
 - Modify: `web/e2e/voice-transcriptions.spec.ts`
 
-- [ ] **Step 1: 扩展真实故障测试**
+- [x] **Step 1: 扩展真实故障测试**
 
 ```python
 @pytest.mark.parametrize(
@@ -871,7 +871,7 @@ def test_transcription_route_failure_policy(
 浏览器测试补齐桌面、手机、平板、320px 最大字号深色、第二上下文恢复、网络失败后原 operation ID
 重放、权限拒绝和假麦克风轨道终止检查。
 
-- [ ] **Step 2: 运行专项并处理失败**
+- [x] **Step 2: 运行专项并处理失败**
 
 Run: `cd server && uv run pytest -q tests/test_audio_validation.py tests/test_voice_transcription_models.py tests/test_voice_transcription_api.py tests/test_voice_transcription_worker.py tests/test_account_deletion_worker.py`
 
@@ -879,7 +879,7 @@ Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts`
 
 Expected: 两组全部 PASS；每个视口检查 axe、控制台、框架错误层和根级横向溢出。
 
-- [ ] **Step 3: 固化受控测试上游与浏览器音频夹具**
+- [x] **Step 3: 固化受控测试上游与浏览器音频夹具**
 
 `server/tests/web_environment.py` 对 `/audio/transcriptions` 解析 multipart，仅验证固定测试模型、
 规范 WAV 和 Bearer 头，返回：
@@ -903,7 +903,7 @@ launchOptions: {
 }
 ```
 
-- [ ] **Step 4: 重跑专项**
+- [x] **Step 4: 重跑专项**
 
 Run: `cd server && uv run pytest -q tests/test_audio_validation.py tests/test_voice_transcription_models.py tests/test_voice_transcription_api.py tests/test_voice_transcription_worker.py tests/test_account_deletion_worker.py`
 
@@ -911,7 +911,7 @@ Run: `cd web && pnpm exec playwright test e2e/voice-transcriptions.spec.ts`
 
 Expected: 全部 PASS，测试数据库和浏览器进程正常清理。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add server/tests/test_voice_transcription_api.py \
@@ -937,7 +937,7 @@ git commit -m "test: 验证语音转写完整流程"
 - Modify: `doc/验收/iTime-产品验收清单.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 执行服务端完整质量门**
+- [x] **Step 1: 执行服务端完整质量门**
 
 Run: `cd server && uv run ruff check .`
 
@@ -951,7 +951,7 @@ Run: `cd server && uv build --no-sources`
 
 Expected: wheel 与 sdist 构建成功。
 
-- [ ] **Step 2: 验证迁移与独立 worker**
+- [x] **Step 2: 验证迁移与独立 worker**
 
 Run: `cd server && uv run alembic upgrade head`
 
@@ -961,7 +961,7 @@ Run: `cd server && uv run python -m itime.ai.worker --once`
 
 Expected: 无待处理作业时正常退出，媒体/临时文字清理路径可执行。
 
-- [ ] **Step 3: 执行前端完整质量门**
+- [x] **Step 3: 执行前端完整质量门**
 
 Run: `cd web && pnpm build`
 
@@ -971,7 +971,7 @@ Run: `cd web && pnpm test:e2e`
 
 Expected: Chromium 全量 PASS；记录通过、跳过、耗时和证据路径。
 
-- [ ] **Step 4: 核验数据库与进程清理**
+- [x] **Step 4: 核验数据库与进程清理**
 
 Run: `psql \"$ITIME_ADMIN_DATABASE_URL\" -Atc \"SELECT count(*) FROM pg_database WHERE datname LIKE 'itime_test_%'\"`
 
@@ -980,12 +980,12 @@ Expected: `0`。
 确认 Playwright 启动的 API、worker、预览服务和受控上游均已退出；开发 API 的 `/api/ready` 返回
 新 migration head。
 
-- [ ] **Step 5: 同步真实证据**
+- [x] **Step 5: 同步真实证据**
 
 文档只写实际命令结果与当前提交 SHA。把任务和困难语音从“未实现”改为“已实现并动态验证”，
 同时保留正式第三方模型、Edge、实体设备、性能、备份恢复、生产部署和其余 Web 首版缺口。
 
-- [ ] **Step 6: 提交文档**
+- [x] **Step 6: 提交文档**
 
 ```bash
 git add README.md doc/README.md designer.md cloud.md \
