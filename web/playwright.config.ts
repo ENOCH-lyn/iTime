@@ -3,6 +3,9 @@ import { defineConfig, devices } from '@playwright/test'
 process.env.ITIME_E2E_BOOTSTRAP_FILE ??=
   `/tmp/itime-ui-admin-bootstrap-${process.pid}.json`
 
+const browserChannel = process.env.ITIME_E2E_BROWSER_CHANNEL
+const browserUse = browserChannel ? { channel: browserChannel } : {}
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 45_000,
@@ -24,9 +27,33 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } } },
-    { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
-    { name: 'tablet', use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 }, hasTouch: true } },
+    {
+      name: 'desktop',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...browserUse,
+        viewport: { width: 1440, height: 1000 },
+      },
+    },
+    {
+      name: 'mobile',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...browserUse,
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    {
+      name: 'tablet',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...browserUse,
+        viewport: { width: 768, height: 1024 },
+        hasTouch: true,
+      },
+    },
   ],
   webServer: {
     command: 'cd ../server && uv run python -m tests.web_environment',

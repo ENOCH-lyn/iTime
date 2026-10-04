@@ -25,7 +25,7 @@
 **Files:**
 - Modify: `web/playwright.config.ts`
 
-- [ ] **Step 1: 在测试配置中读取可选 channel**
+- [x] **Step 1: 在测试配置中读取可选 channel**
 
 保留默认 Chromium 行为；仅在显式提供 `ITIME_E2E_BROWSER_CHANNEL=chrome` 或
 `ITIME_E2E_BROWSER_CHANNEL=msedge` 时把 channel 传给三个既有项目。
@@ -47,7 +47,7 @@ projects: [
 ]
 ```
 
-- [ ] **Step 2: 验证默认 Chromium 配置仍可列出测试**
+- [x] **Step 2: 验证默认 Chromium 配置仍可列出测试**
 
 Run:
 
@@ -58,7 +58,7 @@ pnpm exec playwright test --list
 
 Expected: 配置成功加载，既有 `desktop`、`mobile`、`tablet` 项目和全部测试均可列出。
 
-- [ ] **Step 3: 验证真实 Chrome channel**
+- [x] **Step 3: 验证真实 Chrome channel**
 
 Run:
 
@@ -70,7 +70,7 @@ ITIME_E2E_BROWSER_CHANNEL=chrome pnpm exec playwright test \
 
 Expected: 本机 Google Chrome 启动，指定公共页面冒烟场景通过。
 
-- [ ] **Step 4: 提交浏览器验证基础**
+- [x] **Step 4: 提交浏览器验证基础**
 
 ```bash
 git add web/playwright.config.ts
