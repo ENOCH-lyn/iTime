@@ -17,6 +17,13 @@ function futureDate(days: number) {
   return isoDate(date)
 }
 
+function futureDateBeforeWeekEnd(days: number) {
+  const value = futureDate(days)
+  return new Date(`${value}T12:00:00Z`).getUTCDay() === 0
+    ? addDays(value, 1)
+    : value
+}
+
 function addDays(value: string, days: number) {
   const date = new Date(`${value}T12:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)
@@ -284,7 +291,7 @@ test('单次取消、调课、关联补课及补课恢复均保留原系列', as
   page,
   request,
 }, info) => {
-  const start = futureDate(14)
+  const start = futureDateBeforeWeekEnd(14)
   await account(page, request)
   const created = await createSeries(page, { start_date: start, busy: false })
   await goCalendar(page, start)
@@ -358,7 +365,7 @@ test('系列并发冲突保留草稿，刷新版本后可拆分本次及以后',
   request,
   context,
 }, info) => {
-  const start = futureDate(21)
+  const start = futureDateBeforeWeekEnd(21)
   await account(page, request)
   const original = await createSeries(page, { name: '晨间复习', start_date: start })
   await goCalendar(page, start)
