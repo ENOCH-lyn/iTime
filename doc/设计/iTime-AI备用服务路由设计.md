@@ -100,15 +100,18 @@
 重复最后一个可用配置保留既有三次重试能力。未来若最大尝试数调整，仍按“超出路由长度后重复最后
 一项”生成，不由 worker 临时猜测。
 
-`AIJobAttempt` 和 `AIProviderCost` 均增加非空 `config_version_id`：
+`AIJobConfigRoute` 是 attempt 实际配置的唯一关系事实：
 
-- claim 创建 attempt 时从 `AIJobConfigRoute` 同 attempt 行复制配置 ID；
-- worker 的 claim 携带该 ID，四类 `load_*_work()` 只读取 claim 配置；
-- cost 使用 attempt 配置的冻结价格，不再读取 `AIJob.config_version_id`；
-- 管理成本列表按 provider cost 配置关联，显示实际模型和配置版本。
+- `ai_jobs` 插入触发器先为 1..`max_attempts` 生成全部指向主配置的兼容路由；
+- 接单事务在作业仍为 `queued/attempt_count=0` 时按能力路由替换 attempt 2/3；
+- guard trigger 在首个 attempt 开始后禁止更新或删除作业路由，账号/作业级联删除除外；
+- worker 的 claim 携带该 attempt 的配置 ID，四类 `load_*_work()` 只读取 claim 配置；
+- cost 通过 `(job_id, attempt_number)` 路由读取实际配置和冻结价格，不再读取
+  `AIJob.config_version_id`；
+- 管理成本列表按作业路由关联配置，显示实际模型和配置版本。
 
-迁移为所有既有作业生成每次尝试均指向原 `AIJob.config_version_id` 的路由，并回填既有 attempt 和
-cost，因此升级不改变历史结果。
+迁移为所有既有作业生成每次尝试均指向原 `AIJob.config_version_id` 的路由，因此升级不改变历史
+attempt 或成本归属。
 
 ## 5. 接单与额度
 
@@ -155,8 +158,9 @@ cost，因此升级不改变历史结果。
 
 ## 7. 成本、日志与可观测性
 
-- `AIJobAttempt.config_version_id` 是实际尝试配置事实。
-- `AIProviderCost.config_version_id` 固化计价版本；失败和成功尝试分别按各自价格计算平台成本。
+- `AIJobConfigRoute.config_version_id` 是每次实际尝试配置事实；attempt、正文日志和 cost 都以相同
+  `(job_id, attempt_number)` 关联它。
+- `AIProviderCost` 继续固化当次价格；失败和成功尝试分别按路由配置计算平台成本。
 - 用户账本仍只引用最终成功 provider cost；失败/取消释放预留，成功收费不超过接单预留，超额由
   平台承担。
 - `AIBodyLog` 通过 `(job_id, attempt_number)` 关联 attempt；后台正文详情和成本列表返回实际
@@ -246,5 +250,11 @@ Web：
 
 ## 12. 实现状态
 
-当前为已确认实现设计，代码和动态验证尚未完成。完成后按实际结果更新本节及需求、测试和验收
-文档。
+已由迁移 `0033_ai_fallback_routes`、`server/src/itime/ai/routing_service.py`、管理路由 API、
+四类 AI 接单与 worker、成本/额度服务及 `web/src/components/AdminAISettings.vue` 完整实现。
+
+实际验证覆盖主配置加两个备用的保存、重排、清空、提升为主、乐观版本冲突和审计；作业路由在
+接单时冻结，429 后下一 attempt 使用备用模型和 Key，401 等非重试错误不切换，总截止时间不
+重置。provider cost 按实际 attempt 路由配置计价，用户预留取整条路由最大估算。桌面、手机、
+平板及 320×700 深色最大字号均完成真实 Chromium 流程、axe、控制台、API 500、Vite 错误层和
+横向溢出检查。正式第三方供应商质量、Edge/实体设备、性能和生产部署仍未验证。

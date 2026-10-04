@@ -954,7 +954,7 @@ Browser 插件技能已加载，但当前运行时没有暴露 `browser_*` 工�
 | `uv run alembic check` | 无新升级操作 | 迁移与 ORM 一致 |
 | `uv build --no-sources` | 通过 | sdist 和 wheel |
 
-专项覆盖迁移往返、复合所有权、历史不可变、用户级联删除、上海/纽约 DST、超过 100 候选、共享/排他锁、随机边界、双 worker 租约、重试、取消竞态、过期恢复、跨 capability 并发、额度结算及事务回滚。正式第三方模型规划质量、备用服务路由、性能和生产部署仍未验证。
+专项覆盖迁移往返、复合所有权、历史不可变、用户级联删除、上海/纽约 DST、超过 100 候选、共享/排他锁、随机边界、双 worker 租约、重试、取消竞态、过期恢复、跨 capability 并发、额度结算及事务回滚。备用服务路由后续已由 M4-G 实现；正式第三方模型规划质量、性能和生产部署仍未验证。
 
 ## M5-B：规划、对话提案与日历 Web 界面
 
@@ -1484,3 +1484,66 @@ occurrence，再把它移动到新日期。来源下一代改名后本地移动�
 收口时开发 API 已按当前代码重启，`GET /api/ready` 返回 200；Vite `/calendar` 可访问，
 `itime_test_%` 数据库残留为 0。订阅 occurrence 单次例外的首版范围已完成；任务/困难语音与 AI
 校对、其他对象单项回收、正式第三方订阅兼容性、Edge/实体设备、性能和生产部署仍未完成或验证。
+
+## M4-G：AI 能力级备用服务路由
+
+对应 Git 提交：`9356109`、`3df1c6b`、`8ed03f3`、`14f429a`、`680e3de`、`f2f1aa6`、
+`8f2b532`。专项设计见[AI 备用服务路由设计](../设计/iTime-AI备用服务路由设计.md)，实际代码为
+迁移 `0033_ai_fallback_routes`、`server/src/itime/ai/routing_service.py`、通用 claim/成本与
+额度服务、截图/对话/规划/复盘四类接单及 worker，以及
+`web/src/components/AdminAISettings.vue` 和对应测试。
+
+已实现：
+
+- 每项 AI 能力保留一个已发布主配置，并可设置最多两个同能力、最近测试成功且价格完整的备用
+  配置。后台支持保存、重排、清空、把备用提升为主，以及基于 `routing_version` 的并发冲突恢复；
+  Key 不回显，备用中的不可变版本不能重新测试。
+- `AIJobConfigRoute` 在新作业接单时冻结每个 attempt 的实际配置。无备用展开为
+  `[主, 主, 主]`，一个备用为 `[主, 备用 1, 备用 1]`，两个备用为
+  `[主, 备用 1, 备用 2]`；首个 attempt 开始后数据库触发器阻止修改。
+- 只有网络、429、5xx 和可重试断流进入下一条路由；401/403、端点策略、解密、结构、空输出和
+  业务校验错误直接终止。各 attempt 共享原 `AIJob.deadline_at`，对话重试继续使用 generation
+  reset 隔离旧片段。
+- provider cost 通过 `(job_id, attempt_number)` 读取实际路由配置和冻结价格。用户接单预留取
+  整条主备路由不同配置估算中的最大值，成功只按最终成功 attempt 结算，失败尝试仍由平台承担。
+- 后台“调用顺序”显示主服务及两个备用选择，配置列表显示“主服务/备用 1/备用 2”标签。版本
+  冲突后重读服务端路由但保留管理员当前草稿，可基于最新版再次保存。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit、受控 OpenAI 兼容 HTTP
+上游、真实 AI worker、生产构建预览和 Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 主备路由受影响服务组合 | **64 passed in 115.42s** | 迁移、管理并发、claim、成本、额度及四类 worker |
+| `cd server && uv run pytest -q` | **514 passed in 433.09s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `cd server && uv run alembic current`、`check` | `0033_ai_fallback_routes (head)`，无模型漂移 | 开发库迁移与 ORM 一致性 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 主备管理与真实切换专项 Chromium | **3 passed in 32.9s** | 完整流程 × desktop、mobile、tablet |
+| 管理与对话受影响 Chromium | **30 passed in 2.1m** | 两个完整规格 × 三视口 |
+| `cd web && pnpm test:e2e` 首轮 | **228 passed, 2 skipped, 1 failed in 13.2m** | 唯一失败为既有 tablet 订阅详情短暂未刷新 |
+| 失败用例空载复跑 | **1 passed in 18.9s** | `calendar-subscriptions` 本地覆盖流程 |
+| `cd web && pnpm test:e2e` 完整复跑 | **229 passed, 2 skipped** | 231 项收集；最终状态 `passed`、无失败 ID |
+
+真实浏览器流程先创建、合成测试并发布 conversation 主配置，再创建两个备用，保存并调换顺序，
+把备用提升为主，并模拟另一管理员更新路由以验证 409 后保留草稿。随后真实注册用户并发送
+“备用切换测试”：主模型返回 429，第二次尝试由冻结备用模型成功回复“备用服务已接管并完成
+回复。”；后台成本页显示主模型 attempt 1“等待重试”和备用模型 attempt 2“成功”。
+
+desktop、mobile、tablet 均检查页面标题、非空内容、目标交互、axe、控制台、API 500、Vite
+错误层和横向溢出；desktop 另在 320×700 深色最大字号下复核后台。截图位于：
+
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-admin-management-chat-fallback-route.png`
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-admin-management-fallback-user-response.png`
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-admin-management-fallback-provider-costs.png`
+- `/tmp/itime-ui-evidence/desktop-admin-management-chat-fallback-route-320-large-dark.png`
+
+截图已人工检查，无空白、重叠、裁切或横向溢出。本会话未提供 Browser 插件，故按前端测试规范
+使用仓库 Playwright。首轮全量唯一失败时，订阅列表已显示完成和 1 条事件，但详情短暂保留空态；
+相同 tablet 用例空载复跑及第二次完整全量均通过，未修改无关订阅实现。
+
+收口时开发 API 与 AI worker 已按当前代码重启，`GET /api/ready` 返回 200，OpenAPI 包含
+`/api/v1/admin/ai-configs/routing/{capability}`，Vite `/admin/ai` 可访问，`itime_test_%`
+数据库残留为 0。AI 备用服务路由首版范围已完成；正式第三方供应商质量、数据处理地区、
+Edge/实体设备、M8 性能/恢复和生产部署仍未完成或验证。

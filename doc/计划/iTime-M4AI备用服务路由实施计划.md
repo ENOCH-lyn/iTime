@@ -1,6 +1,7 @@
 # iTime M4 AI 备用服务路由实施计划
 
-当前进度：设计已冻结，等待按本计划实施和动态验证。
+当前进度：全部任务已实现并完成服务端、真实 Chromium 与运行态验证；首版之外的正式供应商、
+Edge/实体设备、性能和生产部署继续按总计划推进。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,8 +21,8 @@ TypeScript、Lucide、Playwright Chromium、axe。
 
 持久模型：
 
-- `server/src/itime/migrations/versions/0033_ai_fallback_routes.py`：能力备用行、作业路由、attempt/
-  cost 实际配置、历史回填和回滚保护。
+- `server/src/itime/migrations/versions/0033_ai_fallback_routes.py`：能力备用行、作业路由、默认
+  路由触发器、历史回填和回滚保护。
 - `server/src/itime/ai/models.py`：`AIConfigFallback`、`AIJobConfigRoute` 及新增字段。
 - `server/tests/test_ai_fallback_models.py`：迁移、约束、回填、不可变成本和级联。
 
@@ -34,7 +35,7 @@ TypeScript、Lucide、Playwright Chromium、axe。
 
 作业与成本：
 
-- `server/src/itime/ai/job_service.py`：claim 选择快照配置并写 attempt。
+- `server/src/itime/ai/job_service.py`：claim 选择不可变快照配置并写 attempt。
 - `server/src/itime/ai/cost_service.py`、`admin_cost_router.py`：实际配置计价与展示。
 - `server/src/itime/calendar/screenshot_{router,service}.py`、
   `server/src/itime/ai/conversation_service.py`、
@@ -45,9 +46,9 @@ TypeScript、Lucide、Playwright Chromium、axe。
 Web：
 
 - `web/src/lib/admin-ai.ts`：路由类型和 GET/PUT。
-- `web/src/components/AdminAISettings.vue`、`web/src/admin.css`：主服务及两个备用下拉框。
-- `web/e2e/admin-management.spec.ts`：配置、发布、备用顺序和并发恢复。
-- `web/e2e/ai-conversations.spec.ts`：真实主服务失败后备用成功。
+- `web/src/components/AdminAISettings.vue`、`web/src/style.css`：主服务及两个备用下拉框。
+- `web/e2e/admin-management.spec.ts`：配置、发布、备用顺序、并发恢复、真实主服务失败后备用成功
+  及逐尝试成本展示。
 
 ## Task 1：建立能力路由和作业快照模型
 
@@ -57,7 +58,7 @@ Web：
 - Create: `server/tests/test_ai_fallback_models.py`
 - Modify: existing model tests with exact column/head assertions
 
-- [ ] **Step 1: 写失败的迁移与约束测试**
+- [x] **Step 1: 写失败的迁移与约束测试**
 
 测试创建同能力主配置、两个已测试配置和一个作业，断言：
 
@@ -79,7 +80,7 @@ attempt 越界。迁移后既有 job 的 1..`max_attempts` 路由、attempt 和 
 删除账号后 job route 级联为 0，删除 fallback 关系不删除全局配置。存在不同于主配置的作业路由
 时拒绝降级；纯回填路由可无损降到 `0032_subscription_exceptions` 再升级。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -88,7 +89,7 @@ uv run pytest -q tests/test_ai_fallback_models.py
 
 Expected: FAIL，迁移表和 ORM 尚不存在。
 
-- [ ] **Step 3: 实现迁移和 ORM**
+- [x] **Step 3: 实现迁移和 ORM**
 
 核心模型：
 
@@ -111,12 +112,12 @@ class AIJobConfigRoute(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 ```
 
-`AIConfigCapability.routing_version` 默认 1；`AIJobAttempt.config_version_id` 与
-`AIProviderCost.config_version_id` 非空并外键到配置。迁移 backfill 使用
-`generate_series(1, ai_jobs.max_attempts)` 写旧作业路由，再从 job/attempt 回填实际配置。
-`prevent_ai_provider_cost_mutation()` 的不可变字段比较加入 config ID。
+`AIConfigCapability.routing_version` 默认 1。迁移 backfill 使用
+`generate_series(1, ai_jobs.max_attempts)` 写旧作业路由；`ai_jobs` AFTER INSERT trigger 为
+后续直接插入生成相同默认路由。路由 guard 只允许 `queued/attempt_count=0` 的作业替换路由，
+首个 attempt 开始后禁止 UPDATE/DELETE，账号或作业级联删除除外。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
@@ -144,7 +145,7 @@ git commit -m "feat: 建立AI备用路由模型"
 - Modify: `server/tests/test_ai_config.py`
 - Create: `server/tests/test_ai_fallback_routing.py`
 
-- [ ] **Step 1: 写路由管理失败测试**
+- [x] **Step 1: 写路由管理失败测试**
 
 创建并合成测试三个 conversation 配置，发布主配置后：
 
@@ -164,7 +165,7 @@ assert [item["position"] for item in saved.json()["fallbacks"]] == [1, 2]
 一致、陈旧版本、并发 PUT、普通用户 401/403 和审计 before/after。发布当前备用为新主配置时该项
 自动移除且 routing version 递增。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -173,7 +174,7 @@ uv run pytest -q tests/test_ai_config.py tests/test_ai_fallback_routing.py
 
 Expected: 新路由 404，schema 和 routing version 尚不存在。
 
-- [ ] **Step 3: 实现路由服务和 schema**
+- [x] **Step 3: 实现路由服务和 schema**
 
 共享值对象：
 
@@ -208,7 +209,7 @@ class AIConfigRouteOutput(BaseModel):
     fallbacks: list[AIConfigFallbackOutput]
 ```
 
-- [ ] **Step 4: 接入管理路由、发布和测试保护**
+- [x] **Step 4: 接入管理路由、发布和测试保护**
 
 在动态 `/{config_id}` 之前注册：
 
@@ -220,7 +221,7 @@ PUT /api/v1/admin/ai-configs/routing/{capability}
 PUT 成功写 `ai_config_fallbacks_updated` 审计。`test_config()` 若配置正在备用列表中返回 409；
 `publish_config()` 与备用行使用同一能力锁，目标若在备用列表中则移除，并递增 routing version。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
@@ -246,7 +247,7 @@ git commit -m "feat: 配置AI备用服务顺序"
 - Modify: `server/tests/test_ai_provider_cost_models.py`
 - Modify: `server/tests/test_admin_provider_costs.py`
 
-- [ ] **Step 1: 写 claim、成本和旧作业稳定性失败测试**
+- [x] **Step 1: 写 claim、成本和旧作业稳定性失败测试**
 
 为一个三次尝试作业冻结 `[primary, backup1, backup2]`，连续 claim/retry 后断言：
 
@@ -259,10 +260,10 @@ assert [
 ```
 
 无备用断言三次均为 primary；一个备用断言 `[primary, backup, backup]`。后台修改能力路由后，既有
-job route 不变，新作业使用新顺序。provider cost 的 config ID、价格和后台列表模型均对应实际
-attempt；lease 过期重领也进入下一条路由。
+job route 不变，新作业使用新顺序。provider cost 的冻结价格和后台列表模型均对应实际 attempt
+路由；lease 过期重领也进入下一条路由。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -272,46 +273,42 @@ uv run pytest -q tests/test_ai_jobs.py tests/test_ai_provider_cost_models.py \
 
 Expected: claim 和 cost 仍固定读取 job 主配置。
 
-- [ ] **Step 3: 实现作业快照和 claim 选路**
+- [x] **Step 3: 实现作业快照和 claim 选路**
 
 接单共享函数：
 
 ```python
-def add_job_config_route(
+async def replace_job_config_route(
     session: AsyncSession,
     job: AIJob,
     route: ActiveConfigRoute,
-) -> tuple[AIJobConfigRoute, ...]:
-    return tuple(
-        AIJobConfigRoute(
-            job_id=job.id,
-            owner_id=job.owner_id,
-            capability=job.capability,
-            attempt_number=index,
-            config_version_id=config.id,
-        )
-        for index, config in enumerate(
-            route.attempts(job.max_attempts),
-            start=1,
-        )
-    )
+) -> None:
+    configs = route.attempts(job.max_attempts)
+    rows = list(await session.scalars(
+        select(AIJobConfigRoute)
+        .where(AIJobConfigRoute.job_id == job.id)
+        .order_by(AIJobConfigRoute.attempt_number)
+        .with_for_update()
+    ))
+    for row, config in zip(rows, configs, strict=True):
+        row.config_version_id = config.id
 ```
 
 `claim_next_job()` 增加 attempt 后锁定相同 `(job_id, attempt_number)` route；缺失时返回
-`ai_job_route_invalid` 终态，不调用 provider。创建 `AIJobAttempt` 和 `ClaimedJob` 时复制 route
-config ID。
+`ai_job_route_invalid` 终态，不调用 provider。`ClaimedJob.config_version_id` 使用 route config
+ID，`AIJobAttempt` 继续通过相同 job/attempt 键关联该不可变路由。
 
-- [ ] **Step 4: 按 attempt 配置计价和展示**
+- [x] **Step 4: 按 attempt 配置计价和展示**
 
-四个 work loader 从 `claim.config_version_id` 读取配置。`add_provider_cost()` 从
-`attempt.config_version_id` 读取价格并写入 cost；后台成本查询改为
-`AIProviderCost.config_version_id == AIConfigVersion.id`。成功结算继续引用该 cost。
+四个 work loader 从 `claim.config_version_id` 读取配置。`add_provider_cost()` 以
+`(attempt.job_id, attempt.attempt_number)` 读取路由配置和价格；后台成本查询经
+`AIJobConfigRoute` 关联实际 `AIConfigVersion`。成功结算继续引用该 cost。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
-uv run pytest -q tests/test_ai_jobs.py tests/test_ai_provider_costs.py \
+uv run pytest -q tests/test_ai_jobs.py tests/test_ai_provider_cost_models.py \
   tests/test_admin_provider_costs.py tests/test_ai_governance_lifecycle.py \
   tests/test_quota_service.py
 uv run ruff check src/itime/ai/job_service.py src/itime/ai/cost_service.py \
@@ -335,13 +332,13 @@ git commit -m "feat: 按尝试选择并计价AI配置"
 - Modify: `server/src/itime/review/job_service.py`
 - Modify: four capability worker/API test files
 
-- [ ] **Step 1: 写接单快照和最坏预留失败测试**
+- [x] **Step 1: 写接单快照和最坏预留失败测试**
 
 四类作业分别配置 primary、低价备用和高价备用，接单后断言三条 route 与能力一致；额度 reservation
 等于三个配置估算中的最大值。任一配置价格缺失或币种与当天额度不一致时，不创建 job、业务映射
 或预留。
 
-- [ ] **Step 2: 写真实 provider failover 失败测试**
+- [x] **Step 2: 写真实 provider failover 失败测试**
 
 本地两个 OpenAI 兼容端点分别记录请求。primary 首次返回 429/503，备用返回有效结果：
 
@@ -361,13 +358,14 @@ assert reservation.charged_nanos == backup_cost.total_cost_nanos
 对 conversation 验证 `content_reset`，对 screenshot/planning/review 各验证结果落入既有业务对象。
 401、非法结构和空输出不得调用备用。后台调整路由后，已排队作业仍调用旧快照。
 
-- [ ] **Step 3: 实现四类接单**
+- [x] **Step 3: 实现四类接单**
 
 每个接单事务使用 `load_active_config_route()`；按每个不同配置生成该能力真实 request body 并调用
 `estimate_reservation_budget()`，要求币种一致后选择最大 `reserved_nanos`。创建 job 后立即
-`session.add_all(add_job_config_route(identity.session, job, route))`，再创建业务映射和额度预留。
+`flush()` 触发默认主配置路由，再调用 `replace_job_config_route(session, job, route)` 替换为冻结
+主备顺序，最后创建业务映射和额度预留。
 
-- [ ] **Step 4: 实现四类 loader**
+- [x] **Step 4: 实现四类 loader**
 
 `load_screenshot_work()`、`load_conversation_work()`、`load_planning_work()`、
 `load_review_work()` 都改为：
@@ -384,7 +382,7 @@ if config is None or config.capability != job.capability:
 
 worker 已使用 `remaining = claim.deadline_at - now()`，保持不变。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
@@ -411,12 +409,11 @@ git commit -m "feat: 接入AI作业备用切换"
 **Files:**
 - Modify: `web/src/lib/admin-ai.ts`
 - Modify: `web/src/components/AdminAISettings.vue`
-- Modify: `web/src/admin.css`
+- Modify: `web/src/style.css`
 - Modify: `web/e2e/admin-management.spec.ts`
-- Modify: `web/e2e/ai-conversations.spec.ts`
 - Modify: `server/tests/web_environment.py`
 
-- [ ] **Step 1: 写失败的后台和用户流程**
+- [x] **Step 1: 写失败的后台和用户流程**
 
 后台流程创建并测试三个 conversation 配置，发布主配置，在“调用顺序”选择备用 1/2 并保存；
 断言版本行标签和顺序。第二页面更新路由后，当前页面保存返回 409，重读仍保留用户选择。
@@ -424,17 +421,16 @@ git commit -m "feat: 接入AI作业备用切换"
 用户流程让 primary 返回 429，备用返回流式成功；页面显示一次 reset 后的最终内容，作业
 attempt=2。后台成本页显示 attempt 1 主配置失败、attempt 2 备用配置成功。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd web
-pnpm exec playwright test e2e/admin-management.spec.ts \
-  e2e/ai-conversations.spec.ts --grep "备用"
+pnpm exec playwright test e2e/admin-management.spec.ts --grep "分别创建"
 ```
 
 Expected: 后台没有路由控件，worker 第二次仍调用主配置。
 
-- [ ] **Step 3: 增加前端 API 和路由编辑器**
+- [x] **Step 3: 增加前端 API 和路由编辑器**
 
 `admin-ai.ts` 增加 `AIConfigRoute`、`getAIConfigRoute()` 和 `saveAIConfigRoute()`。后台组件并行读取
 当前能力配置与路由，使用两个原生 select 保存有序 ID；选项排除当前主配置和另一备用。发布、
@@ -443,16 +439,16 @@ Expected: 后台没有路由控件，worker 第二次仍调用主配置。
 版本行根据 route 显示“主服务”“备用 1”“备用 2”；错误继续使用 `StatusMessage`，409 保留当前
 下拉选择并提供重新读取。
 
-- [ ] **Step 4: 构建、浏览器专项并提交**
+- [x] **Step 4: 构建、浏览器专项并提交**
 
 ```bash
 cd web
 pnpm build
+pnpm exec playwright test e2e/admin-management.spec.ts --grep "分别创建"
 pnpm exec playwright test e2e/admin-management.spec.ts \
-  e2e/ai-conversations.spec.ts --grep "备用"
-git add src/lib/admin-ai.ts src/components/AdminAISettings.vue src/admin.css \
-  e2e/admin-management.spec.ts e2e/ai-conversations.spec.ts \
-  ../server/tests/web_environment.py
+  e2e/ai-conversations.spec.ts
+git add src/lib/admin-ai.ts src/components/AdminAISettings.vue src/style.css \
+  e2e/admin-management.spec.ts ../server/tests/web_environment.py
 git commit -m "feat: 管理并验证AI备用路由"
 ```
 
@@ -475,7 +471,7 @@ API 500、Vite 错误层和根级横向溢出。
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/计划/iTime-M4AI备用服务路由实施计划.md`
 
-- [ ] **Step 1: 服务端质量门禁**
+- [x] **Step 1: 服务端质量门禁**
 
 ```bash
 cd server
@@ -489,7 +485,7 @@ uv build --no-sources
 
 Expected: 全量通过，head 为 `0033_ai_fallback_routes`，无模型漂移。
 
-- [ ] **Step 2: Web 质量门禁**
+- [x] **Step 2: Web 质量门禁**
 
 ```bash
 cd web
@@ -499,12 +495,12 @@ pnpm test:e2e
 
 Expected: 完整 Chromium 通过；只允许测试文件明确声明的非桌面深度 skip。
 
-- [ ] **Step 3: 运行态和证据**
+- [x] **Step 3: 运行态和证据**
 
 重启开发 API/AI worker，确认 `/api/ready`、`/admin/ai`、`/ai` 可访问；检查 OpenAPI 路由、
 `itime_test_%` 残留为 0、截图无裁切/重叠、console 无未解释错误。
 
-- [ ] **Step 4: 同步文档并提交**
+- [x] **Step 4: 同步文档并提交**
 
 记录实际提交、数量、耗时、失败复跑和截图路径；只把备用路由范围标记完成，正式供应商质量、
 数据处理地区、M8 性能/恢复、Edge 和真机继续保持未验证。
