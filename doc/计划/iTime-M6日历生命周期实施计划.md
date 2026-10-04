@@ -456,14 +456,13 @@ Expected: 系列生命周期专项和全部受影响日历服务测试通过。
 - Modify: `server/src/itime/calendar/subscription_router.py`
 - Modify: `server/src/itime/calendar/subscription_service.py`
 - Modify: `server/src/itime/calendar/subscription_projection.py`
-- Modify: `server/src/itime/calendar/subscription_schemas.py`
 - Modify: `server/src/itime/planning/source_conflict_service.py`
 - Modify: `server/tests/test_calendar_lifecycle.py`
-- Modify: `server/tests/test_calendar_subscriptions.py`
-- Modify: `server/tests/test_calendar_subscription_exceptions.py`
 - Modify: `server/tests/test_plan_source_conflicts.py`
+- Test: `server/tests/test_calendar_subscriptions.py`
+- Test: `server/tests/test_calendar_subscription_exceptions.py`
 
-- [ ] **Step 1: 写订阅生命周期和租约竞态失败测试**
+- [x] **Step 1: 写订阅生命周期和租约竞态失败测试**
 
 测试创建真实订阅来源并领取刷新：
 
@@ -502,19 +501,19 @@ assert not await complete_subscription_refresh(
 - 跨账号、版本、幂等、到期和删除/恢复并发；
 - 删除后查询 source-specific occurrence 返回空集合，而非绕过普通投影过滤。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
 uv run pytest -q tests/test_calendar_lifecycle.py \
-  tests/test_calendar_subscriptions.py \
   tests/test_calendar_subscription_exceptions.py \
+  tests/test_calendar_subscriptions.py \
   tests/test_plan_source_conflicts.py
 ```
 
 Expected: FAIL，来源生命周期接口和 worker 防线尚不存在。
 
-- [ ] **Step 3: 提取刷新失效函数并统一可编辑检查**
+- [x] **Step 3: 提取刷新失效函数并统一可编辑检查**
 
 把 `subscription_router._stale_running_refresh` 移到
 `subscription_service.stale_running_refresh`，保持现有错误码和 refresh 终态。扩展：
@@ -529,7 +528,7 @@ Expected: FAIL，来源生命周期接口和 worker 防线尚不存在。
 `subscription_result` 增加来源生命周期字段和剩余天数，保留订阅
 `lifecycle_status=active|paused` 作为独立刷新状态。
 
-- [ ] **Step 4: 实现删除与恢复事务**
+- [x] **Step 4: 实现删除与恢复事务**
 
 在 `lifecycle_service.py` 实现
 `trash_subscription_source(session: AsyncSession, owner_id: UUID, source_id: UUID,
@@ -582,7 +581,7 @@ async def restore_subscription(
 
 列表新增 `lifecycle=active|trashed`，默认活动。
 
-- [ ] **Step 5: 封住 worker、投影和冲突查询旁路**
+- [x] **Step 5: 封住 worker、投影和冲突查询旁路**
 
 `claim_next_subscription` 连接 `CalendarSource` 并要求三个生命周期字段为空；
 `_locked_claim_subscription` 同样连接并锁定活动来源。`query_subscription_occurrences` 连接
@@ -602,19 +601,18 @@ raise AppError(
 )
 ```
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
 uv run pytest -q tests/test_calendar_lifecycle.py \
-  tests/test_calendar_subscriptions.py \
   tests/test_calendar_subscription_exceptions.py \
+  tests/test_calendar_subscriptions.py \
   tests/test_plan_source_conflicts.py
 uv run ruff check src/itime/calendar/lifecycle_service.py \
   src/itime/calendar/subscription_router.py \
   src/itime/calendar/subscription_service.py \
   src/itime/calendar/subscription_projection.py \
-  src/itime/calendar/subscription_schemas.py \
   src/itime/planning/source_conflict_service.py \
   tests/test_calendar_lifecycle.py tests/test_calendar_subscriptions.py \
   tests/test_calendar_subscription_exceptions.py \
@@ -623,7 +621,6 @@ git add src/itime/calendar/lifecycle_service.py \
   src/itime/calendar/subscription_router.py \
   src/itime/calendar/subscription_service.py \
   src/itime/calendar/subscription_projection.py \
-  src/itime/calendar/subscription_schemas.py \
   src/itime/planning/source_conflict_service.py \
   tests/test_calendar_lifecycle.py tests/test_calendar_subscriptions.py \
   tests/test_calendar_subscription_exceptions.py \
@@ -1288,8 +1285,8 @@ uv run pytest -q tests/test_calendar_lifecycle_models.py \
   tests/test_calendar_foundation.py tests/test_calendar_series.py \
   tests/test_calendar_exceptions.py tests/test_calendar_additions.py \
   tests/test_calendar_imports.py tests/test_calendar_screenshot_imports.py \
-  tests/test_calendar_subscriptions.py \
   tests/test_calendar_subscription_exceptions.py \
+  tests/test_calendar_subscriptions.py \
   tests/test_plan_source_conflicts.py tests/test_planning_inputs.py \
   tests/test_review_sessions.py tests/test_data_export_snapshot.py \
   tests/test_data_export_archive.py tests/test_sync_event_coverage.py \

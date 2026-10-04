@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import now
 from itime.auth.session import authorized
+from itime.calendar.lifecycle_service import (
+    restore_subscription_source,
+    trash_subscription_source,
+)
 from itime.calendar.models import (
     CalendarSource,
     CalendarSubscription,
@@ -43,6 +47,7 @@ from itime.calendar.subscription_service import (
     event_source_fields,
     locked_subscription,
     refresh_result,
+    stale_running_refresh,
     subscription_result,
     subscription_url_hmac,
     subscription_version_conflict,
@@ -149,6 +154,7 @@ async def create_subscription(data: SubscriptionCreate, request: Request) -> dic
     scope = "calendar_subscriptions.create"
     settings = request.app.state.settings
     display_url, display_host = subscription_url_metadata(data.url, settings)
+    requested_url_hmac = subscription_url_hmac(settings, data.url)
     async with authorized(request, write=True) as identity:
         replay = await replay_operation(
             identity.session,
@@ -170,6 +176,27 @@ async def create_subscription(data: SubscriptionCreate, request: Request) -> dic
                 "请先保存当前使用的时区，再创建日历订阅。",
                 status=409,
             )
+        trashed_source_id = await identity.session.scalar(
+            select(CalendarSubscription.source_id)
+            .join(
+                CalendarSource,
+                CalendarSource.id == CalendarSubscription.source_id,
+            )
+            .where(
+                CalendarSubscription.owner_id == identity.user.id,
+                CalendarSubscription.url_hmac == requested_url_hmac,
+                CalendarSource.deleted_at.is_not(None),
+                CalendarSource.purged_at.is_(None),
+            )
+            .limit(1)
+        )
+        if trashed_source_id is not None:
+            raise AppError(
+                "calendar_subscription_trashed_duplicate",
+                "相同地址的订阅在回收站中，请恢复后继续使用。",
+                status=409,
+                details={"restore_source_id": str(trashed_source_id)},
+            )
         source = CalendarSource(
             owner_id=identity.user.id,
             kind="ics_subscription",
@@ -181,7 +208,7 @@ async def create_subscription(data: SubscriptionCreate, request: Request) -> dic
             source_id=source.id,
             owner_id=identity.user.id,
             encrypted_url=encrypt_subscription_url(settings, data.url),
-            url_hmac=subscription_url_hmac(settings, data.url),
+            url_hmac=requested_url_hmac,
             display_url=display_url,
             display_host=display_host,
             default_time_zone=time_zone,
@@ -214,8 +241,22 @@ async def create_subscription(data: SubscriptionCreate, request: Request) -> dic
 
 
 @router.get("")
-async def list_subscriptions(request: Request) -> dict:
+async def list_subscriptions(
+    request: Request,
+    lifecycle: Literal["active", "trashed"] = "active",
+) -> dict:
     async with authorized(request) as identity:
+        lifecycle_filter = (
+            (
+                CalendarSource.deleted_at.is_(None),
+                CalendarSource.purged_at.is_(None),
+            )
+            if lifecycle == "active"
+            else (
+                CalendarSource.deleted_at.is_not(None),
+                CalendarSource.purged_at.is_(None),
+            )
+        )
         rows = list(
             (
                 await identity.session.execute(
@@ -227,6 +268,7 @@ async def list_subscriptions(request: Request) -> dict:
                     .where(
                         CalendarSource.owner_id == identity.user.id,
                         CalendarSource.kind == "ics_subscription",
+                        *lifecycle_filter,
                     )
                     .order_by(CalendarSource.updated_at.desc(), CalendarSource.id.desc())
                     .limit(100)
@@ -278,6 +320,7 @@ async def get_subscription(
             identity.session,
             identity.user.id,
             source_id,
+            editable=False,
         )
         statement = (
             select(CalendarSubscriptionEvent)
@@ -355,6 +398,38 @@ async def get_subscription(
         }
 
 
+@router.delete("/{source_id}")
+async def trash_subscription(
+    source_id: UUID,
+    data: SubscriptionAction,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await trash_subscription_source(
+            identity.session,
+            identity.user.id,
+            source_id,
+            data,
+            current_time=now(),
+        )
+
+
+@router.post("/{source_id}/restore")
+async def restore_subscription(
+    source_id: UUID,
+    data: SubscriptionAction,
+    request: Request,
+) -> dict:
+    async with authorized(request, write=True) as identity:
+        return await restore_subscription_source(
+            identity.session,
+            identity.user.id,
+            source_id,
+            data,
+            current_time=now(),
+        )
+
+
 @router.put("/{source_id}")
 async def update_subscription(
     source_id: UUID,
@@ -410,7 +485,7 @@ async def update_subscription(
             if url_changed:
                 if data.url is None or url_metadata is None:
                     raise RuntimeError("changed subscription URL is missing")
-                await _stale_running_refresh(identity.session, subscription, current)
+                await stale_running_refresh(identity.session, subscription, current)
                 subscription.encrypted_url = encrypt_subscription_url(settings, data.url)
                 subscription.url_hmac = new_url_hmac
                 subscription.display_url = url_metadata[0]
@@ -973,7 +1048,7 @@ async def _set_lifecycle(
         if subscription.lifecycle_status != target:
             current = now()
             if paused:
-                await _stale_running_refresh(identity.session, subscription, current)
+                await stale_running_refresh(identity.session, subscription, current)
                 subscription.lifecycle_status = "paused"
                 subscription.refresh_status = "idle"
                 subscription.lease_id = None
@@ -1008,26 +1083,3 @@ async def _set_lifecycle(
             result,
         )
         return result
-
-
-async def _stale_running_refresh(
-    session,
-    subscription: CalendarSubscription,
-    current: datetime,
-) -> None:
-    if subscription.refresh_status != "running" or subscription.lease_id is None:
-        return
-    refresh = await session.scalar(
-        select(CalendarSubscriptionRefresh)
-        .where(
-            CalendarSubscriptionRefresh.source_id == subscription.source_id,
-            CalendarSubscriptionRefresh.lease_id == subscription.lease_id,
-            CalendarSubscriptionRefresh.status == "running",
-        )
-        .with_for_update()
-    )
-    if refresh is not None:
-        refresh.status = "stale"
-        refresh.error_code = "calendar_subscription_superseded"
-        refresh.error_message = "刷新结果已被较新的订阅设置取代。"
-        refresh.finished_at = current

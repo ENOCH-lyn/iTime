@@ -274,6 +274,8 @@ async def open_source_conflict_summaries(
                     PlanSourceConflict.owner_id == owner_id,
                     PlanSourceConflict.plan_version_id.in_(plan_versions),
                     PlanSourceConflict.status == "open",
+                    CalendarSource.deleted_at.is_(None),
+                    CalendarSource.purged_at.is_(None),
                 )
                 .order_by(
                     PlanSourceConflict.plan_version_id,
@@ -296,6 +298,32 @@ async def open_source_conflict_summaries(
         version_id: _summary(items_by_version.get(version_id, []))
         for version_id in plan_versions
     }
+
+
+async def supersede_open_source_conflicts(
+    session: AsyncSession,
+    owner_id: UUID,
+    source_id: UUID,
+    resolved_at: datetime,
+) -> int:
+    conflicts = list(
+        await session.scalars(
+            select(PlanSourceConflict)
+            .where(
+                PlanSourceConflict.owner_id == owner_id,
+                PlanSourceConflict.source_id == source_id,
+                PlanSourceConflict.status == "open",
+            )
+            .order_by(PlanSourceConflict.id)
+            .with_for_update()
+        )
+    )
+    for conflict in conflicts:
+        conflict.status = "resolved"
+        conflict.resolution = "superseded"
+        conflict.resolved_at = resolved_at
+        conflict.version += 1
+    return len(conflicts)
 
 
 async def resolve_source_conflicts(

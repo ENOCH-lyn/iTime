@@ -913,3 +913,61 @@ def test_refresh_after_concurrent_plan_save_marks_the_new_current_version(
             """,
             (current["id"], current["version_id"]),
         ).fetchone()[0] == 0
+
+
+def test_subscription_trash_supersedes_conflict_and_restore_rechecks_plan(
+    client,
+    database_url,
+):
+    _, target, source_id, _, plan, current = setup_moved_source_conflict(
+        client,
+        database_url,
+    )
+    original = current["source_conflicts"]["items"][0]
+    detail = client.get(
+        f"/api/v1/calendar/subscriptions/{source_id}"
+    ).json()["subscription"]
+
+    deleted = client.request(
+        "DELETE",
+        f"/api/v1/calendar/subscriptions/{source_id}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": detail["version"],
+        },
+    )
+    assert deleted.status_code == 200, deleted.text
+    after_delete = planning_context(client, target)["current_plan"]
+    assert after_delete["id"] == plan["id"]
+    assert after_delete["version"] == plan["version"]
+    assert after_delete["source_conflicts"]["open_count"] == 0
+
+    restored = client.post(
+        f"/api/v1/calendar/subscriptions/{source_id}/restore",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": deleted.json()["subscription"]["version"],
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    after_restore = planning_context(client, target)["current_plan"]
+    assert after_restore["id"] == plan["id"]
+    assert after_restore["version"] == plan["version"]
+    assert after_restore["source_conflicts"]["open_count"] == 1
+    assert after_restore["source_conflicts"]["overlap_count"] == 1
+    restored_conflict = after_restore["source_conflicts"]["items"][0]
+    assert restored_conflict["id"] != original["id"]
+    assert restored_conflict["source_id"] == source_id
+    assert restored_conflict["source_generation"] > original["source_generation"]
+    assert restored_conflict["changes"][0]["kind"] == "added"
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        old_status = connection.execute(
+            """
+            SELECT status, resolution
+            FROM plan_source_conflicts
+            WHERE id=%s
+            """,
+            (UUID(original["id"]),),
+        ).fetchone()
+    assert old_status == ("resolved", "superseded")

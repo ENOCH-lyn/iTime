@@ -41,8 +41,20 @@ async def query_subscription_occurrences(
     remaining_limit: int,
     source_id: UUID | None = None,
 ) -> list[dict]:
-    statement = select(CalendarSubscriptionEvent).where(
-        CalendarSubscriptionEvent.owner_id == owner_id
+    statement = (
+        select(CalendarSubscriptionEvent)
+        .join(
+            CalendarSource,
+            and_(
+                CalendarSource.id == CalendarSubscriptionEvent.source_id,
+                CalendarSource.owner_id == CalendarSubscriptionEvent.owner_id,
+            ),
+        )
+        .where(
+            CalendarSubscriptionEvent.owner_id == owner_id,
+            CalendarSource.deleted_at.is_(None),
+            CalendarSource.purged_at.is_(None),
+        )
     )
     if source_id is not None:
         statement = statement.where(

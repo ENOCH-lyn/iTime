@@ -11,6 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.models import User
 from itime.auth.security import now
+from itime.calendar.lifecycle_service import (
+    calendar_lifecycle,
+    calendar_trash_remaining_days,
+    ensure_calendar_editable,
+    ensure_calendar_readable,
+)
 from itime.calendar.models import (
     CalendarSource,
     CalendarSubscription,
@@ -107,6 +113,11 @@ def subscription_result(
             else None
         ),
         "generation": subscription.generation,
+        "lifecycle": calendar_lifecycle(source),
+        "deleted_at": source.deleted_at,
+        "purge_after": source.purge_after,
+        "purged_at": source.purged_at,
+        "trash_remaining_days": calendar_trash_remaining_days(source),
         "version": source.version,
         "state_version": subscription.version,
         "created_at": source.created_at,
@@ -196,6 +207,7 @@ async def locked_subscription(
     source_id: UUID,
     *,
     for_update: bool = False,
+    editable: bool = True,
 ) -> tuple[CalendarSource, CalendarSubscription]:
     source_statement = select(CalendarSource).where(
         CalendarSource.id == source_id,
@@ -220,7 +232,36 @@ async def locked_subscription(
     subscription = await session.scalar(subscription_statement)
     if subscription is None:
         raise RuntimeError("calendar subscription aggregate is incomplete")
+    ensure_calendar_readable(source)
+    if editable:
+        ensure_calendar_editable(source)
     return source, subscription
+
+
+async def stale_running_refresh(
+    session: AsyncSession,
+    subscription: CalendarSubscription,
+    current: datetime,
+    *,
+    error_code: str = "calendar_subscription_superseded",
+    error_message: str = "刷新结果已被较新的订阅设置取代。",
+) -> None:
+    if subscription.refresh_status != "running" or subscription.lease_id is None:
+        return
+    refresh = await session.scalar(
+        select(CalendarSubscriptionRefresh)
+        .where(
+            CalendarSubscriptionRefresh.source_id == subscription.source_id,
+            CalendarSubscriptionRefresh.lease_id == subscription.lease_id,
+            CalendarSubscriptionRefresh.status == "running",
+        )
+        .with_for_update()
+    )
+    if refresh is not None:
+        refresh.status = "stale"
+        refresh.error_code = error_code
+        refresh.error_message = error_message
+        refresh.finished_at = current
 
 
 def subscription_version_conflict(source: CalendarSource) -> AppError:
@@ -241,9 +282,18 @@ async def claim_next_subscription(
     async with database.transaction() as session:
         subscription = await session.scalar(
             select(CalendarSubscription)
+            .join(
+                CalendarSource,
+                and_(
+                    CalendarSource.id == CalendarSubscription.source_id,
+                    CalendarSource.owner_id == CalendarSubscription.owner_id,
+                ),
+            )
             .join(User, User.id == CalendarSubscription.owner_id)
             .where(
                 User.status == "active",
+                CalendarSource.deleted_at.is_(None),
+                CalendarSource.purged_at.is_(None),
                 CalendarSubscription.lifecycle_status == "active",
                 or_(
                     CalendarSubscription.refresh_status == "queued",
@@ -706,16 +756,25 @@ async def _locked_claim_subscription(
 ) -> CalendarSubscription | None:
     return await session.scalar(
         select(CalendarSubscription)
+        .join(
+            CalendarSource,
+            and_(
+                CalendarSource.id == CalendarSubscription.source_id,
+                CalendarSource.owner_id == CalendarSubscription.owner_id,
+            ),
+        )
         .where(
             CalendarSubscription.source_id == claim.source_id,
             CalendarSubscription.owner_id == claim.owner_id,
+            CalendarSource.deleted_at.is_(None),
+            CalendarSource.purged_at.is_(None),
             CalendarSubscription.refresh_status == "running",
             CalendarSubscription.fetch_revision == claim.fetch_revision,
             CalendarSubscription.attempt_count == claim.attempt_number,
             CalendarSubscription.lease_id == claim.lease_id,
             CalendarSubscription.lease_until > now(),
         )
-        .with_for_update()
+        .with_for_update(of=CalendarSubscription)
     )
 
 
