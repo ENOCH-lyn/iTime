@@ -232,7 +232,7 @@ async def _seed_account_base(
                     "id": owner_id,
                     "email": (
                         f"perf-{profile.name}-{seed}-{account_index:03d}"
-                        "@performance.invalid"
+                        "@performance.example.com"
                     ),
                     "password_hash": password_hash,
                     "email_verified_at": created_at,
@@ -552,6 +552,7 @@ async def _seed_calendar_and_plan(
     account_index: int,
     seed: int,
     at: datetime,
+    calendar_series_count: int = 12,
 ) -> Counter[str]:
     counts: Counter[str] = Counter()
     week_start = at.date() - timedelta(days=at.weekday())
@@ -584,7 +585,7 @@ async def _seed_calendar_and_plan(
         for number in range(1, 9)
     ]
     series_rows: list[dict[str, object]] = []
-    for index in range(12):
+    for index in range(calendar_series_count):
         course = index < 8
         starts_at = time(8 + index % 8, 0)
         series_rows.append(
@@ -613,8 +614,8 @@ async def _seed_calendar_and_plan(
                 "starts_at": starts_at,
                 "ends_at": time(starts_at.hour, 50),
                 "end_day_offset": 0,
-                "start_period_number": index + 1 if course else None,
-                "end_period_number": index + 1 if course else None,
+                "start_period_number": index % 8 + 1 if course else None,
+                "end_period_number": index % 8 + 1 if course else None,
                 "recurrence_frequency": "weekly",
                 "recurrence_interval": 1,
                 "recurrence_weekdays": [index % 5 + 1],
@@ -730,13 +731,17 @@ async def _seed_activity_history(
     account_index: int,
     seed: int,
     at: datetime,
+    focus_count: int = 180,
+    difficulty_count: int = 90,
+    review_count: int = 90,
+    memory_count: int = 24,
 ) -> Counter[str]:
     counts: Counter[str] = Counter()
     usable_tasks = task_ids[: max(1, profile.tasks_per_active * 98 // 100)]
 
     focus_rows: list[dict[str, object]] = []
     focus_event_rows: list[dict[str, object]] = []
-    for index in range(180):
+    for index in range(focus_count):
         task_offset = index % len(usable_tasks) if usable_tasks else None
         task_id = usable_tasks[task_offset] if task_offset is not None else None
         task_title = task_titles[task_offset] if task_offset is not None else None
@@ -807,7 +812,7 @@ async def _seed_activity_history(
     _add_count(counts, "focus_events", focus_event_rows)
 
     difficulty_rows: list[dict[str, object]] = []
-    for index in range(90):
+    for index in range(difficulty_count):
         purged = index % 50 == 49
         deleted = not purged and index % 12 == 11
         deleted_at = at - timedelta(days=2) if deleted else (
@@ -855,7 +860,7 @@ async def _seed_activity_history(
 
     review_rows: list[dict[str, object]] = []
     review_message_rows: list[dict[str, object]] = []
-    for index in range(90):
+    for index in range(review_count):
         review_id = stable_uuid(
             profile.name,
             seed,
@@ -903,9 +908,9 @@ async def _seed_activity_history(
     _add_count(counts, "review_messages", review_message_rows)
 
     memory_rows: list[dict[str, object]] = []
-    for index in range(24):
-        purged = index == 23
-        deleted = not purged and index in {20, 21, 22}
+    for index in range(memory_count):
+        purged = index == memory_count - 1
+        deleted = not purged and index >= max(0, memory_count - 4)
         deleted_at = at - timedelta(days=2) if deleted else (
             at - timedelta(days=40) if purged else None
         )
@@ -948,11 +953,17 @@ async def _seed_conversations_and_events(
     account_index: int,
     seed: int,
     at: datetime,
+    conversation_messages: int = 800,
 ) -> Counter[str]:
     counts: Counter[str] = Counter()
     conversation_rows: list[dict[str, object]] = []
     message_rows: list[dict[str, object]] = []
-    for conversation_index in range(20):
+    conversation_count = min(20, conversation_messages)
+    message_base, message_remainder = divmod(
+        conversation_messages,
+        max(1, conversation_count),
+    )
+    for conversation_index in range(conversation_count):
         conversation_id = stable_uuid(
             profile.name,
             seed,
@@ -972,10 +983,11 @@ async def _seed_conversations_and_events(
                 "updated_at": at - timedelta(minutes=conversation_index),
             }
         )
-        for sequence in range(1, 41):
+        message_count = message_base + (conversation_index < message_remainder)
+        for sequence in range(1, message_count + 1):
             completed_at = at - timedelta(
                 days=conversation_index,
-                seconds=40 - sequence,
+                seconds=message_count - sequence,
             )
             message_rows.append(
                 {
@@ -1157,7 +1169,7 @@ async def seed_standard(
                 credential = AccountCredential(
                     email=(
                         f"perf-{profile.name}-{seed}-{account_index:03d}"
-                        "@performance.invalid"
+                        "@performance.example.com"
                     ),
                     password=SYNTHETIC_LOGIN_SECRET,
                     dataset=profile.name,

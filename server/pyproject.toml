@@ -43,7 +43,10 @@ packages = ["src/itime"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra --strict-markers"
-markers = ["integration: 需要隔离的真实 PostgreSQL"]
+markers = [
+    "integration: 需要隔离的真实 PostgreSQL",
+    "performance: 仅在隔离性能环境显式执行的高数据量测试",
+]
 filterwarnings = ["error"]
 
 [tool.ruff]

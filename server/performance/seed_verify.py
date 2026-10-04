@@ -23,6 +23,9 @@ COUNT_QUERIES = {
     "task_links": "SELECT count(*) FROM task_links",
     "academic_terms": "SELECT count(*) FROM academic_terms",
     "term_periods": "SELECT count(*) FROM term_periods",
+    "calendar_sources": "SELECT count(*) FROM calendar_sources",
+    "calendar_subscriptions": "SELECT count(*) FROM calendar_subscriptions",
+    "calendar_subscription_events": "SELECT count(*) FROM calendar_subscription_events",
     "calendar_series": "SELECT count(*) FROM calendar_series",
     "plans": "SELECT count(*) FROM plans",
     "plan_versions": "SELECT count(*) FROM plan_versions",
@@ -161,7 +164,7 @@ async def verify_counts_and_invariants(
     if len(manifest.credentials) != manifest.active_accounts:
         violations.append("凭据数量与活动账号数量不一致")
     if any(
-        not credential.email.endswith("@performance.invalid")
+        not credential.email.endswith("@performance.example.com")
         or credential.dataset != manifest.profile
         for credential in manifest.credentials
     ):

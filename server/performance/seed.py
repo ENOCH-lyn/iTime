@@ -81,7 +81,15 @@ async def seed_dataset(
                 at=at,
             )
         elif profile.name == "history":
-            raise ValueError("重历史数据生成将在 M8-A Task 5 提供")
+            from performance.seed_history import seed_history_accounts
+
+            manifest = await seed_history_accounts(
+                database,
+                settings,
+                profile,
+                seed=seed,
+                at=at,
+            )
         else:
             raise ValueError(f"不支持的数据档位：{profile.name}")
         verification = await verify_dataset(settings, manifest, database=database)
