@@ -82,7 +82,7 @@ git commit -m "test: 支持真实浏览器兼容验证"
 **Files:**
 - Create: `web/e2e/full-user-journey.spec.ts`
 
-- [ ] **Step 1: 写注册、登录、时间和质量检查辅助函数**
+- [x] **Step 1: 写注册、登录、时间和质量检查辅助函数**
 
 测试文件提供以下本地辅助函数，不把新测试耦合到其他 spec 的模块私有实现：
 
@@ -109,7 +109,7 @@ async function registerAndLogin(page: Page, request: APIRequestContext) {
 - `assertPageHealth(page)`：断言无错误层、无根级横向溢出、axe 无违规。
 - `screenshot(page, info, name)`：写入 `/tmp/itime-ui-evidence/<project>-full-journey-*.png`。
 
-- [ ] **Step 2: 先写完整主流程断言**
+- [x] **Step 2: 先写完整主流程断言**
 
 核心测试使用 `test.setTimeout(90_000)`，并按以下顺序只操作真实页面：
 
@@ -180,7 +180,7 @@ test('注册到复盘的完整闭环可在另一在线端查看', async ({
 - 复盘事实包含 1 个计划块、1 个完成任务、1 个专注条目和 1 条困难。
 - 第二端在 5 秒内看到任务完成；随后在统计页看到计划块 1、任务完成 1、专注会话 1，并在复盘页读到已生成报告。
 
-- [ ] **Step 3: 运行 desktop，收集首个真实失败**
+- [x] **Step 3: 运行 desktop，收集首个真实失败**
 
 Run:
 
@@ -191,11 +191,11 @@ pnpm exec playwright test e2e/full-user-journey.spec.ts --project=desktop
 
 Expected: 若跨模块状态、选择器或时序存在缺陷，测试在对应用户步骤失败并保留截图；不得通过降低断言、增加固定长等待或伪造响应绕过。
 
-- [ ] **Step 4: 修复测试自身问题或产品集成缺陷**
+- [x] **Step 4: 修复测试自身问题或产品集成缺陷**
 
 选择器只等待可观察状态，异步 AI 最长等待复用现有 15 秒合同，跨端同步最长等待 5 秒。若失败属于产品代码，则先在所属模块增加最窄回归测试、修复并单独提交，再回到本场景。
 
-- [ ] **Step 5: 运行三种视口和质量检查**
+- [x] **Step 5: 运行三种视口和质量检查**
 
 Run:
 
@@ -206,7 +206,7 @@ pnpm exec playwright test e2e/full-user-journey.spec.ts
 
 Expected: `3 passed`；desktop、mobile、tablet 都完成同一真实闭环，且 axe、控制台、错误层和溢出检查通过。
 
-- [ ] **Step 6: 提交完整闭环测试**
+- [x] **Step 6: 提交完整闭环测试**
 
 ```bash
 git add web/e2e/full-user-journey.spec.ts
