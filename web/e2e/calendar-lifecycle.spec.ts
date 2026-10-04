@@ -530,7 +530,10 @@ test('暂停与删除订阅保持不同语义并停止活动来源', async ({
   if (await deleteError.isVisible()) {
     await expect(deleteError).toContainText('此订阅已在其他页面或设备更新')
     await expect(deleteError).toContainText('请求编号')
-    await importDialog.getByRole('button', { name: '重新读取' }).click()
+    await importDialog.getByRole('button', {
+      name: '重新读取',
+      exact: true,
+    }).click()
     await expect(deleteError).toHaveCount(0)
     page.once('dialog', dialog => dialog.accept())
     await importDialog.getByRole('button', {

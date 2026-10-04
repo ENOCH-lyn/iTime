@@ -401,6 +401,7 @@ async function openSubscription(
     detail.value = result
     syncSubscription(result.subscription)
     if (!preserveDrafts || sourceChanged) resetSourceEditor(result.subscription)
+    if (!silent) error.value = null
 
     if (targetEventId) {
       const event = result.events.find(item => item.id === targetEventId)
