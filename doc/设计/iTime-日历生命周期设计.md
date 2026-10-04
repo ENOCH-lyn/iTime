@@ -2,8 +2,9 @@
 
 更新：2026-10-04。本设计在 `REQ-DATA-01` 的 30 天回收站、`REQ-CAL-01/02/03`
 的日历与外部来源规则，以及既有任务、困难和长期记忆生命周期模式之上，冻结日历系列与
-ICS 订阅源的删除、恢复和到期清理合同。实现仍须按专项计划和真实测试逐项落地；本文不代表
-功能已经完成。
+ICS 订阅源的删除、恢复和到期清理合同。迁移 `0034_calendar_lifecycle`、服务端领域/API、
+独立清理 worker、统一 Web 回收站和真实浏览器测试已于 2026-10-04 完成；本文同时记录实际
+边界，不代表学期、项目、AI 会话等其他对象已经开放回收。
 
 本模块采用可演进工程默认：只有用户可独立管理的日历聚合根进入回收站；学期、节次、单次
 例外、补课和来源事件仍作为聚合内部数据管理；已经发生的计划、执行和复盘快照不因源对象
@@ -300,3 +301,30 @@ ICS 订阅源的删除、恢复和到期清理合同。实现仍须按专项计�
 - 需求追踪、详细设计、测试方案、产品验收、实施证据、README、文档索引和隐私页同步实际状态。
 - 真实 Edge、实体设备、生产备份恢复和正式第三方订阅兼容性未执行时继续明确标注，不以本模块
  结果代替 M7/M8 准入。
+
+## 11. 实现与验证状态
+
+实际实现包括迁移 `0034_calendar_lifecycle`、`calendar/lifecycle_service.py`、
+`calendar/cleanup_worker.py`、系列与订阅生命周期路由、所有普通投影/规划/复盘/导入过滤、
+同步与导出，以及 `CalendarTrashDialog.vue`、日历详情删除入口和订阅暂停/删除分离。服务端
+锁顺序、生命周期检查约束、到期部分索引、planning revision 触发器、URL/正文脱敏、操作响应
+失效和迟到刷新拒绝均已有真实 PostgreSQL 证据。
+
+2026-10-04 的最终门禁：
+
+- 日历生命周期及受影响服务组合：**103 passed**；服务端全量：**532 passed in 455.28s**。
+- Ruff、`itime_server-0.1.0.tar.gz`、`itime_server-0.1.0-py3-none-any.whl`、Alembic
+  `0034_calendar_lifecycle (head)`、`alembic check` 和 `cleanup_worker --once` 全部通过。
+- 受影响 Chromium：**86 passed, 4 skipped**；最终完整 Chromium：
+  **249 passed, 6 skipped in 14.3m**。6 项均是只需 desktop 执行一次的真实 worker、慢上游或
+  深度公开链接场景。
+- 首轮完整 Chromium 暴露订阅刷新可能在轮询观察到 busy 前完成，导致选中详情保留旧事件；
+  `CalendarSubscriptionManager.vue` 现同时比较 generation 并在异步详情读取后复核
+  `pollRevision`。精确顺序复测 **11 passed**，随后完整套件无失败。
+- 人工检查 `/tmp/itime-ui-evidence/` 下 desktop/mobile/tablet 回收站、直接删除、订阅恢复、
+  到期清理和 320×700 深色最大字号截图，无空白、重叠、裁切或根级横向溢出。
+
+收口时开发 API、订阅 worker、日历 cleanup worker 和 Vite 均以当前代码运行；
+`/api/ready` 返回 200，OpenAPI 包含两个恢复路由，`/calendar` 返回 200，测试数据库残留为 0。
+真实 Edge、实体设备、正式第三方私密订阅兼容性、长历史性能、生产部署和备份恢复删除重放仍
+未执行。

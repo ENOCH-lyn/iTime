@@ -1304,11 +1304,11 @@ Expected: 所有专项服务测试、生产构建和受影响 Chromium 三视口
 查看：
 
 ```text
-/tmp/itime-ui-evidence/desktop-calendar-lifecycle-trash.png
+/tmp/itime-ui-evidence/desktop-calendar-lifecycle-purged.png
 /tmp/itime-ui-evidence/mobile-calendar-lifecycle-trash.png
 /tmp/itime-ui-evidence/tablet-calendar-lifecycle-trash.png
 /tmp/itime-ui-evidence/desktop-calendar-lifecycle-subscription-restored.png
-/tmp/itime-ui-evidence/desktop-calendar-lifecycle-320-large-dark.png
+/tmp/itime-ui-evidence/desktop-calendar-lifecycle-trash-320-dark-large.png
 ```
 
 确认无空白画面、标题/URL/日期裁切、文字重叠、按钮移位、不可见焦点或根级横向滚动。截图只作
@@ -1332,6 +1332,8 @@ Expected: 测试提交只包含真实动态验证与隔离环境支持。
 - Modify: `README.md`
 - Modify: `doc/README.md`
 - Modify: `designer.md`
+- Modify: `doc/需求/iTime-需求规格说明书.md`
+- Modify: `doc/需求/iTime-需求访谈问题清单.md`
 - Modify: `doc/需求/iTime-需求追踪矩阵.md`
 - Modify: `doc/设计/iTime-详细设计文档.md`
 - Modify: `doc/设计/iTime-时间课表与重复规则设计.md`
@@ -1344,8 +1346,9 @@ Expected: 测试提交只包含真实动态验证与隔离环境支持。
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `web/src/pages/PrivacyPage.vue`
 - Modify: `web/src/pages/TermsPage.vue`
+- Modify: `web/e2e/public.spec.ts`
 
-- [ ] **Step 1: 执行服务端完整门禁**
+- [x] **Step 1: 执行服务端完整门禁**
 
 ```bash
 cd server
@@ -1361,7 +1364,11 @@ uv run python -m itime.calendar.cleanup_worker --once
 Expected: Ruff、全量 pytest、sdist/wheel、迁移 head/check 和独立清理进程全部通过。记录真实测试
 数量、耗时、迁移 revision 和构建产物名。
 
-- [ ] **Step 2: 执行完整 Chromium 门禁**
+实际：Ruff 通过；全量 pytest **532 passed in 455.28s**；构建产物为
+`itime_server-0.1.0.tar.gz` 和 `itime_server-0.1.0-py3-none-any.whl`；Alembic 为
+`0034_calendar_lifecycle (head)` 且 `check` 无新操作；`cleanup_worker --once` 通过。
+
+- [x] **Step 2: 执行完整 Chromium 门禁**
 
 ```bash
 cd web
@@ -1372,7 +1379,13 @@ pnpm exec playwright test
 Expected: 全部 desktop/mobile/tablet Chromium 用例通过；仅记录配置中明确且有理由的 skip。任何
 失败都先定位并修复或证明为既有非确定问题后空载复跑，不能直接写“通过”。
 
-- [ ] **Step 3: 验证运行态和环境清理**
+实际：首轮全量为 **248 passed, 6 skipped, 1 failed**，唯一失败暴露订阅刷新在轮询观察到 busy
+前完成时详情不重读；修复 generation 比较和异步 revision 复核后，精确顺序复测
+**11 passed**，最终全量为 **249 passed, 6 skipped in 14.3m**。6 项均为配置中仅需 desktop
+执行一次的真实 worker、慢上游或深度公开链接场景；生产构建通过。公开说明更新后另执行
+`public.spec.ts`，**9 passed in 18.4s**。
+
+- [x] **Step 3: 验证运行态和环境清理**
 
 ```bash
 curl -fsS http://127.0.0.1:8000/api/ready
@@ -1392,7 +1405,11 @@ SELECT datname FROM pg_database WHERE datname LIKE 'itime_test_%';
 Expected: `/api/ready` 200、两个恢复路由存在、无测试数据库、无测试 worker、无受控上游或临时
 导出残留。
 
-- [ ] **Step 4: 同步文档与公开说明**
+实际：开发 API、订阅 worker、日历 cleanup worker 和 Vite 已按当前代码重启；
+`/api/ready` 与 `http://localhost:5173/calendar` 返回 200，两个恢复路由存在，测试数据库及
+测试进程/临时导出残留为 0。
+
+- [x] **Step 4: 同步文档与公开说明**
 
 文档只写实际结果：
 
@@ -1406,7 +1423,7 @@ Expected: `/api/ready` 200、两个恢复路由存在、无测试数据库、无
 
 把本计划所有已执行 checkbox 改为 `[x]`。
 
-- [ ] **Step 5: 检查、提交并确认工作树**
+- [x] **Step 5: 检查、提交并确认工作树**
 
 ```bash
 git diff --check

@@ -711,7 +711,7 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 - 帮助中心从原账号排障扩展为首次使用、任务/日历语义、账号安全和失败恢复四组内容；可直接进入任务、日历、演示、重发验证、找回密码和设备管理。
 - 用户协议明确当前为 Web 开发版本，说明服务范围、账号责任、内容来源、AI 结果确认和中断恢复；不虚构尚未确定的运营主体、正式联系方式或争议条款。
 - 隐私说明如实列出当前已处理的账号/任务/日历数据、截图识别的 OpenAI 兼容端点处理、超级管理员正文访问，以及正式上线前仍需披露的供应商、地区和运营主体。
-- 生命周期表逐项区分“产品规则”和“当前状态”：识别原图清理和任务回收站已实现；M4-C 后又将 7 天 AI 正文日志、30 天质检样本更新为已实现。日历对象回收站和注销清理仍标为待实现，不把需求目标冒充现状。
+- 生命周期表逐项区分“产品规则”和“当前状态”：本节交付时识别原图清理和任务回收站已实现，日历对象回收站和注销清理仍标为待实现；M4-C、M6-G 和 M6-H 后分别按实际结果更新 AI 日志/样本、账号注销及日历系列/订阅源状态，不把需求目标冒充现状。
 - 隐私表格在宽屏保持结构化表格；600px 以下转换为带字段标签的完整列表，不把“当前状态”藏在默认视口之外。所有公开页脚只链接真实路由。
 
 2026-10-02 执行：
@@ -722,7 +722,7 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 | `cd web && pnpm exec playwright test e2e/public.spec.ts` | **9 passed in 14.4s** | 五类公共页面 × 1440×1000、390×844、768×1024，另含首页、演示、隐私 320×700 最大字号 |
 | `cd web && pnpm test:e2e` | **105 passed in 4.2m** | 账号、后台、任务、日历、导入、订阅和全部公开页面 Chromium 回归 |
 
-浏览器流程真实访问帮助锚点、协议和隐私路由，核对 7 天日志、30 天样本及“已实现/待实现”状态；M6-B 后更新任务回收站状态，M4-C 后更新正文日志和质量样本状态。三个视口均验证 axe、控制台、API 500 和根级横向溢出；修复了可滚动表格键盘焦点，并将手机表格进一步改为完整标签列表。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-privacy.png` 与 `desktop-public-privacy-320-large-font.png`，已人工检查。正式运营主体/供应商/地区仍是发布前配置与披露项；真实 Edge 和实体设备仍未验证。
+浏览器流程真实访问帮助锚点、协议和隐私路由，核对 7 天日志、30 天样本及“已实现/待实现”状态；M6-B、M4-C、M6-G 和 M6-H 后分别更新任务回收站、正文日志/质量样本、账号注销和日历系列/订阅源回收状态。三个视口均验证 axe、控制台、API 500 和根级横向溢出；修复了可滚动表格键盘焦点，并将手机表格进一步改为完整标签列表。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-privacy.png` 与 `desktop-public-privacy-320-large-font.png`，已人工检查。正式运营主体/供应商/地区仍是发布前配置与披露项；真实 Edge 和实体设备仍未验证。
 
 ## M6-A：任务归档与 30 天回收站服务
 
@@ -774,7 +774,9 @@ Excel 与 ICS 文件导入至此完成；截图识别、原媒体清理和 ICS �
 
 专项流程真实完成任务创建、归档、取消归档、删除确认、回收站只读查看、期限显示和恢复；另一浏览器页面制造归档版本冲突并采用服务器状态，确认完成事实不变。每个视口均检查 axe、控制台、Vite 错误层和根级横向溢出。截图位于 `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-task-lifecycle-{trash-detail,conflict-adopted}.png` 及 `desktop-task-lifecycle-trash-320-large-font.png`，已人工检查三栏、双栏、手机单栏和 320px 大字号，没有内容重叠。
 
-Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium。真实 Edge、实体设备、日历等其他业务对象回收站及跨聚合删除仍待后续模块。
+Browser 插件工具在本会话未暴露，因此按前端测试规范使用仓库 Playwright Chromium。日历系列与
+订阅源回收站后续已由 M6-H 实现；真实 Edge、实体设备及学期、项目、AI 会话等其他独立对象回收
+仍待后续模块。
 
 ## M4-A：全局 AI 多会话与可恢复文本流服务
 
@@ -1547,3 +1549,80 @@ desktop、mobile、tablet 均检查页面标题、非空内容、目标交互、
 `/api/v1/admin/ai-configs/routing/{capability}`，Vite `/admin/ai` 可访问，`itime_test_%`
 数据库残留为 0。AI 备用服务路由首版范围已完成；正式第三方供应商质量、数据处理地区、
 Edge/实体设备、M8 性能/恢复和生产部署仍未完成或验证。
+
+## M6-H：日历系列与 ICS 订阅源 30 天生命周期
+
+对应 Git 提交：`29f760e`、`2ba1380`、`24f742f`、`036da5e`、`4f7fd34`、`08b72a4`、
+`f7eeacb`、`e5b6ca0`、`d0f0d53`、`2f7e033`、`e85633b`、`fff4e7f`。专项设计见
+[日历生命周期设计](../设计/iTime-日历生命周期设计.md)，实际代码包括迁移
+`0034_calendar_lifecycle`、`server/src/itime/calendar/lifecycle_service.py`、
+`cleanup_worker.py`、系列/订阅路由与投影过滤、同步和本人导出，以及
+`web/src/components/CalendarTrashDialog.vue`、日历详情/订阅管理入口和
+`web/e2e/calendar-lifecycle.spec.ts`。
+
+已实现：
+
+- 手工、XLSX/ICS 文件和截图确认形成的 `CalendarSeries`，以及 ICS `CalendarSource`，均使用
+  `active / trashed / purged` 聚合生命周期。删除期限固定为服务端删除时刻后 30×24 小时；
+  默认列表、occurrence、冲突、规划输入、复盘和 AI 上下文立即排除回收对象。
+- 删除与恢复使用本人权限、CSRF、`operation_id`、请求摘要和乐观版本；重复删除不延长期限，
+  同操作号异内容拒绝，活动对象重复恢复冲突，已清理对象返回 410。回收对象的编辑、拆分、
+  例外、补课、刷新和字段覆盖入口统一阻断。
+- 删除系列保留原 ID、重复规则、学期关系、例外和补课，恢复后重新投影。订阅暂停与删除正交：
+  删除先推进 `fetch_revision`、使租约/刷新结果失效并隐藏来源；恢复活动订阅重新排队，恢复
+  暂停订阅仍保持暂停。恢复造成当前计划重叠只创建复核提示，不修改计划版本或计划块。
+- `itime.calendar.cleanup_worker` 每类每批最多 100 条，使用 PostgreSQL
+  `FOR UPDATE SKIP LOCKED`。系列清理脱敏名称、说明、地点、时间、重复和来源并删除直接例外/
+  补课；订阅清理删除事件、覆盖、单次例外和刷新明细，清空加密 URL、主机、验证器、摘要及
+  错误正文；两类都先清除旧操作响应并保留最小墓碑和无正文 `purged` 同步事件。
+- 本人完整 JSON 包含尚可恢复对象及生命周期字段；分类 CSV/Markdown 使用独立回收站分类，
+  ICS 只导出活动安排，已清理墓碑不带正文。账号注销仍优先于单项 worker，既有计划、执行和
+  复盘快照保持不可变。
+- `/calendar` 的活动系列详情提供明确删除确认；订阅管理分开“暂停”和“移到回收站”；统一
+  “日历回收站”按安排/订阅展示只读详情、到期时间和恢复入口。跨标签同步可刷新已打开的
+  回收站及恢复后的日历，网络失败、未知提交结果和版本冲突均保留可恢复状态。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18、真实 Uvicorn/Mailpit、受控 ICS HTTP 来源、真实
+订阅/日历清理 worker、生产构建预览和 Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 日历生命周期及受影响服务组合 | **103 passed** | 迁移、系列/订阅 API、投影、清理、规划、复盘、同步、导出与注销 |
+| `cd server && uv run ruff check src tests` | 通过 | 全部服务端源码与测试静态检查 |
+| `cd server && uv run pytest -q` | **532 passed in 455.28s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv build` | 通过 | `itime_server-0.1.0.tar.gz` 与 `itime_server-0.1.0-py3-none-any.whl` |
+| `cd server && uv run alembic upgrade head/current/check` | `0034_calendar_lifecycle (head)`，无新升级操作 | 开发库迁移与 ORM 一致性 |
+| `cd server && uv run python -m itime.calendar.cleanup_worker --once` | 通过 | 独立清理入口可执行 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 日历生命周期及受影响 Chromium | **86 passed, 4 skipped** | 日历、导入、订阅、规划、导出、同步三视口与 desktop 深度场景 |
+| `cd web && pnpm exec playwright test` 首轮 | **248 passed, 6 skipped, 1 failed** | 唯一失败为订阅刷新过快时选中详情保留旧事件 |
+| 竞态修复后精确顺序复测 | **11 passed** | desktop 日历生命周期后紧接订阅完整流程 |
+| `cd web && pnpm exec playwright test` 最终复跑 | **249 passed, 6 skipped in 14.3m** | 255 项收集；6 项为非 desktop 明确跳过的真实 worker、慢上游或深度公开链接场景 |
+| `cd web && pnpm exec playwright test e2e/public.spec.ts` | **9 passed in 18.4s** | 生命周期公开说明更新后的 desktop/mobile/tablet 回归及 320px 隐私页 |
+
+首轮全量测试中，刷新可在前端轮询首次观察到 `queued/running` 前完成，列表 generation 已前进，
+但选中详情仍保留旧事件。`CalendarSubscriptionManager.pollSubscriptions` 现同时比较选中来源的
+前后 generation；需要重读详情时在异步返回后再次核对 `pollRevision`，防止旧轮询覆盖新选择。
+修复先按原失败顺序通过 11 项复测，再通过完整 255 项收集，不以空载单用例代替全量证据。
+
+真实浏览器覆盖直接删除安排、暂停与删除订阅的差异、活动/暂停订阅恢复、网络失败、未知响应、
+版本冲突、恢复后的计划重叠、跨标签刷新、真实到期清理、敏感正文从 API/UI/导出消失、未到期
+对象保留、第二浏览器上下文及慢 ICS 迟到结果拒绝。desktop、mobile、tablet 均检查 axe、
+控制台、Vite 错误层和根级横向溢出；desktop 另执行 320×700 深色最大字号。截图包括：
+
+- `/tmp/itime-ui-evidence/{mobile,tablet}-calendar-lifecycle-trash.png`
+- `/tmp/itime-ui-evidence/desktop-calendar-lifecycle-trash-320-dark-large.png`
+- `/tmp/itime-ui-evidence/desktop-calendar-lifecycle-{direct-delete,purged}.png`
+- `/tmp/itime-ui-evidence/desktop-calendar-lifecycle-subscription-{direct-delete,restored}.png`
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-privacy.png`
+- `/tmp/itime-ui-evidence/desktop-public-privacy-320-large-font.png`
+
+截图已人工检查，无空白、重叠、裁切、按钮移位或横向溢出。本会话未暴露 Browser 插件，因此
+按前端测试规范使用仓库 Playwright 完成渲染、交互和截图验证。
+
+收口时开发 API、`itime.calendar.subscription_worker`、`itime.calendar.cleanup_worker` 和 Vite
+已按当前代码重启；`GET /api/ready` 返回 200，OpenAPI 包含系列与订阅恢复路由，
+`http://localhost:5173/calendar` 返回 200，`itime_test_%` 数据库及测试进程/临时导出残留为
+0。日历生命周期首版范围已完成；学期、节次、项目、AI 会话等其他独立对象的回收、困难/任务
+语音与 AI 校对、正式第三方订阅兼容性、真实 Edge/实体设备、M8 性能与备份恢复删除重放、生产
+部署仍未完成或验证。
