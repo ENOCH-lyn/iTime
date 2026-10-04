@@ -1,5 +1,7 @@
 import csv
 import json
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ from performance.report import (
     assert_no_sensitive_artifacts,
     build_report,
     evaluate_gates,
+    read_resource_samples,
 )
 
 
@@ -145,6 +148,79 @@ def test_saturation_above_minimum_turns_latency_failure_into_capacity_warning():
     assert not minimum.passed
 
 
+def test_cpu_peak_requires_a_full_60_second_streak():
+    below = evaluate_gates(
+        scenario="peak",
+        users=50,
+        requests=[
+            RequestStat("read::tasks.list", 100, 50, 100, 200, 0),
+            RequestStat("write::tasks.create", 10, 50, 100, 200, 0),
+        ],
+        resources=healthy_resources(cpu_peak_over_90_seconds=59),
+        invariants={},
+    )
+    assert below.passed
+
+    threshold = evaluate_gates(
+        scenario="peak",
+        users=50,
+        requests=[
+            RequestStat("read::tasks.list", 100, 50, 100, 200, 0),
+            RequestStat("write::tasks.create", 10, 50, 100, 200, 0),
+        ],
+        resources=healthy_resources(cpu_peak_over_90_seconds=60),
+        invariants={},
+    )
+    assert threshold.failures == ("CPU stayed above 90% for 60s",)
+
+
+def test_resource_summary_can_be_bounded_to_a_saturation_window(tmp_path: Path):
+    path = tmp_path / "resources.csv"
+    with path.open("w", newline="") as output:
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "at",
+                "cpu_ratio",
+                "memory_ratio",
+                "database_connection_ratio",
+                "blocked_over_two_seconds",
+                "pool_timeouts",
+                "server_5xx",
+                "sampling_gap_seconds",
+            ],
+        )
+        writer.writeheader()
+        for at, cpu in (
+            ("2026-10-05T00:00:00+00:00", 0.99),
+            ("2026-10-05T00:01:00+00:00", 0.40),
+            ("2026-10-05T00:01:01+00:00", 0.60),
+            ("2026-10-05T00:02:00+00:00", 0.95),
+        ):
+            writer.writerow(
+                {
+                    "at": at,
+                    "cpu_ratio": cpu,
+                    "memory_ratio": 0.5,
+                    "database_connection_ratio": 0.3,
+                    "blocked_over_two_seconds": 0,
+                    "pool_timeouts": 0,
+                    "server_5xx": 0,
+                    "sampling_gap_seconds": 0,
+                }
+            )
+
+    summary = read_resource_samples(
+        path,
+        started_at=datetime.fromisoformat("2026-10-05T00:00:30+00:00"),
+        ended_at=datetime.fromisoformat("2026-10-05T00:01:30+00:00"),
+    )
+
+    assert summary.cpu_mean_ratio == pytest.approx(0.5)
+    assert summary.memory_peak_ratio == 0.5
+    assert summary.cpu_peak_over_90_seconds == 0
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -268,3 +344,60 @@ def test_build_report_reads_csv_and_writes_atomic_public_outputs(tmp_path: Path)
     assert "20 users" in report
     assert "read::tasks.list" in report
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_saturation_report_uses_representative_level_and_records_capacity(
+    tmp_path: Path,
+):
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "scenario": "saturation",
+                "users": 100,
+                "environment": "test",
+                "commit": "abc1234",
+            }
+        )
+    )
+    representative_requests = [
+        asdict(RequestStat("read::tasks.list", 300, 120, 800, 1500, 0)),
+        asdict(RequestStat("write::tasks.create", 30, 250, 700, 1400, 0)),
+    ]
+    (tmp_path / "saturation.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "minimum_required_users": 50,
+                "minimum_capacity_passed": True,
+                "maximum_stable_users": 50,
+                "first_unstable_users": 60,
+                "capacity_boundary_users": 60,
+                "stop_reason": "three_consecutive_request_gate_violations",
+                "hard_gate_violations": [],
+                "representative": {
+                    "users": 50,
+                    "requests": representative_requests,
+                    "resources": asdict(healthy_resources()),
+                },
+            }
+        )
+    )
+    (tmp_path / "invariants.json").write_text(
+        json.dumps({"orphan_tasks": 0})
+    )
+
+    result = build_report(tmp_path)
+
+    assert result.passed
+    assert result.warnings == (
+        "capacity boundary observed at 60 users after "
+        "three consecutive violating windows",
+    )
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["saturation"]["maximum_stable_users"] == 50
+    assert summary["saturation"]["representative_users"] == 50
+    report = (tmp_path / "report.md").read_text()
+    assert "- Load: 50 users" in report
+    assert "- Maximum stable load: 50 users" in report
+    assert "- Capacity boundary: 60" in report
+    assert not (tmp_path / "requests_stats.csv").exists()

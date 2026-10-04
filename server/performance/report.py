@@ -4,6 +4,7 @@ import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -145,7 +146,7 @@ def evaluate_gates(
             f"mean CPU ratio {_number(resources.cpu_mean_ratio)} > 0.7",
         ),
         (
-            resources.cpu_peak_over_90_seconds > 0,
+            resources.cpu_peak_over_90_seconds >= 60,
             "CPU stayed above 90% for "
             f"{resources.cpu_peak_over_90_seconds}s",
         ),
@@ -243,9 +244,30 @@ def read_locust_csv(path: Path) -> tuple[RequestStat, ...]:
     return tuple(rows)
 
 
-def read_resource_samples(path: Path) -> ResourceSummary:
+def read_resource_samples(
+    path: Path,
+    *,
+    started_at: datetime | None = None,
+    ended_at: datetime | None = None,
+) -> ResourceSummary:
     with path.open(newline="") as source:
         rows = list(csv.DictReader(source))
+    if started_at is not None or ended_at is not None:
+        selected: list[dict[str, str]] = []
+        for row in rows:
+            raw_at = row.get("at")
+            if not raw_at:
+                raise ValueError("resources.csv 缺少窗口采样时间")
+            try:
+                sampled_at = datetime.fromisoformat(raw_at)
+            except ValueError as exc:
+                raise ValueError("resources.csv 包含无效采样时间") from exc
+            if started_at is not None and sampled_at < started_at:
+                continue
+            if ended_at is not None and sampled_at > ended_at:
+                continue
+            selected.append(row)
+        rows = selected
     if not rows:
         raise ValueError("resources.csv 没有采样数据")
 
@@ -292,11 +314,110 @@ def _write_atomic(path: Path, content: str) -> None:
     os.replace(temporary, path)
 
 
+def _resource_summary(value: object) -> ResourceSummary:
+    if not isinstance(value, Mapping):
+        raise ValueError("饱和代表档位缺少资源摘要")
+    try:
+        return ResourceSummary(
+            cpu_mean_ratio=float(value["cpu_mean_ratio"]),
+            cpu_peak_over_90_seconds=int(value["cpu_peak_over_90_seconds"]),
+            memory_peak_ratio=float(value["memory_peak_ratio"]),
+            memory_growth_ratio=float(value["memory_growth_ratio"]),
+            database_connection_peak_ratio=float(
+                value["database_connection_peak_ratio"]
+            ),
+            blocked_over_two_seconds=int(value["blocked_over_two_seconds"]),
+            pool_timeouts=int(value["pool_timeouts"]),
+            server_5xx=int(value["server_5xx"]),
+            sampling_gap_seconds=int(value["sampling_gap_seconds"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("饱和代表档位资源摘要格式无效") from exc
+
+
+def _request_stats(value: object) -> tuple[RequestStat, ...]:
+    if not isinstance(value, list):
+        raise ValueError("饱和代表档位缺少请求统计")
+    requests: list[RequestStat] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ValueError("饱和代表档位请求统计格式无效")
+        try:
+            requests.append(
+                RequestStat(
+                    name=str(item["name"]),
+                    count=int(item["count"]),
+                    failures=int(item["failures"]),
+                    p50_ms=float(item["p50_ms"]),
+                    p95_ms=float(item["p95_ms"]),
+                    p99_ms=float(item["p99_ms"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("饱和代表档位请求统计格式无效") from exc
+    return tuple(requests)
+
+
+def _saturation_inputs(
+    run_dir: Path,
+) -> tuple[tuple[RequestStat, ...], ResourceSummary, int, dict[str, Any]]:
+    payload = read_json(run_dir / "saturation.json")
+    representative = payload.get("representative")
+    if payload.get("schema_version") != 1 or not isinstance(
+        representative,
+        Mapping,
+    ):
+        raise ValueError("saturation.json 版本或代表档位无效")
+    hard_gate_violations = payload.get("hard_gate_violations")
+    if not isinstance(hard_gate_violations, list) or not all(
+        isinstance(item, str) for item in hard_gate_violations
+    ):
+        raise ValueError("saturation.json 最低容量违规格式无效")
+    try:
+        users = int(representative["users"])
+        maximum_stable_users = int(payload["maximum_stable_users"])
+        minimum_required_users = int(payload["minimum_required_users"])
+        minimum_capacity_passed = payload["minimum_capacity_passed"]
+        first_unstable_users = payload["first_unstable_users"]
+        capacity_boundary_users = payload["capacity_boundary_users"]
+        stop_reason = str(payload["stop_reason"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("saturation.json 摘要字段无效") from exc
+    if not isinstance(minimum_capacity_passed, bool):
+        raise ValueError("saturation.json 最低容量结果必须为布尔值")
+    for name, value in (
+        ("first_unstable_users", first_unstable_users),
+        ("capacity_boundary_users", capacity_boundary_users),
+    ):
+        if value is not None and not isinstance(value, int):
+            raise ValueError(f"saturation.json {name} 必须为整数或 null")
+    if users <= 0 or maximum_stable_users < 0 or minimum_required_users <= 0:
+        raise ValueError("saturation.json 用户档位必须为正数")
+    metadata = {
+        "representative_users": users,
+        "maximum_stable_users": maximum_stable_users,
+        "minimum_required_users": minimum_required_users,
+        "minimum_capacity_passed": minimum_capacity_passed,
+        "first_unstable_users": first_unstable_users,
+        "capacity_boundary_users": capacity_boundary_users,
+        "stop_reason": stop_reason,
+        "hard_gate_violations": hard_gate_violations,
+    }
+    return (
+        _request_stats(representative.get("requests")),
+        _resource_summary(representative.get("resources")),
+        users,
+        metadata,
+    )
+
+
 def _markdown_report(
     manifest: Mapping[str, Any],
     requests: tuple[RequestStat, ...],
     resources: ResourceSummary,
     result: GateResult,
+    *,
+    saturation: Mapping[str, Any] | None = None,
 ) -> str:
     lines = [
         f"# iTime performance report: {result.scenario}",
@@ -306,11 +427,33 @@ def _markdown_report(
         f"- Environment: {manifest.get('environment', 'unknown')}",
         f"- Commit: {manifest.get('commit', 'unknown')}",
         "",
-        "## Requests",
-        "",
-        "| Name | Count | Failures | P50 | P95 | P99 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if saturation is not None:
+        lines.extend(
+            [
+                "## Saturation",
+                "",
+                "- Maximum stable load: "
+                f"{saturation['maximum_stable_users']} users",
+                "- Minimum required load: "
+                f"{saturation['minimum_required_users']} users "
+                f"({'PASS' if saturation['minimum_capacity_passed'] else 'FAIL'})",
+                "- First unstable load: "
+                f"{saturation['first_unstable_users'] or 'not observed'}",
+                "- Capacity boundary: "
+                f"{saturation['capacity_boundary_users'] or 'not observed'}",
+                f"- Stop reason: {saturation['stop_reason']}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Requests",
+            "",
+            "| Name | Count | Failures | P50 | P95 | P99 |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     lines.extend(
         "| "
         f"{row.name} | {row.count} | {row.failures} | "
@@ -353,17 +496,55 @@ def _markdown_report(
 
 def build_report(run_dir: Path) -> GateResult:
     manifest = read_json(run_dir / "manifest.json")
-    requests = read_locust_csv(run_dir / "requests_stats.csv")
-    resources = read_resource_samples(run_dir / "resources.csv")
+    scenario = str(manifest["scenario"])
+    saturation: dict[str, Any] | None = None
+    if scenario == "saturation":
+        requests, resources, users, saturation = _saturation_inputs(run_dir)
+        report_manifest = {**manifest, "users": users}
+    else:
+        requests = read_locust_csv(run_dir / "requests_stats.csv")
+        resources = read_resource_samples(run_dir / "resources.csv")
+        users = int(manifest["users"])
+        report_manifest = manifest
     invariants = read_json(run_dir / "invariants.json")
-    result = evaluate_gates(
-        scenario=str(manifest["scenario"]),
-        users=int(manifest["users"]),
+    evaluated = evaluate_gates(
+        scenario=scenario,
+        users=users,
         requests=requests,
         resources=resources,
         invariants={str(key): int(value) for key, value in invariants.items()},
     )
+    failures = list(evaluated.failures)
+    warnings = list(evaluated.warnings)
+    if saturation is not None:
+        if not saturation["minimum_capacity_passed"]:
+            failures.extend(saturation["hard_gate_violations"])
+            if not saturation["hard_gate_violations"]:
+                failures.append("minimum saturation capacity was not established")
+        boundary = saturation["capacity_boundary_users"]
+        first_unstable = saturation["first_unstable_users"]
+        if boundary is not None and boundary > saturation["minimum_required_users"]:
+            warnings.append(
+                f"capacity boundary observed at {boundary} users after "
+                "three consecutive violating windows"
+            )
+        elif (
+            first_unstable is not None
+            and first_unstable > saturation["minimum_required_users"]
+        ):
+            warnings.append(
+                f"first unstable saturation level observed at "
+                f"{first_unstable} users"
+            )
+    result = GateResult(
+        scenario=scenario,
+        passed=not failures,
+        failures=tuple(dict.fromkeys(failures)),
+        warnings=tuple(dict.fromkeys(warnings)),
+    )
     summary = asdict(result)
+    if saturation is not None:
+        summary["saturation"] = saturation
     artifact = {
         "manifest": manifest,
         "requests": [asdict(item) for item in requests],
@@ -377,6 +558,12 @@ def build_report(run_dir: Path) -> GateResult:
     )
     _write_atomic(
         run_dir / "report.md",
-        _markdown_report(manifest, requests, resources, result),
+        _markdown_report(
+            report_manifest,
+            requests,
+            resources,
+            result,
+            saturation=saturation,
+        ),
     )
     return result

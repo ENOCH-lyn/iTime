@@ -1,11 +1,20 @@
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 import performance.run as performance_run
-from performance.contracts import SCENARIOS, GateResult, RunConfig, Scenario
+import performance.saturation as performance_saturation
+from performance.contracts import (
+    SCENARIOS,
+    GateResult,
+    RequestStat,
+    ResourceSummary,
+    RunConfig,
+    Scenario,
+)
 
 
 def state(tmp_path: Path) -> performance_run.RunState:
@@ -101,6 +110,7 @@ def test_cli_contract_accepts_all_planned_commands():
     assert parser.parse_args(["smoke"]).command == "smoke"
     assert parser.parse_args(["baseline"]).command == "baseline"
     assert parser.parse_args(["verify-clean"]).command == "verify-clean"
+    assert "saturation" in performance_run.BASELINE_SCENARIOS
     for scenario in (
         "steady",
         "peak",
@@ -271,6 +281,197 @@ def test_ui_load_runs_browsers_while_background_load_is_alive(
     assert edge[2][-1] == "--project=desktop"
     assert edge[4]["ITIME_E2E_BROWSER_EXECUTABLE_PATH"] == (
         "/Applications/Microsoft Edge"
+    )
+
+
+def _healthy_resources() -> ResourceSummary:
+    return ResourceSummary(
+        cpu_mean_ratio=0.5,
+        cpu_peak_over_90_seconds=0,
+        memory_peak_ratio=0.6,
+        memory_growth_ratio=0,
+        database_connection_peak_ratio=0.4,
+        blocked_over_two_seconds=0,
+        pool_timeouts=0,
+        server_5xx=0,
+        sampling_gap_seconds=0,
+    )
+
+
+def _saturation_window(
+    users: int,
+    window: int,
+    *,
+    violated: bool,
+) -> performance_saturation.SaturationWindowResult:
+    violations = ("read::tasks.list p95 1001ms > 1000ms",) if violated else ()
+    requests = (
+        RequestStat(
+            "read::tasks.list",
+            100,
+            100,
+            1001 if violated else 900,
+            1500,
+            0,
+        ),
+        RequestStat("write::tasks.create", 10, 200, 700, 1400, 0),
+    )
+    return performance_saturation.SaturationWindowResult(
+        users=users,
+        window=window,
+        started_at="2026-10-05T00:00:00+00:00",
+        ended_at="2026-10-05T00:01:00+00:00",
+        requests=requests,
+        resources=_healthy_resources(),
+        request_violations=violations,
+        violations=violations,
+    )
+
+
+def _saturation_level(
+    users: int,
+    windows: list[performance_saturation.SaturationWindowResult],
+) -> performance_saturation.SaturationLevelResult:
+    violations = performance_saturation.merge_violations(
+        *(window.violations for window in windows)
+    )
+    return performance_saturation.SaturationLevelResult(
+        users=users,
+        completed=(
+            len(windows)
+            == performance_saturation.SATURATION_WINDOWS_PER_LEVEL
+        ),
+        started_at=windows[0].started_at,
+        ended_at=windows[-1].ended_at,
+        requests=performance_saturation.aggregate_request_stats(windows),
+        resources=_healthy_resources(),
+        request_violations=violations,
+        violations=violations,
+    )
+
+
+def test_saturation_parses_locust_window_stats_and_applies_request_gate():
+    requests = performance_saturation.locust_request_stats(
+        {
+            "stats": [
+                {
+                    "name": "auth::login",
+                    "num_requests": 0,
+                    "num_failures": 0,
+                    "median_response_time": 0,
+                    "response_time_percentile_0.95": None,
+                    "response_time_percentile_0.99": None,
+                },
+                {
+                    "name": "read::tasks.list",
+                    "num_requests": 100,
+                    "num_failures": 0,
+                    "median_response_time": 100,
+                    "response_time_percentile_0.95": 1001,
+                    "response_time_percentile_0.99": 1500,
+                },
+                {
+                    "name": "write::tasks.create",
+                    "num_requests": 10,
+                    "num_failures": 0,
+                    "median_response_time": 200,
+                    "response_time_percentile_0.95": 700,
+                    "response_time_percentile_0.99": 1400,
+                },
+                {
+                    "name": "Aggregated",
+                    "num_requests": 110,
+                    "num_failures": 0,
+                    "median_response_time": 100,
+                    "response_time_percentile_0.95": 1001,
+                    "response_time_percentile_0.99": 1500,
+                },
+            ]
+        }
+    )
+
+    assert [request.name for request in requests] == [
+        "read::tasks.list",
+        "write::tasks.create",
+    ]
+    assert performance_saturation.request_gate_violations(60, requests) == (
+        "read::tasks.list p95 1001ms > 1000ms",
+    )
+
+
+def test_saturation_uses_manual_locust_web_mode_and_stops_at_capacity_boundary(
+    tmp_path: Path,
+):
+    run_state = state(tmp_path)
+    command = performance_run._locust_command(
+        run_state,
+        users=10,
+        spawn_rate=10,
+        duration_seconds=1800,
+        prefix="requests",
+        user_classes=("StandardUser",),
+        web_port=8089,
+        autostart=False,
+    )
+    assert "--web-port" in command
+    assert "--autostart" not in command
+    assert "--users" not in command
+    assert "--run-time" not in command
+
+    user_levels: list[int] = []
+    resets: list[None] = []
+    sleeps: list[float] = []
+    captured: list[tuple[int, int]] = []
+
+    def capture(users, window, started_at, ended_at):
+        captured.append((users, window))
+        return _saturation_window(users, window, violated=users >= 60)
+
+    result = performance_saturation.execute_saturation_schedule(
+        set_users=user_levels.append,
+        reset_stats=lambda: resets.append(None),
+        capture_window=capture,
+        summarize_level=_saturation_level,
+        sleep=sleeps.append,
+        now=lambda: datetime(2026, 10, 5, tzinfo=UTC),
+    )
+
+    assert user_levels == [10, 20, 30, 40, 50, 60]
+    assert len(resets) == 18
+    assert sleeps == [60] * 18
+    assert captured[-3:] == [(60, 1), (60, 2), (60, 3)]
+    assert result.stop_reason == "three_consecutive_request_gate_violations"
+    assert result.capacity_boundary_users == 60
+    assert result.maximum_stable_users == 50
+    assert result.first_unstable_users == 60
+    assert result.minimum_capacity_passed
+    assert result.hard_gate_violations == ()
+    assert result.representative.users == 50
+
+
+def test_saturation_failure_below_50_is_a_hard_gate():
+    result = performance_saturation.execute_saturation_schedule(
+        set_users=lambda users: None,
+        reset_stats=lambda: None,
+        capture_window=lambda users, window, started_at, ended_at: (
+            _saturation_window(users, window, violated=users >= 40)
+        ),
+        summarize_level=_saturation_level,
+        sleep=lambda seconds: None,
+        now=lambda: datetime(2026, 10, 5, tzinfo=UTC),
+    )
+
+    assert result.capacity_boundary_users == 40
+    assert result.maximum_stable_users == 30
+    assert not result.minimum_capacity_passed
+    assert result.representative.users == 40
+    assert any(
+        violation.startswith("40 users:")
+        for violation in result.hard_gate_violations
+    )
+    assert (
+        "minimum capacity levels not completed: 50"
+        in result.hard_gate_violations
     )
 
 

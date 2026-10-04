@@ -34,6 +34,7 @@ from performance.report import (
     SensitiveArtifactError,
     assert_no_sensitive_artifacts,
     build_report,
+    read_resource_samples,
 )
 from performance.safety import (
     OUTPUT_ROOT,
@@ -41,6 +42,18 @@ from performance.safety import (
     exclusive_run_lock,
     require_safe_cleanup,
     require_safe_run,
+)
+from performance.saturation import (
+    SATURATION_LEVELS,
+    SATURATION_SPAWN_RATE,
+    SATURATION_WINDOW_SECONDS,
+    SATURATION_WINDOWS_PER_LEVEL,
+    SaturationLevelResult,
+    SaturationWindowResult,
+    build_saturation_level,
+    build_saturation_window,
+    execute_saturation_schedule,
+    locust_request_stats,
 )
 from performance.seed import seed_dataset, write_private_credentials
 from performance.seed_core import SYNTHETIC_LOGIN_SECRET
@@ -83,6 +96,16 @@ LIFECYCLE_STAGES = (
     "build-report",
 )
 CLEANUP_STAGES = ("cleanup", "verify-clean")
+BASELINE_SCENARIOS = (
+    "steady",
+    "peak",
+    "history",
+    "saturation",
+    "ai-isolation",
+    "queues",
+    "maintenance",
+    "soak",
+)
 
 
 @dataclass
@@ -426,19 +449,33 @@ def _locust_command(
     prefix: str,
     user_classes: tuple[str, ...],
     web_port: int | None = None,
+    autostart: bool = True,
 ) -> list[str]:
-    run_mode = (
-        ["--headless", "--only-summary"]
-        if web_port is None
-        else [
-            "--autostart",
-            "--autoquit",
-            "5",
+    if web_port is None:
+        run_mode = ["--headless", "--only-summary"]
+    else:
+        run_mode = [
+            *(
+                ["--autostart", "--autoquit", "5"]
+                if autostart
+                else []
+            ),
             "--web-host",
             "127.0.0.1",
             "--web-port",
             str(web_port),
         ]
+    load_options = (
+        [
+            "--users",
+            str(users),
+            "--spawn-rate",
+            str(spawn_rate),
+            "--run-time",
+            f"{duration_seconds}s",
+        ]
+        if web_port is None or autostart
+        else []
     )
     return [
         sys.executable,
@@ -449,12 +486,7 @@ def _locust_command(
         *run_mode,
         "--host",
         state.config.http_origin,
-        "--users",
-        str(users),
-        "--spawn-rate",
-        str(spawn_rate),
-        "--run-time",
-        f"{duration_seconds}s",
+        *load_options,
         "--csv",
         str(state.config.output_dir / prefix),
         *user_classes,
@@ -854,6 +886,155 @@ def _run_locust(
     _write_command_output(state, prefix, result)
 
 
+def _capture_saturation_window(
+    state: RunState,
+    client: httpx.Client,
+    *,
+    users: int,
+    window: int,
+    started_at: datetime,
+    ended_at: datetime,
+) -> SaturationWindowResult:
+    response = client.get("/stats/requests")
+    response.raise_for_status()
+    requests = locust_request_stats(response.json())
+    resources = read_resource_samples(
+        state.config.output_dir / "resources.csv",
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+    return build_saturation_window(
+        users=users,
+        window=window,
+        started_at=started_at,
+        ended_at=ended_at,
+        requests=requests,
+        resources=resources,
+    )
+
+
+def _summarize_saturation_level(
+    state: RunState,
+    users: int,
+    windows: Sequence[SaturationWindowResult],
+) -> SaturationLevelResult:
+    if not windows:
+        raise RuntimeError(f"{users} 用户档位没有窗口结果")
+    started_at = datetime.fromisoformat(windows[0].started_at)
+    ended_at = datetime.fromisoformat(windows[-1].ended_at)
+    resources = read_resource_samples(
+        state.config.output_dir / "resources.csv",
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+    return build_saturation_level(
+        users,
+        windows,
+        resources,
+    )
+
+
+def _set_locust_users(
+    process: ManagedProcess,
+    client: httpx.Client,
+    stats_origin: str,
+    users: int,
+) -> None:
+    _require_process_alive(process, "饱和负载")
+    response = client.post(
+        "/swarm",
+        data={
+            "user_count": str(users),
+            "spawn_rate": str(SATURATION_SPAWN_RATE),
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise RuntimeError(f"Locust 无法切换到 {users} 用户")
+    _wait_for_locust_users(
+        process,
+        stats_origin,
+        expected=users,
+        timeout=max(30, users / SATURATION_SPAWN_RATE + 10),
+    )
+
+
+def _reset_locust_stats(
+    process: ManagedProcess,
+    client: httpx.Client,
+) -> None:
+    _require_process_alive(process, "饱和负载")
+    response = client.get("/stats/reset")
+    response.raise_for_status()
+    if response.text.strip() != "ok":
+        raise RuntimeError("Locust 统计重置未确认成功")
+
+
+def _run_saturation(state: RunState) -> None:
+    locust_port = _available_port()
+    stats_origin = f"http://127.0.0.1:{locust_port}"
+    state.env["ITIME_PERF_WORKLOAD"] = state.scenario
+    load = _start_process(
+        state,
+        "locust-saturation",
+        _locust_command(
+            state,
+            users=SATURATION_LEVELS[0],
+            spawn_rate=SATURATION_SPAWN_RATE,
+            duration_seconds=(
+                len(SATURATION_LEVELS)
+                * SATURATION_WINDOWS_PER_LEVEL
+                * SATURATION_WINDOW_SECONDS
+            ),
+            prefix="requests",
+            user_classes=("StandardUser",),
+            web_port=locust_port,
+            autostart=False,
+        ),
+    )
+    try:
+        _wait_http(stats_origin, load, path="/stats/requests")
+        with httpx.Client(
+            base_url=stats_origin,
+            timeout=10,
+            trust_env=False,
+        ) as client:
+            summary = execute_saturation_schedule(
+                set_users=lambda users: _set_locust_users(
+                    load,
+                    client,
+                    stats_origin,
+                    users,
+                ),
+                reset_stats=lambda: _reset_locust_stats(load, client),
+                capture_window=lambda users, window, started_at, ended_at: (
+                    _capture_saturation_window(
+                        state,
+                        client,
+                        users=users,
+                        window=window,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                    )
+                ),
+                summarize_level=lambda users, windows: (
+                    _summarize_saturation_level(state, users, windows)
+                ),
+            )
+            response = client.get("/stop")
+            response.raise_for_status()
+        _write_json_atomic(
+            state.config.output_dir / "saturation.json",
+            {
+                "schema_version": 1,
+                **asdict(summary),
+            },
+        )
+    finally:
+        _stop_process(load)
+
+
 def _stage_warmup(state: RunState) -> None:
     assert state.scenario_config is not None
     _run_locust(
@@ -929,6 +1110,8 @@ def _stage_run_locust(state: RunState) -> None:
     try:
         if state.scenario == Scenario.UI_LOAD:
             _run_ui_load(state)
+        elif state.scenario == Scenario.SATURATION:
+            _run_saturation(state)
         else:
             _run_locust(
                 state,
@@ -1237,7 +1420,7 @@ def main() -> None:
         print(json.dumps({"remaining_resources": resources}, ensure_ascii=False))
         raise SystemExit(1 if resources else 0)
     scenarios = (
-        ("steady", "peak", "history", "ai-isolation", "queues", "maintenance", "soak")
+        BASELINE_SCENARIOS
         if args.command == "baseline"
         else ("smoke" if args.command == "smoke" else args.scenario,)
     )
