@@ -432,6 +432,148 @@ class CalendarSubscriptionOverride(Base):
     )
 
 
+class CalendarSubscriptionException(Base):
+    __tablename__ = "calendar_subscription_exceptions"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(source_occurrence_key)) > 0",
+            name="nonempty_source_occurrence_key",
+        ),
+        CheckConstraint(
+            "original_end_at > original_start_at",
+            name="original_interval",
+        ),
+        CheckConstraint(
+            "action IN ('cancelled', 'moved', 'overridden')",
+            name="action",
+        ),
+        CheckConstraint(
+            "(action = 'moved') = "
+            "(moved_all_day IS NOT NULL "
+            "AND moved_start_date IS NOT NULL "
+            "AND moved_end_date IS NOT NULL "
+            "AND moved_time_zone IS NOT NULL "
+            "AND moved_start_at IS NOT NULL "
+            "AND moved_end_at IS NOT NULL)",
+            name="moved_fields",
+        ),
+        CheckConstraint(
+            "action = 'moved' OR "
+            "(moved_all_day IS NULL "
+            "AND moved_start_date IS NULL "
+            "AND moved_end_date IS NULL "
+            "AND moved_starts_at IS NULL "
+            "AND moved_ends_at IS NULL "
+            "AND moved_time_zone IS NULL "
+            "AND moved_ambiguous_offset_minutes IS NULL "
+            "AND moved_start_at IS NULL "
+            "AND moved_end_at IS NULL)",
+            name="non_moved_fields",
+        ),
+        CheckConstraint(
+            "action != 'moved' OR "
+            "(moved_end_at > moved_start_at "
+            "AND length(btrim(moved_time_zone)) > 0 "
+            "AND ("
+            "(moved_all_day "
+            "AND moved_starts_at IS NULL "
+            "AND moved_ends_at IS NULL "
+            "AND moved_ambiguous_offset_minutes IS NULL "
+            "AND moved_end_date > moved_start_date "
+            "AND moved_end_date <= moved_start_date + 366)"
+            " OR "
+            "(NOT moved_all_day "
+            "AND moved_starts_at IS NOT NULL "
+            "AND moved_ends_at IS NOT NULL "
+            "AND moved_end_date >= moved_start_date "
+            "AND moved_end_date <= moved_start_date + 1)"
+            "))",
+            name="moved_shape",
+        ),
+        CheckConstraint(
+            "moved_ambiguous_offset_minutes IS NULL OR "
+            "moved_ambiguous_offset_minutes BETWEEN -840 AND 840",
+            name="moved_ambiguous_offset_minutes",
+        ),
+        CheckConstraint(
+            "(action = 'overridden') = "
+            "(override_name IS NOT NULL "
+            "OR override_description IS NOT NULL "
+            "OR override_location IS NOT NULL "
+            "OR override_busy IS NOT NULL)",
+            name="override_fields",
+        ),
+        CheckConstraint(
+            "override_name IS NULL OR length(btrim(override_name)) > 0",
+            name="nonempty_override_name",
+        ),
+        CheckConstraint("version >= 1", name="version"),
+        ForeignKeyConstraint(
+            ["master_event_id", "owner_id"],
+            [
+                "calendar_subscription_events.id",
+                "calendar_subscription_events.owner_id",
+            ],
+            name="fk_calendar_subscription_exceptions_event_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "id",
+            "owner_id",
+            name="uq_calendar_subscription_exceptions_id_owner",
+        ),
+        UniqueConstraint(
+            "master_event_id",
+            "source_occurrence_key",
+            name="uq_subscription_exceptions_event_occurrence",
+        ),
+        Index(
+            "ix_subscription_exceptions_owner_original",
+            "owner_id",
+            "original_start_at",
+            "master_event_id",
+        ),
+        Index(
+            "ix_subscription_exceptions_owner_moved",
+            "owner_id",
+            "moved_start_at",
+            "master_event_id",
+            postgresql_where=text("action = 'moved'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID]
+    master_event_id: Mapped[UUID]
+    source_occurrence_key: Mapped[str] = mapped_column(String(512))
+    original_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    original_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    original_all_day: Mapped[bool] = mapped_column(Boolean)
+    action: Mapped[str] = mapped_column(String(12))
+    moved_all_day: Mapped[bool | None] = mapped_column(Boolean)
+    moved_start_date: Mapped[date | None] = mapped_column(Date)
+    moved_end_date: Mapped[date | None] = mapped_column(Date)
+    moved_starts_at: Mapped[time | None] = mapped_column(Time(timezone=False))
+    moved_ends_at: Mapped[time | None] = mapped_column(Time(timezone=False))
+    moved_time_zone: Mapped[str | None] = mapped_column(String(64))
+    moved_ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    moved_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    moved_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    override_name: Mapped[str | None] = mapped_column(String(200))
+    override_description: Mapped[str | None] = mapped_column(Text)
+    override_location: Mapped[str | None] = mapped_column(String(300))
+    override_busy: Mapped[bool | None] = mapped_column(Boolean)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
 class CalendarSeries(Base):
     __tablename__ = "calendar_series"
     __table_args__ = (
