@@ -113,6 +113,19 @@ async def claim_next_public_link(
             if not owner_locked:
                 blocked_owners.add(link.owner_id)
                 continue
+            active_link_id = await session.scalar(
+                select(TaskLink.id)
+                .where(
+                    TaskLink.owner_id == link.owner_id,
+                    TaskLink.id != link.id,
+                    TaskLink.fetch_status == "running",
+                    TaskLink.lease_until > current,
+                )
+                .limit(1)
+            )
+            if active_link_id is not None:
+                blocked_owners.add(link.owner_id)
+                continue
             recent_attempts = list(
                 await session.scalars(
                     select(TaskLink.last_attempt_at)
