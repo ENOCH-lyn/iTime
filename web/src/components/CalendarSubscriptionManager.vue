@@ -998,6 +998,9 @@ async function pollSubscriptions(revision = pollRevision) {
         .map(item => item.id),
     )
     const selectedId = selectedSourceId.value
+    const previousSelectedGeneration = selectedId
+      ? pollGenerations.get(selectedId)
+      : undefined
     const loaded = await loadSubscriptions(true)
     if (!loaded || revision !== pollRevision) return
     const selectedSubscription = subscriptions.value.find(item => item.id === selectedId)
@@ -1007,7 +1010,11 @@ async function pollSubscriptions(revision = pollRevision) {
       && beforeBusy.has(selectedId)
       && !!selectedSubscription
       && !['queued', 'running'].includes(selectedSubscription.refresh_status)
-    if (selectedFinished) {
+    const selectedGenerationAdvanced = selectionUnchanged
+      && previousSelectedGeneration !== undefined
+      && !!selectedSubscription
+      && selectedSubscription.generation > previousSelectedGeneration
+    if (selectedFinished || selectedGenerationAdvanced) {
       await openSubscription(
         selectedId,
         selectedEvent.value?.id ?? null,
@@ -1039,6 +1046,7 @@ async function pollSubscriptions(revision = pollRevision) {
         }
       }
     }
+    if (revision !== pollRevision) return
     let completed = 0
     for (const subscription of subscriptions.value) {
       const previousGeneration = pollGenerations.get(subscription.id)
