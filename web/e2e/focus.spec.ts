@@ -97,6 +97,23 @@ async function sessionUserId(page: Page) {
   return ((await response.json()).user.id) as string
 }
 
+async function queuedFocusOperationCount(page: Page) {
+  return page.evaluate(() => {
+    let count = 0
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (!key?.startsWith('itime-focus-queue:')) continue
+      try {
+        const value = JSON.parse(localStorage.getItem(key) ?? '[]')
+        if (Array.isArray(value)) count += value.length
+      } catch {
+        // Invalid queue entries are covered by the dedicated queue boundary test.
+      }
+    }
+    return count
+  })
+}
+
 async function startFreeFocus(page: Page, title: string) {
   await page.goto('/focus')
   await expect(page.getByRole('heading', { name: '专注' })).toBeVisible()
@@ -374,6 +391,7 @@ test('终态冲突可转为修订草稿且仅在明确采用后丢弃队列', as
       route.abort('connectionreset'))
     await second.getByRole('button', { name: '结束' }).click()
     await expect(second.getByText('已结束', { exact: true })).toBeVisible()
+    await expect.poll(() => queuedFocusOperationCount(page)).toBe(0)
 
     await page.getByRole('button', { name: '结束' }).click()
     await expect(page.getByText('1 项待同步')).toBeVisible()
@@ -396,8 +414,8 @@ test('终态冲突可转为修订草稿且仅在明确采用后丢弃队列', as
     await second.reload()
     await expect(second.getByText('进行中', { exact: true })).toBeVisible()
     await second.getByRole('button', { name: '结束', exact: true }).click()
+    await expect.poll(() => queuedFocusOperationCount(page)).toBe(0)
     await page.bringToFront()
-    await page.waitForTimeout(100)
     await page.route('**/api/v1/focus-sessions/*/transitions', route =>
       route.abort('connectionreset'))
     await page.getByRole('button', { name: '结束', exact: true }).click()
