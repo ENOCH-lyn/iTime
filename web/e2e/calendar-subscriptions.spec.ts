@@ -458,4 +458,18 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, 'plan-source-conflict-320-dark-large')
   }
+
+  await page.getByRole('button', {
+    name: '按最新来源重新生成',
+    exact: true,
+  }).click()
+  await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible({
+    timeout: 15_000,
+  })
+  await page.getByRole('button', { name: '确认并写入计划', exact: true }).click()
+  await expect(page.getByText('提案已写入计划，当前为第 2 版。')).toBeVisible()
+  await page.getByRole('button', { name: '查看当前计划', exact: true }).click()
+  await expect(page.getByRole('heading', {
+    name: '订阅来源更新后，当前计划需复核',
+  })).toHaveCount(0)
 })
