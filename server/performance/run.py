@@ -30,6 +30,22 @@ from performance.contracts import (
     SeedManifest,
     SeedProfile,
 )
+from performance.queues import (
+    QUEUE_BACKLOG_SIZE,
+    QUEUE_DRAIN_TIMEOUT_SECONDS,
+    QUEUE_MINIMUM_OBSERVATION_SECONDS,
+    QUEUE_SERVICES,
+    QUEUE_SPAWN_RATE,
+    QUEUE_USERS,
+    QueueDrainObservation,
+    QueueKind,
+    QueueState,
+    QueueTypeResult,
+    build_queue_run_summary,
+    build_queue_type_result,
+    prepare_queue_backlog,
+    wait_for_queue_drain,
+)
 from performance.report import (
     SensitiveArtifactError,
     assert_no_sensitive_artifacts,
@@ -309,6 +325,7 @@ def _new_state(scenario_name: str, *, run_id: str | None = None) -> RunState:
         "ITIME_PERF_UPSTREAM_HTTP_PORT": str(upstream_port),
         "ITIME_PERF_WEB_PORT": str(web_port),
         "ITIME_PERF_IMAGE_TAG": "local",
+        "ITIME_PERF_FETCH_DELAY_SECONDS": "0.25",
     }
     config = RunConfig(
         run_id=active_run_id,
@@ -848,6 +865,13 @@ def _stage_start_services(state: RunState) -> None:
         timeout=180,
     )
     _write_command_output(state, "start-services", result)
+    if state.scenario == Scenario.QUEUES:
+        paused = checked(
+            state.compose("pause", *QUEUE_SERVICES.values()),
+            env=state.env,
+            timeout=30,
+        )
+        _write_command_output(state, "pause-queue-workers", paused)
 
 
 def _stage_wait_ready(state: RunState) -> None:
@@ -1035,6 +1059,165 @@ def _run_saturation(state: RunState) -> None:
         _stop_process(load)
 
 
+async def _prepare_queue(
+    state: RunState,
+    kind: QueueKind,
+) -> QueueState:
+    settings = _settings(state)
+    database = Database(settings)
+    try:
+        upstream_origin = (
+            "http://host.docker.internal:"
+            f"{state.env['ITIME_PERF_UPSTREAM_HTTP_PORT']}"
+        )
+        return await prepare_queue_backlog(
+            database,
+            settings,
+            kind,
+            count=QUEUE_BACKLOG_SIZE,
+            upstream_origin=upstream_origin,
+        )
+    finally:
+        await database.close()
+
+
+async def _wait_for_queue(
+    state: RunState,
+    kind: QueueKind,
+    initial: QueueState,
+) -> QueueDrainObservation:
+    settings = _settings(state)
+    database = Database(settings)
+    try:
+        return await wait_for_queue_drain(
+            database,
+            kind,
+            initial,
+            expected=QUEUE_BACKLOG_SIZE,
+        )
+    finally:
+        await database.close()
+
+
+def _queue_worker_action(
+    state: RunState,
+    kind: QueueKind,
+    action: str,
+) -> None:
+    service = QUEUE_SERVICES[kind]
+    result = checked(
+        state.compose(action, service),
+        env=state.env,
+        timeout=30,
+    )
+    _write_command_output(state, f"{action}-{service}", result)
+
+
+def _unpause_queue_workers(state: RunState) -> None:
+    result = subprocess.run(  # noqa: S603
+        state.compose("unpause", *QUEUE_SERVICES.values()),
+        cwd=ROOT,
+        env=state.env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    _write_command_output(state, "unpause-queue-workers", result)
+
+
+def _run_queue_type(
+    state: RunState,
+    load: ManagedProcess,
+    client: httpx.Client,
+    kind: QueueKind,
+) -> QueueTypeResult:
+    initial = asyncio.run(_prepare_queue(state, kind))
+    _reset_locust_stats(load, client)
+    started_at = datetime.now(UTC)
+    _queue_worker_action(state, kind, "unpause")
+    try:
+        observation = asyncio.run(_wait_for_queue(state, kind, initial))
+        remaining_observation = (
+            QUEUE_MINIMUM_OBSERVATION_SECONDS
+            - observation.drain_seconds
+        )
+        if remaining_observation > 0:
+            time.sleep(remaining_observation)
+        _require_process_alive(load, "队列场景普通 API 负载")
+        ended_at = datetime.now(UTC)
+        response = client.get("/stats/requests")
+        response.raise_for_status()
+        requests = locust_request_stats(response.json())
+        resources = read_resource_samples(
+            state.config.output_dir / "resources.csv",
+            started_at=started_at,
+            ended_at=ended_at,
+        )
+        return build_queue_type_result(
+            kind=kind,
+            initial=initial,
+            observation=observation,
+            started_at=started_at,
+            ended_at=ended_at,
+            requests=requests,
+            resources=resources,
+        )
+    finally:
+        _queue_worker_action(state, kind, "pause")
+
+
+def _run_queues(state: RunState) -> None:
+    locust_port = _available_port()
+    stats_origin = f"http://127.0.0.1:{locust_port}"
+    state.env["ITIME_PERF_WORKLOAD"] = state.scenario
+    load = _start_process(
+        state,
+        "locust-queues",
+        _locust_command(
+            state,
+            users=QUEUE_USERS,
+            spawn_rate=QUEUE_SPAWN_RATE,
+            duration_seconds=(
+                len(QUEUE_SERVICES) * QUEUE_DRAIN_TIMEOUT_SECONDS
+            ),
+            prefix="requests",
+            user_classes=("StandardUser",),
+            web_port=locust_port,
+            autostart=False,
+        ),
+    )
+    try:
+        _wait_http(stats_origin, load, path="/stats/requests")
+        with httpx.Client(
+            base_url=stats_origin,
+            timeout=10,
+            trust_env=False,
+        ) as client:
+            _set_locust_users(
+                load,
+                client,
+                stats_origin,
+                QUEUE_USERS,
+            )
+            results = tuple(
+                _run_queue_type(state, load, client, kind)
+                for kind in QueueKind
+            )
+            response = client.get("/stop")
+            response.raise_for_status()
+        _write_json_atomic(
+            state.config.output_dir / "queue-results.json",
+            {
+                "schema_version": 1,
+                **asdict(build_queue_run_summary(results)),
+            },
+        )
+    finally:
+        _unpause_queue_workers(state)
+        _stop_process(load)
+
+
 def _stage_warmup(state: RunState) -> None:
     assert state.scenario_config is not None
     _run_locust(
@@ -1112,6 +1295,8 @@ def _stage_run_locust(state: RunState) -> None:
             _run_ui_load(state)
         elif state.scenario == Scenario.SATURATION:
             _run_saturation(state)
+        elif state.scenario == Scenario.QUEUES:
+            _run_queues(state)
         else:
             _run_locust(
                 state,
@@ -1271,6 +1456,8 @@ def _cleanup(state: RunState) -> None:
     require_safe_cleanup(state.config, manifest)
     for process in reversed(state.processes):
         _stop_process(process)
+    if state.scenario == Scenario.QUEUES:
+        _unpause_queue_workers(state)
     checked(
         state.compose("down", "--volumes", "--remove-orphans"),
         env=state.env,

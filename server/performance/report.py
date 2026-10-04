@@ -411,6 +411,68 @@ def _saturation_inputs(
     )
 
 
+def _queue_inputs(
+    run_dir: Path,
+) -> tuple[tuple[RequestStat, ...], ResourceSummary, int, dict[str, Any]]:
+    payload = read_json(run_dir / "queue-results.json")
+    queue_results = payload.get("queues")
+    violations = payload.get("violations")
+    if (
+        payload.get("schema_version") != 1
+        or not isinstance(queue_results, list)
+        or not isinstance(violations, list)
+        or not all(isinstance(item, str) for item in violations)
+    ):
+        raise ValueError("queue-results.json 格式无效")
+    kinds = [
+        item.get("kind")
+        for item in queue_results
+        if isinstance(item, Mapping)
+    ]
+    if kinds != ["subscriptions", "public_links", "exports"]:
+        raise ValueError("queue-results.json 队列类型或顺序无效")
+    try:
+        users = int(payload["users"])
+        backlog_per_type = int(payload["backlog_per_type"])
+        drain_timeout_seconds = int(payload["drain_timeout_seconds"])
+        minimum_observation_seconds = int(
+            payload["minimum_observation_seconds"]
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("queue-results.json 摘要字段无效") from exc
+    if users <= 0 or backlog_per_type <= 0 or drain_timeout_seconds <= 0:
+        raise ValueError("queue-results.json 数量与时限必须为正数")
+    details = [
+        {
+            "kind": item["kind"],
+            "expected": int(item["expected"]),
+            "drained": bool(item["drained"]),
+            "drain_seconds": float(item["drain_seconds"]),
+            "throughput_per_second": float(item["throughput_per_second"]),
+            "oldest_remaining_age_seconds": item[
+                "oldest_remaining_age_seconds"
+            ],
+            "final": item["final"],
+        }
+        for item in queue_results
+        if isinstance(item, Mapping)
+    ]
+    metadata = {
+        "backlog_per_type": backlog_per_type,
+        "drain_timeout_seconds": drain_timeout_seconds,
+        "minimum_observation_seconds": minimum_observation_seconds,
+        "passed": payload.get("passed") is True,
+        "violations": violations,
+        "results": details,
+    }
+    return (
+        _request_stats(payload.get("requests")),
+        _resource_summary(payload.get("resources")),
+        users,
+        metadata,
+    )
+
+
 def _markdown_report(
     manifest: Mapping[str, Any],
     requests: tuple[RequestStat, ...],
@@ -418,6 +480,7 @@ def _markdown_report(
     result: GateResult,
     *,
     saturation: Mapping[str, Any] | None = None,
+    queues: Mapping[str, Any] | None = None,
 ) -> str:
     lines = [
         f"# iTime performance report: {result.scenario}",
@@ -446,6 +509,33 @@ def _markdown_report(
                 "",
             ]
         )
+    if queues is not None:
+        lines.extend(
+            [
+                "## Queues",
+                "",
+                f"- Backlog per type: {queues['backlog_per_type']}",
+                f"- Drain timeout: {queues['drain_timeout_seconds']}s",
+                "",
+                "| Queue | Drained | Drain | Throughput | Remaining oldest |",
+                "| --- | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for item in queues["results"]:
+            oldest_age = item["oldest_remaining_age_seconds"]
+            oldest_label = (
+                f"{_number(oldest_age)}s"
+                if oldest_age is not None
+                else "-"
+            )
+            lines.append(
+                "| "
+                f"{item['kind']} | {'yes' if item['drained'] else 'no'} | "
+                f"{_number(item['drain_seconds'])}s | "
+                f"{_number(item['throughput_per_second'])}/s | "
+                f"{oldest_label} |"
+            )
+        lines.append("")
     lines.extend(
         [
             "## Requests",
@@ -498,8 +588,12 @@ def build_report(run_dir: Path) -> GateResult:
     manifest = read_json(run_dir / "manifest.json")
     scenario = str(manifest["scenario"])
     saturation: dict[str, Any] | None = None
+    queues: dict[str, Any] | None = None
     if scenario == "saturation":
         requests, resources, users, saturation = _saturation_inputs(run_dir)
+        report_manifest = {**manifest, "users": users}
+    elif scenario == "queues":
+        requests, resources, users, queues = _queue_inputs(run_dir)
         report_manifest = {**manifest, "users": users}
     else:
         requests = read_locust_csv(run_dir / "requests_stats.csv")
@@ -536,6 +630,8 @@ def build_report(run_dir: Path) -> GateResult:
                 f"first unstable saturation level observed at "
                 f"{first_unstable} users"
             )
+    if queues is not None:
+        failures.extend(queues["violations"])
     result = GateResult(
         scenario=scenario,
         passed=not failures,
@@ -545,6 +641,8 @@ def build_report(run_dir: Path) -> GateResult:
     summary = asdict(result)
     if saturation is not None:
         summary["saturation"] = saturation
+    if queues is not None:
+        summary["queues"] = queues
     artifact = {
         "manifest": manifest,
         "requests": [asdict(item) for item in requests],
@@ -564,6 +662,7 @@ def build_report(run_dir: Path) -> GateResult:
             resources,
             result,
             saturation=saturation,
+            queues=queues,
         ),
     )
     return result

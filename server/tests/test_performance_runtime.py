@@ -119,6 +119,11 @@ def test_performance_compose_fixes_services_processes_and_connection_budget():
         worker = services[name]
         assert worker["environment"]["ITIME_DB_POOL_SIZE"] == "1"
         assert worker["environment"]["ITIME_DB_MAX_OVERFLOW"] == "0"
+    for name in ("subscription-worker", "public-link-worker"):
+        assert (
+            services[name]["environment"]["ITIME_PERF_FETCH_DELAY_SECONDS"]
+            == "0.25"
+        )
 
     application_connections = 2 * (4 + 1) + 2 * 1 + len(serial_workers)
     helper_connections = 4

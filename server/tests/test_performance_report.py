@@ -401,3 +401,89 @@ def test_saturation_report_uses_representative_level_and_records_capacity(
     assert "- Maximum stable load: 50 users" in report
     assert "- Capacity boundary: 60" in report
     assert not (tmp_path / "requests_stats.csv").exists()
+
+
+def test_queue_report_uses_combined_workload_and_drain_evidence(tmp_path: Path):
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "scenario": "queues",
+                "users": 20,
+                "environment": "test",
+                "commit": "abc1234",
+            }
+        )
+    )
+    queue_results = [
+        {
+            "kind": kind,
+            "expected": 50,
+            "drained": True,
+            "drain_seconds": 25,
+            "throughput_per_second": 2,
+            "oldest_remaining_age_seconds": None,
+            "final": {
+                "queued": 0,
+                "running": 0,
+                "succeeded": 50,
+                "failed": 0,
+                "oldest": None,
+            },
+        }
+        for kind in ("subscriptions", "public_links", "exports")
+    ]
+    (tmp_path / "queue-results.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "users": 20,
+                "backlog_per_type": 50,
+                "drain_timeout_seconds": 180,
+                "minimum_observation_seconds": 30,
+                "passed": True,
+                "violations": [],
+                "requests": [
+                    asdict(
+                        RequestStat(
+                            "read::tasks.list",
+                            300,
+                            120,
+                            450,
+                            900,
+                            0,
+                        )
+                    ),
+                    asdict(
+                        RequestStat(
+                            "write::tasks.create",
+                            30,
+                            250,
+                            700,
+                            1400,
+                            0,
+                        )
+                    ),
+                ],
+                "resources": asdict(healthy_resources()),
+                "queues": queue_results,
+            }
+        )
+    )
+    (tmp_path / "invariants.json").write_text(
+        json.dumps({"orphan_tasks": 0})
+    )
+
+    result = build_report(tmp_path)
+
+    assert result.passed
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["queues"]["backlog_per_type"] == 50
+    assert [item["kind"] for item in summary["queues"]["results"]] == [
+        "subscriptions",
+        "public_links",
+        "exports",
+    ]
+    report = (tmp_path / "report.md").read_text()
+    assert "- Backlog per type: 50" in report
+    assert "| subscriptions | yes | 25s | 2/s | - |" in report
+    assert not (tmp_path / "requests_stats.csv").exists()
