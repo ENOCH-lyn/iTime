@@ -1,0 +1,24 @@
+FROM python:3.13.9-slim-bookworm@sha256:b685a4fa58bb19d1814d78a1ec0f0208f351452724f78b20212c984d6e124a34
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    PATH=/app/.venv/bin:$PATH \
+    HOME=/tmp
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv==0.11.29 \
+    && groupadd --system itime \
+    && useradd --system --gid itime --home-dir /app itime
+
+COPY pyproject.toml uv.lock alembic.ini ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+COPY performance ./performance
+RUN uv sync --frozen --no-dev
+
+USER itime
+
+CMD ["uvicorn", "itime.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
