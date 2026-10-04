@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
 from itime.planning import models as planning_models  # noqa: F401
+from itime.review import models as review_models  # noqa: F401
 
 
 class AIConfigCapability(Base):
@@ -32,6 +33,7 @@ class AIConfigCapability(Base):
             name="capability",
         ),
         CheckConstraint("next_version >= 1", name="next_version"),
+        CheckConstraint("routing_version >= 1", name="routing_version"),
         ForeignKeyConstraint(
             ["current_version_id", "capability"],
             ["ai_config_versions.id", "ai_config_versions.capability"],
@@ -44,6 +46,11 @@ class AIConfigCapability(Base):
     capability: Mapped[str] = mapped_column(String(50), primary_key=True)
     next_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     current_version_id: Mapped[UUID | None]
+    routing_version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default="1",
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -187,6 +194,42 @@ class AIConfigVersion(Base):
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIConfigFallback(Base):
+    __tablename__ = "ai_config_fallbacks"
+    __table_args__ = (
+        CheckConstraint("position BETWEEN 1 AND 2", name="position"),
+        ForeignKeyConstraint(
+            ["capability"],
+            ["ai_config_capabilities.capability"],
+            name="fk_ai_config_fallbacks_capability",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["config_version_id", "capability"],
+            ["ai_config_versions.id", "ai_config_versions.capability"],
+            name="fk_ai_config_fallbacks_config",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "capability",
+            "config_version_id",
+            name="uq_ai_config_fallbacks_config",
+        ),
+    )
+
+    capability: Mapped[str] = mapped_column(String(50), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    config_version_id: Mapped[UUID]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
 
 class TemporaryMedia(Base):
@@ -340,6 +383,12 @@ class AIJob(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("id", "owner_id", name="uq_ai_jobs_id_owner"),
+        UniqueConstraint(
+            "id",
+            "capability",
+            "owner_id",
+            name="uq_ai_jobs_id_capability_owner",
+        ),
         UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
         UniqueConstraint(
             "planning_snapshot_id",
@@ -419,6 +468,47 @@ class AIJob(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIJobConfigRoute(Base):
+    __tablename__ = "ai_job_config_routes"
+    __table_args__ = (
+        CheckConstraint("attempt_number BETWEEN 1 AND 5", name="attempt_number"),
+        ForeignKeyConstraint(
+            ["job_id", "capability", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.capability", "ai_jobs.owner_id"],
+            name="fk_ai_job_config_routes_job",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["config_version_id", "capability"],
+            ["ai_config_versions.id", "ai_config_versions.capability"],
+            name="fk_ai_job_config_routes_config",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "job_id",
+            "attempt_number",
+            "config_version_id",
+            name="uq_ai_job_config_routes_attempt_config",
+        ),
+        Index(
+            "ix_ai_job_config_routes_owner_job",
+            "owner_id",
+            "job_id",
+            "attempt_number",
+        ),
+    )
+
+    job_id: Mapped[UUID] = mapped_column(primary_key=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[UUID]
+    capability: Mapped[str] = mapped_column(String(50))
+    config_version_id: Mapped[UUID]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
 
 class AIJobAttempt(Base):
