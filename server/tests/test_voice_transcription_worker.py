@@ -233,17 +233,19 @@ def resolve(
     )
 
 
+@pytest.mark.parametrize("primary_mode", ["rate_limited", "unavailable"])
 def test_worker_posts_multipart_falls_back_and_settles_successful_route(
     transcription_client,
     transcription_database_url,
     transcription_upstream,
+    primary_mode,
 ):
     create_account(
         transcription_client,
         transcription_database_url,
     )
     state, origin = transcription_upstream
-    state.reset("rate_limited", "success")
+    state.reset(primary_mode, "success")
     primary_id, fallback_id = api_support.publish_transcription_route(
         transcription_database_url,
         primary_price=60_000_000,

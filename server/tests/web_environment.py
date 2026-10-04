@@ -12,6 +12,8 @@ import tempfile
 import threading
 import time
 from contextlib import ExitStack, contextmanager
+from email import policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -25,11 +27,13 @@ from sqlalchemy.engine import make_url
 from itime.admin.models import AdminCredential, AdminEnrollment, AdminRecoveryCode
 from itime.admin.operations import create_admin
 from itime.admin.security import normalize_recovery_code
+from itime.ai.audio_validation import validate_voice_wav
 from itime.ai.models import AIConfigCapability, AIConfigVersion
 from itime.auth.models import User
 from itime.auth.security import Security, now
 from itime.config import Settings
 from itime.database import Database
+from itime.errors import AppError
 from itime.quota.models import AIQuotaPolicyState, AIQuotaPolicyVersion
 from itime.quota.service import RESERVATION_ESTIMATOR_VERSION
 from tests.conftest import SERVER, isolated_database
@@ -201,6 +205,32 @@ def review_tool_arguments(request_body: dict) -> dict:
     }
 
 
+def parse_multipart(content_type: str, body: bytes) -> dict[str, object]:
+    message = BytesParser(policy=policy.default).parsebytes(
+        b"Content-Type: "
+        + content_type.encode()
+        + b"\r\nMIME-Version: 1.0\r\n\r\n"
+        + body
+    )
+    parts: dict[str, object] = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if not isinstance(name, str):
+            continue
+        payload = part.get_payload(decode=True) or b""
+        filename = part.get_filename()
+        parts[name] = (
+            {
+                "filename": filename,
+                "content_type": part.get_content_type(),
+                "contents": payload,
+            }
+            if filename is not None
+            else payload.decode()
+        )
+    return parts
+
+
 class FakeAIHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
@@ -214,6 +244,36 @@ class FakeAIHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(length)
         if self.path.endswith("/audio/transcriptions"):
+            try:
+                parts = parse_multipart(
+                    self.headers.get("Content-Type", ""),
+                    raw_body,
+                )
+                file_part = parts["file"]
+                assert isinstance(file_part, dict)
+                assert isinstance(parts["model"], str) and parts["model"]
+                assert parts["response_format"] == "json"
+                assert self.headers.get("Authorization", "").startswith(
+                    "Bearer "
+                )
+                assert file_part["content_type"] == "audio/wav"
+                assert str(file_part["filename"]).endswith(".wav")
+                validate_voice_wav(
+                    file_part["contents"],
+                    file_part["filename"],
+                    file_part["content_type"],
+                )
+            except (AppError, AssertionError, KeyError, TypeError, ValueError):
+                body = json.dumps(
+                    {"error": "invalid transcription fixture request"}
+                ).encode()
+                self.send_response(422)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            time.sleep(0.5)
             body = json.dumps(
                 {
                     "text": "周五前完成论文提纲",

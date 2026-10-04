@@ -1236,7 +1236,14 @@
   }
 
   .product-navigation .nav-link {
-    width: auto;
+    width: 44px;
+    flex: 0 0 44px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .product-navigation .product-label {
+    display: none;
   }
 
   .task-locations {
@@ -1475,6 +1482,12 @@
 }
 
 @media (max-width: 420px) {
+  .task-locations,
+  .project-navigation-list {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
   .task-navigation-top {
     min-width: 0;
     gap: 2px;

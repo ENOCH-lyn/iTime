@@ -4,10 +4,13 @@ import {
   test,
   type APIRequestContext,
   type Page,
+  type TestInfo,
 } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 
 const password = 'Valid-transcription-ui-password-123'
+const evidence = '/tmp/itime-ui-evidence'
 const runtimeErrors = new WeakMap<Page, string[]>()
 
 async function mailLink(request: APIRequestContext, address: string) {
@@ -103,6 +106,42 @@ async function recordDifficultyVoice(page: Page) {
   return control
 }
 
+async function screenshot(page: Page, info: TestInfo, name: string) {
+  await mkdir(evidence, { recursive: true })
+  await page.screenshot({
+    path: `${evidence}/${info.project.name}-voice-transcription-${name}.png`,
+    fullPage: true,
+  })
+}
+
+async function assertPageQuality(page: Page) {
+  expect(await page.locator('vite-error-overlay').count()).toBe(0)
+  expect(runtimeErrors.get(page)).toEqual([])
+  expect(await new AxeBuilder({ page }).analyze()).toMatchObject({ violations: [] })
+  expect(await page.evaluate(() => (
+    [...document.querySelectorAll<HTMLElement>('body *')]
+      .filter(element => {
+        const style = getComputedStyle(element)
+        if (
+          style.display === 'none'
+          || style.visibility === 'hidden'
+          || style.opacity === '0'
+          || style.position === 'fixed'
+        ) return false
+        const rect = element.getBoundingClientRect()
+        return rect.left < -1 || rect.right > innerWidth + 1
+      })
+      .map(element => {
+        const rect = element.getBoundingClientRect()
+        return {
+          element: `${element.tagName.toLowerCase()}.${element.className}`,
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+        }
+      })
+  ))).toEqual([])
+}
+
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -123,12 +162,16 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('任务语音控件录制、转写并展示独立草稿', async ({ page, request }) => {
+test('任务语音控件录制、转写并展示独立草稿', async ({
+  page,
+  request,
+}, info) => {
   await account(page, request)
   await page.goto('/tasks')
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
 
   const control = await recordTaskVoice(page)
+  await screenshot(page, info, 'task-ready')
   await control.getByRole('button', { name: '应用到任务名称' }).click()
   await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue(
     '周五前完成论文提纲',
@@ -281,4 +324,232 @@ test('困难转写限制、丢弃、编辑态和回收站门禁正确', async ({
   await page.getByRole('group', { name: '困难范围' })
     .getByRole('button', { name: '回收站', exact: true }).click()
   await expect(difficultyVoiceControl(page)).toHaveCount(0)
+})
+
+test('麦克风权限拒绝保留任务文字并提供恢复说明', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: () => Promise.reject(
+        new DOMException('Permission denied by test', 'NotAllowedError'),
+      ),
+    })
+  })
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  await page.getByLabel('任务名称', { exact: true }).fill('权限失败仍保留')
+
+  const control = taskVoiceControl(page)
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('alert')).toContainText('未允许麦克风权限')
+  await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue(
+    '权限失败仍保留',
+  )
+})
+
+test('组件卸载会停止全部麦克风轨道', async ({ page, request }, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await page.addInitScript(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(
+      navigator.mediaDevices,
+    )
+    Object.defineProperty(window, '__itimeTrackStops', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    })
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async (constraints: MediaStreamConstraints) => {
+        const stream = await original(constraints)
+        for (const track of stream.getTracks()) {
+          const stop = track.stop.bind(track)
+          Object.defineProperty(track, 'stop', {
+            configurable: true,
+            value: () => {
+              ;(window as typeof window & { __itimeTrackStops: number })
+                .__itimeTrackStops += 1
+              stop()
+            },
+          })
+        }
+        return stream
+      },
+    })
+  })
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const control = taskVoiceControl(page)
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.getByRole('link', { name: 'AI', exact: true }).click()
+  await expect(page).toHaveURL('/ai')
+  await expect.poll(() => page.evaluate(
+    () => (window as typeof window & { __itimeTrackStops: number })
+      .__itimeTrackStops,
+  )).toBeGreaterThan(0)
+})
+
+test('上传失败以同一操作号重放且只创建一份转写', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  const operationIds: string[] = []
+  await page.route('**/api/v1/voice-transcriptions?**', async route => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    operationIds.push(route.request().headers()['x-operation-id'] ?? '')
+    if (operationIds.length === 1) await route.abort('failed')
+    else await route.continue()
+  })
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const control = taskVoiceControl(page)
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.waitForTimeout(500)
+  await control.getByRole('button', { name: '停止录音' }).click()
+  await expect(control.getByRole('button', { name: '重试原上传' })).toBeVisible()
+  await control.getByRole('button', { name: '重试原上传' }).click()
+  await expect(control.getByLabel('转写草稿')).toHaveValue(
+    '周五前完成论文提纲',
+    { timeout: 15_000 },
+  )
+  expect(operationIds).toHaveLength(2)
+  expect(operationIds[0]).not.toBe('')
+  expect(operationIds[1]).toBe(operationIds[0])
+  const listed = await (
+    await page.request.get(
+      '/api/v1/voice-transcriptions?purpose=task_title&limit=20',
+    )
+  ).json()
+  expect(listed.items).toHaveLength(1)
+})
+
+test('第二页面恢复同一未解决转写草稿', async ({
+  context,
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const control = taskVoiceControl(page)
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.waitForTimeout(500)
+  const accepted = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && response.url().includes('/api/v1/voice-transcriptions?')
+    && response.status() === 202
+  ))
+  await control.getByRole('button', { name: '停止录音' }).click()
+  await accepted
+  const second = await context.newPage()
+  watchRuntime(second)
+  await second.goto('/tasks')
+  await second.getByRole('button', { name: '新建任务', exact: true }).click()
+  const recovered = taskVoiceControl(second)
+  await expect(recovered.getByLabel('转写草稿')).toHaveValue(
+    '周五前完成论文提纲',
+    { timeout: 15_000 },
+  )
+  const listed = await (
+    await second.request.get(
+      '/api/v1/voice-transcriptions?purpose=task_title&limit=20',
+    )
+  ).json()
+  expect(listed.items).toHaveLength(1)
+  await recovered.getByRole('button', { name: '丢弃', exact: true }).click()
+  expect(runtimeErrors.get(second)).toEqual([])
+  await second.close()
+})
+
+test('处理中取消清除草稿且晚到结果不会重新出现', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const control = taskVoiceControl(page)
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.waitForTimeout(500)
+  const accepted = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && response.url().includes('/api/v1/voice-transcriptions?')
+    && response.status() === 202
+  ))
+  await control.getByRole('button', { name: '停止录音' }).click()
+  await accepted
+  await expect(control.getByRole('button', { name: '取消转写' })).toBeVisible()
+  await control.getByRole('button', { name: '取消转写' }).click()
+  await expect(control).toContainText('已丢弃')
+  await expect.poll(async () => {
+    const listed = await (
+      await page.request.get(
+        '/api/v1/voice-transcriptions?purpose=task_title&limit=1',
+      )
+    ).json()
+    return [
+      listed.items[0].transcription.resolution,
+      listed.items[0].job.status,
+    ]
+  }).toEqual(['discarded', 'cancelled'])
+  await page.reload()
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  await expect(taskVoiceControl(page).getByLabel('转写草稿')).toHaveCount(0)
+})
+
+test('录音达到 60 秒会自动停止并进入转写', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await account(page, request)
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  const control = taskVoiceControl(page)
+  await page.clock.install()
+  await control.getByRole('button', { name: '开始语音输入' }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.waitForTimeout(500)
+  await page.clock.fastForward(60_100)
+  await expect(control.getByLabel('转写草稿')).toHaveValue(
+    '周五前完成论文提纲',
+    { timeout: 15_000 },
+  )
+})
+
+test('320px 最大字号深色下转写草稿无溢出', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(info.project.name !== 'desktop')
+  await account(page, request)
+  await page.setViewportSize({ width: 320, height: 780 })
+  await page.evaluate(() => {
+    localStorage.setItem('itime-appearance', JSON.stringify({
+      theme: 'dark',
+      fontSize: 'larger',
+    }))
+  })
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新建任务', exact: true }).click()
+  await recordTaskVoice(page)
+  await assertPageQuality(page)
+  await screenshot(page, info, 'task-ready-320-large-dark')
 })
