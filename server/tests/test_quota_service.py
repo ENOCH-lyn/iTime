@@ -12,8 +12,10 @@ from itime.database import Database
 from itime.errors import AppError
 from itime.planning import models as _planning_models  # noqa: F401
 from itime.quota.service import (
+    AUDIO_RESERVATION_ESTIMATOR_VERSION,
     BudgetEstimate,
     activity_window,
+    estimate_audio_reservation_budget,
     estimate_reservation_budget,
     get_or_create_daily_allowance,
     quota_snapshot,
@@ -140,6 +142,28 @@ def test_reservation_estimate_uses_max_output_and_priced_input():
     assert estimate.output_tokens == 100
     assert estimate.reserved_nanos >= 200_000
     assert estimate.estimator_version == "reservation-utf8-vision-v1"
+
+
+def test_audio_reservation_estimate_uses_authoritative_duration_and_rounds_up():
+    class Config:
+        max_output_tokens = None
+        pricing_basis = "audio_minute"
+        price_currency = "CNY"
+        input_price_nanos_per_million_tokens = None
+        cached_input_price_nanos_per_million_tokens = None
+        output_price_nanos_per_million_tokens = None
+        audio_price_nanos_per_minute = 120_000_000
+
+    estimate = estimate_audio_reservation_budget(
+        Config(),
+        duration_ms=1001,
+    )
+
+    assert estimate.currency == "CNY"
+    assert estimate.input_tokens == 0
+    assert estimate.output_tokens == 0
+    assert estimate.reserved_nanos == 2_002_000
+    assert estimate.estimator_version == AUDIO_RESERVATION_ESTIMATOR_VERSION
 
 
 def test_timezone_change_reuses_covering_allowance(admin_url):

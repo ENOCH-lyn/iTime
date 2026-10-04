@@ -7,7 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.ai.models import AIConfigVersion, AIJob, AIProviderCost
-from itime.ai.pricing import format_currency_nanos, token_cost_breakdown
+from itime.ai.pricing import (
+    audio_duration_cost,
+    format_currency_nanos,
+    token_cost_breakdown,
+)
 from itime.ai.usage import estimate_usage
 from itime.auth.models import User
 from itime.auth.security import now
@@ -24,14 +28,17 @@ from itime.quota.models import (
 )
 
 RESERVATION_ESTIMATOR_VERSION = "reservation-utf8-vision-v1"
+AUDIO_RESERVATION_ESTIMATOR_VERSION = "reservation-audio-duration-v1"
 
 
 class PricedConfig(Protocol):
-    max_output_tokens: int
+    max_output_tokens: int | None
+    pricing_basis: str
     price_currency: str | None
     input_price_nanos_per_million_tokens: int | None
     cached_input_price_nanos_per_million_tokens: int | None
     output_price_nanos_per_million_tokens: int | None
+    audio_price_nanos_per_minute: int | None
 
 
 @dataclass(frozen=True)
@@ -141,6 +148,12 @@ def estimate_reservation_budget(
         input_summary=input_summary,
     )
     output_tokens = config.max_output_tokens
+    if output_tokens is None:
+        raise AppError(
+            "ai_quota_pricing_unavailable",
+            "当前 AI 配置缺少最大输出限制，暂时不能接收新请求。",
+            status=503,
+        )
     _, _, _, reserved_nanos = token_cost_breakdown(
         input_tokens=estimated.input_tokens,
         cached_input_tokens=0,
@@ -155,6 +168,33 @@ def estimate_reservation_budget(
         output_tokens=output_tokens,
         reserved_nanos=reserved_nanos,
         estimator_version=RESERVATION_ESTIMATOR_VERSION,
+    )
+
+
+def estimate_audio_reservation_budget(
+    config: PricedConfig,
+    *,
+    duration_ms: int,
+) -> BudgetEstimate:
+    if (
+        config.pricing_basis != "audio_minute"
+        or config.price_currency is None
+        or config.audio_price_nanos_per_minute is None
+    ):
+        raise AppError(
+            "ai_quota_pricing_unavailable",
+            "当前语音转写配置缺少音频价格，暂时不能接收新请求。",
+            status=503,
+        )
+    return BudgetEstimate(
+        currency=config.price_currency,
+        input_tokens=0,
+        output_tokens=0,
+        reserved_nanos=audio_duration_cost(
+            duration_ms,
+            config.audio_price_nanos_per_minute,
+        ),
+        estimator_version=AUDIO_RESERVATION_ESTIMATOR_VERSION,
     )
 
 
