@@ -110,7 +110,8 @@ useSyncRefresh(
         selectedTask.value = null
       }
     } else if (selectedTask.value && editorDirty.value && !linkOnly) {
-      pageSuccess.value = '其他设备有更新；当前填写已保留，请保存时比较最新版。'
+      pageSuccess.value = ''
+      editorSuccess.value = '其他设备有更新；当前填写已保留，请保存时比较最新版。'
     }
   },
 )

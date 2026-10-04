@@ -190,9 +190,16 @@ test('并发归档冲突可采用服务器状态且完成事实不变', async ({
     }
     await statusFilter.selectOption('completed')
     await openTask(second, title)
+    await second.getByLabel('正文', { exact: false })
+      .fill('本地未保存的归档冲突草稿。')
 
     await page.getByRole('button', { name: '归档', exact: true }).click()
     await expect(page.getByText('任务已归档。')).toBeVisible()
+    await expect(second.getByText(
+      '其他设备有更新；当前填写已保留，请保存时比较最新版。',
+    )).toBeVisible({ timeout: 5_000 })
+    await expect(second.getByLabel('正文', { exact: false }))
+      .toHaveValue('本地未保存的归档冲突草稿。')
     await second.getByRole('button', { name: '归档', exact: true }).click()
     await expect(second.getByRole('alert')).toContainText('已在其他页面或设备更新')
     await expect(second.getByText(/服务器最新版/)).toBeVisible()
