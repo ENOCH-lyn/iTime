@@ -293,6 +293,7 @@ async def seed_history_accounts(
     *,
     seed: int,
     at: datetime,
+    upstream_origin: str = "http://host.docker.internal:18081",
 ) -> SeedManifest:
     if at.tzinfo is None:
         raise ValueError("性能数据基准时间必须包含 UTC offset")
@@ -302,6 +303,7 @@ async def seed_history_accounts(
         profile=profile,
         seed=seed,
         at=at,
+        upstream_origin=upstream_origin,
     )
     counts: Counter[str] = Counter()
     credentials: list[AccountCredential] = []

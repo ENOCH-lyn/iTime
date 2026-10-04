@@ -27,6 +27,7 @@ ROUTE_NAMES = {
     ("GET", "/api/v1/sync/status"): "sync.status",
     ("GET", "/api/v1/tasks"): "tasks.list",
     ("POST", "/api/v1/auth/login"): "login",
+    ("POST", "/api/v1/ai/conversations"): "conversations.create",
     ("POST", "/api/v1/tasks"): "tasks.create",
 }
 
@@ -38,6 +39,16 @@ def request_name(method: str, path: str, *, category: str | None = None) -> str:
         "/api/v1/tasks/"
     ):
         operation = "tasks.detail"
+    if operation is None and path.startswith("/api/v1/ai/conversations/"):
+        operation = (
+            "messages.accept"
+            if normalized_method == "POST" and path.endswith("/messages")
+            else "conversations.read"
+        )
+    if operation is None and normalized_method == "GET" and path.startswith(
+        "/api/v1/ai/jobs/"
+    ):
+        operation = "jobs.read"
     if operation is None:
         operation = path.removeprefix("/api/v1/").strip("/").replace("/", ".")
     if category is None:
@@ -567,8 +578,122 @@ class SyncUser(AuthenticatedUser):
         )
 
 
+class AIUser(AuthenticatedUser):
+    weight = 1
+    dataset_kind = "standard"
+
+    def on_start(self) -> None:
+        super().on_start()
+        conversation = self.request_json(
+            "POST",
+            "/api/v1/ai/conversations",
+            expected_status=201,
+            required_keys=("conversation",),
+            category="ai",
+            headers=self.write_headers(),
+            json={
+                "operation_id": str(uuid4()),
+                "title": "性能隔离会话",
+            },
+        )
+        if conversation is None:
+            raise StopUser()
+        self.conversation_id = str(conversation["conversation"]["id"])
+        self.conversation_version = int(conversation["conversation"]["version"])
+        self.generation_submitted = False
+
+    @task
+    def generate_reply(self) -> None:
+        if self.generation_submitted:
+            gevent.sleep(1)
+            return
+        self.generation_submitted = True
+        started = time.perf_counter()
+        submitted = self.request_json(
+            "POST",
+            f"/api/v1/ai/conversations/{self.conversation_id}/messages",
+            expected_status=202,
+            required_keys=("conversation", "messages", "job"),
+            category="ai",
+            headers=self.write_headers(),
+            json={
+                "operation_id": str(uuid4()),
+                "expected_conversation_version": self.conversation_version,
+                "content": "请给出一句简短的合成性能测试回复。",
+                "response_mode": "text",
+            },
+        )
+        if submitted is None:
+            return
+        self.conversation_version = int(submitted["conversation"]["version"])
+        job_id = str(submitted["job"]["id"])
+        claimed_recorded = False
+        deadline = started + 65
+        while time.perf_counter() < deadline:
+            job = self.request_json(
+                "GET",
+                f"/api/v1/ai/jobs/{job_id}",
+                required_keys=("id", "status"),
+                category="ai-probe",
+            )
+            if job is None:
+                return
+            status = str(job["status"])
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            if not claimed_recorded and status in {
+                "running",
+                "succeeded",
+                "failed",
+                "timed_out",
+                "cancelled",
+            }:
+                events.request.fire(
+                    request_type="AI",
+                    name="ai::accepted-to-claimed",
+                    response_time=elapsed_ms,
+                    response_length=0,
+                    exception=None,
+                    context={},
+                )
+                claimed_recorded = True
+            if status == "succeeded":
+                encoded = json.dumps(
+                    job.get("output") or {},
+                    ensure_ascii=False,
+                ).encode()
+                events.request.fire(
+                    request_type="AI",
+                    name="ai::end-to-end",
+                    response_time=elapsed_ms,
+                    response_length=len(encoded),
+                    exception=None,
+                    context={},
+                )
+                return
+            if status in {"failed", "timed_out", "cancelled"}:
+                events.request.fire(
+                    request_type="AI",
+                    name="ai::end-to-end",
+                    response_time=elapsed_ms,
+                    response_length=0,
+                    exception=RuntimeError(f"AI job ended as {status}"),
+                    context={},
+                )
+                return
+            gevent.sleep(0.25)
+        events.request.fire(
+            request_type="AI",
+            name="ai::end-to-end",
+            response_time=(time.perf_counter() - started) * 1000,
+            response_length=0,
+            exception=TimeoutError("AI 作业超过 65 秒仍未终止"),
+            context={},
+        )
+
+
 WORKLOADS = {
     "standard": StandardUser,
     "history": HistoryUser,
     "sync": SyncUser,
+    "ai": AIUser,
 }

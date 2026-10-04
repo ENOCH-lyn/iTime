@@ -103,6 +103,9 @@ INVARIANT_QUERIES = {
     "external_ai_configs": """
         SELECT count(*) FROM ai_config_versions
         WHERE endpoint_url NOT LIKE 'http://host.docker.internal:%'
+          AND endpoint_url NOT LIKE 'http://127.0.0.1:%'
+          AND endpoint_url NOT LIKE 'http://localhost:%'
+          AND endpoint_url NOT LIKE 'http://[::1]:%'
     """,
 }
 

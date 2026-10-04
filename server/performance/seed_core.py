@@ -97,6 +97,7 @@ async def _prepare_globals(
     profile: SeedProfile,
     seed: int,
     at: datetime,
+    upstream_origin: str,
 ) -> GlobalSeedState:
     security = Security(settings)
     password_hash = await security.hash_password(SYNTHETIC_LOGIN_SECRET)
@@ -116,7 +117,7 @@ async def _prepare_globals(
                     id=config_id,
                     capability=capability,
                     version=state.next_version,
-                    endpoint_url="http://host.docker.internal:18081/v1",
+                    endpoint_url=f"{upstream_origin.rstrip('/')}/v1",
                     model=f"performance-{capability}",
                     api_key_ciphertext=security.ai_cipher.encrypt(
                         b"synthetic-performance-key"
@@ -1130,6 +1131,7 @@ async def seed_standard(
     *,
     seed: int,
     at: datetime,
+    upstream_origin: str = "http://host.docker.internal:18081",
 ) -> SeedManifest:
     if at.tzinfo is None:
         raise ValueError("性能数据基准时间必须包含 UTC offset")
@@ -1139,6 +1141,7 @@ async def seed_standard(
         profile=profile,
         seed=seed,
         at=at,
+        upstream_origin=upstream_origin,
     )
     counts: Counter[str] = Counter()
     credentials: list[AccountCredential] = []

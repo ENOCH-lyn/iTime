@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy.engine import make_url
 
@@ -29,6 +30,21 @@ def require_safe_seed_settings(settings: Settings) -> None:
         raise ValueError("性能数据只允许写入本地或专用 Compose 数据库")
     if not database_name.startswith(("itime_perf_", "itime_test_")):
         raise ValueError("性能数据库名必须以 itime_perf_ 或 itime_test_ 开头")
+
+
+def require_safe_upstream_origin(origin: str) -> None:
+    parsed = urlsplit(origin)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname
+        not in {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("性能上游必须为无凭据、无路径的本机 HTTP origin")
 
 
 def write_private_credentials(
@@ -68,8 +84,10 @@ async def seed_dataset(
     seed: int,
     at: datetime,
     credentials_path: Path,
+    upstream_origin: str = "http://host.docker.internal:18081",
 ) -> SeedManifest:
     require_safe_seed_settings(settings)
+    require_safe_upstream_origin(upstream_origin)
     database = Database(settings)
     try:
         if profile.name == "standard":
@@ -79,6 +97,7 @@ async def seed_dataset(
                 profile,
                 seed=seed,
                 at=at,
+                upstream_origin=upstream_origin,
             )
         elif profile.name == "history":
             from performance.seed_history import seed_history_accounts
@@ -89,6 +108,7 @@ async def seed_dataset(
                 profile,
                 seed=seed,
                 at=at,
+                upstream_origin=upstream_origin,
             )
         else:
             raise ValueError(f"不支持的数据档位：{profile.name}")
@@ -108,6 +128,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--at", type=datetime.fromisoformat, required=True)
     parser.add_argument("--credentials", type=Path, required=True)
+    parser.add_argument(
+        "--upstream-origin",
+        default="http://host.docker.internal:18081",
+    )
     return parser.parse_args()
 
 
@@ -125,6 +149,7 @@ def main() -> None:
             seed=args.seed,
             at=args.at,
             credentials_path=args.credentials,
+            upstream_origin=args.upstream_origin,
         )
     )
     print(json.dumps(manifest.to_public_dict(), ensure_ascii=False, sort_keys=True))

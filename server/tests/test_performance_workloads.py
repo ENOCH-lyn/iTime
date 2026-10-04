@@ -64,7 +64,7 @@ def credential(email: str, dataset: str = "standard") -> dict[str, str]:
 
 
 def test_workload_registry_and_request_names():
-    assert set(workloads.WORKLOADS) == {"standard", "history", "sync"}
+    assert set(workloads.WORKLOADS) == {"standard", "history", "sync", "ai"}
     assert workloads.request_name("GET", "/api/v1/tasks") == "read::tasks.list"
     assert workloads.request_name("POST", "/api/v1/tasks") == "write::tasks.create"
     assert (
@@ -207,3 +207,67 @@ def test_sync_change_matching_requires_the_created_entity():
         },
         target,
     )
+
+
+def test_ai_user_submits_once_and_emits_claim_and_completion_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    credentials_path = tmp_path / "accounts.json"
+    credentials_path.write_text(
+        json.dumps([credential("ai-user@performance.example.com")])
+    )
+    monkeypatch.setenv("ITIME_PERF_CREDENTIALS", str(credentials_path))
+    monkeypatch.setenv("ITIME_PERF_ANCHOR_DATE", "2026-10-05")
+    workloads.reset_credential_pools()
+
+    responses = [
+        FakeResponse(200, {"csrf_token": "csrf-value"}),
+        FakeResponse(200, {"next_cursor": "cursor-1", "reset_required": True}),
+        FakeResponse(
+            201,
+            {"conversation": {"id": "conversation-1", "version": 1}},
+        ),
+        FakeResponse(
+            202,
+            {
+                "conversation": {"id": "conversation-1", "version": 2},
+                "messages": [{"id": "request"}, {"id": "response"}],
+                "job": {"id": "job-1", "status": "queued"},
+            },
+        ),
+        FakeResponse(200, {"id": "job-1", "status": "running"}),
+        FakeResponse(
+            200,
+            {
+                "id": "job-1",
+                "status": "succeeded",
+                "output": {"content": "完成"},
+            },
+        ),
+    ]
+    client = FakeClient(responses)
+    fired: list[dict] = []
+    monkeypatch.setattr(
+        workloads.events.request,
+        "fire",
+        lambda **kwargs: fired.append(kwargs),
+    )
+    monkeypatch.setattr(workloads.gevent, "sleep", lambda _: None)
+    user = workloads.AIUser(Environment())
+    user.client = client
+
+    user.on_start()
+    user.generate_reply()
+    user.generate_reply()
+
+    submit = client.calls[3][2]
+    assert submit["headers"] == {"X-CSRF-Token": "csrf-value"}
+    UUID(submit["json"]["operation_id"])
+    assert [item["name"] for item in fired] == [
+        "ai::accepted-to-claimed",
+        "ai::end-to-end",
+    ]
+    assert all(item["exception"] is None for item in fired)
+    assert client.responses == []
+    user.on_stop()
