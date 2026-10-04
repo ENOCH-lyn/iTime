@@ -322,6 +322,98 @@ def test_context_includes_subscription_occurrences(client, database_url):
     assert subscriptions[0]["start_at"].endswith("Z")
 
 
+def test_context_excludes_trashed_calendar_series_and_subscription(
+    client,
+    database_url,
+):
+    create_account(client, database_url, time_zone="UTC")
+    series = create_series(
+        client,
+        name="将回收的固定安排",
+        start_date="2026-10-05",
+        starts_at="09:00:00",
+        ends_at="10:00:00",
+    )["series"]
+    subscription = create_subscription(client, name="将回收的订阅")
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE calendar_subscriptions
+            SET next_refresh_at = CASE
+                WHEN source_id=%s THEN now() - interval '1 day'
+                ELSE now() + interval '1 day'
+            END
+            WHERE refresh_status='queued'
+            """,
+            (subscription["id"],),
+        )
+    assert asyncio.run(
+        run_worker(
+            database_url,
+            FakeFetcher(
+                [
+                    result(
+                        daily_ics(
+                            "将回收的订阅安排",
+                            date(2026, 10, 5),
+                        )
+                    )
+                ]
+            ),
+        )
+    )
+    before = get_context(
+        client,
+        scope="day",
+        target_date="2026-10-05",
+    ).json()["context"]["fixed_occurrences"]
+    assert {
+        item["name"]
+        for item in before
+    } == {
+        "将回收的固定安排",
+        "将回收的订阅安排",
+    }
+
+    deleted_series = client.request(
+        "DELETE",
+        f"/api/v1/calendar/series/{series['id']}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": series["version"],
+        },
+    )
+    assert deleted_series.status_code == 200
+    current_subscription = client.get(
+        f"/api/v1/calendar/subscriptions/{subscription['id']}"
+    ).json()["subscription"]
+    deleted_source = client.request(
+        "DELETE",
+        f"/api/v1/calendar/subscriptions/{subscription['id']}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": current_subscription["version"],
+        },
+    )
+    assert deleted_source.status_code == 200
+
+    after = get_context(
+        client,
+        scope="day",
+        target_date="2026-10-05",
+    ).json()["context"]["fixed_occurrences"]
+    assert {
+        item["name"]
+        for item in after
+    }.isdisjoint({
+        "将回收的固定安排",
+        "将回收的订阅安排",
+    })
+
+
 def test_context_rejects_cross_owner_selection_and_more_than_100_candidates(
     client,
     database_url,

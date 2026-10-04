@@ -198,7 +198,11 @@ def seed_export_facts(
             (memory_id, owner_id, marker, f"{marker}-memory"),
         )
         connection.commit()
-    return {"marker": marker, "subscription_url": subscription_url}
+    return {
+        "marker": marker,
+        "source_id": str(source_id),
+        "subscription_url": subscription_url,
+    }
 
 
 def read_snapshot(settings: Settings, owner_id: UUID) -> dict:
@@ -378,6 +382,113 @@ def test_snapshot_includes_only_public_cancelled_deletion_history(
         "last_error_message",
     ):
         assert forbidden not in rendered
+
+
+def test_snapshot_exports_calendar_trash_and_skips_purged_url_decryption(
+    client,
+    database_url,
+    settings,
+):
+    _, owner_id_value = create_account(client, database_url)
+    owner_id = UUID(owner_id_value)
+    facts = seed_export_facts(database_url, settings, owner_id)
+    series_id = uuid4()
+    current = datetime.now(UTC)
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            INSERT INTO calendar_series (
+                id, owner_id, kind, name, description, location, busy,
+                source_type, time_zone, start_date, starts_at, ends_at,
+                end_day_offset, recurrence_frequency, recurrence_interval,
+                recurrence_weekdays, course_week_numbers,
+                deleted_at, purge_after
+            ) VALUES (
+                %s, %s, 'fixed', '回收中的安排', '完整说明', '完整地点', true,
+                'manual', 'Asia/Shanghai', DATE '2026-10-05',
+                TIME '09:00', TIME '10:00', 0, 'none', 1,
+                '[]'::jsonb, '[]'::jsonb, %s, %s
+            )
+            """,
+            (
+                series_id,
+                owner_id,
+                current,
+                current + timedelta(days=30),
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE calendar_sources
+            SET deleted_at=%s, purge_after=%s
+            WHERE id=%s
+            """,
+            (
+                current,
+                current + timedelta(days=30),
+                UUID(facts["source_id"]),
+            ),
+        )
+
+    recoverable = read_snapshot(settings, owner_id)
+    series = next(
+        item
+        for item in recoverable["calendar"]["series"]
+        if item["id"] == str(series_id)
+    )
+    assert series["lifecycle"] == "trashed"
+    assert series["name"] == "回收中的安排"
+    source = next(
+        item
+        for item in recoverable["calendar"]["sources"]
+        if item["id"] == facts["source_id"]
+    )
+    assert source["lifecycle"] == "trashed"
+    subscription = next(
+        item
+        for item in recoverable["calendar"]["subscriptions"]
+        if item["source_id"] == facts["source_id"]
+    )
+    assert subscription["lifecycle"] == "trashed"
+    assert subscription["url"] == facts["subscription_url"]
+
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE calendar_sources
+            SET name='已彻底删除的订阅', purged_at=now()
+            WHERE id=%s
+            """,
+            (UUID(facts["source_id"]),),
+        )
+        connection.execute(
+            """
+            UPDATE calendar_subscriptions
+            SET encrypted_url=''::bytea,
+                url_hmac=%s,
+                display_url='已清理',
+                display_host='deleted.invalid',
+                lifecycle_status='paused',
+                refresh_status='idle'
+            WHERE source_id=%s
+            """,
+            ("0" * 64, UUID(facts["source_id"])),
+        )
+
+    purged = read_snapshot(settings, owner_id)
+    purged_subscription = next(
+        item
+        for item in purged["calendar"]["subscriptions"]
+        if item["source_id"] == facts["source_id"]
+    )
+    assert purged_subscription["lifecycle"] == "purged"
+    assert purged_subscription["url"] is None
 
 
 def test_repeatable_read_snapshot_excludes_later_commit(

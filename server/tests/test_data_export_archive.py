@@ -246,6 +246,113 @@ def test_archive_contains_verified_json_csv_ics_and_markdown():
         assert "敏感个人信息" in package.read("README.txt").decode()
 
 
+def test_archive_separates_calendar_trash_from_active_calendar_files():
+    snapshot = sample_snapshot()
+    deleted_at = "2026-10-04T08:00:00Z"
+    purge_after = "2026-11-03T08:00:00Z"
+    series = snapshot["calendar"]["series"][0]
+    series.update(
+        {
+            "lifecycle": "trashed",
+            "deleted_at": deleted_at,
+            "purge_after": purge_after,
+            "purged_at": None,
+        }
+    )
+    source_id = str(uuid4())
+    event_id = str(uuid4())
+    snapshot["calendar"]["sources"] = [
+        {
+            "id": source_id,
+            "kind": "ics_subscription",
+            "name": "回收订阅",
+            "lifecycle": "trashed",
+            "deleted_at": deleted_at,
+            "purge_after": purge_after,
+            "purged_at": None,
+        }
+    ]
+    snapshot["calendar"]["subscriptions"] = [
+        {
+            "source_id": source_id,
+            "display_host": "calendar.example",
+            "lifecycle": "trashed",
+        }
+    ]
+    snapshot["calendar"]["subscription_events"] = [
+        {
+            "id": event_id,
+            "source_id": source_id,
+            "uid": "trashed-event",
+            "recurrence_id": "",
+            "baseline": {
+                "name": "回收订阅安排",
+                "description": "",
+                "location": "",
+                "busy": True,
+                "status": "confirmed",
+                "start": {
+                    "kind": "datetime",
+                    "semantic": "utc",
+                    "local": "2026-10-05T09:00:00",
+                    "time_zone": "UTC",
+                    "utc": "2026-10-05T09:00:00Z",
+                },
+                "duration": {"kind": "seconds", "value": 3600},
+                "rrule": None,
+                "rdates": [],
+                "exdates": [],
+            },
+            "parse_status": "valid",
+            "source_status": "active",
+        }
+    ]
+
+    archive = build_export_archive(
+        snapshot,
+        uuid4(),
+        ExportLimits(
+            max_uncompressed_bytes=1_000_000,
+            max_archive_bytes=500_000,
+        ),
+    )
+    with ZipFile(io.BytesIO(archive.content)) as package:
+        calendar = Calendar.from_ical(package.read("calendar/itime.ics"))
+        summaries = {
+            str(component.get("summary"))
+            for component in calendar.walk("VEVENT")
+        }
+        assert "每周例会" not in summaries
+        assert "回收订阅安排" not in summaries
+
+        event_rows = list(
+            csv.DictReader(
+                io.StringIO(
+                    package.read("csv/calendar-events.csv").decode("utf-8-sig")
+                )
+            )
+        )
+        assert not {
+            "每周例会",
+            "回收订阅安排",
+        }.intersection({row["title"] for row in event_rows})
+        trash_rows = list(
+            csv.DictReader(
+                io.StringIO(
+                    package.read("csv/calendar-trash.csv").decode("utf-8-sig")
+                )
+            )
+        )
+        assert {(row["kind"], row["title"]) for row in trash_rows} == {
+            ("calendar_fixed", "每周例会"),
+            ("ics_subscription", "回收订阅"),
+        }
+        trash_markdown = package.read("markdown/calendar-trash.md").decode()
+        assert "每周例会" in trash_markdown
+        assert "回收订阅" in trash_markdown
+        assert "calendar.example" in trash_markdown
+
+
 def test_archive_composes_subscription_occurrence_exceptions():
     snapshot = sample_snapshot()
     source_id = str(uuid4())

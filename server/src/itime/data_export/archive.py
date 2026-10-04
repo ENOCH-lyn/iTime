@@ -20,6 +20,7 @@ EXPECTED_EXPORT_PATHS = (
     "csv/task-steps.csv",
     "csv/task-occurrences.csv",
     "csv/calendar-events.csv",
+    "csv/calendar-trash.csv",
     "csv/plan-blocks.csv",
     "csv/focus-sessions.csv",
     "csv/difficulties.csv",
@@ -28,6 +29,7 @@ EXPECTED_EXPORT_PATHS = (
     "markdown/conversations.md",
     "markdown/reviews.md",
     "markdown/memories.md",
+    "markdown/calendar-trash.md",
     "manifest.json",
 )
 
@@ -208,11 +210,33 @@ def _task_events(snapshot: dict, snapshot_at: datetime) -> list[Event]:
     return events
 
 
+def _calendar_item_active(item: dict) -> bool:
+    lifecycle = item.get("lifecycle")
+    if lifecycle is not None:
+        return lifecycle == "active"
+    return item.get("deleted_at") is None and item.get("purged_at") is None
+
+
+def _active_subscription_events(snapshot: dict) -> list[dict]:
+    sources = snapshot["calendar"].get("sources", [])
+    source_states = {
+        source["id"]: _calendar_item_active(source)
+        for source in sources
+    }
+    return [
+        item
+        for item in snapshot["calendar"]["subscription_events"]
+        if source_states.get(item["source_id"], True)
+    ]
+
+
 def _series_events(snapshot: dict, snapshot_at: datetime) -> list[Event]:
     events: list[Event] = []
     event_by_series: dict[str, Event] = {}
     series_by_id = {
-        item["id"]: item for item in snapshot["calendar"]["series"]
+        item["id"]: item
+        for item in snapshot["calendar"]["series"]
+        if _calendar_item_active(item)
     }
     for series in series_by_id.values():
         start = _local_datetime(
@@ -514,7 +538,7 @@ def _subscription_events(
         item["event_id"]: item["values"]
         for item in snapshot["calendar"]["subscription_overrides"]
     }
-    source_events = snapshot["calendar"]["subscription_events"]
+    source_events = _active_subscription_events(snapshot)
     masters = {
         item["id"]: item
         for item in source_events
@@ -799,6 +823,74 @@ def _memory_markdown(snapshot: dict) -> tuple[bytes, int]:
     return "\n".join(lines).encode(), len(memories)
 
 
+def _calendar_trash_rows(snapshot: dict) -> list[dict]:
+    subscriptions = {
+        item["source_id"]: item
+        for item in snapshot["calendar"].get("subscriptions", [])
+    }
+    rows = [
+        {
+            "kind": f"calendar_{item['kind']}",
+            "id": item["id"],
+            "title": item.get("name") or "",
+            "source_type": item.get("source_type") or "manual",
+            "source_host": "",
+            "deleted_at": item.get("deleted_at"),
+            "purge_after": item.get("purge_after"),
+            "lifecycle": item.get("lifecycle") or "trashed",
+        }
+        for item in snapshot["calendar"]["series"]
+        if item.get("deleted_at") is not None
+        and item.get("purged_at") is None
+    ]
+    rows.extend(
+        {
+            "kind": "ics_subscription",
+            "id": item["id"],
+            "title": item.get("name") or "",
+            "source_type": item["kind"],
+            "source_host": subscriptions.get(item["id"], {}).get(
+                "display_host",
+                "",
+            ),
+            "deleted_at": item.get("deleted_at"),
+            "purge_after": item.get("purge_after"),
+            "lifecycle": item.get("lifecycle") or "trashed",
+        }
+        for item in snapshot["calendar"].get("sources", [])
+        if item.get("kind") == "ics_subscription"
+        and item.get("deleted_at") is not None
+        and item.get("purged_at") is None
+    )
+    rows.sort(
+        key=lambda item: (
+            str(item.get("deleted_at") or ""),
+            str(item["id"]),
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _calendar_trash_markdown(snapshot: dict) -> tuple[bytes, int]:
+    rows = _calendar_trash_rows(snapshot)
+    lines = ["# iTime calendar trash", ""]
+    for item in rows:
+        lines.extend(
+            [
+                markdown_heading(2, item["title"] or "Deleted calendar item"),
+                "",
+                f"- Kind: `{item['kind']}`",
+                f"- Source: `{item['source_type']}`",
+                f"- Host: `{item['source_host']}`",
+                f"- Deleted at: `{item['deleted_at']}`",
+                f"- Purge after: `{item['purge_after']}`",
+                "",
+            ]
+        )
+    return "\n".join(lines).encode(), len(rows)
+
+
 def _calendar_csv(snapshot: dict) -> list[dict]:
     rows = [
         {
@@ -816,7 +908,9 @@ def _calendar_csv(snapshot: dict) -> list[dict]:
             "source_type": item["source_type"],
         }
         for item in snapshot["calendar"]["series"]
+        if _calendar_item_active(item)
     ]
+    active_subscription_events = _active_subscription_events(snapshot)
     rows.extend(
         {
             "kind": "subscription",
@@ -835,8 +929,13 @@ def _calendar_csv(snapshot: dict) -> list[dict]:
             "status": item["source_status"],
             "source_type": "subscription",
         }
-        for item in snapshot["calendar"]["subscription_events"]
+        for item in active_subscription_events
     )
+    active_master_ids = {
+        item["id"]
+        for item in active_subscription_events
+        if not item.get("recurrence_id")
+    }
     rows.extend(
         {
             "kind": "subscription_exception",
@@ -860,6 +959,7 @@ def _calendar_csv(snapshot: dict) -> list[dict]:
             "source_type": "subscription",
         }
         for item in snapshot["calendar"].get("subscription_exceptions", [])
+        if item["master_event_id"] in active_master_ids
     )
     return rows
 
@@ -869,6 +969,8 @@ def _build_entries(snapshot: dict) -> tuple[list[tuple[str, bytes, int]], list[d
     conversation_md, conversation_count = _conversation_markdown(snapshot)
     review_md, review_count = _review_markdown(snapshot)
     memory_md, memory_count = _memory_markdown(snapshot)
+    calendar_trash_md, calendar_trash_count = _calendar_trash_markdown(snapshot)
+    calendar_trash_rows = _calendar_trash_rows(snapshot)
     csv_specs = (
         (
             "csv/projects.csv",
@@ -947,6 +1049,20 @@ def _build_entries(snapshot: dict) -> tuple[list[tuple[str, bytes, int]], list[d
                 "time_zone",
                 "status",
                 "source_type",
+            ),
+        ),
+        (
+            "csv/calendar-trash.csv",
+            calendar_trash_rows,
+            (
+                "kind",
+                "id",
+                "title",
+                "source_type",
+                "source_host",
+                "deleted_at",
+                "purge_after",
+                "lifecycle",
             ),
         ),
         (
@@ -1061,6 +1177,11 @@ def _build_entries(snapshot: dict) -> tuple[list[tuple[str, bytes, int]], list[d
             ("markdown/conversations.md", conversation_md, conversation_count),
             ("markdown/reviews.md", review_md, review_count),
             ("markdown/memories.md", memory_md, memory_count),
+            (
+                "markdown/calendar-trash.md",
+                calendar_trash_md,
+                calendar_trash_count,
+            ),
         )
     )
     return entries, warnings

@@ -842,18 +842,16 @@ Expected: 脱敏、双 worker、回滚、账号竞争和独立进程测试全部
 ## Task 5：接入规划、同步和本人导出
 
 **Files:**
-- Modify: `server/src/itime/planning/snapshot_service.py`
-- Modify: `server/src/itime/review/fact_service.py`
 - Modify: `server/src/itime/data_export/snapshot.py`
 - Modify: `server/src/itime/data_export/archive.py`
 - Modify: `server/tests/test_planning_inputs.py`
-- Modify: `server/tests/test_review_sessions.py`
 - Modify: `server/tests/test_data_export_snapshot.py`
 - Modify: `server/tests/test_data_export_archive.py`
 - Modify: `server/tests/test_sync_event_coverage.py`
-- Modify: `server/tests/test_sync_feed.py`
+- Test: `server/tests/test_review_sessions.py`
+- Test: `server/tests/test_sync_feed.py`
 
-- [ ] **Step 1: 写跨模块失败测试**
+- [x] **Step 1: 写跨模块失败测试**
 
 专项断言：
 
@@ -883,7 +881,7 @@ assert next(item for item in snapshot["calendar"]["subscriptions"]
 - 删除、恢复、清理事件只有类型、ID、动作和版本，无名称、URL、地点或正文；
 - 游标从另一设备读取事件后触发日历页刷新，过期游标重建仍不显示回收内容。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -894,10 +892,12 @@ uv run pytest -q tests/test_planning_inputs.py tests/test_review_sessions.py \
 
 Expected: FAIL，导出格式和生命周期跨模块断言尚未满足。
 
-- [ ] **Step 3: 收紧规划与复盘读取**
+- [x] **Step 3: 验证规划与复盘读取**
 
-即使 `query_occurrences` 已过滤，`snapshot_service.py` 和 `fact_service.py` 中直接查询
-`CalendarSeries/CalendarSource` 的路径也必须显式要求：
+`snapshot_service.py` 通过 `query_occurrences` 读取固定安排，因而复用 Task 2/3 的统一生命周期
+过滤；`fact_service.py` 只读取已保存计划、任务、专注和困难事实，不直接查询日历聚合。专项测试
+用直接数据库构造的回收对象确认规划上下文不含回收内容，并保持既有复盘事实回归通过。活动条件
+固定为：
 
 ```python
 CalendarSeries.deleted_at.is_(None),
@@ -908,7 +908,7 @@ CalendarSource.purged_at.is_(None),
 
 测试使用直接数据库构造的回收对象，避免仅证明 API 删除路径。
 
-- [ ] **Step 4: 扩展完整 JSON 快照**
+- [x] **Step 4: 扩展完整 JSON 快照**
 
 `snapshot.py` 的来源和系列白名单加入：
 
@@ -928,7 +928,7 @@ item["lifecycle"] = "purged"
 
 活动和回收对象分别写 `active/trashed`。不得把密钥、HMAC 或墓碑占位密文加入 JSON。
 
-- [ ] **Step 5: 扩展分类归档**
+- [x] **Step 5: 扩展分类归档**
 
 `EXPECTED_EXPORT_PATHS` 增加：
 
@@ -940,31 +940,29 @@ item["lifecycle"] = "purged"
 `_series_events` 和订阅 ICS 组合只处理 lifecycle active。`calendar-trash.csv` 固定字段：
 
 ```text
-kind,id,name,source_type,deleted_at,purge_after,lifecycle
+kind,id,title,source_type,source_host,deleted_at,purge_after,lifecycle
 ```
 
 Markdown 以“日历回收站”为一级标题，按删除时间列出类型、名称、删除时间和清理时间，不写完整
 订阅 URL。manifest 计数和 SHA-256 必须包含新增文件。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```bash
 cd server
 uv run pytest -q tests/test_planning_inputs.py tests/test_review_sessions.py \
   tests/test_data_export_snapshot.py tests/test_data_export_archive.py \
   tests/test_sync_event_coverage.py tests/test_sync_feed.py
-uv run ruff check src/itime/planning/snapshot_service.py \
-  src/itime/review/fact_service.py src/itime/data_export/snapshot.py \
+uv run ruff check src/itime/data_export/snapshot.py \
   src/itime/data_export/archive.py tests/test_planning_inputs.py \
-  tests/test_review_sessions.py tests/test_data_export_snapshot.py \
+  tests/test_data_export_snapshot.py \
   tests/test_data_export_archive.py tests/test_sync_event_coverage.py \
   tests/test_sync_feed.py
-git add src/itime/planning/snapshot_service.py \
-  src/itime/review/fact_service.py src/itime/data_export/snapshot.py \
+git add src/itime/data_export/snapshot.py \
   src/itime/data_export/archive.py tests/test_planning_inputs.py \
-  tests/test_review_sessions.py tests/test_data_export_snapshot.py \
+  tests/test_data_export_snapshot.py \
   tests/test_data_export_archive.py tests/test_sync_event_coverage.py \
-  tests/test_sync_feed.py
+  doc/计划/iTime-M6日历生命周期实施计划.md
 git commit -m "feat: 同步并导出日历回收状态"
 ```
 

@@ -144,6 +144,20 @@ async def _one(
     return rows[0] if rows else None
 
 
+def _with_lifecycle(
+    rows: list[dict[str, JSONValue]],
+) -> list[dict[str, JSONValue]]:
+    for item in rows:
+        item["lifecycle"] = (
+            "purged"
+            if item.get("purged_at") is not None
+            else "trashed"
+            if item.get("deleted_at") is not None
+            else "active"
+        )
+    return rows
+
+
 async def _subscription_rows(
     connection: AsyncConnection,
     owner_id: UUID,
@@ -177,6 +191,13 @@ async def _subscription_rows(
         select(
             *_columns(CalendarSubscription, fields),
             CalendarSubscription.encrypted_url.label("_encrypted_url"),
+            CalendarSource.deleted_at.label("_source_deleted_at"),
+            CalendarSource.purge_after.label("_source_purge_after"),
+            CalendarSource.purged_at.label("_source_purged_at"),
+        )
+        .join(
+            CalendarSource,
+            CalendarSource.id == CalendarSubscription.source_id,
         )
         .where(CalendarSubscription.owner_id == owner_id)
         .order_by(CalendarSubscription.source_id)
@@ -188,9 +209,26 @@ async def _subscription_rows(
         item = {
             key: export_value(value)
             for key, value in raw.items()
-            if key != "_encrypted_url"
+            if not key.startswith("_")
         }
-        item["url"] = decrypt_subscription_url(settings, encrypted_url)
+        deleted_at = raw["_source_deleted_at"]
+        purge_after = raw["_source_purge_after"]
+        purged_at = raw["_source_purged_at"]
+        item["lifecycle"] = (
+            "purged"
+            if purged_at is not None
+            else "trashed"
+            if deleted_at is not None
+            else "active"
+        )
+        item["deleted_at"] = export_value(deleted_at)
+        item["purge_after"] = export_value(purge_after)
+        item["purged_at"] = export_value(purged_at)
+        item["url"] = (
+            None
+            if purged_at is not None or not encrypted_url
+            else decrypt_subscription_url(settings, encrypted_url)
+        )
         rows.append(item)
     return rows
 
@@ -524,12 +562,24 @@ async def collect_export_snapshot(
             owner_id,
             order=("term_id", "period_number"),
         ),
-        "sources": await _rows(
-            connection,
-            CalendarSource,
-            ("id", "kind", "name", "version", "created_at", "updated_at"),
-            owner_id,
-            order=("created_at", "id"),
+        "sources": _with_lifecycle(
+            await _rows(
+                connection,
+                CalendarSource,
+                (
+                    "id",
+                    "kind",
+                    "name",
+                    "deleted_at",
+                    "purge_after",
+                    "purged_at",
+                    "version",
+                    "created_at",
+                    "updated_at",
+                ),
+                owner_id,
+                order=("created_at", "id"),
+            ),
         ),
         "subscriptions": await _subscription_rows(
             connection,
@@ -630,43 +680,48 @@ async def collect_export_snapshot(
             owner_id,
             order=("master_event_id", "source_occurrence_key"),
         ),
-        "series": await _rows(
-            connection,
-            CalendarSeries,
-            (
-                "id",
-                "term_id",
-                "predecessor_id",
-                "source_id",
-                "kind",
-                "name",
-                "description",
-                "location",
-                "busy",
-                "source_type",
-                "time_zone",
-                "start_date",
-                "starts_at",
-                "ends_at",
-                "end_day_offset",
-                "start_period_number",
-                "end_period_number",
-                "recurrence_frequency",
-                "recurrence_interval",
-                "recurrence_weekdays",
-                "recurrence_month",
-                "recurrence_day_of_month",
-                "recurrence_until",
-                "recurrence_count",
-                "course_first_week_monday",
-                "course_week_numbers",
-                "ambiguous_offset_minutes",
-                "version",
-                "created_at",
-                "updated_at",
+        "series": _with_lifecycle(
+            await _rows(
+                connection,
+                CalendarSeries,
+                (
+                    "id",
+                    "term_id",
+                    "predecessor_id",
+                    "source_id",
+                    "kind",
+                    "name",
+                    "description",
+                    "location",
+                    "busy",
+                    "source_type",
+                    "time_zone",
+                    "start_date",
+                    "starts_at",
+                    "ends_at",
+                    "end_day_offset",
+                    "start_period_number",
+                    "end_period_number",
+                    "recurrence_frequency",
+                    "recurrence_interval",
+                    "recurrence_weekdays",
+                    "recurrence_month",
+                    "recurrence_day_of_month",
+                    "recurrence_until",
+                    "recurrence_count",
+                    "course_first_week_monday",
+                    "course_week_numbers",
+                    "ambiguous_offset_minutes",
+                    "deleted_at",
+                    "purge_after",
+                    "purged_at",
+                    "version",
+                    "created_at",
+                    "updated_at",
+                ),
+                owner_id,
+                order=("start_date", "starts_at", "id"),
             ),
-            owner_id,
-            order=("start_date", "starts_at", "id"),
         ),
         "import_batches": await _rows(
             connection,

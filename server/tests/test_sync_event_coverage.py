@@ -9,6 +9,8 @@ from tests.test_ai_conversation_api import (
     publish_conversation_config,
     send_message,
 )
+from tests.test_calendar_series import create_series
+from tests.test_calendar_subscriptions import create_subscription
 
 pytestmark = pytest.mark.integration
 PASSWORD = "Valid-sync-event-password-123"
@@ -155,3 +157,92 @@ def test_conversation_events_cover_create_update_message_and_cancel(
         ("conversation", UUID(conversation["id"]), "updated", 3),
         ("conversation", UUID(conversation["id"]), "updated", 4),
     ]
+
+
+def test_calendar_lifecycle_events_are_content_free(
+    client,
+    database_url,
+):
+    _, owner_id = create_sync_account(client, database_url)
+    series = create_series(client, name="同步回收安排")["series"]
+    subscription = create_subscription(client, name="同步回收订阅")
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "DELETE FROM change_events WHERE owner_id=%s",
+            (owner_id,),
+        )
+
+    deleted_series = client.request(
+        "DELETE",
+        f"/api/v1/calendar/series/{series['id']}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": series["version"],
+        },
+    )
+    assert deleted_series.status_code == 200
+    restored_series = client.post(
+        f"/api/v1/calendar/series/{series['id']}/restore",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": deleted_series.json()["series"]["version"],
+        },
+    )
+    assert restored_series.status_code == 200
+    deleted_source = client.request(
+        "DELETE",
+        f"/api/v1/calendar/subscriptions/{subscription['id']}",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": subscription["version"],
+        },
+    )
+    assert deleted_source.status_code == 200
+    restored_source = client.post(
+        f"/api/v1/calendar/subscriptions/{subscription['id']}/restore",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": deleted_source.json()["subscription"]["version"],
+        },
+    )
+    assert restored_source.status_code == 200
+
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        events = connection.execute(
+            """
+            SELECT entity_type, entity_id, action, entity_version
+            FROM change_events
+            WHERE owner_id=%s
+            ORDER BY sequence
+            """,
+            (owner_id,),
+        ).fetchall()
+        columns = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public'
+                  AND table_name='change_events'
+                """
+            )
+        }
+    assert events == [
+        ("calendar_series", UUID(series["id"]), "deleted", 2),
+        ("calendar_series", UUID(series["id"]), "restored", 3),
+        ("calendar_source", UUID(subscription["id"]), "deleted", 2),
+        ("calendar_source", UUID(subscription["id"]), "restored", 3),
+    ]
+    assert columns == {
+        "sequence",
+        "owner_id",
+        "entity_type",
+        "entity_id",
+        "action",
+        "entity_version",
+        "changed_at",
+    }
