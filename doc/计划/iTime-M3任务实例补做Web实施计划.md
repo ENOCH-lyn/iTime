@@ -29,7 +29,7 @@
 **Files:**
 - Modify: `web/e2e/calendar.spec.ts`
 
-- [ ] **Step 1: 扩展任务创建 helper**
+- [x] **Step 1: 扩展任务创建 helper**
 
 让 helper 可创建带截止时刻、每日重复和有限次数的任务；保存后进入统一日历。
 
@@ -41,7 +41,7 @@ await page.getByLabel('重复方式').selectOption('daily')
 await page.getByLabel('重复次数').fill('3')
 ```
 
-- [ ] **Step 2: 编写补做链路测试**
+- [x] **Step 2: 编写补做链路测试**
 
 测试必须从真实页面选择基础任务实例，创建另一天/时刻的补做，再从日历打开新实例并核对来源：
 
@@ -66,7 +66,7 @@ expect(items.find(item => item.kind === 'makeup')).toMatchObject({
 每个 Playwright 项目都执行创建、打开和独立完成；desktop 另切到 320×700、最大字号深色，检查
 表单、来源、按钮、axe、控制台和根级横向溢出并保存截图。
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 ```bash
 cd web
@@ -82,7 +82,7 @@ Expected: 三个项目均因找不到“安排补做”失败，证明测试触�
 - Modify: `web/src/lib/task-schedules.ts`
 - Modify: `web/src/components/CalendarOccurrencePanel.vue`
 
-- [ ] **Step 1: 封装现有补做端点**
+- [x] **Step 1: 封装现有补做端点**
 
 在 `task-schedules.ts` 新增：
 
@@ -109,7 +109,7 @@ export async function createTaskMakeup(
 }
 ```
 
-- [ ] **Step 2: 增加任务补做表单状态与提交**
+- [x] **Step 2: 增加任务补做表单状态与提交**
 
 在 `CalendarOccurrencePanel.vue`：
 
@@ -127,7 +127,7 @@ const canCreateTaskMakeup = computed(() => (
 ))
 ```
 
-- [ ] **Step 3: 展示补做来源和防止链式补做**
+- [x] **Step 3: 展示补做来源和防止链式补做**
 
 `kind=makeup` 的详情增加来源事实：
 
@@ -140,7 +140,7 @@ const canCreateTaskMakeup = computed(() => (
 
 补做实例不渲染“安排补做”；原实例完成/跳过状态不因创建补做改变。
 
-- [ ] **Step 4: 构建并跑专项**
+- [x] **Step 4: 构建并跑专项**
 
 ```bash
 cd web
@@ -151,7 +151,7 @@ pnpm exec playwright test e2e/calendar.spec.ts \
 
 Expected: TypeScript/Vite 构建通过，测试在 desktop、mobile、tablet 共 3 项通过。
 
-- [ ] **Step 5: 提交功能**
+- [x] **Step 5: 提交功能**
 
 ```bash
 git add web/src/lib/task-schedules.ts \
@@ -171,7 +171,7 @@ git commit -m "feat: 支持任务实例补做"
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 - Modify: `doc/计划/iTime-M3任务实例补做Web实施计划.md`
 
-- [ ] **Step 1: 执行受影响服务端和完整日历 Chromium**
+- [x] **Step 1: 执行受影响服务端和完整日历 Chromium**
 
 ```bash
 cd server
@@ -186,7 +186,7 @@ pnpm exec playwright test e2e/calendar.spec.ts
 
 Expected: 任务补做、生命周期、统计和导出服务回归通过；日历全部场景在三种视口通过。
 
-- [ ] **Step 2: 执行全量回归**
+- [x] **Step 2: 执行全量回归**
 
 ```bash
 cd server
@@ -198,7 +198,7 @@ pnpm test:e2e
 
 Expected: 服务端及 Chromium 全量通过；只允许测试中明确说明为 desktop-only 的 skip。
 
-- [ ] **Step 3: 核对环境与证据**
+- [x] **Step 3: 核对环境与证据**
 
 ```bash
 curl --fail --silent http://127.0.0.1:8000/api/ready
@@ -209,7 +209,7 @@ git diff --check
 确认 `/tmp/itime-ui-evidence/*calendar-task-makeup*` 截图可读、无重叠或溢出，且
 `itime_test_%` 测试数据库残留为 0。
 
-- [ ] **Step 4: 同步状态文档并提交**
+- [x] **Step 4: 同步状态文档并提交**
 
 把“任务补做仅服务端实现”的描述更新为实际 API、UI、动态证据及剩余语音/AI 校对边界，不把本
 功能通过扩大成整个 Web 首版完成。

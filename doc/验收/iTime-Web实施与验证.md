@@ -476,7 +476,7 @@ Q-AUTH-03 仍未全部定稿：本模块要求管理员逐个指定邀请有效�
 
 日历浏览器测试覆盖真实注册、邮件验证和登录，手工创建学期/节次/课程/固定安排，统一展示任务截止，冲突保留与解释，单次取消/恢复/调课、补课创建/取消/恢复，双页面系列版本冲突与草稿保留，未来系列拆分总次数不膨胀，跨时区投影、跨午夜、DST 缺失及重复时刻。三个视口均检查 axe、控制台、API 500、横向溢出；另在 320×700 最大字号下验证议程布局。截图位于 `/tmp/itime-ui-evidence/*-calendar-*.png`，并已人工检查桌面月网格、手机议程、平板单栏详情和 320px 大字号。
 
-本节不包含 Excel、ICS、截图或订阅导入，也未实现任务实例补做、归档和回收站。真实 Edge、实体设备和全产品端到端验收仍待后续阶段。
+本节不包含 Excel、ICS、截图或订阅导入；任务实例补做、归档和回收站当时尚未实现，后续证据分别见 M3-Q、M6-A/M6-B。真实 Edge、实体设备和全产品端到端验收仍待后续阶段。
 
 ## M3-J：Excel 与 ICS 文件导入服务
 
@@ -1305,6 +1305,55 @@ DOM/控制台检查与 Playwright 截图均完成；Browser 截图工具超时�
 `http://localhost:5173/tasks` 返回 200。环境核查发现 6 个中止浏览器回归留下且无活动连接的
 `itime_test_%` 数据库，按测试资源命名边界清理后残留为 0；开发数据库未删除或重建。
 
-`REQ-LINK-01` 首版范围已完成。本模块不代表任务实例补做 Web 入口、任务/困难语音、其他对象
-单项回收、其他业务对象提案、正式公网兼容性、生产受限出口、正式模型质量、M8 性能分位数、
-真实 Edge/实体设备、备份恢复或生产部署已经完成。
+`REQ-LINK-01` 首版范围已完成。任务实例补做 Web 入口随后由 M3-Q 实现；本模块不代表任务/
+困难语音、其他对象单项回收、其他业务对象提案、正式公网兼容性、生产受限出口、正式模型质量、
+M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
+
+## M3-Q：重复任务实例关联补做 Web 入口
+
+对应 Git 提交：`dcb8d83`、`36c4128`。实际代码为
+`web/src/lib/task-schedules.ts`、`web/src/components/CalendarOccurrencePanel.vue`、
+`web/src/calendar.css` 和 `web/e2e/calendar.spec.ts`；既有服务端合同为
+`POST /api/v1/tasks/{task_id}/occurrences/makeup`，设计见
+[任务核心服务设计](../设计/iTime-任务核心服务设计.md)。
+
+已实现：
+
+- 统一日历只在重复任务的基础实例显示“安排补做”；补做实例、非重复任务、课程/固定安排和计划
+  块不显示该入口，课程“补课”与任务“补做”保持不同领域语义。
+- 日期型任务只提交补做日期；定时型任务提交当地日期和时刻，DST 重复时刻沿用现有 UTC 偏移
+  选择。请求携带任务版本和稳定 `operation_id`，响应未知时相同输入可安全重试；版本冲突重新
+  读取任务详情并保留当前表单。
+- 成功后统一日历重读服务端事实。原实例状态保持不变，新实例显示“关联补做 · 原实例日期”，
+  可独立完成、跳过、重新打开、调整截止日期和同步步骤，但不能继续创建链式补做。
+- 新表单使用 `h1 → h2` 语义层级；实施时同步修正同一详情面板既有调课、覆盖、补课和任务改期
+  表单的标题跳级，视觉字号保持不变。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn/Mailpit、生产构建预览和
+Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 任务日期、生命周期、统计与导出受影响服务端回归 | **26 passed in 23.01s** | 关联补做、任务清理、统计投影与导出快照 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run pytest -q` | **488 passed in 384.42s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| 补做专项 Chromium | **3 passed in 18.5s** | 完整补做流程 × desktop、mobile、tablet |
+| `cd web && pnpm exec playwright test e2e/calendar.spec.ts` | **15 passed in 49.6s** | 日历、任务补做、课程补课、系列冲突和 DST 三视口回归 |
+| `cd web && pnpm test:e2e` | **223 passed, 2 skipped in 12.0m** | 全部用户端、后台和公开页面 Chromium 全量回归 |
+
+浏览器流程从真实注册、邮件验证、任务创建和重复设置开始，在基础实例创建关联补做，查询服务端
+确认原实例仍为 `open`，再打开补做实例核对来源并独立完成。三个视口均检查 axe、控制台、Vite
+错误层和根级横向溢出；desktop 另在 320×700 最大字号深色下展开表单。截图位于
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-calendar-task-makeup-{form,completed}.png`
+及 `/tmp/itime-ui-evidence/desktop-calendar-task-makeup-form-320-large-dark.png`，已人工检查
+无重叠、裁切、空白画面或操作混淆。
+
+Browser 插件也在 `http://localhost:5173` 真实完成注册、邮件验证、登录、重复任务创建、日历
+跳转和补做提交；页面身份、DOM、成功状态、无 Vite 覆盖层及无横向溢出均通过。截图接口因浏览器
+渲染器节流不可用，视觉证据使用上述 Playwright 截图；控制台唯一警告来自 Browser 插件自身的
+EventEmitter listener 上限，不是应用脚本。该临时账号已从本地开发库清理。
+
+收口时 `GET /api/ready` 与 `http://localhost:5173/calendar` 均返回 200，`itime_test_%` 测试
+数据库残留为 0。任务实例补做的首版 Web 范围已完成；任务/困难语音与 AI 校对、来源更新后的已
+确认计划专门冲突提示、正式 Edge/实体设备、性能和生产部署仍未完成或验证。

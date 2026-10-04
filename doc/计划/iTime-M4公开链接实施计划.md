@@ -1002,8 +1002,11 @@ git add README.md doc/README.md cloud.md \
 git commit -m "docs: 记录公开链接实施证据"
 ```
 
-- [ ] **Step 7: 继续完整 Web 审计**
+- [x] **Step 7: 继续完整 Web 审计**
 
 以需求追踪矩阵为清单逐项核对当前代码、API、可达 UI 和动态证据。优先处理仍属 Web 首版且没有
 真实实现的语音输入/校对、来源更新后的计划冲突、其余业务对象回收和 M7/M8 发布准入；不得因为
 `REQ-LINK-01` 收口而结束总 goal。
+
+实际审计首先确认任务实例补做仅有服务端 API，既有日历 UI/E2E 覆盖的是课程补课；该 Web 缺口
+随后按 `iTime-M3任务实例补做Web实施计划.md` 实现并验证。
