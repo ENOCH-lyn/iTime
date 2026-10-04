@@ -10,12 +10,6 @@ function isoDate(value: Date) {
   return value.toISOString().slice(0, 10)
 }
 
-function addDays(value: string, days: number) {
-  const result = new Date(`${value}T12:00:00Z`)
-  result.setUTCDate(result.getUTCDate() + days)
-  return isoDate(result)
-}
-
 function weekStart(value: string) {
   const result = new Date(`${value}T12:00:00Z`)
   const weekday = result.getUTCDay() || 7
@@ -23,7 +17,7 @@ function weekStart(value: string) {
   return isoDate(result)
 }
 
-function activityDate(timeZone: string) {
+function zonedParts(value: Date, timeZone: string) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone,
@@ -31,16 +25,55 @@ function activityDate(timeZone: string) {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
       hourCycle: 'h23',
-    }).formatToParts(new Date()).map(part => [part.type, part.value]),
+    }).formatToParts(value).map(part => [part.type, part.value]),
   )
-  const value = new Date(Date.UTC(
+  return parts
+}
+
+function activityDate(timeZone: string, value = new Date()) {
+  const parts = zonedParts(value, timeZone)
+  const activityDay = new Date(Date.UTC(
     Number(parts.year),
     Number(parts.month) - 1,
     Number(parts.day),
   ))
-  if (Number(parts.hour) < 4) value.setUTCDate(value.getUTCDate() - 1)
-  return isoDate(value)
+  if (Number(parts.hour) < 4) {
+    activityDay.setUTCDate(activityDay.getUTCDate() - 1)
+  }
+  return isoDate(activityDay)
+}
+
+function localDateTime(value: Date, timeZone: string) {
+  const parts = zonedParts(value, timeZone)
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
+}
+
+async function currentActivityFixture(page: Page, timeZone: string) {
+  while (true) {
+    const now = new Date()
+    const parts = zonedParts(now, timeZone)
+    const localSeconds = (
+      Number(parts.hour) * 3600
+      + Number(parts.minute) * 60
+      + Number(parts.second)
+    )
+    const secondsIntoActivityDay = (
+      localSeconds - 4 * 3600 + 24 * 3600
+    ) % (24 * 3600)
+    if (secondsIntoActivityDay >= 3 && secondsIntoActivityDay <= 24 * 3600 - 30) {
+      const endedAt = new Date(now.getTime() - 1000)
+      const startedAt = new Date(endedAt.getTime() - 1000)
+      return {
+        activityDate: activityDate(timeZone, endedAt),
+        localStartedAt: localDateTime(startedAt, timeZone),
+        localEndedAt: localDateTime(endedAt, timeZone),
+      }
+    }
+    await page.waitForTimeout(3000)
+  }
 }
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
@@ -178,7 +211,7 @@ async function completeTask(
 async function createManualFocus(
   page: Page,
   csrf: string,
-  targetDate: string,
+  interval: { localStartedAt: string; localEndedAt: string },
 ) {
   const response = await page.request.post('/api/v1/focus-sessions/manual', {
     headers: { 'X-CSRF-Token': csrf },
@@ -187,12 +220,12 @@ async function createManualFocus(
       title: '统计补记',
       task_id: null,
       occurrence_key: null,
-      local_started_at: `${targetDate}T09:00:00`,
-      local_ended_at: `${targetDate}T10:00:00`,
+      local_started_at: interval.localStartedAt,
+      local_ended_at: interval.localEndedAt,
       time_zone: 'Asia/Shanghai',
       start_utc_offset_minutes: null,
       end_utc_offset_minutes: null,
-      effective_duration_seconds: 3600,
+      effective_duration_seconds: 1,
     },
   })
   expect(response.ok()).toBeTruthy()
@@ -258,12 +291,14 @@ test('personal statistics separate plan task and focus facts', async ({
   page,
   request,
 }, info) => {
+  test.setTimeout(90_000)
+  const activity = await currentActivityFixture(page, 'Asia/Shanghai')
   const csrf = await account(page, request)
-  const targetDate = addDays(activityDate('Asia/Shanghai'), -1)
+  const targetDate = activity.activityDate
   const task = await createTask(page, csrf)
   await createPlan(page, csrf, task, targetDate)
   await completeTask(page, csrf, task)
-  await createManualFocus(page, csrf, targetDate)
+  await createManualFocus(page, csrf, activity)
   await createAbandonedFocus(page, csrf)
 
   await page.goto(`/stats?scope=week&date=${targetDate}`)
