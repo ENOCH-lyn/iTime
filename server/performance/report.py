@@ -15,6 +15,11 @@ from performance.contracts import (
 )
 
 LIMITS = {
+    "smoke": {
+        "read": {"p95_ms": 1000, "p99_ms": 2000},
+        "write": {"p95_ms": 1000, "p99_ms": 2000},
+        "sync": {"p95_ms": 3000, "p99_ms": 5000},
+    },
     "steady": {
         "read": {"p95_ms": 500, "p99_ms": 1000},
         "write": {"p95_ms": 800, "p99_ms": 1500},
@@ -258,9 +263,17 @@ def read_resource_samples(path: Path) -> ResourceSummary:
         0.0,
         (final_memory - initial_memory) / max(initial_memory, 0.000001),
     )
+    high_cpu_streak = 0
+    current_streak = 0
+    for value in cpu:
+        if value > 0.90:
+            current_streak += 1
+            high_cpu_streak = max(high_cpu_streak, current_streak)
+        else:
+            current_streak = 0
     return ResourceSummary(
         cpu_mean_ratio=sum(cpu) / len(cpu),
-        cpu_peak_over_90_seconds=sum(value > 0.90 for value in cpu),
+        cpu_peak_over_90_seconds=high_cpu_streak,
         memory_peak_ratio=max(memory),
         memory_growth_ratio=memory_growth,
         database_connection_peak_ratio=max(connections),

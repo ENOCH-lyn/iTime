@@ -1,11 +1,13 @@
+import argparse
 import asyncio
 import csv
 import json
 import os
 import re
+import signal
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -128,6 +130,7 @@ class SamplerConfig:
     memory_limit_bytes: int = 4 * 1024**3
     database_connection_limit: int = 50
     interval_seconds: float = 1.0
+    container_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.docker_context != "colima-itime-perf":
@@ -195,11 +198,49 @@ async def sample_docker(
     compose_project: str,
     *,
     at: datetime,
+    container_ids: tuple[str, ...] = (),
 ) -> tuple[DockerStat, ...]:
     if docker_context != "colima-itime-perf":
         raise SamplerError("Docker 采样只允许专用 context")
     if not COMPOSE_PROJECT.fullmatch(compose_project):
         raise SamplerError("Docker 采样项目名无效")
+    active_container_ids = container_ids or await list_container_ids(
+        docker_context,
+        compose_project,
+    )
+    if not active_container_ids:
+        raise SamplerError("被测 Compose 项目没有运行中的容器")
+    result = await asyncio.to_thread(
+        _run,
+        [
+            "docker",
+            "--context",
+            docker_context,
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{json .}}",
+            *active_container_ids,
+        ],
+    )
+    try:
+        return tuple(
+            parse_docker_stat(json.loads(line), at=at)
+            for line in result.stdout.splitlines()
+            if line.strip()
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise SamplerError("Docker stats 输出格式无效") from exc
+
+
+async def list_container_ids(
+    docker_context: str,
+    compose_project: str,
+) -> tuple[str, ...]:
+    if docker_context != "colima-itime-perf":
+        raise SamplerError("Docker 容器枚举只允许专用 context")
+    if not COMPOSE_PROJECT.fullmatch(compose_project):
+        raise SamplerError("Docker 容器枚举项目名无效")
     listed = await asyncio.to_thread(
         _run,
         [
@@ -213,30 +254,7 @@ async def sample_docker(
             "{{.ID}}",
         ],
     )
-    container_ids = listed.stdout.split()
-    if not container_ids:
-        raise SamplerError("被测 Compose 项目没有运行中的容器")
-    result = await asyncio.to_thread(
-        _run,
-        [
-            "docker",
-            "--context",
-            docker_context,
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{json .}}",
-            *container_ids,
-        ],
-    )
-    try:
-        return tuple(
-            parse_docker_stat(json.loads(line), at=at)
-            for line in result.stdout.splitlines()
-            if line.strip()
-        )
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise SamplerError("Docker stats 输出格式无效") from exc
+    return tuple(listed.stdout.split())
 
 
 async def inspect_containers(
@@ -409,6 +427,7 @@ async def write_sample(
             config.docker_context,
             config.compose_project,
             at=sampled_at,
+            container_ids=config.container_ids,
         ),
         sample_postgres(config.database_url, at=sampled_at),
     )
@@ -506,22 +525,74 @@ async def sample_until_stopped(
     config: SamplerConfig,
     stop: asyncio.Event,
 ) -> None:
-    next_tick = time.monotonic()
-    continuous_gap = 0
+    last_started: float | None = None
     while not stop.is_set():
         started = time.monotonic()
-        lateness = max(0.0, started - next_tick)
-        continuous_gap = (
-            continuous_gap + 1
-            if lateness >= config.interval_seconds
-            else 0
+        sampling_gap = (
+            0
+            if last_started is None
+            else max(
+                0,
+                int(started - last_started - config.interval_seconds),
+            )
         )
-        await write_sample(config, sampling_gap_seconds=continuous_gap)
-        next_tick += config.interval_seconds
+        await write_sample(config, sampling_gap_seconds=sampling_gap)
+        last_started = started
         try:
             await asyncio.wait_for(
                 stop.wait(),
-                timeout=max(0.0, next_tick - time.monotonic()),
+                timeout=max(
+                    0.0,
+                    config.interval_seconds - (time.monotonic() - started),
+                ),
             )
         except TimeoutError:
             continue
+
+
+async def _main_async(config: SamplerConfig) -> None:
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signal_number in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signal_number, stop.set)
+    container_ids = await list_container_ids(
+        config.docker_context,
+        config.compose_project,
+    )
+    if not container_ids:
+        raise SamplerError("被测 Compose 项目没有运行中的容器")
+    await sample_until_stopped(
+        replace(config, container_ids=container_ids),
+        stop,
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="采集 iTime 性能资源指标")
+    parser.add_argument("--docker-context", required=True)
+    parser.add_argument("--compose-project", required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--interval", type=float, default=1.0)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    database_url = os.environ.get("ITIME_PERF_DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("缺少 ITIME_PERF_DATABASE_URL")
+    asyncio.run(
+        _main_async(
+            SamplerConfig(
+                docker_context=args.docker_context,
+                compose_project=args.compose_project,
+                database_url=database_url,
+                output_dir=args.output_dir,
+                interval_seconds=args.interval,
+            )
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

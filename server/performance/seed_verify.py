@@ -120,6 +120,8 @@ class VerificationResult:
 async def verify_counts_and_invariants(
     database: Database,
     manifest: SeedManifest,
+    *,
+    allow_growth: bool = False,
 ) -> VerificationResult:
     actual_counts: dict[str, int] = {}
     violations: list[str] = []
@@ -131,13 +133,16 @@ async def verify_counts_and_invariants(
                 continue
             actual = int(await session.scalar(text(query)) or 0)
             actual_counts[name] = actual
-            if actual != expected:
+            count_matches = actual >= expected if allow_growth else actual == expected
+            if not count_matches:
                 violations.append(f"{name} 计数不匹配：期望 {expected}，实际 {actual}")
 
-        for name, query in INVARIANT_QUERIES.items():
-            value = int(await session.scalar(text(query)) or 0)
-            if value:
-                violations.append(f"{name}={value}")
+        invariant_values = await collect_invariants(database, session=session)
+        violations.extend(
+            f"{name}={value}"
+            for name, value in invariant_values.items()
+            if value
+        )
 
         active_task_owners = int(
             await session.scalar(text("SELECT count(DISTINCT owner_id) FROM tasks")) or 0
@@ -185,11 +190,33 @@ async def verify_dataset(
     manifest: SeedManifest,
     *,
     database: Database | None = None,
+    allow_growth: bool = False,
 ) -> VerificationResult:
     owned_database = database is None
     active_database = database or Database(settings)
     try:
-        return await verify_counts_and_invariants(active_database, manifest)
+        return await verify_counts_and_invariants(
+            active_database,
+            manifest,
+            allow_growth=allow_growth,
+        )
     finally:
         if owned_database:
             await active_database.close()
+
+
+async def collect_invariants(
+    database: Database,
+    *,
+    session=None,
+) -> dict[str, int]:
+    if session is not None:
+        return {
+            name: int(await session.scalar(text(query)) or 0)
+            for name, query in INVARIANT_QUERIES.items()
+        }
+    async with database.sessions() as owned_session:
+        return {
+            name: int(await owned_session.scalar(text(query)) or 0)
+            for name, query in INVARIANT_QUERIES.items()
+        }

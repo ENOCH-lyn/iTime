@@ -46,7 +46,29 @@ SCENARIOS = {
     Scenario.STEADY: ScenarioConfig(Scenario.STEADY, 20, 4, 900, "standard"),
     Scenario.PEAK: ScenarioConfig(Scenario.PEAK, 50, 10, 300, "standard"),
     Scenario.HISTORY: ScenarioConfig(Scenario.HISTORY, 10, 2, 600, "history"),
+    Scenario.AI_ISOLATION: ScenarioConfig(
+        Scenario.AI_ISOLATION,
+        40,
+        8,
+        300,
+        "standard",
+    ),
+    Scenario.QUEUES: ScenarioConfig(Scenario.QUEUES, 20, 4, 300, "standard"),
+    Scenario.MAINTENANCE: ScenarioConfig(
+        Scenario.MAINTENANCE,
+        20,
+        4,
+        300,
+        "standard",
+    ),
     Scenario.SOAK: ScenarioConfig(Scenario.SOAK, 20, 4, 3600, "standard"),
+    Scenario.SATURATION: ScenarioConfig(
+        Scenario.SATURATION,
+        100,
+        10,
+        1800,
+        "standard",
+    ),
 }
 
 
