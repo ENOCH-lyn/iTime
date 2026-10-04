@@ -1695,10 +1695,10 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 代码运行。任务/困难纯语音转写首版范围已完成；多任务/属性语音解析、正式第三方模型质量、
 真实 Edge/实体设备、M8 性能与备份恢复、生产部署仍未完成或验证。
 
-## M7-D：完整 Web 用户闭环与真实 Chrome/Edge 核心兼容
+## M7-D：完整 Web 用户闭环与真实 Chrome/Edge 兼容
 
 对应 Git 提交：`dcc6891`、`56854a4`、`f8181b0`、`ad8dcf0`、`73586ab`、`23e4bee`、
-`1778c53`。实施计划见
+`1778c53`、`952c567`、`8cca2fd`、`406d31f`。实施计划见
 [M7 完整 Web 闭环实施计划](../计划/iTime-M7完整Web闭环实施计划.md)，核心场景位于
 `web/e2e/full-user-journey.spec.ts`；`web/playwright.config.ts` 保留默认仓库 Chromium，
 并支持显式选择本机浏览器 channel 或 executable path。
@@ -1728,6 +1728,12 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 版本冲突。测试改为独立上下文，并在远端暂停完成前阻断主端同步，再重放本地结束操作；产品
 行为未因稳定测试而放宽。该场景连续 10 次通过，三视口专注专项 24 项通过。
 
+真实 Edge 全量回归继续发现并修复三类边界问题：订阅首次刷新在极窄竞态下可能只更新来源摘要
+而保留空事件详情；订阅删除版本冲突后成功重读未清除旧错误；原生日期输入的程序化 `blur`
+与统计夹具跨周一 04:00 边界均属于测试交互/时间基准假设。前两项已修复为完成态详情重读和
+成功重读清除错误，后两项分别改用真实点击离焦和同一当前活动日夹具；相关 Edge 场景分别完成
+18 次、30 次和 15 次重复验证。
+
 2026-10-04 在 macOS、本地 PostgreSQL 18、Mailpit、隔离 Uvicorn/worker、生产构建预览及
 以下浏览器中执行：
 
@@ -1742,6 +1748,7 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 | `ITIME_E2E_BROWSER_EXECUTABLE_PATH=...Microsoft Edge ... --project=desktop` | **1 passed** | Microsoft Edge **154.0.4258.53** 核心闭环 |
 | 完整闭环、同步与生命周期组合 | **30 passed** | 跨设备刷新、脏草稿提示和核心旅程 |
 | `cd web && pnpm test:e2e` | **277 passed, 20 skipped in 16.9m** | 297 项收集；三个 Chromium 视口全量回归 |
+| `ITIME_E2E_BROWSER_EXECUTABLE_PATH=...Microsoft Edge ... pnpm test:e2e` | **277 passed, 20 skipped in 17.7m** | Microsoft Edge **154.0.4258.53**；297 项收集；desktop、mobile、tablet 全量回归 |
 
 20 个跳过项均为测试内显式限定 desktop 的到期清理、慢上游、浏览器麦克风故障及 320px 深度
 场景；相同业务的移动和平板主流程实际执行。完整闭环截图位于：
@@ -1751,11 +1758,12 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 
 六张本轮全量回归截图已人工检查，主端复盘和独立第二端结果均非空，电脑、手机、平板没有内容
 重叠、裁切、按钮移位或根级横向溢出。Browser 插件未在当前环境提供，因此按前端测试规范使用
-仓库 Playwright；真实 Chrome/Edge 结果不是用内置 Chromium 替代。
+仓库 Playwright；真实 Chrome/Edge 结果不是用内置 Chromium 替代。Edge 全量运行的
+`.last-run.json` 为 `passed`，失败证据目录为空。
 
 收口时 `itime_test_%` 数据库数量和名称列表均为 0，没有孤立 Playwright、
 `tests.web_environment` 或 4173 预览进程；`GET /api/ready` 与
-`http://localhost:5173/tasks` 均返回 200。`E2E-01` 和核心流程的 Chrome/Edge desktop
-兼容验证已完成；学期、项目、AI 会话删除语义仍待产品确认且当前无删除旁路。全部页面 Edge、
-实体设备、正式第三方模型质量、其他业务对象提案、M8 性能/容量/备份恢复及生产部署仍未完成，
-不能据此宣称 Web 首版已经发布。
+`http://localhost:5173/tasks` 均返回 200。`E2E-01`、真实 Chrome desktop 核心流程和真实
+Edge 三视口全部页面兼容验证已完成；学期、项目、AI 会话删除语义仍待产品确认且当前无删除
+旁路。实体设备、正式最低版本矩阵、正式第三方模型质量、其他业务对象提案、M8
+性能/容量/备份恢复及生产部署仍未完成，不能据此宣称 Web 首版已经发布。
