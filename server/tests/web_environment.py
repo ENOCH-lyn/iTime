@@ -556,7 +556,7 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             else "原固定课程"
             if scenario == "plan-conflict"
             else "来源课程更新"
-            if scenario == "update" and count > 1
+            if scenario in {"update", "occurrence-exception"} and count > 1
             else "订阅课程"
         )
         starts_at = (
@@ -583,7 +583,7 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             "RRULE:FREQ=WEEKLY;BYDAY=TU",
             "END:VEVENT",
         ]
-        if scenario == "basic":
+        if scenario in {"basic", "occurrence-exception"}:
             events.extend(
                 [
                     "BEGIN:VEVENT",
@@ -604,6 +604,8 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             and count > 1
             or scenario == "plan-conflict"
             and count > 2
+            or scenario == "occurrence-exception"
+            and count > 2
         ):
             events = []
         body = (
@@ -619,7 +621,7 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         etag_version = (
             count
-            if scenario == "plan-conflict"
+            if scenario in {"plan-conflict", "occurrence-exception"}
             else 2
             if scenario in {"update", "cancel"} and count > 1
             else 1

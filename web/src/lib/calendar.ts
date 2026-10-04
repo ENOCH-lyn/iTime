@@ -72,7 +72,9 @@ export interface CalendarOccurrence {
   series_id: string | null
   series_version: number | null
   subscription_event_id?: string | null
+  subscription_master_event_id?: string | null
   source_event_version?: number | null
+  source_version?: number | null
   occurrence_key: string
   occurrence_type: 'base' | 'addition' | 'subscription'
   kind: 'course' | 'fixed'
@@ -84,6 +86,7 @@ export interface CalendarOccurrence {
   location: string
   busy: boolean
   status: 'scheduled' | 'cancelled' | 'source_cancelled'
+  source_status?: 'scheduled' | 'source_cancelled'
   time_zone: string
   all_day?: boolean
   original_local_start_date: string
@@ -123,6 +126,55 @@ export interface CalendarException {
   version: number
   created_at: string
   updated_at: string
+}
+
+export interface CalendarSubscriptionException {
+  id: string
+  master_event_id: string
+  source_occurrence_key: string
+  original_start_at: string
+  original_end_at: string
+  original_all_day: boolean
+  action: 'cancelled' | 'moved' | 'overridden'
+  moved_all_day: boolean | null
+  moved_start_date: string | null
+  moved_end_date: string | null
+  moved_starts_at: string | null
+  moved_ends_at: string | null
+  moved_time_zone: string | null
+  moved_ambiguous_utc_offset_minutes: number | null
+  moved_start_at: string | null
+  moved_end_at: string | null
+  override_name: string | null
+  override_description: string | null
+  override_location: string | null
+  override_busy: boolean | null
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SubscriptionExceptionFields {
+  action: CalendarSubscriptionException['action']
+  moved_all_day: boolean | null
+  moved_start_date: string | null
+  moved_end_date: string | null
+  moved_starts_at: string | null
+  moved_ends_at: string | null
+  moved_time_zone: string | null
+  moved_ambiguous_utc_offset_minutes: number | null
+  override_name: string | null
+  override_description: string | null
+  override_location: string | null
+  override_busy: boolean | null
+}
+
+export interface SubscriptionExceptionWriteResult {
+  operation_id: string
+  source_version: number
+  exception: CalendarSubscriptionException | null
+  occurrence: CalendarOccurrence
+  conflicts: CalendarWriteResult['conflicts']
 }
 
 export interface CalendarAddition {
@@ -398,6 +450,58 @@ export async function saveOccurrenceException(
       : { occurrence_key: occurrence.occurrence_key }),
     ...fields,
   }, existing ? 'PUT' : 'POST')
+}
+
+export async function saveSubscriptionOccurrenceException(
+  occurrence: CalendarOccurrence,
+  fields: SubscriptionExceptionFields,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (
+    !occurrence.source_id
+    || !occurrence.subscription_master_event_id
+    || !occurrence.source_occurrence_key
+    || occurrence.source_version == null
+  ) {
+    throw new Error('calendar_subscription_occurrence_not_editable')
+  }
+  const path = occurrence.exception_id
+    ? `/calendar/subscriptions/${occurrence.source_id}/exceptions/${occurrence.exception_id}`
+    : `/calendar/subscriptions/${occurrence.source_id}/exceptions`
+  return api<SubscriptionExceptionWriteResult>(path, {
+    operation_id: operationId,
+    expected_source_version: occurrence.source_version,
+    ...(occurrence.exception_id
+      ? { expected_version: occurrence.exception_version }
+      : {
+          master_event_id: occurrence.subscription_master_event_id,
+          source_occurrence_key: occurrence.source_occurrence_key,
+        }),
+    ...fields,
+  }, occurrence.exception_id ? 'PUT' : 'POST')
+}
+
+export async function resetSubscriptionOccurrenceException(
+  occurrence: CalendarOccurrence,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (
+    !occurrence.source_id
+    || !occurrence.exception_id
+    || occurrence.exception_version == null
+    || occurrence.source_version == null
+  ) {
+    throw new Error('calendar_subscription_exception_not_editable')
+  }
+  return api<SubscriptionExceptionWriteResult>(
+    `/calendar/subscriptions/${occurrence.source_id}/exceptions/${occurrence.exception_id}`,
+    {
+      operation_id: operationId,
+      expected_source_version: occurrence.source_version,
+      expected_version: occurrence.exception_version,
+    },
+    'DELETE',
+  )
 }
 
 export async function listCalendarAdditions(seriesId: string) {

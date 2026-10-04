@@ -357,6 +357,111 @@ test('本地覆盖保留来源差异，刷新失败保留旧日历', async ({
   await expect(page.getByRole('button', { name: /订阅课程/ }).first()).toBeVisible()
 })
 
+test('订阅单次例外可取消、重置、移动并跨来源刷新保留', async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90_000)
+  const { calendar_origin: origin } = await bootstrap(info)
+  await account(page, request)
+  await setTimeZone(page, 'Asia/Shanghai')
+  let dialog = await openSubscriptions(page)
+  await createSubscription(
+    page,
+    dialog,
+    origin,
+    'occurrence-exception',
+    '单次例外来源',
+  )
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await page.getByLabel('跳转日期').fill('2026-10-06')
+  await expect(page.getByText('正在读取日历…')).toHaveCount(0)
+
+  let eventButton = page.getByRole('button', { name: /订阅课程/ }).first()
+  await expect(eventButton).toBeVisible()
+  await eventButton.click()
+  const panel = page.locator('.occurrence-panel')
+  await expect(panel.getByRole('button', { name: '取消本次' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: '调整本次时间' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: '覆盖本次内容' })).toBeVisible()
+  await panel.getByRole('button', { name: '取消本次' }).click()
+  await expect(panel.getByText('本次订阅安排已取消，其他实例和来源均未改变。'))
+    .toBeVisible()
+  await expect(panel.getByText('已取消', { exact: true }).first()).toBeVisible()
+  await expect(panel.getByRole('button', { name: '重置为来源' })).toBeVisible()
+
+  await panel.getByRole('button', { name: '重置为来源' }).click()
+  await expect(panel.getByText('本次订阅安排已恢复为当前来源内容。'))
+    .toBeVisible()
+  await expect(panel.getByRole('button', { name: '取消本次' })).toBeVisible()
+
+  await panel.getByRole('button', { name: '调整本次时间' }).click()
+  await panel.getByLabel('开始日期').fill('2026-10-07')
+  await panel.getByLabel('开始', { exact: true }).fill('14:00')
+  await panel.getByLabel('结束', { exact: true }).fill('15:00')
+  await panel.getByRole('button', { name: '保存本次' }).click()
+  await expect(panel.getByText('本次安排已调课。')).toBeVisible()
+  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+  await expect(panel.getByText('已调课', { exact: true })).toBeVisible()
+
+  await panel.getByRole('button', { name: '管理来源与本地覆盖' }).click()
+  dialog = page.getByRole('dialog', { name: '导入日历' })
+  await dialog.getByRole('button', { name: '立即刷新', exact: true }).click()
+  await expect(dialog.getByText('来源课程更新', { exact: true }).last()).toBeVisible({
+    timeout: 15_000,
+  })
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+  await expect(panel.getByRole('heading', { name: '来源课程更新' })).toBeVisible()
+
+  await panel.getByRole('button', { name: '管理来源与本地覆盖' }).click()
+  dialog = page.getByRole('dialog', { name: '导入日历' })
+  await dialog.getByRole('button', { name: '立即刷新', exact: true }).click()
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/calendar/subscriptions')
+    const body = await response.json()
+    return body.items.find(
+      (item: { name: string }) => item.name === '单次例外来源',
+    )?.generation
+  }, { timeout: 15_000 }).toBe(3)
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(panel.getByText('来源已取消，本地移动仍保留')).toBeVisible()
+  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+
+  expect((await new AxeBuilder({ page }).include('.occurrence-panel').analyze()).violations)
+    .toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'occurrence-exception')
+
+  if (info.project.name === 'desktop') {
+    const allDayButton = page.getByRole('button', { name: /全天纪念日/ }).first()
+    await expect(allDayButton).toBeVisible()
+    await allDayButton.click()
+    await panel.getByRole('button', { name: '调整本次时间' }).click()
+    await expect(panel.getByLabel('开始', { exact: true })).toHaveCount(0)
+    await panel.getByLabel('开始日期').fill('2026-10-09')
+    await panel.getByLabel('结束日期（不含）').fill('2026-10-10')
+    await panel.getByRole('button', { name: '保存本次' }).click()
+    await expect(panel.getByText('2026-10-09 全天', { exact: true })).toBeVisible()
+
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.goto('/calendar?date=2026-10-07')
+    eventButton = page.getByRole('button', { name: /来源课程更新/ }).first()
+    await expect(eventButton).toBeVisible()
+    await eventButton.click()
+    await expect(page.getByText('来源已取消，本地移动仍保留')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'occurrence-exception-320-dark-large')
+  }
+})
+
 test('订阅来源更新后已确认计划可查看并明确保留', async ({
   page,
   request,
