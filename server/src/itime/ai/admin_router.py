@@ -7,7 +7,11 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from itime.admin.security import authorized_admin
-from itime.ai.models import AIConfigCapability, AIConfigVersion
+from itime.ai.models import (
+    AIConfigCapability,
+    AIConfigFallback,
+    AIConfigVersion,
+)
 from itime.ai.pricing import format_price_per_million, parse_price_per_million
 from itime.ai.provider import (
     EndpointPolicyError,
@@ -15,8 +19,16 @@ from itime.ai.provider import (
     enforce_endpoint_policy,
     test_openai_compatible,
 )
+from itime.ai.routing_service import (
+    fallback_config_in_use,
+    read_config_route,
+    remove_fallback_config,
+    replace_fallbacks,
+)
 from itime.ai.schemas import (
     AIConfigCreateInput,
+    AIConfigRouteOutput,
+    AIConfigRouteUpdate,
     AIConfigVersionListOutput,
     AIConfigVersionOutput,
     Capability,
@@ -155,6 +167,75 @@ async def list_configs(
         }
 
 
+def config_route_result(
+    state: AIConfigCapability,
+    primary: AIConfigVersion | None,
+    fallbacks: list[tuple[AIConfigFallback, AIConfigVersion]],
+) -> dict:
+    return {
+        "capability": state.capability,
+        "routing_version": state.routing_version,
+        "primary": config_result(primary) if primary is not None else None,
+        "fallbacks": [
+            {
+                "position": row.position,
+                "config": config_result(config),
+            }
+            for row, config in fallbacks
+        ],
+    }
+
+
+@router.get(
+    "/routing/{capability}",
+    response_model=AIConfigRouteOutput,
+)
+async def get_config_route(
+    capability: Capability,
+    request: Request,
+) -> dict:
+    async with authorized_admin(request) as identity:
+        state, primary, fallbacks = await read_config_route(
+            identity.session,
+            capability,
+        )
+        return config_route_result(state, primary, fallbacks)
+
+
+@router.put(
+    "/routing/{capability}",
+    response_model=AIConfigRouteOutput,
+)
+async def update_config_route(
+    capability: Capability,
+    data: AIConfigRouteUpdate,
+    request: Request,
+) -> dict:
+    async with authorized_admin(request, write=True) as identity:
+        state, primary, fallbacks, previous_ids = await replace_fallbacks(
+            identity.session,
+            capability,
+            expected_routing_version=data.expected_routing_version,
+            config_ids=data.fallback_config_ids,
+        )
+        current_ids = [row.config_version_id for row, _config in fallbacks]
+        if current_ids != previous_ids:
+            audit(
+                request,
+                identity.session,
+                identity.user,
+                "ai_config_fallbacks_updated",
+                primary.id,
+                details={
+                    "capability": capability,
+                    "routing_version": state.routing_version,
+                    "before": [str(config_id) for config_id in previous_ids],
+                    "after": [str(config_id) for config_id in current_ids],
+                },
+            )
+        return config_route_result(state, primary, fallbacks)
+
+
 @router.get("/{config_id}", response_model=AIConfigVersionOutput)
 async def get_config(config_id: UUID, request: Request) -> dict:
     async with authorized_admin(request) as identity:
@@ -221,6 +302,12 @@ async def test_config(config_id: UUID, request: Request) -> dict:
         )
         if config is None:
             raise config_not_found()
+        if await fallback_config_in_use(identity.session, config.id):
+            raise AppError(
+                "ai_config_fallback_in_use",
+                "此配置正在备用路由中，请先从调用顺序移除。",
+                status=409,
+            )
         if config.status in {"published", "retired"}:
             raise AppError(
                 "ai_config_test_not_allowed",
@@ -354,6 +441,11 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
                 "只有最近一次合成测试成功的版本可以发布。",
                 status=409,
             )
+        await remove_fallback_config(
+            identity.session,
+            state,
+            config.id,
+        )
         if state.current_version_id is not None:
             previous = await identity.session.scalar(
                 select(AIConfigVersion)
@@ -376,6 +468,7 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
         config.published_by_user_id = identity.user.id
         config.updated_at = current
         state.current_version_id = config.id
+        state.routing_version += 1
         state.updated_at = current
         audit(
             request,

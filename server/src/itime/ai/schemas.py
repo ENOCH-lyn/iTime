@@ -131,6 +131,23 @@ class AIConfigVersionOutput(BaseModel):
     retired_at: datetime | None
 
 
+class AIConfigFallbackOutput(BaseModel):
+    position: int
+    config: AIConfigVersionOutput
+
+
+class AIConfigRouteOutput(BaseModel):
+    capability: Capability
+    routing_version: int
+    primary: AIConfigVersionOutput | None
+    fallbacks: list[AIConfigFallbackOutput]
+
+
+class AIConfigRouteUpdate(Input):
+    expected_routing_version: int = Field(ge=1)
+    fallback_config_ids: list[UUID] = Field(max_length=2)
+
+
 class AIConfigVersionListOutput(BaseModel):
     items: list[AIConfigVersionOutput]
     next_cursor: dict[str, datetime | UUID] | None
