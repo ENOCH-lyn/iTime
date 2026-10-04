@@ -22,6 +22,7 @@ PLANNING_TABLES = {
     "plans",
     "plan_versions",
     "scheduled_blocks",
+    "plan_source_conflicts",
     "plan_unscheduled_items",
 }
 
@@ -230,7 +231,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             ).fetchone() == ("planning", 1, None)
             assert (
                 connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0030_public_task_links"
+                == "0031_plan_source_conflicts"
             )
 
         from itime.ai.models import AIJob
@@ -252,6 +253,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             planning_models.Plan.__tablename__,
             planning_models.PlanVersion.__tablename__,
             planning_models.ScheduledBlock.__tablename__,
+            planning_models.PlanSourceConflict.__tablename__,
             planning_models.PlanUnscheduledItem.__tablename__,
         } == PLANNING_TABLES
         assert Base.metadata.tables.keys() >= PLANNING_TABLES

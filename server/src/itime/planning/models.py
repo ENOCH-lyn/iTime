@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -593,6 +594,116 @@ class ScheduledBlock(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class PlanSourceConflict(Base):
+    __tablename__ = "plan_source_conflicts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'resolved')",
+            name="status",
+        ),
+        CheckConstraint(
+            "resolution IS NULL OR resolution IN ('kept', 'replanned', 'superseded')",
+            name="resolution",
+        ),
+        CheckConstraint(
+            "(status = 'open' AND resolution IS NULL AND resolved_at IS NULL) "
+            "OR (status = 'resolved' AND resolution IS NOT NULL "
+            "AND resolved_at IS NOT NULL)",
+            name="state",
+        ),
+        CheckConstraint("source_generation >= 1", name="source_generation"),
+        CheckConstraint("version >= 1", name="version"),
+        CheckConstraint(
+            "jsonb_typeof(changes) = 'array' "
+            "AND jsonb_array_length(changes) <= 2000 "
+            "AND (details_limited OR jsonb_array_length(changes) >= 1)",
+            name="changes",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(affected_block_ids) = 'array' "
+            "AND jsonb_array_length(affected_block_ids) <= 100",
+            name="affected_block_ids",
+        ),
+        ForeignKeyConstraint(
+            ["plan_id", "owner_id"],
+            ["plans.id", "plans.owner_id"],
+            name="fk_plan_source_conflicts_plan_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["plan_version_id", "plan_id", "owner_id"],
+            ["plan_versions.id", "plan_versions.plan_id", "plan_versions.owner_id"],
+            name="fk_plan_source_conflicts_plan_version",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["source_id", "owner_id"],
+            ["calendar_sources.id", "calendar_sources.owner_id"],
+            name="fk_plan_source_conflicts_source_owner",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "plan_version_id",
+            "source_id",
+            "source_generation",
+            name="uq_plan_source_conflicts_version_source_generation",
+        ),
+        Index(
+            "ix_plan_source_conflicts_owner_status_detected",
+            "owner_id",
+            "status",
+            "detected_at",
+            "id",
+        ),
+        Index(
+            "ix_plan_source_conflicts_plan_version_status",
+            "plan_version_id",
+            "status",
+            "detected_at",
+            "id",
+        ),
+        Index(
+            "ix_plan_source_conflicts_source_generation",
+            "source_id",
+            "source_generation",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID]
+    plan_id: Mapped[UUID]
+    plan_version_id: Mapped[UUID]
+    source_id: Mapped[UUID]
+    source_generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(12),
+        default="open",
+        server_default="open",
+    )
+    resolution: Mapped[str | None] = mapped_column(String(12))
+    changes: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    affected_block_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    details_limited: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PlanUnscheduledItem(Base):
