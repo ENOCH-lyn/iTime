@@ -241,7 +241,11 @@ def test_worker_retries_unknown_failure_and_stops_on_build_error(
                 autocommit=True,
             ) as connection:
                 connection.execute(
-                    "UPDATE data_export_jobs SET available_at=now() WHERE id=%s",
+                                """
+                                UPDATE data_export_jobs
+                                SET available_at=now()-interval '1 second'
+                                WHERE id=%s
+                                """,
                     (retry_job,),
                 )
     assert row[10] == "data_export_generation_failed"

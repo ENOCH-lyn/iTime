@@ -339,6 +339,7 @@ async def create_task(data: TaskCreate, request: Request) -> dict:
             )
             for position, step in enumerate(data.steps)
         )
+        link_available_at = now()
         identity.session.add_all(
             TaskLink(
                 task_id=task.id,
@@ -346,6 +347,7 @@ async def create_task(data: TaskCreate, request: Request) -> dict:
                 title=link.title,
                 url=str(link.url),
                 position=position,
+                available_at=link_available_at,
             )
             for position, link in enumerate(data.links)
         )

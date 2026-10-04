@@ -110,7 +110,7 @@ def seed_screenshot_job(
             %s, %s, 'calendar_screenshot', %s, %s,
             %s, '{"filename":"schedule.png"}',
             CASE WHEN %s = 'running' THEN 1 ELSE 0 END,
-            now(), now() + interval '10 minutes',
+            now() - interval '1 second', now() + interval '10 minutes',
             %s,
             CASE WHEN %s = 'running' THEN now() + interval '5 minutes' ELSE NULL END
         )

@@ -233,12 +233,8 @@ async def claim_next_subscription(
     *,
     lease_seconds: int,
 ) -> ClaimedSubscription | None:
+    current = now()
     async with database.transaction() as session:
-        current = await session.scalar(select(func.clock_timestamp()))
-        if not isinstance(current, datetime):
-            raise RuntimeError(
-                "database did not return a subscription claim timestamp"
-            )
         subscription = await session.scalar(
             select(CalendarSubscription)
             .join(User, User.id == CalendarSubscription.owner_id)

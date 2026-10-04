@@ -253,7 +253,7 @@ def test_retry_backoff_final_failure_and_previous_snapshot_are_preserved(
                     SET fetch_status='queued',
                         fetch_revision=fetch_revision+1,
                         attempt_count=0,
-                        available_at=now(),
+                        available_at=now()-interval '1 second',
                         last_error_code=NULL,
                         last_error_message=NULL,
                         last_http_status=NULL,
@@ -293,7 +293,11 @@ def test_retry_backoff_final_failure_and_previous_snapshot_are_preserved(
                         autocommit=True,
                     ) as connection:
                         connection.execute(
-                            "UPDATE task_links SET available_at=now() WHERE id=%s",
+                            """
+                            UPDATE task_links
+                            SET available_at=now()-interval '1 second'
+                            WHERE id=%s
+                            """,
                             (link_id,),
                         )
         finally:
@@ -403,7 +407,7 @@ def test_changed_deleted_or_inactive_task_rejects_late_result(
                         fetch_revision=fetch_revision+1,
                         fetch_status='queued',
                         attempt_count=0,
-                        available_at=now(),
+                        available_at=now()-interval '1 second',
                         lease_id=NULL,
                         lease_until=NULL,
                         updated_at=now()
