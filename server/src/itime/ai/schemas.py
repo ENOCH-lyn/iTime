@@ -9,7 +9,13 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 from itime.ai.pricing import format_price_per_million, parse_price_per_million
 from itime.schemas import Input
 
-Capability = Literal["calendar_screenshot", "conversation", "planning", "review"]
+Capability = Literal[
+    "calendar_screenshot",
+    "conversation",
+    "planning",
+    "review",
+    "transcription",
+]
 ConfigStatus = Literal["draft", "tested", "published", "retired"]
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}$")
 CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")

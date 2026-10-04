@@ -29,7 +29,8 @@ class AIConfigCapability(Base):
     __table_args__ = (
         CheckConstraint(
             "capability IN "
-            "('calendar_screenshot', 'conversation', 'planning', 'review')",
+            "('calendar_screenshot', 'conversation', 'planning', 'review', "
+            "'transcription')",
             name="capability",
         ),
         CheckConstraint("next_version >= 1", name="next_version"),
@@ -61,7 +62,8 @@ class AIConfigVersion(Base):
     __table_args__ = (
         CheckConstraint(
             "capability IN "
-            "('calendar_screenshot', 'conversation', 'planning', 'review')",
+            "('calendar_screenshot', 'conversation', 'planning', 'review', "
+            "'transcription')",
             name="capability",
         ),
         CheckConstraint(
@@ -86,24 +88,37 @@ class AIConfigVersion(Base):
             name="timeout_seconds",
         ),
         CheckConstraint(
-            "max_output_tokens BETWEEN 1 AND 32768",
+            "(capability = 'transcription' AND max_output_tokens IS NULL) "
+            "OR (capability <> 'transcription' "
+            "AND max_output_tokens BETWEEN 1 AND 32768)",
             name="max_output_tokens",
         ),
         CheckConstraint(
-            "num_nonnulls(price_currency, "
+            "pricing_basis IN ('token', 'audio_minute')",
+            name="pricing_basis",
+        ),
+        CheckConstraint(
+            "((num_nonnulls(price_currency, "
             "input_price_nanos_per_million_tokens, "
             "cached_input_price_nanos_per_million_tokens, "
-            "output_price_nanos_per_million_tokens) = 0 "
-            "OR (num_nonnulls(price_currency, "
-            "input_price_nanos_per_million_tokens, "
-            "cached_input_price_nanos_per_million_tokens, "
-            "output_price_nanos_per_million_tokens) = 4 "
+            "output_price_nanos_per_million_tokens, "
+            "audio_price_nanos_per_minute) = 0) "
+            "OR (capability <> 'transcription' AND pricing_basis = 'token' "
             "AND price_currency ~ '^[A-Z]{3}$' "
             "AND input_price_nanos_per_million_tokens BETWEEN 0 AND 1000000000000000 "
             "AND cached_input_price_nanos_per_million_tokens "
             "BETWEEN 0 AND 1000000000000000 "
             "AND output_price_nanos_per_million_tokens "
-            "BETWEEN 0 AND 1000000000000000)",
+            "BETWEEN 0 AND 1000000000000000 "
+            "AND audio_price_nanos_per_minute IS NULL) "
+            "OR (capability = 'transcription' "
+            "AND pricing_basis = 'audio_minute' "
+            "AND price_currency ~ '^[A-Z]{3}$' "
+            "AND input_price_nanos_per_million_tokens IS NULL "
+            "AND cached_input_price_nanos_per_million_tokens IS NULL "
+            "AND output_price_nanos_per_million_tokens IS NULL "
+            "AND audio_price_nanos_per_minute BETWEEN 0 AND 1000000000000000)) "
+            "IS TRUE",
             name="pricing",
         ),
         CheckConstraint(
@@ -160,7 +175,12 @@ class AIConfigVersion(Base):
     model: Mapped[str] = mapped_column(String(255))
     api_key_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
     timeout_seconds: Mapped[int] = mapped_column(Integer)
-    max_output_tokens: Mapped[int] = mapped_column(Integer)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer)
+    pricing_basis: Mapped[str] = mapped_column(
+        String(20),
+        default="token",
+        server_default="token",
+    )
     price_currency: Mapped[str | None] = mapped_column(String(3))
     input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
         BigInteger
@@ -171,6 +191,7 @@ class AIConfigVersion(Base):
     output_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
         BigInteger
     )
+    audio_price_nanos_per_minute: Mapped[int | None] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
     last_test_id: Mapped[UUID | None]
     last_test_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -235,17 +256,47 @@ class AIConfigFallback(Base):
 class TemporaryMedia(Base):
     __tablename__ = "temporary_media"
     __table_args__ = (
-        CheckConstraint("purpose IN ('calendar_screenshot')", name="purpose"),
         CheckConstraint(
-            "content_type IN ('image/png', 'image/jpeg', 'image/webp')",
+            "purpose IN ('calendar_screenshot', 'voice_transcription')",
+            name="purpose",
+        ),
+        CheckConstraint(
+            "(purpose = 'calendar_screenshot' "
+            "AND content_type IN ('image/png', 'image/jpeg', 'image/webp')) "
+            "OR (purpose = 'voice_transcription' AND content_type = 'audio/wav')",
             name="content_type",
         ),
         CheckConstraint("length(btrim(original_filename)) > 0", name="filename"),
         CheckConstraint("length(content_sha256) = 64", name="content_sha256"),
-        CheckConstraint("byte_size BETWEEN 1 AND 5242880", name="byte_size"),
-        CheckConstraint("width BETWEEN 1 AND 20000000", name="width"),
-        CheckConstraint("height BETWEEN 1 AND 20000000", name="height"),
+        CheckConstraint(
+            "(purpose = 'calendar_screenshot' "
+            "AND byte_size BETWEEN 1 AND 5242880) "
+            "OR (purpose = 'voice_transcription' "
+            "AND byte_size BETWEEN 45 AND 2097152)",
+            name="byte_size",
+        ),
+        CheckConstraint(
+            "width IS NULL OR width BETWEEN 1 AND 20000000",
+            name="width",
+        ),
+        CheckConstraint(
+            "height IS NULL OR height BETWEEN 1 AND 20000000",
+            name="height",
+        ),
         CheckConstraint("width::bigint * height::bigint <= 20000000", name="pixels"),
+        CheckConstraint(
+            "(purpose = 'calendar_screenshot' "
+            "AND width IS NOT NULL AND height IS NOT NULL "
+            "AND duration_ms IS NULL AND sample_rate_hz IS NULL "
+            "AND channel_count IS NULL AND sample_width_bits IS NULL) "
+            "OR (purpose = 'voice_transcription' "
+            "AND width IS NULL AND height IS NULL "
+            "AND duration_ms BETWEEN 250 AND 60000 "
+            "AND sample_rate_hz = 16000 "
+            "AND channel_count = 1 "
+            "AND sample_width_bits = 16)",
+            name="media_shape",
+        ),
         CheckConstraint(
             "(encrypted_content IS NULL) = "
             "(deleted_at IS NOT NULL AND deletion_reason IS NOT NULL)",
@@ -253,10 +304,17 @@ class TemporaryMedia(Base):
         ),
         CheckConstraint(
             "deletion_reason IS NULL OR deletion_reason IN "
-            "('confirmed', 'expired', 'account_deletion')",
+            "('confirmed', 'accepted', 'discarded', 'cancelled', "
+            "'expired', 'account_deletion')",
             name="deletion_reason",
         ),
         UniqueConstraint("id", "owner_id", name="uq_temporary_media_id_owner"),
+        UniqueConstraint(
+            "id",
+            "purpose",
+            "owner_id",
+            name="uq_temporary_media_id_purpose_owner",
+        ),
         Index("ix_temporary_media_owner_created", "owner_id", "created_at", "id"),
         Index(
             "ix_temporary_media_expiry",
@@ -272,8 +330,12 @@ class TemporaryMedia(Base):
     content_type: Mapped[str] = mapped_column(String(40))
     content_sha256: Mapped[str] = mapped_column(String(64))
     byte_size: Mapped[int] = mapped_column(Integer)
-    width: Mapped[int] = mapped_column(Integer)
-    height: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    sample_rate_hz: Mapped[int | None] = mapped_column(Integer)
+    channel_count: Mapped[int | None] = mapped_column(Integer)
+    sample_width_bits: Mapped[int | None] = mapped_column(Integer)
     encrypted_content: Mapped[bytes | None] = mapped_column(LargeBinary)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -288,7 +350,8 @@ class AIJob(Base):
     __table_args__ = (
         CheckConstraint(
             "capability IN "
-            "('calendar_screenshot', 'conversation', 'planning', 'review')",
+            "('calendar_screenshot', 'conversation', 'planning', 'review', "
+            "'transcription')",
             name="capability",
         ),
         CheckConstraint(
@@ -322,7 +385,11 @@ class AIJob(Base):
             "OR (capability = 'review' "
             "AND input_media_id IS NULL AND conversation_id IS NULL "
             "AND planning_snapshot_id IS NULL AND review_session_id IS NOT NULL "
-            "AND review_snapshot_id IS NOT NULL)",
+            "AND review_snapshot_id IS NOT NULL) "
+            "OR (capability = 'transcription' "
+            "AND input_media_id IS NOT NULL AND conversation_id IS NULL "
+            "AND planning_snapshot_id IS NULL AND review_session_id IS NULL "
+            "AND review_snapshot_id IS NULL)",
             name="input_reference",
         ),
         CheckConstraint(
@@ -388,6 +455,12 @@ class AIJob(Base):
             "capability",
             "owner_id",
             name="uq_ai_jobs_id_capability_owner",
+        ),
+        UniqueConstraint(
+            "id",
+            "input_media_id",
+            "owner_id",
+            name="uq_ai_jobs_id_input_media_owner",
         ),
         UniqueConstraint("input_media_id", name="uq_ai_jobs_input_media"),
         UniqueConstraint(
@@ -468,6 +541,141 @@ class AIJob(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class VoiceTranscription(Base):
+    __tablename__ = "voice_transcriptions"
+    __table_args__ = (
+        CheckConstraint("capability = 'transcription'", name="capability"),
+        CheckConstraint(
+            "media_purpose = 'voice_transcription'",
+            name="media_purpose",
+        ),
+        CheckConstraint(
+            "purpose IN ('task_title', 'difficulty_content')",
+            name="purpose",
+        ),
+        CheckConstraint(
+            "resolution IN ('pending', 'accepted', 'discarded', 'expired')",
+            name="resolution",
+        ),
+        CheckConstraint(
+            "(transcript IS NULL) = (transcript_sha256 IS NULL)",
+            name="transcript_pair",
+        ),
+        CheckConstraint(
+            "transcript IS NULL OR char_length(btrim(transcript)) BETWEEN 1 AND 4000",
+            name="transcript",
+        ),
+        CheckConstraint(
+            "transcript_sha256 IS NULL OR length(transcript_sha256) = 64",
+            name="transcript_sha256",
+        ),
+        CheckConstraint(
+            "language IS NULL OR char_length(btrim(language)) BETWEEN 1 AND 32",
+            name="language",
+        ),
+        CheckConstraint(
+            "(transcript IS NULL OR ready_at IS NOT NULL) "
+            "AND (resolution <> 'accepted' OR ready_at IS NOT NULL)",
+            name="ready_state",
+        ),
+        CheckConstraint(
+            "(resolution = 'pending' AND resolved_at IS NULL) "
+            "OR (resolution <> 'pending' AND resolved_at IS NOT NULL)",
+            name="resolution_state",
+        ),
+        CheckConstraint(
+            "resolution NOT IN ('discarded', 'expired') "
+            "OR (transcript IS NULL AND text_purged_at IS NOT NULL)",
+            name="discard_state",
+        ),
+        CheckConstraint(
+            "text_purged_at IS NULL OR transcript IS NULL",
+            name="text_purged",
+        ),
+        CheckConstraint("expires_at > created_at", name="expiry"),
+        CheckConstraint("version >= 1", name="version"),
+        ForeignKeyConstraint(
+            ["job_id", "capability", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.capability", "ai_jobs.owner_id"],
+            name="fk_voice_transcriptions_job_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["job_id", "media_id", "owner_id"],
+            ["ai_jobs.id", "ai_jobs.input_media_id", "ai_jobs.owner_id"],
+            name="fk_voice_transcriptions_job_media_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["media_id", "media_purpose", "owner_id"],
+            ["temporary_media.id", "temporary_media.purpose", "temporary_media.owner_id"],
+            name="fk_voice_transcriptions_media_owner",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "id",
+            "owner_id",
+            name="uq_voice_transcriptions_id_owner",
+        ),
+        UniqueConstraint("job_id", name="uq_voice_transcriptions_job"),
+        UniqueConstraint("media_id", name="uq_voice_transcriptions_media"),
+        Index(
+            "ix_voice_transcriptions_owner_purpose_created",
+            "owner_id",
+            "purpose",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_voice_transcriptions_expiry",
+            "expires_at",
+            "id",
+            postgresql_where=text(
+                "resolution = 'pending' OR transcript IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    job_id: Mapped[UUID]
+    media_id: Mapped[UUID]
+    capability: Mapped[str] = mapped_column(
+        String(50),
+        default="transcription",
+        server_default="transcription",
+    )
+    media_purpose: Mapped[str] = mapped_column(
+        String(40),
+        default="voice_transcription",
+        server_default="voice_transcription",
+    )
+    purpose: Mapped[str] = mapped_column(String(32))
+    transcript: Mapped[str | None] = mapped_column(Text)
+    transcript_sha256: Mapped[str | None] = mapped_column(String(64))
+    language: Mapped[str | None] = mapped_column(String(32))
+    resolution: Mapped[str] = mapped_column(
+        String(16),
+        default="pending",
+        server_default="pending",
+    )
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    text_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
 
 class AIJobConfigRoute(Base):
@@ -564,8 +772,12 @@ class AIProviderCost(Base):
             name="attempt_status",
         ),
         CheckConstraint(
-            "usage_source IN ('provider', 'estimated', 'not_sent')",
+            "usage_source IN ('provider', 'estimated', 'measured', 'not_sent')",
             name="usage_source",
+        ),
+        CheckConstraint(
+            "billing_basis IN ('token', 'audio_minute')",
+            name="billing_basis",
         ),
         CheckConstraint(
             "(usage_source = 'not_sent') = (provider_started_at IS NULL)",
@@ -595,13 +807,21 @@ class AIProviderCost(Base):
             name="usage_details",
         ),
         CheckConstraint(
-            "num_nonnulls(price_currency, "
+            "(billing_basis = 'token' AND audio_duration_ms IS NULL) "
+            "OR (billing_basis = 'audio_minute' "
+            "AND audio_duration_ms BETWEEN 250 AND 60000)",
+            name="audio_usage",
+        ),
+        CheckConstraint(
+            "(num_nonnulls(price_currency, "
             "input_price_nanos_per_million_tokens, "
             "cached_input_price_nanos_per_million_tokens, "
             "output_price_nanos_per_million_tokens, "
             "input_cost_nanos, cached_input_cost_nanos, "
-            "output_cost_nanos, total_cost_nanos) = 0 "
-            "OR (num_nonnulls(price_currency, "
+            "output_cost_nanos, audio_price_nanos_per_minute, "
+            "audio_cost_nanos, total_cost_nanos) = 0 "
+            "OR (billing_basis = 'token' "
+            "AND num_nonnulls(price_currency, "
             "input_price_nanos_per_million_tokens, "
             "cached_input_price_nanos_per_million_tokens, "
             "output_price_nanos_per_million_tokens, "
@@ -617,7 +837,22 @@ class AIProviderCost(Base):
             "AND cached_input_cost_nanos >= 0 "
             "AND output_cost_nanos >= 0 "
             "AND total_cost_nanos = input_cost_nanos "
-            "+ cached_input_cost_nanos + output_cost_nanos)",
+            "+ cached_input_cost_nanos + output_cost_nanos "
+            "AND audio_price_nanos_per_minute IS NULL "
+            "AND audio_cost_nanos IS NULL) "
+            "OR (billing_basis = 'audio_minute' "
+            "AND price_currency ~ '^[A-Z]{3}$' "
+            "AND input_price_nanos_per_million_tokens IS NULL "
+            "AND cached_input_price_nanos_per_million_tokens IS NULL "
+            "AND output_price_nanos_per_million_tokens IS NULL "
+            "AND input_cost_nanos IS NULL "
+            "AND cached_input_cost_nanos IS NULL "
+            "AND output_cost_nanos IS NULL "
+            "AND audio_price_nanos_per_minute "
+            "BETWEEN 0 AND 1000000000000000 "
+            "AND audio_cost_nanos >= 0 "
+            "AND total_cost_nanos = audio_cost_nanos)) "
+            "IS TRUE",
             name="pricing",
         ),
         ForeignKeyConstraint(
@@ -675,6 +910,12 @@ class AIProviderCost(Base):
     output_tokens: Mapped[int] = mapped_column(BigInteger)
     total_tokens: Mapped[int] = mapped_column(BigInteger)
     usage_details: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    billing_basis: Mapped[str] = mapped_column(
+        String(20),
+        default="token",
+        server_default="token",
+    )
+    audio_duration_ms: Mapped[int | None] = mapped_column(Integer)
     price_currency: Mapped[str | None] = mapped_column(String(3))
     input_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
         BigInteger
@@ -685,9 +926,11 @@ class AIProviderCost(Base):
     output_price_nanos_per_million_tokens: Mapped[int | None] = mapped_column(
         BigInteger
     )
+    audio_price_nanos_per_minute: Mapped[int | None] = mapped_column(BigInteger)
     input_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
     cached_input_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
     output_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
+    audio_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
     total_cost_nanos: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
