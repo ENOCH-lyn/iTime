@@ -1181,7 +1181,11 @@ watch(pageError, async value => {
           </RouterLink>
         </aside>
 
-        <section class="plan-preview-pane" aria-labelledby="plan-preview-title">
+        <section
+          class="plan-preview-pane"
+          aria-labelledby="plan-preview-title"
+          tabindex="0"
+        >
           <header class="plan-preview-heading">
             <div>
               <span v-if="selectedProposal">AI 提案 · 尚未写入计划</span>

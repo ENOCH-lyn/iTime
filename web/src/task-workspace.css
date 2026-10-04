@@ -459,6 +459,10 @@
   white-space: nowrap;
 }
 
+.task-list > li.active .task-copy > span {
+  color: var(--text);
+}
+
 .task-meta,
 .task-labels {
   display: flex;
@@ -1322,6 +1326,21 @@
 
   .task-main {
     grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  }
+
+  .task-editor-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+  }
+
+  .task-editor-actions {
+    grid-column: 1;
+    justify-content: flex-start;
+  }
+
+  .task-editor-actions .button {
+    flex: 1 1 120px;
   }
 }
 
