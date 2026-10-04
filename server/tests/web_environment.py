@@ -550,14 +550,36 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             self.send_response(304)
             self.end_headers()
             return
-        title = "来源课程更新" if scenario == "update" and count > 1 else "订阅课程"
+        title = (
+            "移动后的固定课程"
+            if scenario == "plan-conflict" and count > 1
+            else "原固定课程"
+            if scenario == "plan-conflict"
+            else "来源课程更新"
+            if scenario == "update" and count > 1
+            else "订阅课程"
+        )
+        starts_at = (
+            "20261006T093000"
+            if scenario == "plan-conflict" and count > 1
+            else "20261006T110000"
+            if scenario == "plan-conflict"
+            else "20261006T090000"
+        )
+        ends_at = (
+            "20261006T103000"
+            if scenario == "plan-conflict" and count > 1
+            else "20261006T120000"
+            if scenario == "plan-conflict"
+            else "20261006T100000"
+        )
         events = [
             "BEGIN:VEVENT",
             f"UID:{parsed.path}",
             f"SUMMARY:{title}",
             "LOCATION:教学楼 B203",
-            "DTSTART;TZID=Asia/Shanghai:20261006T090000",
-            "DTEND;TZID=Asia/Shanghai:20261006T100000",
+            f"DTSTART;TZID=Asia/Shanghai:{starts_at}",
+            f"DTEND;TZID=Asia/Shanghai:{ends_at}",
             "RRULE:FREQ=WEEKLY;BYDAY=TU",
             "END:VEVENT",
         ]
@@ -577,7 +599,12 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
                     "END:VEVENT",
                 ]
             )
-        if scenario == "cancel" and count > 1:
+        if (
+            scenario == "cancel"
+            and count > 1
+            or scenario == "plan-conflict"
+            and count > 2
+        ):
             events = []
         body = (
             "BEGIN:VCALENDAR\r\n"
@@ -590,9 +617,16 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/calendar; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        etag_version = (
+            count
+            if scenario == "plan-conflict"
+            else 2
+            if scenario in {"update", "cancel"} and count > 1
+            else 1
+        )
         self.send_header(
             "ETag",
-            f'"{scenario}-v{2 if scenario in {"update", "cancel"} and count > 1 else 1}"',
+            f'"{scenario}-v{etag_version}"',
         )
         self.end_headers()
         self.wfile.write(body)

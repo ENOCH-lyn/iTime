@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
+  AlertTriangle,
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
@@ -39,19 +40,32 @@ import {
   refreshSession,
 } from '../lib/auth'
 import { listTaskOccurrences } from '../lib/task-schedules'
-import { listPlanningBlocks, type PlanningBlockProjection } from '../lib/plans'
+import {
+  listPlanningBlocks,
+  type PlanningBlockProjection,
+  type PlanSourceConflictSummary,
+} from '../lib/plans'
 import { useSyncRefresh } from '../lib/use-sync-refresh'
 import '../calendar.css'
 
+const route = useRoute()
 const router = useRouter()
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const view = ref<'week' | 'month'>('week')
-const anchor = ref(dateInZone(new Date(), browserTimeZone))
+const routeDate = typeof route.query.date === 'string' ? route.query.date : ''
+const anchor = ref(validDate(routeDate)
+  ? routeDate
+  : dateInZone(new Date(), browserTimeZone))
 const jumpDate = ref(anchor.value)
 const settings = ref<TimeSettings | null>(null)
 const terms = ref<Term[]>([])
 const series = ref<CalendarSeries[]>([])
 const calendarItems = ref<CalendarDisplayItem[]>([])
+const planSourceConflicts = ref<PlanSourceConflictSummary>({
+  open_count: 0,
+  overlap_count: 0,
+  items: [],
+})
 const selected = ref<CalendarDisplayItem | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
@@ -72,7 +86,7 @@ const showFixed = ref(true)
 const showSubscriptions = ref(true)
 const showCancelled = ref(true)
 let loadRevision = 0
-let anchorTouched = false
+let anchorTouched = validDate(routeDate)
 let importOpener: HTMLElement | null = null
 
 function parseLocalDate(value: string) {
@@ -209,6 +223,13 @@ onMounted(async () => {
     return
   }
   await initialize()
+  const sourceId = typeof route.query.source === 'string'
+    ? route.query.source
+    : null
+  const eventId = typeof route.query.event === 'string'
+    ? route.query.event
+    : null
+  if (sourceId) await openSubscription(sourceId, eventId)
 })
 
 useSyncRefresh(
@@ -315,7 +336,7 @@ function mergeOccurrences(
         : `计划第 ${item.plan_version} 版`,
       state: 'scheduled' as const,
       kind: 'plan' as const,
-      conflict: false,
+      conflict: item.source_conflict_count > 0,
       plan: item,
     })),
   ]
@@ -343,6 +364,11 @@ async function loadOccurrences() {
       taskResult.items,
       planResult.items,
     )
+    planSourceConflicts.value = planResult.source_conflicts ?? {
+      open_count: 0,
+      overlap_count: 0,
+      items: [],
+    }
     settings.value = {
       ...settings.value,
       time_zone: calendarResult.time_zone,
@@ -450,7 +476,7 @@ async function openSeriesEditor(occurrence: CalendarOccurrence, split = false) {
   }
 }
 
-async function openSubscription(sourceId: string, eventId: string) {
+async function openSubscription(sourceId: string, eventId: string | null) {
   importOpener = document.activeElement instanceof HTMLElement
     ? document.activeElement
     : null
@@ -587,7 +613,10 @@ watch(pageError, value => {
           <label class="checkbox-label"><input v-model="showCancelled" type="checkbox" />已取消/跳过</label>
         </div>
 
-        <div v-if="pageError || pageSuccess || identity?.user.ai_access === 'frozen'" class="calendar-status">
+        <div
+          v-if="pageError || pageSuccess || identity?.user.ai_access === 'frozen' || planSourceConflicts.open_count"
+          class="calendar-status"
+        >
           <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
             <CirclePause :size="20" aria-hidden="true" />
             <p>此账号的 AI 功能已暂停，日历和手动编辑仍可使用。</p>
@@ -595,6 +624,20 @@ watch(pageError, value => {
           <StatusMessage :error="pageError" :success="detailOpen ? '' : pageSuccess"
             :retry-label="pageError?.retryable || pageError?.code.includes('version_conflict') ? '重新读取' : undefined"
             @retry="initialize" />
+          <div v-if="planSourceConflicts.open_count" class="status calendar-plan-source-status" role="status">
+            <AlertTriangle :size="20" aria-hidden="true" />
+            <p>
+              当前范围有 {{ planSourceConflicts.open_count }} 个订阅来源变化需要复核；
+              {{ planSourceConflicts.overlap_count
+                ? `${planSourceConflicts.overlap_count} 个来源与计划块重叠。`
+                : '计划内容尚未自动调整。' }}
+              <RouterLink
+                :to="{ path: '/plans', query: { scope: 'week', date: anchor } }"
+              >
+                打开规划处理
+              </RouterLink>
+            </p>
+          </div>
         </div>
 
         <CalendarGrid

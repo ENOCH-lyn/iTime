@@ -72,6 +72,69 @@ async function csrf(page: Page) {
   return (await response.json()).csrf_token as string
 }
 
+async function setTimeZone(page: Page, value: string) {
+  const sessionCsrf = await csrf(page)
+  const response = await page.request.get('/api/v1/time-settings')
+  expect(response.ok()).toBeTruthy()
+  const settings = (await response.json()).settings
+  if (settings.time_zone === value) return sessionCsrf
+  const updated = await page.request.put('/api/v1/time-settings', {
+    headers: { 'X-CSRF-Token': sessionCsrf },
+    data: {
+      operation_id: randomUUID(),
+      expected_version: settings.version,
+      time_zone: value,
+      week_starts_on: 1,
+      activity_day_start_minute: 240,
+    },
+  })
+  expect(updated.ok()).toBeTruthy()
+  await page.reload()
+  return sessionCsrf
+}
+
+async function createConfirmedPlan(page: Page, sessionCsrf: string) {
+  const taskResponse = await page.request.post('/api/v1/tasks', {
+    headers: { 'X-CSRF-Token': sessionCsrf },
+    data: {
+      operation_id: randomUUID(),
+      title: '来源冲突测试任务',
+      description: '已确认计划不能被订阅刷新静默移动',
+      project_id: null,
+      estimated_minutes: 60,
+      priority: 2,
+      labels: [],
+      links: [],
+      steps: [{ title: '保持当前计划块' }],
+    },
+  })
+  expect(taskResponse.ok()).toBeTruthy()
+  const task = (await taskResponse.json()).task
+  const planResponse = await page.request.post('/api/v1/plans/versions', {
+    headers: { 'X-CSRF-Token': sessionCsrf },
+    data: {
+      operation_id: randomUUID(),
+      week_start_date: '2026-10-05',
+      expected_plan_version: 0,
+      density: 'balanced',
+      buffer_minutes: 0,
+      availability_start: '08:00:00',
+      availability_end: '22:00:00',
+      blocks: [{
+        task_id: task.id,
+        occurrence_key: null,
+        local_date: '2026-10-06',
+        starts_at: '09:00:00',
+        ends_at: '10:00:00',
+        step_ids: [task.steps[0].id],
+      }],
+      unscheduled_items: [],
+    },
+  })
+  expect(planResponse.ok()).toBeTruthy()
+  return (await planResponse.json()).plan
+}
+
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -123,7 +186,8 @@ async function createSubscription(
   await expect(detail.getByText('已就绪', { exact: true })).toBeVisible({
     timeout: 15_000,
   })
-  await expect(dialog.getByText('订阅课程', { exact: true }).last()).toBeVisible()
+  const eventName = scenario === 'plan-conflict' ? '原固定课程' : '订阅课程'
+  await expect(dialog.getByText(eventName, { exact: true }).last()).toBeVisible()
   await expect(dialog.getByText(/private-token/)).toHaveCount(0)
 }
 
@@ -291,4 +355,107 @@ test('本地覆盖保留来源差异，刷新失败保留旧日历', async ({
   await page.getByLabel('跳转日期').fill('2026-10-06')
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /订阅课程/ }).first()).toBeVisible()
+})
+
+test('订阅来源更新后已确认计划可查看并明确保留', async ({
+  page,
+  request,
+}, info) => {
+  const { calendar_origin: origin } = await bootstrap(info)
+  await account(page, request)
+  const sessionCsrf = await setTimeZone(page, 'Asia/Shanghai')
+  let dialog = await openSubscriptions(page)
+  await createSubscription(
+    page,
+    dialog,
+    origin,
+    'plan-conflict',
+    '计划冲突来源',
+  )
+  const originalPlan = await createConfirmedPlan(page, sessionCsrf)
+  const sourceRegion = dialog.getByRole('region', { name: '计划冲突来源' })
+  await sourceRegion.getByRole('button', { name: '立即刷新', exact: true }).click()
+  await expect(
+    dialog.getByRole('region', { name: '最近刷新' })
+      .getByText('已更新', { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 })
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+
+  await page.goto('/plans?scope=week&date=2026-10-06')
+  await expect(page.getByRole('heading', {
+    name: '订阅来源更新后，当前计划需复核',
+  })).toBeVisible()
+  await expect(page.getByText('第 1 版计划没有被自动改动。')).toBeVisible()
+  const conflict = page.getByRole('region', { name: '计划冲突来源的计划变化' })
+  await expect(conflict.getByText('1 处变化 · 与 1 个计划块重叠')).toBeVisible()
+  await conflict.getByText('查看变化时段').click()
+  await expect(conflict.getByText(/11:00.*09:30/)).toBeVisible()
+  await expect(page.locator('.plan-block')).toHaveCount(1)
+  expect((await new AxeBuilder({ page }).include('.plan-source-conflicts').analyze()).violations)
+    .toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await page.evaluate(() => scrollTo(0, 0))
+  await screenshot(page, info, 'plan-source-conflict')
+
+  await conflict.getByRole('link', { name: '在日历查看' }).click()
+  await expect(page).toHaveURL(/\/calendar\?.*date=2026-10-06/)
+  dialog = page.getByRole('dialog', { name: '导入日历' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('计划冲突来源', { exact: true }).first()).toBeVisible()
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  const planEvent = page.getByRole('button', {
+    name: /09:00–10:00 来源冲突测试任务，存在时间冲突/,
+  }).first()
+  await expect(planEvent).toBeVisible()
+  await planEvent.click()
+  await expect(page.getByText('订阅来源变化后与此计划块重叠。')).toBeVisible()
+  await page.getByRole('link', { name: '前往规划页' }).click()
+
+  await expect(page.getByRole('heading', {
+    name: '订阅来源更新后，当前计划需复核',
+  })).toBeVisible()
+  await page.getByRole('button', { name: '保留当前计划', exact: true }).click()
+  await expect(page.getByText('已保留第 1 版计划，来源冲突已处理。')).toBeVisible()
+  await expect(page.getByRole('heading', {
+    name: '订阅来源更新后，当前计划需复核',
+  })).toHaveCount(0)
+  const currentPlan = await (
+    await page.request.get(`/api/v1/plans/${originalPlan.id}`)
+  ).json()
+  expect(currentPlan.plan.version).toBe(1)
+  expect(currentPlan.plan.current_version.blocks).toEqual(
+    originalPlan.current_version.blocks,
+  )
+
+  await page.goto('/calendar?date=2026-10-06')
+  dialog = await openSubscriptions(page)
+  await dialog.getByRole('button', { name: /移动后的固定课程/ }).first().click()
+  await dialog.getByRole('button', { name: '立即刷新', exact: true }).click()
+  await expect(
+    dialog.getByRole('region', { name: '最近刷新' })
+      .getByText('已更新', { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 })
+  await dialog.getByRole('button', { name: '完成', exact: true }).click()
+  await page.goto('/plans?scope=week&date=2026-10-06')
+  await expect(page.getByRole('heading', {
+    name: '订阅来源更新后，当前计划需复核',
+  })).toBeVisible()
+  await expect(page.getByText('1 处变化 · 未与计划块重叠')).toBeVisible()
+
+  if (info.project.name === 'desktop') {
+    await page.evaluate(() => localStorage.setItem(
+      'itime-appearance',
+      JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
+    ))
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.reload()
+    await expect(page.getByRole('heading', {
+      name: '订阅来源更新后，当前计划需复核',
+    })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'plan-source-conflict-320-dark-large')
+  }
 })

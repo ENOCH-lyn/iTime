@@ -128,6 +128,7 @@ const visibleDays = computed(() => props.days.filter(day => (
                 cancelled: ['cancelled', 'source_cancelled', 'skipped'].includes(item.state),
               },
             ]"
+            :aria-label="`${timeLabel(item)} ${item.title}${item.conflict ? '，存在时间冲突' : ''}`"
             @click="emit('select', item)"
           >
             <span class="agenda-time"><Clock3 :size="15" aria-hidden="true" />{{ timeLabel(item) }}</span>

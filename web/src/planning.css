@@ -452,10 +452,125 @@
 }
 
 .proposal-state,
+.plan-source-conflicts,
 .plan-summary,
 .plan-preview {
   width: min(940px, calc(100% - 44px));
   margin-inline: auto;
+}
+
+.plan-source-conflicts {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-source-conflicts > header {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--notice-text);
+}
+
+.plan-source-conflicts > header svg {
+  margin-top: 2px;
+}
+
+.plan-source-conflicts h2 {
+  font-size: .9375rem;
+}
+
+.plan-source-conflicts > header p,
+.plan-source-conflict-limited {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.plan-source-conflict-list {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-source-conflict {
+  position: relative;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-source-conflict-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plan-source-conflict-heading > div {
+  min-width: 0;
+}
+
+.plan-source-conflict-heading strong,
+.plan-source-conflict-heading small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.plan-source-conflict-heading strong {
+  font-size: .875rem;
+}
+
+.plan-source-conflict-heading small,
+.plan-source-conflict-heading > span {
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.plan-source-conflict-heading > span {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.plan-source-conflict details {
+  margin-top: 10px;
+  font-size: .8125rem;
+}
+
+.plan-source-conflict summary {
+  width: fit-content;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.plan-source-conflict ul {
+  display: grid;
+  gap: 7px;
+  padding: 10px 0 0 18px;
+  margin: 0;
+}
+
+.plan-source-conflict li strong,
+.plan-source-conflict li span {
+  display: block;
+}
+
+.plan-source-conflict li span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-source-calendar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.plan-source-conflict-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 14px;
 }
 
 .proposal-state {
@@ -987,6 +1102,7 @@
   }
 
   .proposal-state,
+  .plan-source-conflicts,
   .plan-summary,
   .plan-preview {
     width: calc(100% - 32px);
@@ -1009,6 +1125,24 @@
 }
 
 @media (max-width: 520px) {
+  .plan-source-conflict-heading {
+    display: grid;
+    gap: 5px;
+  }
+
+  .plan-source-conflict-heading > span {
+    justify-self: start;
+  }
+
+  .plan-source-conflict-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .plan-source-conflict-actions .button {
+    width: 100%;
+  }
+
   .plan-navigation {
     padding: 10px 12px 8px;
   }

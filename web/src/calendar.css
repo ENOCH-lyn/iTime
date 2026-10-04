@@ -183,6 +183,20 @@
   margin-bottom: 0;
 }
 
+.calendar-plan-source-status {
+  color: var(--notice-text);
+}
+
+.calendar-plan-source-status p {
+  min-width: 0;
+}
+
+.calendar-plan-source-status a {
+  margin-left: 6px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .calendar-grid {
   min-width: 760px;
   display: grid;

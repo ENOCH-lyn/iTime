@@ -566,7 +566,10 @@ async function saveTaskMakeup() {
         <StatusMessage :error="error" :success="error ? '' : success" />
         <div v-if="item.conflict" class="status restriction-status" role="status">
           <AlertTriangle :size="20" aria-hidden="true" />
-          <p>这段时间与其他占用安排重叠。两项内容均已保留，请确认是否需要调整。</p>
+          <p v-if="plan?.source_conflict_count">
+            订阅来源变化后与此计划块重叠。第 {{ plan.plan_version }} 版计划未被自动调整，请前往规划页处理。
+          </p>
+          <p v-else>这段时间与其他占用安排重叠。两项内容均已保留，请确认是否需要调整。</p>
         </div>
 
         <dl class="occurrence-facts">

@@ -86,6 +86,53 @@ export interface PlanBlock {
   created_at?: string
 }
 
+export interface PlanSourceOccurrence {
+  name: string
+  local_start_date: string
+  local_start_time: string | null
+  local_end_date: string
+  local_end_time: string | null
+  time_zone: string
+  start_at: string | null
+  end_at: string | null
+  busy: boolean
+  status: 'scheduled' | 'source_cancelled'
+}
+
+export interface PlanSourceConflictChange {
+  kind: 'added' | 'removed' | 'moved' | 'availability_changed'
+  occurrence_key: string
+  event_id: string
+  name: string
+  before: PlanSourceOccurrence | null
+  after: PlanSourceOccurrence | null
+  affected_block_ids: string[]
+}
+
+export interface PlanSourceConflict {
+  id: string
+  plan_id: string
+  plan_version_id: string
+  plan_version: number
+  source_id: string
+  source_name: string
+  source_generation: number
+  status: 'open' | 'resolved'
+  resolution: 'kept' | 'replanned' | 'superseded' | null
+  changes: PlanSourceConflictChange[]
+  affected_block_ids: string[]
+  details_limited: boolean
+  version: number
+  detected_at: string
+  resolved_at: string | null
+}
+
+export interface PlanSourceConflictSummary {
+  open_count: number
+  overlap_count: number
+  items: PlanSourceConflict[]
+}
+
 export interface PlanUnscheduledItem {
   id?: string
   position: number
@@ -126,6 +173,7 @@ export interface Plan {
   current_version_id: string
   version: number
   current_version: PlanVersion
+  source_conflicts: PlanSourceConflictSummary
   created_at: string
   updated_at: string
 }
@@ -136,6 +184,7 @@ export interface PlanningBlockProjection extends PlanBlock {
   plan_version_id: string
   plan_version: number
   plan_source: 'ai' | 'manual'
+  source_conflict_count: number
 }
 
 interface ContextBlock {
@@ -185,6 +234,7 @@ export interface PlanningCurrentPlan {
   input_revision: number
   blocks: ContextBlock[]
   unscheduled_items: ContextUnscheduledItem[]
+  source_conflicts: PlanSourceConflictSummary
 }
 
 export interface PlanningContext {
@@ -450,6 +500,25 @@ export async function saveManualPlanVersion(input: ManualPlanVersionInput) {
   return api<{ operation_id: string; plan: Plan }>('/plans/versions', input)
 }
 
+export async function keepPlanAfterSourceChanges(
+  planId: string,
+  expectedPlanVersion: number,
+  conflictIds: string[],
+  operationId: string,
+) {
+  return api<{
+    operation_id: string
+    plan_id: string
+    plan_version: number
+    source_conflicts: PlanSourceConflictSummary
+  }>(`/plans/${planId}/source-conflicts/resolve`, {
+    operation_id: operationId,
+    expected_plan_version: expectedPlanVersion,
+    conflict_ids: conflictIds,
+    resolution: 'kept',
+  })
+}
+
 export async function listPlanningBlocks(start: string, end: string) {
   const params = new URLSearchParams({ start, end })
   return api<{
@@ -457,5 +526,6 @@ export async function listPlanningBlocks(start: string, end: string) {
     end: string
     time_zone: string
     items: PlanningBlockProjection[]
+    source_conflicts: PlanSourceConflictSummary
   }>(`/planning/blocks?${params}`)
 }

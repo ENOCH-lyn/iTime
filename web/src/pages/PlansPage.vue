@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
+  AlertTriangle,
+  CalendarSearch,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -35,6 +37,7 @@ import {
   getPlanHistory,
   getPlanProposal,
   getPlanningContext,
+  keepPlanAfterSourceChanges,
   listPlanProposals,
   listPlanningJobs,
   rejectPlanProposal,
@@ -43,6 +46,8 @@ import {
   type PlanProposal,
   type PlanProposalSummary,
   type PlanScope,
+  type PlanSourceConflict,
+  type PlanSourceOccurrence,
   type PlanUnscheduledItem,
   type PlanVersion,
   type PlanningContext,
@@ -86,6 +91,7 @@ const cancelling = ref(false)
 const applying = ref(false)
 const rejecting = ref(false)
 const saving = ref(false)
+const keepingSourceConflicts = ref(false)
 const pendingLogout = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
@@ -94,11 +100,15 @@ let pollTimer = 0
 let generationOperation: { id: string; fingerprint: string } | null = null
 let proposalOperation: { id: string; fingerprint: string } | null = null
 let saveOperation: { id: string; fingerprint: string } | null = null
+let keepConflictsOperation: { id: string; fingerprint: string } | null = null
 let cancelOperation = ''
 let disposed = false
 const activeJobStorageKey = 'itime-active-planning-job'
 
 const currentPlan = computed(() => context.value?.current_plan ?? null)
+const sourceConflicts = computed(() => (
+  currentPlan.value?.source_conflicts.items ?? []
+))
 const visibleScope = computed<PlanScope>(() => (
   selectedProposal.value?.input_snapshot.scope
   ?? viewedVersion.value?.scope
@@ -145,7 +155,7 @@ const jobActive = computed(() => (
   activeJob.value?.status === 'queued' || activeJob.value?.status === 'running'
 ))
 const actionPending = computed(() => (
-  applying.value || rejecting.value || saving.value
+  applying.value || rejecting.value || saving.value || keepingSourceConflicts.value
 ))
 const selectableTasks = computed(() => {
   const unique = new Map<string, PlanningContext['task_candidates'][number]>()
@@ -292,6 +302,35 @@ function readableTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function sourceOccurrenceLabel(value: PlanSourceOccurrence | null) {
+  if (!value) return ''
+  const start = value.local_start_time?.slice(0, 5) ?? '全天'
+  const end = value.local_end_time?.slice(0, 5)
+  return `${readableShort(value.local_start_date)} ${start}${end ? `–${end}` : ''}`
+}
+
+function sourceChangeLabel(change: PlanSourceConflict['changes'][number]) {
+  if (change.kind === 'added') {
+    return `新增 ${sourceOccurrenceLabel(change.after)}`
+  }
+  if (change.kind === 'removed') {
+    return `${sourceOccurrenceLabel(change.before)} → 已取消`
+  }
+  return `${sourceOccurrenceLabel(change.before)} → ${sourceOccurrenceLabel(change.after)}`
+}
+
+function sourceConflictDate(conflict: PlanSourceConflict) {
+  const change = conflict.changes[0]
+  return change?.after?.local_start_date
+    ?? change?.before?.local_start_date
+    ?? currentPlan.value?.week_start_date
+    ?? form.target_date
+}
+
+function sourceConflictEvent(conflict: PlanSourceConflict) {
+  return conflict.changes[0]?.event_id
 }
 
 function minutes(value: string) {
@@ -577,6 +616,56 @@ async function generatePlan() {
   } finally {
     generating.value = false
   }
+}
+
+async function keepCurrentPlanAfterSourceChanges() {
+  if (!currentPlan.value || !sourceConflicts.value.length || keepingSourceConflicts.value) {
+    return
+  }
+  const conflictIds = sourceConflicts.value.map(item => item.id).sort()
+  const fingerprint = JSON.stringify({
+    planId: currentPlan.value.id,
+    planVersion: currentPlan.value.version,
+    conflictIds,
+  })
+  keepConflictsOperation = keepConflictsOperation?.fingerprint === fingerprint
+    ? keepConflictsOperation
+    : { id: crypto.randomUUID(), fingerprint }
+  keepingSourceConflicts.value = true
+  pageError.value = null
+  try {
+    const keptVersion = currentPlan.value.version
+    await keepPlanAfterSourceChanges(
+      currentPlan.value.id,
+      keptVersion,
+      conflictIds,
+      keepConflictsOperation.id,
+    )
+    keepConflictsOperation = null
+    await loadContext(true)
+    pageSuccess.value = `已保留第 ${keptVersion} 版计划，来源冲突已处理。`
+  } catch (reason) {
+    const currentError = failure(reason)
+    if (currentError.code.includes('conflict')) {
+      await loadContext(true)
+    }
+    pageError.value = currentError
+  } finally {
+    keepingSourceConflicts.value = false
+  }
+}
+
+async function replanAfterSourceChanges() {
+  if (!currentPlan.value || generating.value || jobActive.value) return
+  selectedProposal.value = null
+  viewedVersion.value = null
+  editing.value = false
+  dirty.value = false
+  form.scope = 'week'
+  form.target_date = currentPlan.value.week_start_date
+  await replaceQuery()
+  await loadContext(true)
+  await generatePlan()
 }
 
 async function cancelGeneration() {
@@ -1136,6 +1225,90 @@ watch(pageError, async value => {
           </div>
 
           <template v-else>
+            <section
+              v-if="currentPlan && !selectedProposal && !viewedVersion && !editing && sourceConflicts.length"
+              class="plan-source-conflicts"
+              role="alert"
+              aria-labelledby="plan-source-conflicts-title"
+            >
+              <header>
+                <AlertTriangle :size="21" aria-hidden="true" />
+                <div>
+                  <h2 id="plan-source-conflicts-title">订阅来源更新后，当前计划需复核</h2>
+                  <p>第 {{ currentPlan.version }} 版计划没有被自动改动。</p>
+                </div>
+              </header>
+              <div class="plan-source-conflict-list">
+                <article
+                  v-for="conflict in sourceConflicts"
+                  :key="conflict.id"
+                  class="plan-source-conflict"
+                  role="region"
+                  :aria-label="`${conflict.source_name}的计划变化`"
+                >
+                  <div class="plan-source-conflict-heading">
+                    <div>
+                      <strong>{{ conflict.source_name }}</strong>
+                      <small>来源第 {{ conflict.source_generation }} 版 · {{ readableTime(conflict.detected_at) }}</small>
+                    </div>
+                    <span>
+                      {{ conflict.details_limited
+                        ? '变化较多 · 需查看日历'
+                        : `${conflict.changes.length} 处变化 · ${conflict.affected_block_ids.length
+                          ? `与 ${conflict.affected_block_ids.length} 个计划块重叠`
+                          : '未与计划块重叠'}` }}
+                    </span>
+                  </div>
+                  <p v-if="conflict.details_limited" class="plan-source-conflict-limited">
+                    此来源在该周的事件超过安全展示上限，请在日历中缩小日期范围查看。
+                  </p>
+                  <details v-else>
+                    <summary>查看变化时段</summary>
+                    <ul>
+                      <li v-for="change in conflict.changes" :key="`${change.occurrence_key}:${change.kind}`">
+                        <strong>{{ change.name }}</strong>
+                        <span>{{ sourceChangeLabel(change) }}</span>
+                      </li>
+                    </ul>
+                  </details>
+                  <RouterLink
+                    :to="{
+                      path: '/calendar',
+                      query: {
+                        date: sourceConflictDate(conflict),
+                        source: conflict.source_id,
+                        ...(sourceConflictEvent(conflict)
+                          ? { event: sourceConflictEvent(conflict) }
+                          : {}),
+                      },
+                    }"
+                    class="text-button plan-source-calendar-link"
+                  >
+                    <CalendarSearch :size="16" aria-hidden="true" />在日历查看
+                  </RouterLink>
+                </article>
+              </div>
+              <div class="plan-source-conflict-actions">
+                <button
+                  type="button"
+                  class="button secondary"
+                  :disabled="actionPending || identity?.user.ai_access === 'frozen'"
+                  @click="replanAfterSourceChanges"
+                >
+                  <RefreshCw :size="17" aria-hidden="true" />按最新来源重新生成
+                </button>
+                <button
+                  type="button"
+                  class="button"
+                  :disabled="actionPending"
+                  @click="keepCurrentPlanAfterSourceChanges"
+                >
+                  <CircleCheck :size="17" aria-hidden="true" />
+                  {{ keepingSourceConflicts ? '正在处理…' : '保留当前计划' }}
+                </button>
+              </div>
+            </section>
+
             <div v-if="selectedProposal" class="proposal-state" :data-state="selectedProposal.effective_status">
               <CircleAlert v-if="selectedProposal.effective_status === 'conflicted'" :size="19" aria-hidden="true" />
               <XCircle v-else-if="['rejected', 'expired'].includes(selectedProposal.effective_status)" :size="19" aria-hidden="true" />
