@@ -1,0 +1,180 @@
+name: itime-perf-${ITIME_PERF_RUN_ID:?required}
+
+x-app: &app
+  image: itime-performance:${ITIME_PERF_IMAGE_TAG:-local}
+  build:
+    context: ./server
+    dockerfile: Dockerfile.performance
+  environment: &app-env
+    ITIME_ENVIRONMENT: test
+    ITIME_DATABASE_URL: postgresql+psycopg://itime:${ITIME_PERF_POSTGRES_PASSWORD:?required}@postgres:5432/${ITIME_PERF_DATABASE:?required}
+    ITIME_PUBLIC_ORIGIN: http://localhost:${ITIME_PERF_WEB_PORT:-4174}
+    ITIME_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
+    ITIME_ENCRYPTION_KEY: ${ITIME_PERF_ENCRYPTION_KEY:?required}
+    ITIME_AI_ENCRYPTION_KEY: ${ITIME_PERF_AI_ENCRYPTION_KEY:?required}
+    ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY: ${ITIME_PERF_CALENDAR_KEY:?required}
+    ITIME_EXPORT_ENCRYPTION_KEY: ${ITIME_PERF_EXPORT_KEY:?required}
+    ITIME_AUTH_IP_LIMIT: "1000"
+    ITIME_AUTH_IDENTITY_LIMIT: "100"
+    ITIME_MAIL_COOLDOWN_SECONDS: "1"
+    ITIME_DB_MAX_OVERFLOW: "0"
+    ITIME_AI_PRIVATE_ENDPOINT_HOSTS: '["host.docker.internal"]'
+    ITIME_SMTP_HOST: host.docker.internal
+    ITIME_SMTP_PORT: ${ITIME_PERF_UPSTREAM_SMTP_PORT:?required}
+    ITIME_SMTP_STARTTLS: "true"
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  depends_on:
+    postgres:
+      condition: service_healthy
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  restart: "no"
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 10s
+
+services:
+  postgres:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    environment:
+      POSTGRES_USER: itime
+      POSTGRES_PASSWORD: ${ITIME_PERF_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${ITIME_PERF_DATABASE:?required}
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U itime -d ${ITIME_PERF_DATABASE:?required}
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    mem_limit: 1g
+    pids_limit: 128
+    restart: "no"
+    shm_size: 128mb
+    stop_grace_period: 30s
+    volumes:
+      - perf_postgres:/var/lib/postgresql
+
+  migrate:
+    <<: *app
+    command:
+      - alembic
+      - upgrade
+      - head
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 256m
+    pids_limit: 64
+
+  api:
+    <<: *app
+    command:
+      - uvicorn
+      - itime.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "2"
+      - --no-access-log
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "4"
+      ITIME_DB_MAX_OVERFLOW: "1"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen("http://127.0.0.1:8000/api/ready", timeout=2)
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    mem_limit: 1280m
+    pids_limit: 128
+    ports:
+      - "127.0.0.1::8000"
+
+  ai-worker:
+    <<: *app
+    command:
+      - python
+      - -m
+      - itime.ai.worker
+    deploy:
+      replicas: 2
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 384m
+    pids_limit: 64
+
+  mail-worker:
+    <<: *app
+    command:
+      - python
+      - -m
+      - itime.mail_worker
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 160m
+    pids_limit: 64
+
+  subscription-worker:
+    <<: *app
+    command:
+      - python
+      - -m
+      - performance.synthetic_workers
+      - subscription
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 160m
+    pids_limit: 64
+
+  public-link-worker:
+    <<: *app
+    command:
+      - python
+      - -m
+      - performance.synthetic_workers
+      - public-link
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 160m
+    pids_limit: 64
+
+  export-worker:
+    <<: *app
+    command:
+      - python
+      - -m
+      - itime.data_export.worker
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 320m
+    pids_limit: 64
+
+volumes:
+  perf_postgres:
