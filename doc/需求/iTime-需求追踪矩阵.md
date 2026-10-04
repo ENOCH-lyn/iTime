@@ -12,7 +12,7 @@
 | REQ-APP-01 | Android 后 iOS，完整用户功能 | 平台矩阵；§1 | APP-01、APP-02、NOT-01 | M9—M10 |
 | REQ-AUTH-01 | 邮箱密码、验证找回、开放/邀请制 | 账号；§3 | AUTH-01、AUTH-02 | M2 |
 | REQ-AUTH-02 | 不限固定设备数、设备管理和撤销 | 设置/设备；§3、§10 | AUTH-03、SYN-04 | M2 |
-| REQ-TASK-01 | 统一任务、层级、语音、文本链接、批量检索 | 任务/目标；§2、§4 | TASK-01、TASK-03 | M3 |
+| REQ-TASK-01 | 统一任务、层级、语音、文本链接、批量检索 | 任务/目标；[语音转写设计](../设计/iTime-任务与困难语音转写设计.md)；§2、§4 | TASK-01、TASK-03 | M3 |
 | REQ-TASK-02 | 步骤顺序、重复、跨日拆分/不可拆 | 任务详情；§4 | TASK-01、TASK-02、PLAN-04 | M3/M5 |
 | REQ-CAL-01 | 学期/节次/周次/例外、固定区间 | 课表/日历；§4、§5 | CAL-01、CAL-03 | M3 |
 | REQ-CAL-02 | 截图/Excel/手工/ICS 与订阅 | 导入/校对；§4、§9 | CAL-02、MEDIA-01 | M3 |
@@ -23,7 +23,7 @@
 | REQ-PLAN-01 | 用户触发日周规划、密度/缓冲/步骤 | 规划预览；§4、§6 | PLAN-01、PLAN-02、PLAN-03、PLAN-04 | M5 |
 | REQ-PLAN-02 | 手工纠错、重排预览与版本 | 预览/日历；§6 | PLAN-05、CHAT-03 | M5 |
 | REQ-EXEC-01 | 正/倒计时、单一进行中、修订、确认完成 | 专注；§5 | EXEC-01、EXEC-02、EXEC-03、TASK-02 | M5 |
-| REQ-DIFF-01 | 一句话困难、可选情绪、主动求助 | 专注/困难；§2、§11 | DIFF-01、REV-01 | M5 |
+| REQ-DIFF-01 | 一句话困难、可选情绪、主动求助 | 专注/困难；[语音转写设计](../设计/iTime-任务与困难语音转写设计.md)；§2、§11 | DIFF-01、REV-01 | M5 |
 | REQ-REVIEW-01 | 单日补做、可跳过、报告批注与版本 | 复盘/历史；§11 | REV-01、REV-02、REV-03 | M6 |
 | REQ-MEM-01 | 记忆/偏好确认保存、管理删除 | 记忆/设置；§6、§11 | REV-03、CHAT-02 | M6 |
 | REQ-STATS-01 | 计划块/任务/专注分开，日周月 | 个人统计；§5、§11 | MET-01、MET-02 | M6 |
@@ -65,7 +65,7 @@
 | REQ-WEB-01 | 公开产品页、演示、帮助、协议隐私和账号入口已实现；登录后默认进入 `web/src/pages/AIPage.vue`，AI、任务、规划、日历、专注、复盘、统计和设置从八项统一产品导航可达，设置内 `/account/data` 提供本人数据导出与账号注销，`/account/sync` 提供同步与离线工作区，`/calendar` 提供日历系列与 ICS 订阅源统一回收站；现有页面已通过生产构建及桌面、平板、手机、320px 大字号 Chromium 动态测试 | 学期、项目、AI 会话等其余独立对象的回收页面仍待后续模块；Edge/真机未验证 |
 | REQ-AUTH-01 | `server/src/itime/auth/`、`admin/management.py`、`mail_worker.py` 及 `web/src/pages/AuthPage.vue`；邮箱账号与开放/邀请注册已执行真实 PostgreSQL/HTTP/Mailpit 和三种视口 Chromium 测试 | 改邮箱/申诉细则；不得将整个需求标为通过 |
 | REQ-AUTH-02 | `auth/session.py`、`router.py`、`web/src/components/DeviceSettings.vue`、`web/src/lib/auth.ts`；服务端会话撤销、分页列表、并发授权、真实设备管理页面，以及显式退出或申请注销后的账号级游标、缓存和待传队列清理已动态验证；注销申请即时撤销全部设备，撤销时仅创建一个新会话 | 会话意外失效后的重新认证提示继续单独验证 |
-| REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks`、`0009_task_schedules` 与 `0016_task_lifecycle`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期/关联补做、未来拆分、手动归档及 30 天任务回收站均有可达 Web 入口，并通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试 | 语音输入与 AI 校对仍待后续模块；Edge/真机未验证 |
+| REQ-TASK-01/02 | `server/src/itime/tasks/`、迁移 `0005_tasks`、`0009_task_schedules` 与 `0016_task_lifecycle`、任务工作区、日期编辑器及统一日历；任务核心、截止/重复/可拆参数、实例完成/跳过/调期/关联补做、未来拆分、手动归档及 30 天任务回收站均有可达 Web 入口，并通过真实 HTTP/PostgreSQL 和三视口 Chromium 测试；任务语音的实现合同已在专项设计中冻结 | 语音输入与 AI 校对仍待实现；Edge/真机未验证 |
 | REQ-DATA-01 | 迁移 `0016_task_lifecycle`、`0025_execution_difficulties`、`0026_review_memory` 与 `0034_calendar_lifecycle`，四类独立清理 worker 及对应 Web 工作区已实现任务、困难、长期记忆、日历系列和 ICS 订阅源的删除、30 天恢复、到期清理和可达回收入口；任务与日历对象保留最小墓碑，记忆删除后立即退出 AI 检索，日历删除不改写既有计划/执行/复盘事实；专项覆盖双 worker、旧操作与迟到刷新阻断、导出/同步、并发 UI 冲突及 320px 大字号 | 学期、节次、项目、AI 会话等其他独立对象尚未开放单项删除或回收；账号注销单列 `REQ-DATA-02`，备份删除重放仍待 M8 |
 | REQ-DATA-02 | 迁移 `0029_account_deletions`、`server/src/itime/account_deletion/`、`POST /api/v1/account-deletion`、`POST /cancel`、独立清理 worker、`/account/data` 危险区和登录恢复页已实现 7 天撤销、会话冻结、在途任务停止、到期单事务清理及最小回执；专项覆盖密码/邮箱/CSRF、并发、晚到结果、双 worker、回滚、全部 owner 表、跨标签本地清理、三视口和同邮箱新 UUID | 生产备份恢复后的删除回执重放、法务保留及其余对象单项回收仍待 M8 或后续模块验证 |
 | REQ-CAL-01 / REQ-CAL-03 / REQ-TIME-01 | `server/src/itime/calendar/`、`server/src/itime/planning/`、`server/src/itime/statistics/`、迁移 `0006`—`0015`、`0022`—`0024`、`0031_plan_source_conflicts`、`0032_subscription_exceptions` 与 `0034_calendar_lifecycle`、日历及统计页面；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、例外、全部导入、日历系列 30 天回收恢复、订阅 occurrence 单次取消/移动/内容覆盖/重置、当前计划块投影、来源更新后的已确认计划复核/实际重叠/保留或重排处理，以及额度和统计的 04:00 活动日已通过真实 HTTP/PostgreSQL、worker 和三视口 Chromium 测试；删除日历对象不改写既有计划/执行/复盘，刷新失败或仅非调度字段变化不制造计划冲突 | 学期不提供独立删除；Edge/真机未验证 |
@@ -73,7 +73,7 @@
 | REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`0022`—`0024`、`0026_review_memory`、`0030_public_task_links` 与 `0033_ai_fallback_routes`、`server/src/itime/ai/`、通用 worker/SSE 路由及 `web/src/pages/AIPage.vue` 已实现多普通会话、相关历史和公开资料不可变快照、消息持久化、文本流、租约续期、重试 reset、取消、离页/断线恢复，以及与普通会话分离的单日复盘会话；四类能力新作业会冻结主配置和最多两个备用配置的尝试顺序，可重试故障切换但不重置总截止时间，非重试错误不切换 | 正式模型质量评测仍待后续模块 |
 | REQ-LINK-01 | 迁移 `0030_public_task_links`、`server/src/itime/network/restricted_http.py`、`server/src/itime/public_links/`、任务链接刷新 API、任务来源块及 `web/e2e/public-links.spec.ts` 已实现新增/URL 变化自动排队、受限 HTTPS 读取、确定性摘要、失败保旧、手动刷新、账号级并发/频率限制、同步失效、规划和普通对话不可变不可信上下文，以及本人导出/任务清理/注销联动；已通过真实 PostgreSQL/Uvicorn/受控 HTTP/worker 和三视口 Chromium 测试 | 需登录或 JavaScript 渲染页面不在首版；正式公网兼容性、生产出口、正式模型质量、Edge 和真机仍未验证 |
 | REQ-CHAT-02 / REQ-PLAN-01 / REQ-PLAN-02 | `server/src/itime/planning/`、迁移 `0022`—`0024`、`web/src/pages/PlansPage.vue` 及规划组件已实现一致输入快照、日/周 AI 提案、确定性硬约束校验、确认/拒绝、过期与版本冲突、不可变周版本、手工时间/步骤/顺序纠错、历史查看和日历投影；已通过真实 PostgreSQL/HTTP/双 worker、额度终态及三视口 Chromium 测试 | 首版规划范围已完成；局部接受、锁定单块、任意历史恢复不在本阶段，正式模型规划质量、Edge 和真机仍未验证 |
-| REQ-EXEC-01 / REQ-DIFF-01 | 迁移 `0025_execution_difficulties`、`server/src/itime/execution/`、`web/src/pages/FocusPage.vue`、`DifficultyPanel.vue` 和账号/会话隔离离线队列已实现自由/任务/计划块正倒计时、单一开放专注、暂停恢复结束、步骤进度、明确任务完成、补记修订、困难增删改及 30 天恢复、主动带到 AI 草稿；跨活动日专注、补记和修订已纳入统计，专注队列已接入全局同步状态；已覆盖双连接并发、未知响应、顺序重放、终态冲突、队列上限与三视口 Chromium | 困难语音校对、Edge 和真机仍未实现或验证 |
+| REQ-EXEC-01 / REQ-DIFF-01 | 迁移 `0025_execution_difficulties`、`server/src/itime/execution/`、`web/src/pages/FocusPage.vue`、`DifficultyPanel.vue` 和账号/会话隔离离线队列已实现自由/任务/计划块正倒计时、单一开放专注、暂停恢复结束、步骤进度、明确任务完成、补记修订、困难增删改及 30 天恢复、主动带到 AI 草稿；跨活动日专注、补记和修订已纳入统计，专注队列已接入全局同步状态；已覆盖双连接并发、未知响应、顺序重放、终态冲突、队列上限与三视口 Chromium；困难语音的实现合同已在专项设计中冻结 | 困难语音校对、Edge 和真机仍未实现或验证 |
 | REQ-REVIEW-01 / REQ-MEM-01 | 迁移 `0026_review_memory`、`server/src/itime/review/`、通用 AI worker 的 `review` 能力、`web/src/pages/ReviewsPage.vue` 和复盘组件已实现 04:00 单日事实快照、最多三轮可跳过追问、离页恢复、结构化报告、不可变版本、独立批注、记忆候选确认/拒绝、人工记忆管理、整体暂停及 30 天回收恢复；普通对话与规划在调用时重新校验有效记忆 | 正式模型复盘质量、Edge 和真机仍未验证 |
 | REQ-STATS-01 | `server/src/itime/statistics/`、`web/src/pages/StatisticsPage.vue`、统计组件/API 及 `web/e2e/statistics.spec.ts` 已实现日/自然周/自然月查询、当前计划版本、任务完成/跳过、专注完成/放弃/补记/修订、跨 04:00 分配、空态和读取失败保旧；已通过真实 PostgreSQL/HTTP、活动日数学、三视口及 320px 大字号 Chromium 验证 | 后台运营指标、长历史性能、Edge 和真机不属于本模块或仍未验证 |
 | REQ-SYNC-01 | 迁移 `0028_sync_feed`、`server/src/itime/sync/`、`web/src/lib/{data-cache,sync,sync-queue,use-sync-refresh}.ts`、`/account/sync` 和 `web/e2e/sync.spec.ts` 已实现账号绑定 HMAC 游标、无正文失效事件、30 天有界清理、跨标签/跨设备刷新、当前已认证页面的 AES-GCM 离线缓存、普通/重复任务步骤与既有专注操作的类型化队列、冲突保留及退出清理；已覆盖游标篡改/过期/超前、账号隔离、清理竞争、幂等重放、跨设备 5 秒上界、断网恢复、三视口和 320px 深色大字号 | 离线新建、离线冷启动不属于已确认首版范围；M8 并发性能分位数、Edge 和真机仍未验证 |
