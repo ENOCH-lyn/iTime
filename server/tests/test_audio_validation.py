@@ -1,5 +1,6 @@
 import hashlib
 import struct
+from importlib import resources
 
 import pytest
 
@@ -64,6 +65,21 @@ def test_validate_voice_wav_returns_authoritative_metadata():
     assert result.channel_count == 1
     assert result.sample_width_bits == 16
     assert result.sha256 == hashlib.sha256(contents).hexdigest()
+
+
+def test_packaged_transcription_probe_uses_canonical_voice_format():
+    contents = (
+        resources.files("itime.ai")
+        .joinpath("assets/transcription_probe.wav")
+        .read_bytes()
+    )
+    result = validate_voice_wav(
+        contents,
+        "itime-voice-check.wav",
+        "audio/wav",
+    )
+    assert result.byte_size == len(contents)
+    assert MIN_VOICE_DURATION_MS <= result.duration_ms <= MAX_VOICE_DURATION_MS
 
 
 @pytest.mark.parametrize("duration_ms", [MIN_VOICE_DURATION_MS, MAX_VOICE_DURATION_MS])

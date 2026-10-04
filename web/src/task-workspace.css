@@ -1490,7 +1490,9 @@
 
   .task-navigation-top {
     min-width: 0;
+    flex-wrap: wrap;
     gap: 2px;
+    overflow: visible;
   }
 
   .task-navigation .wordmark {
@@ -1499,14 +1501,24 @@
   }
 
   .product-navigation {
+    flex: 1 1 220px;
+    flex-wrap: wrap;
     gap: 0;
+    overflow-x: visible;
   }
 
   .product-navigation .nav-link {
     width: 36px;
     min-width: 36px;
+    flex-basis: 36px;
     justify-content: center;
     padding-inline: 0;
+  }
+
+  .product-navigation .sync-status-indicator {
+    width: 36px;
+    height: 40px;
+    flex: 0 0 36px;
   }
 
   .product-label {
