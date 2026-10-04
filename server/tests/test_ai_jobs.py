@@ -229,6 +229,84 @@ async def exercise_claims(database_url: str) -> None:
         await database.close()
 
 
+def test_attempts_follow_frozen_config_route(database_url, client):
+    _, owner_id = create_account(client, database_url)
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        config_ids = [seed_config(connection) for _ in range(3)]
+        job_id = seed_job(
+            connection,
+            owner_id,
+            config_ids[0],
+            seed_media(connection, owner_id),
+        )
+        connection.execute(
+            """
+            UPDATE ai_job_config_routes
+            SET config_version_id = CASE attempt_number
+                WHEN 1 THEN %s::uuid
+                WHEN 2 THEN %s::uuid
+                ELSE %s::uuid
+            END
+            WHERE job_id=%s
+            """,
+            (*config_ids, job_id),
+        )
+
+    async def exercise_route():
+        database = Database(
+            Settings(database_url=database_url, environment="test")
+        )
+        try:
+            claims = []
+            for attempt_number in range(1, 4):
+                claim = await claim_next_job(database)
+                assert claim is not None, attempt_number
+                claims.append(claim)
+                status = await reject_or_retry_job(
+                    database,
+                    claim,
+                    error_code="ai_rate_limited",
+                    error_message="上游限流。",
+                    error_stage="upstream",
+                    retryable=attempt_number < 3,
+                    http_status=429,
+                )
+                assert status == ("queued" if attempt_number < 3 else "failed")
+                if attempt_number < 3:
+                    async with database.transaction() as session:
+                        await session.execute(
+                            text(
+                                "UPDATE ai_jobs "
+                                "SET available_at=now() - interval '1 second' "
+                                "WHERE id=:job_id"
+                            ),
+                            {"job_id": job_id},
+                        )
+            return claims
+        finally:
+            await database.close()
+
+    claims = asyncio.run(exercise_route())
+    assert [str(claim.config_version_id) for claim in claims] == config_ids
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        assert connection.execute(
+            """
+            SELECT attempt_number, attempt_status
+            FROM ai_provider_costs
+            WHERE job_id=%s
+            ORDER BY attempt_number
+            """,
+            (job_id,),
+        ).fetchall() == [
+            (1, "retryable_failed"),
+            (2, "retryable_failed"),
+            (3, "failed"),
+        ]
+
+
 def test_concurrent_claim_retry_terminal_and_late_result(database_url, client):
     _, owner_id = create_account(client, database_url)
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:

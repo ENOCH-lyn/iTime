@@ -10,6 +10,7 @@ from itime.ai.models import (
     AIConfigVersion,
     AIJob,
     AIJobAttempt,
+    AIJobConfigRoute,
     AIProviderCost,
 )
 from itime.ai.pricing import token_cost_breakdown
@@ -83,7 +84,17 @@ async def add_provider_cost(
             AIBodyLog.attempt_number == attempt.attempt_number,
         )
     )
-    config = await session.get(AIConfigVersion, job.config_version_id)
+    route_config_id = await session.scalar(
+        select(AIJobConfigRoute.config_version_id).where(
+            AIJobConfigRoute.job_id == job.id,
+            AIJobConfigRoute.attempt_number == attempt.attempt_number,
+        )
+    )
+    config = (
+        await session.get(AIConfigVersion, route_config_id)
+        if route_config_id is not None
+        else None
+    )
 
     if attempt.provider_started_at is None:
         usage_source = "not_sent"

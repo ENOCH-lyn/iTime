@@ -10,6 +10,7 @@ from itime.ai.models import (
     AIConfigVersion,
     AIJob,
     AIJobAttempt,
+    AIJobConfigRoute,
     AIProviderCost,
 )
 from itime.ai.pricing import format_currency_nanos, format_price_per_million
@@ -138,7 +139,18 @@ async def list_provider_costs(
                     AIJobAttempt.attempt_number == AIProviderCost.attempt_number,
                 ),
             )
-            .join(AIConfigVersion, AIConfigVersion.id == AIJob.config_version_id)
+            .join(
+                AIJobConfigRoute,
+                and_(
+                    AIJobConfigRoute.job_id == AIProviderCost.job_id,
+                    AIJobConfigRoute.attempt_number
+                    == AIProviderCost.attempt_number,
+                ),
+            )
+            .join(
+                AIConfigVersion,
+                AIConfigVersion.id == AIJobConfigRoute.config_version_id,
+            )
             .join(User, User.id == AIProviderCost.owner_id)
         )
         if capability is not None:

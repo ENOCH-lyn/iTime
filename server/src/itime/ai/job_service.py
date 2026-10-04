@@ -11,7 +11,13 @@ from itime.ai.governance_service import (
     add_attempt_body_log,
     finish_attempt_body_log,
 )
-from itime.ai.models import AIJob, AIJobAttempt, AIProviderCost, TemporaryMedia
+from itime.ai.models import (
+    AIJob,
+    AIJobAttempt,
+    AIJobConfigRoute,
+    AIProviderCost,
+    TemporaryMedia,
+)
 from itime.auth.models import User
 from itime.auth.security import now
 from itime.database import Database
@@ -290,6 +296,26 @@ async def claim_next_job(
                     ),
                 )
 
+            route_config_id = job.config_version_id
+            if terminal_error_code is None:
+                next_attempt = job.attempt_count + 1
+                selected_config_id = await session.scalar(
+                    select(AIJobConfigRoute.config_version_id)
+                    .where(
+                        AIJobConfigRoute.job_id == job.id,
+                        AIJobConfigRoute.attempt_number == next_attempt,
+                    )
+                    .with_for_update(read=True)
+                )
+                if selected_config_id is None:
+                    terminal_error_code = "ai_job_route_invalid"
+                    terminal_error_message = (
+                        "AI 作业调用路由不完整，请重新提交。"
+                    )
+                    terminal_error_stage = "configuration"
+                else:
+                    route_config_id = selected_config_id
+
             lease_id = uuid4()
             job.status = "running"
             job.lease_id = lease_id
@@ -311,7 +337,7 @@ async def claim_next_job(
                     id=job.id,
                     owner_id=job.owner_id,
                     capability=job.capability,
-                    config_version_id=job.config_version_id,
+                    config_version_id=route_config_id,
                     input_media_id=job.input_media_id,
                     conversation_id=job.conversation_id,
                     planning_snapshot_id=job.planning_snapshot_id,
@@ -357,7 +383,7 @@ async def claim_next_job(
                 id=job.id,
                 owner_id=job.owner_id,
                 capability=job.capability,
-                config_version_id=job.config_version_id,
+                config_version_id=route_config_id,
                 input_media_id=job.input_media_id,
                 conversation_id=job.conversation_id,
                 planning_snapshot_id=job.planning_snapshot_id,
