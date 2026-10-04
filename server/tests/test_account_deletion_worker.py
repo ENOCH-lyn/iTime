@@ -184,10 +184,15 @@ def seed_personal_data(
     )
     connection.execute(
         """
-        INSERT INTO calendar_sources (id, owner_id, kind, name)
-        VALUES (%s, %s, 'ics_subscription', '待删除日历')
+        INSERT INTO calendar_sources (
+            id, owner_id, kind, name, deleted_at, purge_after
+        )
+        VALUES (
+            %s, %s, 'ics_subscription', '待删除日历',
+            %s, %s
+        )
         """,
-        (source_id, owner_id),
+        (source_id, owner_id, current, current + timedelta(days=30)),
     )
     connection.execute(
         """

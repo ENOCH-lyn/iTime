@@ -85,7 +85,7 @@ Web：
 - Modify: `server/tests/test_planning_models.py`
 - Modify: `server/tests/test_account_deletion_worker.py`
 
-- [ ] **Step 1: 写模型和迁移失败测试**
+- [x] **Step 1: 写模型和迁移失败测试**
 
 `test_calendar_lifecycle_models.py` 使用 `isolated_database` 升级到 head，分别插入一个系列和一个
 订阅来源，再验证以下约束：
@@ -128,7 +128,7 @@ with pytest.raises(CheckViolation):
 生命周期字段更新时触发；名称修改不额外使规划提案过期。`test_account_deletion_worker.py`
 继续验证 `calendar_series`、`calendar_sources` 由用户根行级联清空。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -138,7 +138,7 @@ uv run pytest -q tests/test_calendar_lifecycle_models.py \
 
 Expected: FAIL，`0034_calendar_lifecycle` 和 ORM 字段尚不存在。
 
-- [ ] **Step 3: 实现 ORM 字段与约束**
+- [x] **Step 3: 实现 ORM 字段与约束**
 
 在两个聚合根加入相同字段：
 
@@ -169,7 +169,7 @@ ix_calendar_sources_owner_lifecycle_updated
 ix_calendar_sources_purge_due
 ```
 
-- [ ] **Step 4: 实现 `0034_calendar_lifecycle`**
+- [x] **Step 4: 实现 `0034_calendar_lifecycle`**
 
 迁移 down revision 为 `0033_ai_fallback_routes`。对两表添加字段、检查约束和索引，并创建只监听
 来源生命周期列的触发器：
@@ -206,7 +206,7 @@ $$;
 
 然后按触发器、索引、约束、字段的逆序删除。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server

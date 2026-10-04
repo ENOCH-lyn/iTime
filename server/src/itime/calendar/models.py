@@ -146,14 +146,37 @@ class CalendarSource(Base):
             name="kind",
         ),
         CheckConstraint("length(btrim(name)) > 0", name="nonempty_name"),
+        CheckConstraint(
+            "(deleted_at IS NULL AND purge_after IS NULL AND purged_at IS NULL) "
+            "OR (deleted_at IS NOT NULL AND purge_after IS NOT NULL "
+            "AND purge_after >= deleted_at "
+            "AND (purged_at IS NULL OR purged_at >= deleted_at))",
+            name="lifecycle_consistency",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_calendar_sources_id_owner"),
         Index("ix_calendar_sources_owner_created", "owner_id", "created_at", "id"),
+        Index(
+            "ix_calendar_sources_owner_lifecycle_updated",
+            "owner_id",
+            "deleted_at",
+            "updated_at",
+            "id",
+        ),
+        Index(
+            "ix_calendar_sources_purge_due",
+            "purge_after",
+            "id",
+            postgresql_where=text("deleted_at IS NOT NULL AND purged_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(24))
     name: Mapped[str] = mapped_column(String(255))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -682,6 +705,13 @@ class CalendarSeries(Base):
             "OR (kind = 'fixed' AND course_week_numbers = '[]'::jsonb)",
             name="course_recurrence",
         ),
+        CheckConstraint(
+            "(deleted_at IS NULL AND purge_after IS NULL AND purged_at IS NULL) "
+            "OR (deleted_at IS NOT NULL AND purge_after IS NOT NULL "
+            "AND purge_after >= deleted_at "
+            "AND (purged_at IS NULL OR purged_at >= deleted_at))",
+            name="lifecycle_consistency",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_calendar_series_id_owner"),
         ForeignKeyConstraint(
             ["term_id", "owner_id"],
@@ -720,6 +750,19 @@ class CalendarSeries(Base):
             "term_id",
             "updated_at",
             "id",
+        ),
+        Index(
+            "ix_calendar_series_owner_lifecycle_updated",
+            "owner_id",
+            "deleted_at",
+            "updated_at",
+            "id",
+        ),
+        Index(
+            "ix_calendar_series_purge_due",
+            "purge_after",
+            "id",
+            postgresql_where=text("deleted_at IS NOT NULL AND purged_at IS NULL"),
         ),
     )
 
@@ -763,6 +806,9 @@ class CalendarSeries(Base):
         server_default=text("'[]'::jsonb"),
     )
     ambiguous_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

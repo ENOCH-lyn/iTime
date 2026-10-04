@@ -36,6 +36,7 @@ REVISION_TRIGGER_TABLES = {
     "calendar_series",
     "calendar_exceptions",
     "calendar_additions",
+    "calendar_sources",
     "calendar_subscription_events",
     "calendar_subscription_exceptions",
     "calendar_subscription_overrides",
@@ -232,7 +233,7 @@ def test_planning_migration_round_trip_and_orm_consistency(admin_url):
             ).fetchone() == ("planning", 1, None)
             assert (
                 connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-                == "0033_ai_fallback_routes"
+                == "0034_calendar_lifecycle"
             )
 
         from itime.ai.models import AIJob
