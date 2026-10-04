@@ -43,7 +43,9 @@ def reset_public_link_context(database_url):
             )
             connection.execute("DELETE FROM ai_jobs")
             connection.execute("DELETE FROM ai_conversations")
-            connection.execute("DELETE FROM users")
+            connection.execute("DELETE FROM ai_quota_ledger_entries")
+            connection.execute("DELETE FROM ai_quota_reservations")
+            connection.execute("DELETE FROM ai_daily_allowances")
             connection.execute(
                 """
                 UPDATE ai_quota_policy_state
