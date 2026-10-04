@@ -88,6 +88,7 @@ def test_performance_compose_fixes_services_processes_and_connection_budget():
         "subscription-worker",
         "public-link-worker",
         "export-worker",
+        "maintenance-runner",
     }
     assert required == set(services)
 
@@ -124,6 +125,12 @@ def test_performance_compose_fixes_services_processes_and_connection_budget():
             services[name]["environment"]["ITIME_PERF_FETCH_DELAY_SECONDS"]
             == "0.25"
         )
+    assert services["maintenance-runner"]["command"] == ["sleep", "infinity"]
+    assert services["maintenance-runner"]["environment"]["ITIME_DB_POOL_SIZE"] == "1"
+    assert (
+        services["maintenance-runner"]["environment"]["ITIME_DB_MAX_OVERFLOW"]
+        == "0"
+    )
 
     application_connections = 2 * (4 + 1) + 2 * 1 + len(serial_workers)
     helper_connections = 4

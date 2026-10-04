@@ -487,3 +487,79 @@ def test_queue_report_uses_combined_workload_and_drain_evidence(tmp_path: Path):
     assert "- Backlog per type: 50" in report
     assert "| subscriptions | yes | 25s | 2/s | - |" in report
     assert not (tmp_path / "requests_stats.csv").exists()
+
+
+def test_maintenance_report_uses_measured_cleanup_window(tmp_path: Path):
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "scenario": "maintenance",
+                "users": 20,
+                "environment": "test",
+                "commit": "abc1234",
+            }
+        )
+    )
+    maintenance_requests = [
+        asdict(RequestStat("read::tasks.list", 300, 120, 300, 600, 0)),
+        asdict(RequestStat("write::tasks.create", 30, 250, 500, 900, 0)),
+    ]
+    maintenance_state = {
+        "tasks_due": 0,
+        "tasks_purged": 100,
+        "calendar_series_due": 0,
+        "calendar_series_purged": 100,
+        "difficulties_due": 0,
+        "difficulties_purged": 100,
+        "memories_due": 0,
+        "memories_purged": 100,
+        "expired_sync_events": 0,
+        "sync_events": 1000,
+    }
+    (tmp_path / "maintenance.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "users": 20,
+                "baseline_seconds": 60,
+                "maintenance_seconds": 60,
+                "maximum_degradation_ratio": 2,
+                "passed": True,
+                "violations": [],
+                "degradation_ratios": {"read": 1.2, "write": 1.1},
+                "initial": maintenance_state,
+                "final": maintenance_state,
+                "cleanup": {
+                    "counts": {
+                        "tasks": 100,
+                        "calendar_series": 100,
+                        "calendar_sources": 0,
+                        "difficulties": 100,
+                        "memories": 100,
+                        "sync_events": 1000,
+                    },
+                    "durations_seconds": {"tasks": 0.5},
+                    "total_seconds": 2.5,
+                },
+                "baseline_requests": maintenance_requests,
+                "maintenance_requests": maintenance_requests,
+                "baseline_resources": asdict(healthy_resources()),
+                "maintenance_resources": asdict(healthy_resources()),
+            }
+        )
+    )
+    (tmp_path / "invariants.json").write_text(
+        json.dumps({"orphan_tasks": 0})
+    )
+
+    result = build_report(tmp_path)
+
+    assert result.passed
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["maintenance"]["cleanup"]["counts"]["sync_events"] == 1000
+    assert summary["maintenance"]["degradation_ratios"]["read"] == 1.2
+    report = (tmp_path / "report.md").read_text()
+    assert "- Cleanup duration: 2.5s" in report
+    assert "| read | 1.2x |" in report
+    assert "- sync_events: 1000" in report
+    assert not (tmp_path / "requests_stats.csv").exists()

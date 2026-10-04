@@ -473,6 +473,70 @@ def _queue_inputs(
     )
 
 
+def _maintenance_inputs(
+    run_dir: Path,
+) -> tuple[tuple[RequestStat, ...], ResourceSummary, int, dict[str, Any]]:
+    payload = read_json(run_dir / "maintenance.json")
+    violations = payload.get("violations")
+    cleanup = payload.get("cleanup")
+    degradation = payload.get("degradation_ratios")
+    initial = payload.get("initial")
+    final = payload.get("final")
+    if (
+        payload.get("schema_version") != 1
+        or not isinstance(violations, list)
+        or not all(isinstance(item, str) for item in violations)
+        or not isinstance(cleanup, Mapping)
+        or not isinstance(degradation, Mapping)
+        or not isinstance(initial, Mapping)
+        or not isinstance(final, Mapping)
+    ):
+        raise ValueError("maintenance.json 格式无效")
+    try:
+        users = int(payload["users"])
+        baseline_seconds = int(payload["baseline_seconds"])
+        maintenance_seconds = int(payload["maintenance_seconds"])
+        maximum_degradation_ratio = float(
+            payload["maximum_degradation_ratio"]
+        )
+        cleanup_counts = {
+            str(key): int(value)
+            for key, value in cleanup["counts"].items()
+        }
+        cleanup_durations = {
+            str(key): float(value)
+            for key, value in cleanup["durations_seconds"].items()
+        }
+        total_seconds = float(cleanup["total_seconds"])
+        degradation_ratios = {
+            str(key): float(value)
+            for key, value in degradation.items()
+        }
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError("maintenance.json 摘要字段无效") from exc
+    metadata = {
+        "baseline_seconds": baseline_seconds,
+        "maintenance_seconds": maintenance_seconds,
+        "maximum_degradation_ratio": maximum_degradation_ratio,
+        "passed": payload.get("passed") is True,
+        "violations": violations,
+        "degradation_ratios": degradation_ratios,
+        "cleanup": {
+            "counts": cleanup_counts,
+            "durations_seconds": cleanup_durations,
+            "total_seconds": total_seconds,
+        },
+        "initial": dict(initial),
+        "final": dict(final),
+    }
+    return (
+        _request_stats(payload.get("maintenance_requests")),
+        _resource_summary(payload.get("maintenance_resources")),
+        users,
+        metadata,
+    )
+
+
 def _markdown_report(
     manifest: Mapping[str, Any],
     requests: tuple[RequestStat, ...],
@@ -481,6 +545,7 @@ def _markdown_report(
     *,
     saturation: Mapping[str, Any] | None = None,
     queues: Mapping[str, Any] | None = None,
+    maintenance: Mapping[str, Any] | None = None,
 ) -> str:
     lines = [
         f"# iTime performance report: {result.scenario}",
@@ -536,6 +601,34 @@ def _markdown_report(
                 f"{oldest_label} |"
             )
         lines.append("")
+    if maintenance is not None:
+        lines.extend(
+            [
+                "## Maintenance",
+                "",
+                "- Cleanup duration: "
+                f"{_number(maintenance['cleanup']['total_seconds'])}s",
+                "- Maximum allowed P95 degradation: "
+                f"{_number(maintenance['maximum_degradation_ratio'])}x",
+                "",
+                "| Category | P95 degradation |",
+                "| --- | ---: |",
+            ]
+        )
+        lines.extend(
+            f"| {category} | {_number(ratio)}x |"
+            for category, ratio in sorted(
+                maintenance["degradation_ratios"].items()
+            )
+        )
+        lines.extend(["", "### Cleaned rows", ""])
+        lines.extend(
+            f"- {name}: {count}"
+            for name, count in sorted(
+                maintenance["cleanup"]["counts"].items()
+            )
+        )
+        lines.append("")
     lines.extend(
         [
             "## Requests",
@@ -589,11 +682,15 @@ def build_report(run_dir: Path) -> GateResult:
     scenario = str(manifest["scenario"])
     saturation: dict[str, Any] | None = None
     queues: dict[str, Any] | None = None
+    maintenance: dict[str, Any] | None = None
     if scenario == "saturation":
         requests, resources, users, saturation = _saturation_inputs(run_dir)
         report_manifest = {**manifest, "users": users}
     elif scenario == "queues":
         requests, resources, users, queues = _queue_inputs(run_dir)
+        report_manifest = {**manifest, "users": users}
+    elif scenario == "maintenance":
+        requests, resources, users, maintenance = _maintenance_inputs(run_dir)
         report_manifest = {**manifest, "users": users}
     else:
         requests = read_locust_csv(run_dir / "requests_stats.csv")
@@ -632,6 +729,8 @@ def build_report(run_dir: Path) -> GateResult:
             )
     if queues is not None:
         failures.extend(queues["violations"])
+    if maintenance is not None:
+        failures.extend(maintenance["violations"])
     result = GateResult(
         scenario=scenario,
         passed=not failures,
@@ -643,6 +742,8 @@ def build_report(run_dir: Path) -> GateResult:
         summary["saturation"] = saturation
     if queues is not None:
         summary["queues"] = queues
+    if maintenance is not None:
+        summary["maintenance"] = maintenance
     artifact = {
         "manifest": manifest,
         "requests": [asdict(item) for item in requests],
@@ -663,6 +764,7 @@ def build_report(run_dir: Path) -> GateResult:
             result,
             saturation=saturation,
             queues=queues,
+            maintenance=maintenance,
         ),
     )
     return result

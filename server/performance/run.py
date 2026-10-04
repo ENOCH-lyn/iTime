@@ -24,11 +24,24 @@ from performance.contracts import (
     SCENARIOS,
     AccountCredential,
     GateResult,
+    RequestStat,
+    ResourceSummary,
     RunConfig,
     Scenario,
     ScenarioConfig,
     SeedManifest,
     SeedProfile,
+)
+from performance.maintenance import (
+    MAINTENANCE_SPAWN_RATE,
+    MAINTENANCE_USERS,
+    MAINTENANCE_WINDOW_SECONDS,
+    CleanupBatchResult,
+    MaintenanceState,
+    build_maintenance_summary,
+    parse_cleanup_batch_result,
+    prepare_maintenance_batch,
+    read_maintenance_state,
 )
 from performance.queues import (
     QUEUE_BACKLOG_SIZE,
@@ -847,6 +860,11 @@ def _stage_start_services(state: RunState) -> None:
         f"http://127.0.0.1:{upstream_port}",
         upstream,
     )
+    services = ["api", "ai-worker", "mail-worker"]
+    if state.scenario == Scenario.MAINTENANCE:
+        services.append("maintenance-runner")
+    else:
+        services.extend(QUEUE_SERVICES.values())
     result = checked(
         state.compose(
             "up",
@@ -854,12 +872,7 @@ def _stage_start_services(state: RunState) -> None:
             "--wait",
             "--scale",
             "ai-worker=2",
-            "api",
-            "ai-worker",
-            "mail-worker",
-            "subscription-worker",
-            "public-link-worker",
-            "export-worker",
+            *services,
         ),
         env=state.env,
         timeout=180,
@@ -1218,6 +1231,163 @@ def _run_queues(state: RunState) -> None:
         _stop_process(load)
 
 
+async def _prepare_maintenance(
+    state: RunState,
+) -> MaintenanceState:
+    settings = _settings(state)
+    database = Database(settings)
+    try:
+        return await prepare_maintenance_batch(database, settings)
+    finally:
+        await database.close()
+
+
+async def _read_maintenance(
+    state: RunState,
+) -> MaintenanceState:
+    database = Database(_settings(state))
+    try:
+        return await read_maintenance_state(database)
+    finally:
+        await database.close()
+
+
+def _run_maintenance_batch(state: RunState) -> CleanupBatchResult:
+    result = _run_logged(
+        state,
+        "maintenance-batch",
+        state.compose(
+            "exec",
+            "-T",
+            "maintenance-runner",
+            "python",
+            "-m",
+            "performance.maintenance",
+        ),
+        env=state.env,
+        timeout=180,
+        cwd=ROOT,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError("维护批次未输出结果")
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("维护批次输出不是有效 JSON") from exc
+    return parse_cleanup_batch_result(payload)
+
+
+def _capture_locust_window(
+    state: RunState,
+    load: ManagedProcess,
+    client: httpx.Client,
+    *,
+    started_at: datetime,
+    ended_at: datetime,
+) -> tuple[tuple[RequestStat, ...], ResourceSummary]:
+    _require_process_alive(load, "维护场景普通 API 负载")
+    response = client.get("/stats/requests")
+    response.raise_for_status()
+    return (
+        locust_request_stats(response.json()),
+        read_resource_samples(
+            state.config.output_dir / "resources.csv",
+            started_at=started_at,
+            ended_at=ended_at,
+        ),
+    )
+
+
+def _run_maintenance(state: RunState) -> None:
+    initial = asyncio.run(_prepare_maintenance(state))
+    locust_port = _available_port()
+    stats_origin = f"http://127.0.0.1:{locust_port}"
+    state.env["ITIME_PERF_WORKLOAD"] = state.scenario
+    load = _start_process(
+        state,
+        "locust-maintenance",
+        _locust_command(
+            state,
+            users=MAINTENANCE_USERS,
+            spawn_rate=MAINTENANCE_SPAWN_RATE,
+            duration_seconds=MAINTENANCE_WINDOW_SECONDS * 2,
+            prefix="requests",
+            user_classes=("StandardUser",),
+            web_port=locust_port,
+            autostart=False,
+        ),
+    )
+    try:
+        _wait_http(stats_origin, load, path="/stats/requests")
+        with httpx.Client(
+            base_url=stats_origin,
+            timeout=10,
+            trust_env=False,
+        ) as client:
+            _set_locust_users(
+                load,
+                client,
+                stats_origin,
+                MAINTENANCE_USERS,
+            )
+
+            _reset_locust_stats(load, client)
+            baseline_started = datetime.now(UTC)
+            time.sleep(MAINTENANCE_WINDOW_SECONDS)
+            baseline_ended = datetime.now(UTC)
+            baseline_requests, baseline_resources = _capture_locust_window(
+                state,
+                load,
+                client,
+                started_at=baseline_started,
+                ended_at=baseline_ended,
+            )
+
+            _reset_locust_stats(load, client)
+            maintenance_started = datetime.now(UTC)
+            monotonic_started = time.monotonic()
+            cleanup = _run_maintenance_batch(state)
+            remaining = (
+                MAINTENANCE_WINDOW_SECONDS
+                - (time.monotonic() - monotonic_started)
+            )
+            if remaining > 0:
+                time.sleep(remaining)
+            maintenance_ended = datetime.now(UTC)
+            maintenance_requests, maintenance_resources = (
+                _capture_locust_window(
+                    state,
+                    load,
+                    client,
+                    started_at=maintenance_started,
+                    ended_at=maintenance_ended,
+                )
+            )
+            response = client.get("/stop")
+            response.raise_for_status()
+
+        final = asyncio.run(_read_maintenance(state))
+        summary = build_maintenance_summary(
+            initial=initial,
+            final=final,
+            cleanup=cleanup,
+            baseline_requests=baseline_requests,
+            maintenance_requests=maintenance_requests,
+            baseline_resources=baseline_resources,
+            maintenance_resources=maintenance_resources,
+        )
+        _write_json_atomic(
+            state.config.output_dir / "maintenance.json",
+            {
+                "schema_version": 1,
+                **asdict(summary),
+            },
+        )
+    finally:
+        _stop_process(load)
+
+
 def _stage_warmup(state: RunState) -> None:
     assert state.scenario_config is not None
     _run_locust(
@@ -1297,6 +1467,8 @@ def _stage_run_locust(state: RunState) -> None:
             _run_saturation(state)
         elif state.scenario == Scenario.QUEUES:
             _run_queues(state)
+        elif state.scenario == Scenario.MAINTENANCE:
+            _run_maintenance(state)
         else:
             _run_locust(
                 state,
@@ -1416,11 +1588,15 @@ def _stage_verify_invariants(state: RunState) -> None:
     if state.manifest is None:
         raise RuntimeError("数据清单尚未创建")
     settings = _settings(state)
-    verification = asyncio.run(
-        verify_dataset(
-            settings,
-            state.manifest,
-            allow_growth=True,
+    verification = (
+        None
+        if state.scenario == Scenario.MAINTENANCE
+        else asyncio.run(
+            verify_dataset(
+                settings,
+                state.manifest,
+                allow_growth=True,
+            )
         )
     )
     database = Database(settings)
@@ -1429,7 +1605,7 @@ def _stage_verify_invariants(state: RunState) -> None:
     finally:
         asyncio.run(database.close())
     _write_json_atomic(state.config.output_dir / "invariants.json", invariants)
-    if not verification.ok:
+    if verification is not None and not verification.ok:
         raise RuntimeError(
             "负载后数据不变量失败：" + "; ".join(verification.violations)
         )

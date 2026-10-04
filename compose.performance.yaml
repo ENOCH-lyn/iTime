@@ -178,5 +178,16 @@ services:
     mem_limit: 320m
     pids_limit: 64
 
+  maintenance-runner:
+    <<: *app
+    command:
+      - sleep
+      - infinity
+    environment:
+      <<: *app-env
+      ITIME_DB_POOL_SIZE: "1"
+    mem_limit: 256m
+    pids_limit: 64
+
 volumes:
   perf_postgres:
