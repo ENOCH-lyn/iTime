@@ -11,6 +11,7 @@ from itime.ai.models import (
     AIJob,
     AIJobConfigRoute,
 )
+from itime.ai.provider import ProviderConfig
 from itime.auth.security import now
 from itime.errors import AppError
 
@@ -32,6 +33,16 @@ class ActiveConfigRoute:
             self.configs[min(index, len(self.configs) - 1)]
             for index in range(max_attempts)
         )
+
+
+def provider_config(config: AIConfigVersion) -> ProviderConfig:
+    return ProviderConfig(
+        endpoint_url=config.endpoint_url,
+        model=config.model,
+        api_key_ciphertext=bytes(config.api_key_ciphertext),
+        timeout_seconds=config.timeout_seconds,
+        max_output_tokens=config.max_output_tokens,
+    )
 
 
 async def read_config_route(
@@ -91,6 +102,8 @@ def _pricing_complete(config: AIConfigVersion) -> bool:
 async def load_active_config_route(
     session: AsyncSession,
     capability: str,
+    *,
+    unavailable_message: str = "此 AI 能力暂未配置，请稍后重试。",
 ) -> ActiveConfigRoute:
     state, primary, fallback_rows = await read_config_route(
         session,
@@ -99,7 +112,7 @@ async def load_active_config_route(
     if primary is None or primary.status != "published":
         raise AppError(
             "ai_capability_unavailable",
-            "此 AI 能力暂未配置，请稍后重试。",
+            unavailable_message,
             status=503,
             retryable=True,
         )

@@ -23,8 +23,12 @@ from itime.ai.job_service import (
     job_result,
     reject_or_retry_job,
 )
-from itime.ai.models import AIConfigCapability, AIConfigVersion, AIJob
+from itime.ai.models import AIConfigVersion, AIJob
 from itime.ai.provider import ProviderConfig
+from itime.ai.routing_service import (
+    load_active_config_route,
+    replace_job_config_route,
+)
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
@@ -32,6 +36,7 @@ from itime.planning.job_service import lock_owner_ai_job_capacity
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
+    maximum_reservation_estimate,
     release_reservation,
     reserve_job_budget,
     settle_success,
@@ -273,19 +278,12 @@ async def _enqueue_review_generation(
             current_time=now(),
         )
     await lock_owner_ai_job_capacity(session, owner_id)
-    state = await session.get(AIConfigCapability, "review")
-    config = (
-        await session.get(AIConfigVersion, state.current_version_id)
-        if state is not None and state.current_version_id is not None
-        else None
+    route = await load_active_config_route(
+        session,
+        "review",
+        unavailable_message="AI 复盘暂未配置，请稍后重试；已有记录仍可查看。",
     )
-    if config is None or config.status != "published":
-        raise AppError(
-            "ai_capability_unavailable",
-            "AI 复盘暂未配置，请稍后重试；已有记录仍可查看。",
-            status=503,
-            retryable=True,
-        )
+    config = route.primary
     current = now()
     snapshot = await build_review_snapshot(
         session,
@@ -308,11 +306,20 @@ async def _enqueue_review_generation(
         "facts_sha256": snapshot.facts_sha256,
         "request_schema_version": REVIEW_REQUEST_SCHEMA_VERSION,
     }
-    estimate = estimate_reservation_budget(
-        config,
-        request_body=request_body,
-        input_summary=input_summary,
-        capability="review",
+    estimate = maximum_reservation_estimate(
+        [
+            estimate_reservation_budget(
+                route_config,
+                request_body=review_request_body(
+                    review_provider_config(route_config),
+                    messages,
+                    purpose,
+                ),
+                input_summary=input_summary,
+                capability="review",
+            )
+            for route_config in route.configs
+        ]
     )
     daily = await get_or_create_daily_allowance(
         session,
@@ -344,6 +351,7 @@ async def _enqueue_review_generation(
     )
     session.add(job)
     await session.flush()
+    await replace_job_config_route(session, job, route)
     append_planning_job_event(
         session,
         job,
@@ -412,7 +420,7 @@ async def load_review_work(
                 ReviewInputSnapshot.review_session_id == claim.review_session_id,
             )
         )
-        config = await session.get(AIConfigVersion, job.config_version_id)
+        config = await session.get(AIConfigVersion, claim.config_version_id)
         if snapshot is None:
             raise ReviewWorkUnavailable(
                 "ai_job_input_invalid",

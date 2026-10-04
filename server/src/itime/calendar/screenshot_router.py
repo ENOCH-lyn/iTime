@@ -8,8 +8,12 @@ from sqlalchemy import func, select
 
 from itime.ai.image_validation import MAX_IMAGE_BYTES, validate_image
 from itime.ai.job_service import job_result
-from itime.ai.models import AIConfigCapability, AIConfigVersion, AIJob, TemporaryMedia
-from itime.ai.provider import ProviderConfig
+from itime.ai.models import AIJob, TemporaryMedia
+from itime.ai.routing_service import (
+    load_active_config_route,
+    provider_config,
+    replace_job_config_route,
+)
 from itime.ai.screenshot_provider import screenshot_log_request_body
 from itime.auth.security import now
 from itime.auth.session import authorized, check_ai_access
@@ -20,6 +24,7 @@ from itime.errors import AppError
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
+    maximum_reservation_estimate,
     reserve_job_budget,
 )
 from itime.tasks.service import replay_operation, save_operation
@@ -138,22 +143,14 @@ async def upload_calendar_screenshot(
                 status=429,
                 retryable=True,
             )
-        state = await identity.session.get(
-            AIConfigCapability,
+        route = await load_active_config_route(
+            identity.session,
             "calendar_screenshot",
+            unavailable_message=(
+                "截图识别暂未配置，请稍后重试或使用 Excel、ICS 文件导入。"
+            ),
         )
-        config = (
-            await identity.session.get(AIConfigVersion, state.current_version_id)
-            if state is not None and state.current_version_id is not None
-            else None
-        )
-        if config is None or config.status != "published":
-            raise AppError(
-                "ai_capability_unavailable",
-                "截图识别暂未配置，请稍后重试或使用 Excel、ICS 文件导入。",
-                status=503,
-                retryable=True,
-            )
+        config = route.primary
 
         current = now()
         daily = await get_or_create_daily_allowance(
@@ -166,20 +163,6 @@ async def upload_calendar_screenshot(
             identity.user.id,
             daily.time_zone,
         )
-        provider = ProviderConfig(
-            endpoint_url=config.endpoint_url,
-            model=config.model,
-            api_key_ciphertext=bytes(config.api_key_ciphertext),
-            timeout_seconds=config.timeout_seconds,
-            max_output_tokens=config.max_output_tokens,
-        )
-        request_body = screenshot_log_request_body(
-            provider,
-            content_type=image.content_type,
-            byte_size=image.byte_size,
-            content_sha256=image.sha256,
-            context=context,
-        )
         input_summary = {
             "filename": filename,
             "content_type": image.content_type,
@@ -189,11 +172,22 @@ async def upload_calendar_screenshot(
             "content_sha256": image.sha256,
             "recognition_context": context,
         }
-        estimate = estimate_reservation_budget(
-            config,
-            request_body=request_body,
-            input_summary=input_summary,
-            capability="calendar_screenshot",
+        estimate = maximum_reservation_estimate(
+            [
+                estimate_reservation_budget(
+                    route_config,
+                    request_body=screenshot_log_request_body(
+                        provider_config(route_config),
+                        content_type=image.content_type,
+                        byte_size=image.byte_size,
+                        content_sha256=image.sha256,
+                        context=context,
+                    ),
+                    input_summary=input_summary,
+                    capability="calendar_screenshot",
+                )
+                for route_config in route.configs
+            ]
         )
         media = TemporaryMedia(
             id=uuid4(),
@@ -224,6 +218,7 @@ async def upload_calendar_screenshot(
         )
         identity.session.add(job)
         await identity.session.flush()
+        await replace_job_config_route(identity.session, job, route)
         await reserve_job_budget(
             identity.session,
             owner_id=identity.user.id,

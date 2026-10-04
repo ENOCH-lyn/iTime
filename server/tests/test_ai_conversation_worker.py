@@ -9,8 +9,9 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import psycopg
@@ -394,8 +395,10 @@ def enqueue_conversation_job(
     endpoint: str,
     *,
     prompt: str,
+    publish_config: bool = True,
 ) -> dict:
-    publish_conversation_config(database_url, endpoint)
+    if publish_config:
+        publish_conversation_config(database_url, endpoint)
     create_account(client, database_url)
     created = client.post(
         "/api/v1/ai/conversations",
@@ -413,6 +416,71 @@ def enqueue_conversation_job(
     )
     assert submitted.status_code == 202, submitted.text
     return submitted.json()
+
+
+def configure_conversation_fallback(
+    database_url: str,
+    endpoint: str,
+) -> tuple[str, str]:
+    primary_id = publish_conversation_config(database_url, endpoint)
+    settings = Settings(database_url=database_url, environment="test")
+    cipher = Fernet(
+        (settings.ai_encryption_key or settings.encryption_key).get_secret_value()
+    )
+    backup_id = uuid4()
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        version = connection.execute(
+            """
+            UPDATE ai_config_capabilities
+            SET next_version=next_version + 1,
+                routing_version=routing_version + 1,
+                updated_at=now()
+            WHERE capability='conversation'
+            RETURNING next_version - 1
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO ai_config_versions (
+                id, capability, version, endpoint_url, model,
+                api_key_ciphertext, timeout_seconds, max_output_tokens,
+                price_currency, input_price_nanos_per_million_tokens,
+                cached_input_price_nanos_per_million_tokens,
+                output_price_nanos_per_million_tokens,
+                status, last_test_id, last_test_started_at,
+                last_test_completed_at
+            ) VALUES (
+                %s, 'conversation', %s, %s, 'backup-chat-model', %s,
+                10, 4096, 'CNY', 2000000000, 1000000000, 4000000000,
+                'tested', %s, now(), now()
+            )
+            """,
+            (
+                backup_id,
+                version,
+                endpoint,
+                cipher.encrypt(b"sk-conversation-backup"),
+                uuid4(),
+            ),
+        )
+        connection.execute(
+            """
+            DELETE FROM ai_config_fallbacks
+            WHERE capability='conversation'
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO ai_config_fallbacks (
+                capability, position, config_version_id
+            ) VALUES ('conversation', 1, %s)
+            """,
+            (backup_id,),
+        )
+    return primary_id, str(backup_id)
 
 
 async def process_once(
@@ -613,6 +681,7 @@ def assert_success(
     expected_generation: int,
     expected_attempts: int,
     expected_usage_source: str = "provider",
+    expected_total_cost_nanos: int = 135_000,
 ) -> None:
     job = snapshot["job"]
     generation = snapshot["generation"]
@@ -645,7 +714,7 @@ def assert_success(
         assert costs[-1]["cached_input_tokens"] == 10
         assert costs[-1]["output_tokens"] == 20
         assert costs[-1]["total_tokens"] == 120
-        assert costs[-1]["total_cost_nanos"] == 135_000
+        assert costs[-1]["total_cost_nanos"] == expected_total_cost_nanos
     else:
         assert costs[-1]["input_tokens"] > 0
         assert costs[-1]["output_tokens"] > 0
@@ -806,6 +875,128 @@ def test_rate_limit_retry_resets_content_with_new_generation(
     ]
     assert resets[0]["sequence"] < generation_two_deltas[0]["sequence"]
     assert len(state.request_snapshot()) == 2
+
+
+def test_retryable_failure_switches_to_frozen_backup_config(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("rate_then_success")
+    primary_id, backup_id = configure_conversation_fallback(
+        conversation_worker_database_url,
+        endpoint,
+    )
+    submitted = enqueue_conversation_job(
+        conversation_worker_client,
+        conversation_worker_database_url,
+        endpoint,
+        prompt="主服务限流后切换备用",
+        publish_config=False,
+    )
+    job_id = submitted["job"]["id"]
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        assert connection.execute(
+            """
+            SELECT attempt_number, config_version_id
+            FROM ai_job_config_routes
+            WHERE job_id=%s
+            ORDER BY attempt_number
+            """,
+            (job_id,),
+        ).fetchall() == [
+            (1, UUID(primary_id)),
+            (2, UUID(backup_id)),
+            (3, UUID(backup_id)),
+        ]
+
+    assert run_process_once(conversation_worker_database_url)
+    first = job_snapshot(conversation_worker_database_url, job_id)
+    assert first["job"]["status"] == "queued"
+    assert first["reservation"]["reserved_nanos"] > 16_384_000
+    original_deadline = datetime.fromisoformat(
+        submitted["job"]["deadline_at"].replace("Z", "+00:00")
+    )
+    make_job_due(conversation_worker_database_url, job_id)
+    assert run_process_once(conversation_worker_database_url)
+    completed = job_snapshot(conversation_worker_database_url, job_id)
+    assert_success(
+        completed,
+        expected_content="前半段，后半段",
+        expected_generation=2,
+        expected_attempts=2,
+        expected_total_cost_nanos=270_000,
+    )
+    requests = state.request_snapshot()
+    assert [request["body"]["model"] for request in requests] == [
+        "chat-model",
+        "backup-chat-model",
+    ]
+    assert [request["authorization"] for request in requests] == [
+        "Bearer sk-conversation-secret",
+        "Bearer sk-conversation-backup",
+    ]
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        actual_configs = connection.execute(
+            """
+            SELECT cost.attempt_number, route.config_version_id,
+                   cost.attempt_status,
+                   cost.output_price_nanos_per_million_tokens
+            FROM ai_provider_costs AS cost
+            JOIN ai_job_config_routes AS route
+              ON route.job_id=cost.job_id
+             AND route.attempt_number=cost.attempt_number
+            WHERE cost.job_id=%s
+            ORDER BY cost.attempt_number
+            """,
+            (job_id,),
+        ).fetchall()
+        final_deadline = connection.execute(
+            "SELECT deadline_at FROM ai_jobs WHERE id=%s",
+            (job_id,),
+        ).fetchone()[0]
+    assert final_deadline == original_deadline
+    assert actual_configs == [
+        (1, UUID(primary_id), "retryable_failed", 2_000_000_000),
+        (2, UUID(backup_id), "succeeded", 4_000_000_000),
+    ]
+
+
+def test_non_retryable_failure_does_not_call_backup_config(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("authentication")
+    configure_conversation_fallback(
+        conversation_worker_database_url,
+        endpoint,
+    )
+    submitted = enqueue_conversation_job(
+        conversation_worker_client,
+        conversation_worker_database_url,
+        endpoint,
+        prompt="鉴权失败不切换",
+        publish_config=False,
+    )
+    assert run_process_once(conversation_worker_database_url)
+    snapshot = job_snapshot(
+        conversation_worker_database_url,
+        submitted["job"]["id"],
+    )
+    assert snapshot["job"]["status"] == "failed"
+    assert snapshot["job"]["attempt_count"] == 1
+    assert snapshot["reservation"]["status"] == "released"
+    requests = state.request_snapshot()
+    assert len(requests) == 1
+    assert requests[0]["body"]["model"] == "chat-model"
+    assert requests[0]["authorization"] == "Bearer sk-conversation-secret"
 
 
 def test_success_over_reservation_is_absorbed_by_platform(

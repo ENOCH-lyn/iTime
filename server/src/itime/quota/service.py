@@ -158,6 +158,21 @@ def estimate_reservation_budget(
     )
 
 
+def maximum_reservation_estimate(
+    estimates: list[BudgetEstimate],
+) -> BudgetEstimate:
+    if not estimates:
+        raise ValueError("at least one quota estimate is required")
+    currencies = {estimate.currency for estimate in estimates}
+    if len(currencies) != 1:
+        raise AppError(
+            "ai_quota_pricing_unavailable",
+            "AI 主备配置价格币种不一致，暂时不能接收新请求。",
+            status=503,
+        )
+    return max(estimates, key=lambda estimate: estimate.reserved_nanos)
+
+
 async def _current_policy(session: AsyncSession) -> AIQuotaPolicyVersion:
     state = await session.scalar(
         select(AIQuotaPolicyState)

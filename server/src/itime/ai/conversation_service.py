@@ -28,9 +28,14 @@ from itime.ai.job_service import (
     finish_running_attempt,
     job_result,
 )
-from itime.ai.models import AIConfigCapability, AIConfigVersion, AIJob
+from itime.ai.models import AIConfigVersion, AIJob
 from itime.ai.provider import ProviderConfig
 from itime.ai.relevance import relevance_score
+from itime.ai.routing_service import (
+    load_active_config_route,
+    provider_config,
+    replace_job_config_route,
+)
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
@@ -48,6 +53,7 @@ from itime.public_links.service import select_relevant_public_sources
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
+    maximum_reservation_estimate,
     release_reservation,
     reserve_job_budget,
     settle_success,
@@ -339,23 +345,16 @@ async def enqueue_message(
                 status=409,
             )
 
-    state = await session.get(AIConfigCapability, capability)
-    config = (
-        await session.get(AIConfigVersion, state.current_version_id)
-        if state is not None and state.current_version_id is not None
-        else None
+    route = await load_active_config_route(
+        session,
+        capability,
+        unavailable_message=(
+            "AI 规划暂未配置，请稍后重试；任务和日历仍可手动使用。"
+            if capability == "planning"
+            else "全局 AI 对话暂未配置，请稍后重试；任务和日历仍可手动使用。"
+        ),
     )
-    if config is None or config.status != "published":
-        raise AppError(
-            "ai_capability_unavailable",
-            (
-                "AI 规划暂未配置，请稍后重试；任务和日历仍可手动使用。"
-                if capability == "planning"
-                else "全局 AI 对话暂未配置，请稍后重试；任务和日历仍可手动使用。"
-            ),
-            status=503,
-            retryable=True,
-        )
+    config = route.primary
 
     context_message_ids = await select_relevant_context(
         session,
@@ -408,13 +407,7 @@ async def enqueue_message(
             "related_context_count": len(context_message_ids),
         }
     else:
-        provider = ProviderConfig(
-            endpoint_url=config.endpoint_url,
-            model=config.model,
-            api_key_ciphertext=bytes(config.api_key_ciphertext),
-            timeout_seconds=config.timeout_seconds,
-            max_output_tokens=config.max_output_tokens,
-        )
+        provider = provider_config(config)
         request_body = conversation_request_body(provider, messages)
         input_summary = {
             "resource_type": "conversation_message",
@@ -429,11 +422,31 @@ async def enqueue_message(
         }
         for source in public_sources
     ]
-    estimate = estimate_reservation_budget(
-        config,
-        request_body=request_body,
-        input_summary=input_summary if planning_snapshot is not None else {},
-        capability=capability,
+    route_estimates = []
+    for route_config in route.configs:
+        if planning_snapshot is not None:
+            route_request_body = planning_request_body(
+                planning_provider_config(route_config),
+                provider_messages,
+            )
+        else:
+            route_request_body = conversation_request_body(
+                provider_config(route_config),
+                messages,
+            )
+        validate_request_body(route_request_body)
+        route_estimates.append(
+            estimate_reservation_budget(
+                route_config,
+                request_body=route_request_body,
+                input_summary=(
+                    input_summary if planning_snapshot is not None else {}
+                ),
+                capability=capability,
+            )
+        )
+    estimate = maximum_reservation_estimate(
+        route_estimates
     )
     daily = await get_or_create_daily_allowance(
         session,
@@ -493,6 +506,7 @@ async def enqueue_message(
     )
     session.add(job)
     await session.flush()
+    await replace_job_config_route(session, job, route)
     session.add(
         ChatGeneration(
             job_id=job.id,
@@ -719,7 +733,7 @@ async def load_conversation_work(
             )
             .with_for_update()
         )
-        config = await session.get(AIConfigVersion, job.config_version_id)
+        config = await session.get(AIConfigVersion, claim.config_version_id)
         if generation is None:
             raise ConversationWorkUnavailable(
                 "ai_job_input_invalid",

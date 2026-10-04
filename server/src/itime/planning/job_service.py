@@ -29,8 +29,12 @@ from itime.ai.job_service import (
     job_result,
     reject_or_retry_job,
 )
-from itime.ai.models import AIConfigCapability, AIConfigVersion, AIJob
+from itime.ai.models import AIConfigVersion, AIJob
 from itime.ai.provider import ProviderConfig
+from itime.ai.routing_service import (
+    load_active_config_route,
+    replace_job_config_route,
+)
 from itime.auth.security import now
 from itime.database import Database
 from itime.errors import AppError
@@ -49,6 +53,7 @@ from itime.planning.validation import NormalizedPlan, normalize_plan_payload
 from itime.quota.service import (
     estimate_reservation_budget,
     get_or_create_daily_allowance,
+    maximum_reservation_estimate,
     release_reservation,
     reserve_job_budget,
     settle_success,
@@ -112,19 +117,14 @@ async def enqueue_planning_generation(
             status=409,
         )
 
-    state = await session.get(AIConfigCapability, "planning")
-    config = (
-        await session.get(AIConfigVersion, state.current_version_id)
-        if state is not None and state.current_version_id is not None
-        else None
+    route = await load_active_config_route(
+        session,
+        "planning",
+        unavailable_message=(
+            "AI 规划暂未配置，请稍后重试；任务和日历仍可手动使用。"
+        ),
     )
-    if config is None or config.status != "published":
-        raise AppError(
-            "ai_capability_unavailable",
-            "AI 规划暂未配置，请稍后重试；任务和日历仍可手动使用。",
-            status=503,
-            retryable=True,
-        )
+    config = route.primary
 
     provider = planning_provider_config(config)
     snapshot_payload = planning_snapshot_payload(snapshot)
@@ -145,11 +145,19 @@ async def enqueue_planning_generation(
         "request_schema_version": PLANNING_REQUEST_SCHEMA_VERSION,
         "memory_references": memory_references(memory_items),
     }
-    estimate = estimate_reservation_budget(
-        config,
-        request_body=request_body,
-        input_summary=input_summary,
-        capability="planning",
+    estimate = maximum_reservation_estimate(
+        [
+            estimate_reservation_budget(
+                route_config,
+                request_body=planning_request_body(
+                    planning_provider_config(route_config),
+                    messages,
+                ),
+                input_summary=input_summary,
+                capability="planning",
+            )
+            for route_config in route.configs
+        ]
     )
     current = now()
     daily = await get_or_create_daily_allowance(
@@ -179,6 +187,7 @@ async def enqueue_planning_generation(
     )
     session.add(job)
     await session.flush()
+    await replace_job_config_route(session, job, route)
     append_planning_event(
         session,
         job,
@@ -241,7 +250,7 @@ async def load_planning_work(
                 "作业已被取消或由其他执行进程接管。",
                 "worker",
             )
-        config = await session.get(AIConfigVersion, job.config_version_id)
+        config = await session.get(AIConfigVersion, claim.config_version_id)
         snapshot = await session.scalar(
             select(PlanningInputSnapshot).where(
                 PlanningInputSnapshot.id == claim.planning_snapshot_id,
