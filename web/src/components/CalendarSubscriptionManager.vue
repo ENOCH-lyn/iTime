@@ -1014,7 +1014,18 @@ async function pollSubscriptions(revision = pollRevision) {
       && previousSelectedGeneration !== undefined
       && !!selectedSubscription
       && selectedSubscription.generation > previousSelectedGeneration
-    if (selectedFinished || selectedGenerationAdvanced) {
+    const selectedDetailMissingEvents = selectionUnchanged
+      && !!selectedId
+      && !!selectedSubscription
+      && detail.value?.subscription.id === selectedId
+      && !['queued', 'running'].includes(selectedSubscription.refresh_status)
+      && detail.value.events.length
+        < Math.min(selectedSubscription.event_count ?? 0, 25)
+    if (
+      selectedFinished
+      || selectedGenerationAdvanced
+      || selectedDetailMissingEvents
+    ) {
       await openSubscription(
         selectedId,
         selectedEvent.value?.id ?? null,

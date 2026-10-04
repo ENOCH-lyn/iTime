@@ -289,7 +289,7 @@ test('学期课程、固定安排和任务截止在统一日历中展示并标�
   await page.locator('.calendar-view-switch').getByText('月', { exact: true }).click()
   await expect(await eventButton(page, date, '提交课程报告')).toBeVisible()
   await page.getByLabel('跳转日期').fill('')
-  await page.getByLabel('跳转日期').blur()
+  await page.locator('.calendar-title h1').click()
   await expect(page.getByLabel('跳转日期')).toHaveValue(date)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
