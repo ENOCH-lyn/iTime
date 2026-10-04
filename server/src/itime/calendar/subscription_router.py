@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.security import now
 from itime.auth.session import authorized
@@ -11,14 +13,26 @@ from itime.calendar.models import (
     CalendarSource,
     CalendarSubscription,
     CalendarSubscriptionEvent,
+    CalendarSubscriptionException,
     CalendarSubscriptionOverride,
     CalendarSubscriptionRefresh,
     UserTimeSettings,
 )
+from itime.calendar.series_service import query_occurrences
+from itime.calendar.subscription_exception_service import (
+    locked_subscription_exception,
+    subscription_exception_result,
+    subscription_exception_version_conflict,
+    validate_subscription_exception,
+)
 from itime.calendar.subscription_fetcher import subscription_url_metadata
+from itime.calendar.subscription_projection import get_subscription_occurrence
 from itime.calendar.subscription_schemas import (
     SubscriptionAction,
     SubscriptionCreate,
+    SubscriptionExceptionCreate,
+    SubscriptionExceptionDelete,
+    SubscriptionExceptionUpdate,
     SubscriptionOverrideUpdate,
     SubscriptionRefresh,
     SubscriptionUpdate,
@@ -42,6 +56,92 @@ from itime.tasks.service import (
 )
 
 router = APIRouter(prefix="/api/v1/calendar/subscriptions", tags=["日历订阅"])
+
+
+async def _exception_write_result(
+    session: AsyncSession,
+    owner_id: UUID,
+    source: CalendarSource,
+    *,
+    master_event_id: UUID,
+    source_occurrence_key: str,
+    exception: CalendarSubscriptionException | None,
+    operation_id: UUID,
+) -> dict:
+    occurrence = await get_subscription_occurrence(
+        session,
+        owner_id,
+        source_id=source.id,
+        master_event_id=master_event_id,
+        source_occurrence_key=source_occurrence_key,
+    )
+    start_at = occurrence["start_at"]
+    end_at = occurrence["end_at"]
+    conflict_items: list[dict] = []
+    has_more = False
+    if start_at is not None and end_at is not None:
+        user_time_zone = await session.scalar(
+            select(UserTimeSettings.time_zone).where(
+                UserTimeSettings.owner_id == owner_id
+            )
+        )
+        zone = ZoneInfo(user_time_zone or occurrence["time_zone"])
+        range_start = start_at.astimezone(zone).date() - timedelta(days=1)
+        range_end = end_at.astimezone(zone).date() + timedelta(days=2)
+        cursor = range_start
+        seen: set[tuple] = set()
+        while cursor < range_end:
+            chunk_end = min(cursor + timedelta(days=93), range_end)
+            items, _time_zone = await query_occurrences(
+                session,
+                owner_id,
+                cursor,
+                chunk_end,
+            )
+            target = next(
+                (
+                    item
+                    for item in items
+                    if item.get("subscription_master_event_id")
+                    == master_event_id
+                    and item.get("source_occurrence_key")
+                    == source_occurrence_key
+                ),
+                None,
+            )
+            if target is not None:
+                occurrence = target
+                for conflict in target["conflict_with"]:
+                    key = (
+                        conflict["series_id"],
+                        conflict.get("subscription_event_id"),
+                        conflict["occurrence_key"],
+                        conflict["occurrence_type"],
+                        conflict["overlap_start"],
+                        conflict["overlap_end"],
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if len(conflict_items) < 100:
+                        conflict_items.append(conflict)
+                    else:
+                        has_more = True
+            cursor = chunk_end
+    return {
+        "operation_id": operation_id,
+        "source_version": source.version,
+        "exception": (
+            subscription_exception_result(exception)
+            if exception is not None
+            else None
+        ),
+        "occurrence": occurrence,
+        "conflicts": {
+            "items": conflict_items,
+            "has_more": has_more,
+        },
+    }
 
 
 @router.post("", status_code=201)
@@ -531,6 +631,306 @@ async def update_subscription_override(
             "operation_id": data.operation_id,
             "event": event_result(event, override),
         }
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.post("/{source_id}/exceptions", status_code=201)
+async def create_subscription_exception(
+    source_id: UUID,
+    data: SubscriptionExceptionCreate,
+    request: Request,
+) -> dict:
+    scope = f"calendar_subscription_exceptions.create:{source_id}"
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        source, subscription = await locked_subscription(
+            identity.session,
+            identity.user.id,
+            source_id,
+            for_update=True,
+        )
+        if source.version != data.expected_source_version:
+            raise subscription_version_conflict(source)
+        master = await identity.session.scalar(
+            select(CalendarSubscriptionEvent)
+            .where(
+                CalendarSubscriptionEvent.id == data.master_event_id,
+                CalendarSubscriptionEvent.source_id == source_id,
+                CalendarSubscriptionEvent.owner_id == identity.user.id,
+                CalendarSubscriptionEvent.recurrence_id == "",
+            )
+            .with_for_update()
+        )
+        if master is None:
+            raise AppError(
+                "calendar_subscription_occurrence_not_found",
+                "未找到此订阅安排实例。",
+                status=404,
+            )
+        occurrence = await get_subscription_occurrence(
+            identity.session,
+            identity.user.id,
+            source_id=source_id,
+            master_event_id=master.id,
+            source_occurrence_key=data.source_occurrence_key,
+            include_local_exception=False,
+        )
+        existing = await identity.session.scalar(
+            select(CalendarSubscriptionException).where(
+                CalendarSubscriptionException.master_event_id == master.id,
+                CalendarSubscriptionException.source_occurrence_key
+                == data.source_occurrence_key,
+            )
+        )
+        if existing is not None:
+            raise AppError(
+                "calendar_subscription_exception_exists",
+                "该次订阅安排已有本地修改，请编辑或重置现有例外。",
+                status=409,
+                details={
+                    "exception_id": str(existing.id),
+                    "current_version": existing.version,
+                },
+            )
+        values = validate_subscription_exception(
+            data,
+            occurrence,
+            subscription.default_time_zone,
+        )
+        exception = CalendarSubscriptionException(
+            owner_id=identity.user.id,
+            master_event_id=master.id,
+            source_occurrence_key=data.source_occurrence_key,
+            original_start_at=occurrence["start_at"],
+            original_end_at=occurrence["end_at"],
+            original_all_day=occurrence["all_day"],
+            **values,
+        )
+        identity.session.add(exception)
+        current = now()
+        source.version += 1
+        source.updated_at = current
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_source",
+            source.id,
+            "updated",
+            source.version,
+        )
+        await identity.session.flush()
+        result = await _exception_write_result(
+            identity.session,
+            identity.user.id,
+            source,
+            master_event_id=master.id,
+            source_occurrence_key=data.source_occurrence_key,
+            exception=exception,
+            operation_id=data.operation_id,
+        )
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.put("/{source_id}/exceptions/{exception_id}")
+async def update_subscription_exception(
+    source_id: UUID,
+    exception_id: UUID,
+    data: SubscriptionExceptionUpdate,
+    request: Request,
+) -> dict:
+    scope = (
+        f"calendar_subscription_exceptions.update:{source_id}:{exception_id}"
+    )
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        source, subscription = await locked_subscription(
+            identity.session,
+            identity.user.id,
+            source_id,
+            for_update=True,
+        )
+        if source.version != data.expected_source_version:
+            raise subscription_version_conflict(source)
+        exception = await locked_subscription_exception(
+            identity.session,
+            identity.user.id,
+            exception_id,
+        )
+        master = await identity.session.scalar(
+            select(CalendarSubscriptionEvent).where(
+                CalendarSubscriptionEvent.id == exception.master_event_id,
+                CalendarSubscriptionEvent.source_id == source_id,
+                CalendarSubscriptionEvent.owner_id == identity.user.id,
+                CalendarSubscriptionEvent.recurrence_id == "",
+            )
+        )
+        if master is None:
+            raise AppError(
+                "calendar_subscription_exception_not_found",
+                "未找到此订阅单次例外。",
+                status=404,
+            )
+        if exception.version != data.expected_version:
+            raise subscription_exception_version_conflict(exception)
+        occurrence = await get_subscription_occurrence(
+            identity.session,
+            identity.user.id,
+            source_id=source_id,
+            master_event_id=master.id,
+            source_occurrence_key=exception.source_occurrence_key,
+            include_local_exception=False,
+        )
+        values = validate_subscription_exception(
+            data,
+            occurrence,
+            subscription.default_time_zone,
+        )
+        changed = any(
+            getattr(exception, field) != value
+            for field, value in values.items()
+        )
+        if changed:
+            for field, value in values.items():
+                setattr(exception, field, value)
+            current = now()
+            exception.version += 1
+            exception.updated_at = current
+            source.version += 1
+            source.updated_at = current
+            emit_change(
+                identity.session,
+                identity.user.id,
+                "calendar_source",
+                source.id,
+                "updated",
+                source.version,
+            )
+        await identity.session.flush()
+        result = await _exception_write_result(
+            identity.session,
+            identity.user.id,
+            source,
+            master_event_id=master.id,
+            source_occurrence_key=exception.source_occurrence_key,
+            exception=exception,
+            operation_id=data.operation_id,
+        )
+        save_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+            result,
+        )
+        return result
+
+
+@router.delete("/{source_id}/exceptions/{exception_id}")
+async def delete_subscription_exception(
+    source_id: UUID,
+    exception_id: UUID,
+    data: SubscriptionExceptionDelete,
+    request: Request,
+) -> dict:
+    scope = (
+        f"calendar_subscription_exceptions.delete:{source_id}:{exception_id}"
+    )
+    async with authorized(request, write=True) as identity:
+        replay = await replay_operation(
+            identity.session,
+            identity.user.id,
+            data.operation_id,
+            scope,
+            data,
+        )
+        if replay is not None:
+            return replay
+        source, _subscription = await locked_subscription(
+            identity.session,
+            identity.user.id,
+            source_id,
+            for_update=True,
+        )
+        if source.version != data.expected_source_version:
+            raise subscription_version_conflict(source)
+        exception = await locked_subscription_exception(
+            identity.session,
+            identity.user.id,
+            exception_id,
+        )
+        master = await identity.session.scalar(
+            select(CalendarSubscriptionEvent).where(
+                CalendarSubscriptionEvent.id == exception.master_event_id,
+                CalendarSubscriptionEvent.source_id == source_id,
+                CalendarSubscriptionEvent.owner_id == identity.user.id,
+                CalendarSubscriptionEvent.recurrence_id == "",
+            )
+        )
+        if master is None:
+            raise AppError(
+                "calendar_subscription_exception_not_found",
+                "未找到此订阅单次例外。",
+                status=404,
+            )
+        if exception.version != data.expected_version:
+            raise subscription_exception_version_conflict(exception)
+        source_occurrence_key = exception.source_occurrence_key
+        master_event_id = exception.master_event_id
+        await identity.session.delete(exception)
+        current = now()
+        source.version += 1
+        source.updated_at = current
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "calendar_source",
+            source.id,
+            "updated",
+            source.version,
+        )
+        await identity.session.flush()
+        result = await _exception_write_result(
+            identity.session,
+            identity.user.id,
+            source,
+            master_event_id=master_event_id,
+            source_occurrence_key=source_occurrence_key,
+            exception=None,
+            operation_id=data.operation_id,
+        )
         save_operation(
             identity.session,
             identity.user.id,
