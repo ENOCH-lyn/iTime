@@ -111,6 +111,27 @@ async function screenshot(
   })
 }
 
+function wavBuffer(durationMs = 500) {
+  const sampleRate = 16_000
+  const samples = Math.floor(sampleRate * durationMs / 1000)
+  const dataBytes = samples * 2
+  const buffer = Buffer.alloc(44 + dataBytes)
+  buffer.write('RIFF', 0, 'ascii')
+  buffer.writeUInt32LE(36 + dataBytes, 4)
+  buffer.write('WAVE', 8, 'ascii')
+  buffer.write('fmt ', 12, 'ascii')
+  buffer.writeUInt32LE(16, 16)
+  buffer.writeUInt16LE(1, 20)
+  buffer.writeUInt16LE(1, 22)
+  buffer.writeUInt32LE(sampleRate, 24)
+  buffer.writeUInt32LE(sampleRate * 2, 28)
+  buffer.writeUInt16LE(2, 32)
+  buffer.writeUInt16LE(16, 34)
+  buffer.write('data', 36, 'ascii')
+  buffer.writeUInt32LE(dataBytes, 40)
+  return buffer
+}
+
 test.beforeEach(async ({ page }) => {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -268,4 +289,84 @@ test('管理员显式读取 AI 正文、提交质检并回查审计', async ({
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, 'quality-320-large-dark')
   }
+})
+
+test('管理员可按语音转写筛选音频成本与治理内容', async ({
+  page,
+  request,
+}, info) => {
+  const address = await account(page, request)
+  const auth = await (await page.request.get('/api/v1/auth/me')).json()
+  const uploaded = await page.request.post(
+    '/api/v1/voice-transcriptions?purpose=task_title&filename=voice.wav',
+    {
+      headers: {
+        'Content-Type': 'audio/wav',
+        'X-CSRF-Token': auth.csrf_token,
+        'X-Operation-ID': randomUUID(),
+      },
+      data: wavBuffer(),
+    },
+  )
+  expect(uploaded.status()).toBe(202)
+  const accepted = await uploaded.json()
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `/api/v1/voice-transcriptions/${accepted.transcription.id}`,
+    )
+    return (await response.json()).job.status
+  }, { timeout: 15_000 }).toBe('succeeded')
+
+  const data = await bootstrap(info)
+  await loginAdmin(
+    page,
+    data.active['governance-transcription']!,
+    data.password,
+  )
+  await page.goto('/admin/costs')
+  await page.getByLabel('用户邮箱', { exact: true }).fill(address)
+  await page.getByLabel('能力', { exact: true }).selectOption('transcription')
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  const costRow = page.getByRole('list', { name: 'AI 供应商成本' })
+    .getByRole('listitem').filter({ hasText: address })
+  await expect(costRow).toContainText('语音转写')
+  await expect(costRow).toContainText('平台实测')
+  await expect(costRow).toContainText('音频 500 毫秒')
+  await expect(costRow).toContainText('单价 0.006 / 分钟')
+  await expect(costRow.locator('.cost-amount')).toHaveText('CNY 0.00005')
+
+  await page.goto('/admin/logs')
+  await page.getByLabel('用户邮箱', { exact: true }).fill(address)
+  await page.getByLabel('能力', { exact: true }).selectOption('transcription')
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  const logRow = page.getByRole('list', { name: 'AI 技术正文日志' })
+    .getByRole('listitem').filter({ hasText: address })
+  await expect(logRow).toContainText('语音转写')
+  await logRow.getByRole('button', { name: '查看正文', exact: true }).click()
+  const logDialog = page.getByRole('dialog', { name: 'AI 技术正文' })
+  await logDialog.getByRole(
+    'button',
+    { name: '审计并读取正文', exact: true },
+  ).click()
+  await expect(logDialog).toContainText('omitted_by_retention_policy')
+  await expect(logDialog).toContainText('周五前完成论文提纲')
+  await expect(logDialog).not.toContainText('RIFF')
+  await logDialog.locator('.dialog-actions')
+    .getByRole('button', { name: '关闭' }).click()
+
+  await page.goto('/admin/quality')
+  await page.getByLabel('用户邮箱', { exact: true }).fill(address)
+  await page.getByLabel('能力', { exact: true }).selectOption('transcription')
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  const sampleRow = page.getByRole('list', { name: 'AI 质量样本' })
+    .getByRole('listitem').filter({ hasText: address })
+  await expect(sampleRow).toContainText('语音转写')
+  await expect(sampleRow).toContainText('待质检')
+
+  expect(await page.locator('vite-error-overlay').count()).toBe(0)
+  expect(await page.evaluate(
+    () => document.documentElement.scrollWidth <= innerWidth,
+  )).toBe(true)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await screenshot(page, info, 'transcription-governance')
 })

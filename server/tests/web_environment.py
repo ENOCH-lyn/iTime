@@ -212,7 +212,24 @@ class FakeAIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
-        body = json.loads(self.rfile.read(length))
+        raw_body = self.rfile.read(length)
+        if self.path.endswith("/audio/transcriptions"):
+            body = json.dumps(
+                {
+                    "text": "周五前完成论文提纲",
+                    "language": "zh",
+                    "duration": 1.0,
+                },
+                ensure_ascii=False,
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("x-request-id", "playwright-fake-transcription")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        body = json.loads(raw_body)
         prompt = json.dumps(body.get("messages", []), ensure_ascii=False)
         if body.get("stream") is True:
             tool_name = (
@@ -832,6 +849,7 @@ async def seed_admins(
                 "management-errors",
                 "ai-config",
                 "governance",
+                "governance-transcription",
                 "quota",
             ):
                 email = f"ui-admin-{project}-{role}@example.com"
@@ -876,6 +894,7 @@ async def seed_admins(
                 ("conversation", "chat-test-model"),
                 ("planning", "planning-test-model"),
                 ("review", "review-test-model"),
+                ("transcription", "transcription-test-model"),
             ):
                 current = now()
                 state = await session.get(
@@ -892,11 +911,35 @@ async def seed_admins(
                         b"playwright-ai-key"
                     ),
                     timeout_seconds=10,
-                    max_output_tokens=4096,
+                    max_output_tokens=(
+                        None if capability == "transcription" else 4096
+                    ),
+                    pricing_basis=(
+                        "audio_minute"
+                        if capability == "transcription"
+                        else "token"
+                    ),
                     price_currency="CNY",
-                    input_price_nanos_per_million_tokens=1_000_000_000,
-                    cached_input_price_nanos_per_million_tokens=500_000_000,
-                    output_price_nanos_per_million_tokens=2_000_000_000,
+                    input_price_nanos_per_million_tokens=(
+                        None
+                        if capability == "transcription"
+                        else 1_000_000_000
+                    ),
+                    cached_input_price_nanos_per_million_tokens=(
+                        None
+                        if capability == "transcription"
+                        else 500_000_000
+                    ),
+                    output_price_nanos_per_million_tokens=(
+                        None
+                        if capability == "transcription"
+                        else 2_000_000_000
+                    ),
+                    audio_price_nanos_per_minute=(
+                        6_000_000
+                        if capability == "transcription"
+                        else None
+                    ),
                     status="published",
                     last_test_id=uuid4(),
                     last_test_started_at=current,

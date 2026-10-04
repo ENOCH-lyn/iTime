@@ -45,8 +45,10 @@ const currency = ref('')
 const inputPrice = ref('')
 const cachedInputPrice = ref('')
 const outputPrice = ref('')
+const audioPrice = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 const capability = ref<AIConfigCapability>('calendar_screenshot')
+const isTranscription = computed(() => capability.value === 'transcription')
 
 const capabilityCopy: Record<AIConfigCapability, {
   label: string
@@ -72,6 +74,11 @@ const capabilityCopy: Record<AIConfigCapability, {
     label: '每日复盘',
     heading: '每日复盘配置',
     testDescription: '合成工具',
+  },
+  transcription: {
+    label: '语音转写',
+    heading: '语音转写配置',
+    testDescription: '合成音频',
   },
 }
 
@@ -181,21 +188,29 @@ function validate() {
   if (!Number.isInteger(timeoutValue) || timeoutValue < 1 || timeoutValue > 300) {
     errors.timeout = '请输入 1—300 秒。'
   }
-  const tokenValue = Number(maxTokens.value)
-  if (!Number.isInteger(tokenValue) || tokenValue < 1 || tokenValue > 32768) {
-    errors.maxTokens = '请输入 1—32768。'
+  if (!isTranscription.value) {
+    const tokenValue = Number(maxTokens.value)
+    if (!Number.isInteger(tokenValue) || tokenValue < 1 || tokenValue > 32768) {
+      errors.maxTokens = '请输入 1—32768。'
+    }
   }
   if (!/^[A-Za-z]{3}$/.test(currency.value.trim())) {
     errors.currency = '请输入三个字母的币种代码，例如 CNY。'
   }
-  if (!validPrice(inputPrice.value)) {
-    errors.inputPrice = '请输入 0—1000000，最多 9 位小数。'
-  }
-  if (cachedInputPrice.value.trim() && !validPrice(cachedInputPrice.value)) {
-    errors.cachedInputPrice = '请输入 0—1000000，最多 9 位小数。'
-  }
-  if (!validPrice(outputPrice.value)) {
-    errors.outputPrice = '请输入 0—1000000，最多 9 位小数。'
+  if (isTranscription.value) {
+    if (!validPrice(audioPrice.value)) {
+      errors.audioPrice = '请输入 0—1000000，最多 9 位小数。'
+    }
+  } else {
+    if (!validPrice(inputPrice.value)) {
+      errors.inputPrice = '请输入 0—1000000，最多 9 位小数。'
+    }
+    if (cachedInputPrice.value.trim() && !validPrice(cachedInputPrice.value)) {
+      errors.cachedInputPrice = '请输入 0—1000000，最多 9 位小数。'
+    }
+    if (!validPrice(outputPrice.value)) {
+      errors.outputPrice = '请输入 0—1000000，最多 9 位小数。'
+    }
   }
   fieldErrors.value = errors
   return Object.keys(errors).length === 0
@@ -215,6 +230,7 @@ async function createConfig() {
         'inputPrice',
         'cachedInputPrice',
         'outputPrice',
+        'audioPrice',
       ]
         .find(key => fieldErrors.value[key])
       if (first) document.getElementById(`ai-${first}`)?.focus()
@@ -230,14 +246,23 @@ async function createConfig() {
       model: model.value.trim(),
       api_key: apiKey.value,
       timeout_seconds: Number(timeout.value),
-      max_output_tokens: Number(maxTokens.value),
-      pricing: {
-        currency: currency.value.trim().toUpperCase(),
-        input_per_million_tokens: inputPrice.value.trim(),
-        cached_input_per_million_tokens:
-          cachedInputPrice.value.trim() || undefined,
-        output_per_million_tokens: outputPrice.value.trim(),
-      },
+      max_output_tokens: isTranscription.value
+        ? null
+        : Number(maxTokens.value),
+      pricing: isTranscription.value
+        ? {
+            basis: 'audio_minute',
+            currency: currency.value.trim().toUpperCase(),
+            audio_per_minute: audioPrice.value.trim(),
+          }
+        : {
+            basis: 'token',
+            currency: currency.value.trim().toUpperCase(),
+            input_per_million_tokens: inputPrice.value.trim(),
+            cached_input_per_million_tokens:
+              cachedInputPrice.value.trim() || inputPrice.value.trim(),
+            output_per_million_tokens: outputPrice.value.trim(),
+          },
     })
     apiKey.value = ''
     configs.value = [created, ...configs.value]
@@ -387,28 +412,40 @@ watch(firstFallbackId, value => {
           <FormField id="ai-timeout" v-model="timeout" label="单次超时（秒）"
             type="number" inputmode="numeric" :min="1" :max="300" :step="1"
             :error="fieldErrors.timeout" :disabled="!!pendingAction" @blur="validate" />
-          <FormField id="ai-maxTokens" v-model="maxTokens" label="最大输出 Token"
+          <FormField v-if="!isTranscription" id="ai-maxTokens"
+            v-model="maxTokens" label="最大输出 Token"
             type="number" inputmode="numeric" :min="1" :max="32768" :step="1"
             :error="fieldErrors.maxTokens" :disabled="!!pendingAction" @blur="validate" />
         </div>
         <fieldset class="ai-pricing-fields">
           <legend>供应商价格</legend>
-          <p>金额按每百万 Token 填写，并随此配置版本冻结。</p>
+          <p>
+            {{ isTranscription
+              ? '金额按每分钟音频填写，并随此配置版本冻结。'
+              : '金额按每百万 Token 填写，并随此配置版本冻结。' }}
+          </p>
           <div class="ai-config-number-grid">
             <FormField id="ai-currency" v-model="currency" label="币种代码"
               autocomplete="off" :maxlength="3" :error="fieldErrors.currency"
               :disabled="!!pendingAction" hint="三个字母，例如 CNY 或 USD。"
               @blur="validate" />
-            <FormField id="ai-inputPrice" v-model="inputPrice"
+            <FormField v-if="isTranscription" id="ai-audioPrice"
+              v-model="audioPrice" label="音频价格（每分钟）"
+              inputmode="decimal" :maxlength="32"
+              :error="fieldErrors.audioPrice" :disabled="!!pendingAction"
+              @blur="validate" />
+            <FormField v-if="!isTranscription" id="ai-inputPrice" v-model="inputPrice"
               label="输入价格（每百万 Token）" inputmode="decimal"
               :maxlength="32" :error="fieldErrors.inputPrice"
               :disabled="!!pendingAction" @blur="validate" />
-            <FormField id="ai-cachedInputPrice" v-model="cachedInputPrice"
+            <FormField v-if="!isTranscription" id="ai-cachedInputPrice"
+              v-model="cachedInputPrice"
               label="缓存输入价格（每百万 Token）" inputmode="decimal"
               :maxlength="32" :error="fieldErrors.cachedInputPrice"
               :disabled="!!pendingAction" hint="留空时与普通输入价格相同。"
               @blur="validate" />
-            <FormField id="ai-outputPrice" v-model="outputPrice"
+            <FormField v-if="!isTranscription" id="ai-outputPrice"
+              v-model="outputPrice"
               label="输出价格（每百万 Token）" inputmode="decimal"
               :maxlength="32" :error="fieldErrors.outputPrice"
               :disabled="!!pendingAction" @blur="validate" />
@@ -508,15 +545,23 @@ watch(firstFallbackId, value => {
               </span>
             </div>
             <p class="wrap-anywhere">{{ config.endpoint_url }}</p>
-            <p>
+            <p v-if="config.max_output_tokens !== null">
               Key 已加密设置 · 超时 {{ config.timeout_seconds }} 秒 ·
               最多 {{ config.max_output_tokens }} Token
             </p>
+            <p v-else>
+              Key 已加密设置 · 超时 {{ config.timeout_seconds }} 秒 · 按音频时长计价
+            </p>
             <p v-if="config.pricing">
               {{ config.pricing.currency }}
-              输入 {{ config.pricing.input_per_million_tokens }} ·
-              缓存输入 {{ config.pricing.cached_input_per_million_tokens }} ·
-              输出 {{ config.pricing.output_per_million_tokens }} / 百万 Token
+              <template v-if="config.pricing.basis === 'audio_minute'">
+                音频 {{ config.pricing.audio_per_minute }} / 分钟
+              </template>
+              <template v-else>
+                输入 {{ config.pricing.input_per_million_tokens }} ·
+                缓存输入 {{ config.pricing.cached_input_per_million_tokens }} ·
+                输出 {{ config.pricing.output_per_million_tokens }} / 百万 Token
+              </template>
             </p>
             <p v-else class="warning-text">
               此历史版本未配置价格，调用只能记录用量，不能计算金额。

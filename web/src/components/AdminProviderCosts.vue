@@ -30,6 +30,7 @@ const capabilityLabels: Record<AIConfigCapability, string> = {
   conversation: '全局对话',
   planning: '日周规划',
   review: '每日复盘',
+  transcription: '语音转写',
 }
 const statusLabels: Record<ProviderCostStatus, string> = {
   succeeded: '成功',
@@ -42,9 +43,17 @@ const statusLabels: Record<ProviderCostStatus, string> = {
 const usageLabels: Record<ProviderUsageSource, string> = {
   provider: '供应商上报',
   estimated: '平台估算',
+  measured: '平台实测',
   not_sent: '未发出请求',
 }
 const number = new Intl.NumberFormat('zh-CN')
+
+function durationLabel(durationMs: number) {
+  if (durationMs < 1000) return `${number.format(durationMs)} 毫秒`
+  return `${new Intl.NumberFormat('zh-CN', {
+    maximumFractionDigits: 3,
+  }).format(durationMs / 1000)} 秒`
+}
 
 async function handleError(reason: unknown) {
   const current = failure(reason)
@@ -112,6 +121,9 @@ onMounted(() => void load())
           <option value="all">全部</option>
           <option value="conversation">全局对话</option>
           <option value="calendar_screenshot">截图识别</option>
+          <option value="planning">日周规划</option>
+          <option value="review">每日复盘</option>
+          <option value="transcription">语音转写</option>
         </select>
       </div>
       <div class="field">
@@ -162,11 +174,19 @@ onMounted(() => void load())
               {{ item.pricing.currency }} {{ item.amounts.total }}
             </strong>
             <strong v-else class="cost-unpriced">未配置价格</strong>
-            · 输入 {{ number.format(item.usage.input_tokens) }}
-            <template v-if="item.usage.cached_input_tokens">
-              （缓存 {{ number.format(item.usage.cached_input_tokens) }}）
+            <template v-if="item.billing_basis === 'audio_minute'">
+              · 音频 {{ durationLabel(item.usage.audio_duration_ms) }}
+              <template v-if="item.pricing">
+                · 单价 {{ item.pricing.audio_per_minute }} / 分钟
+              </template>
             </template>
-            · 输出 {{ number.format(item.usage.output_tokens) }} Token
+            <template v-else>
+              · 输入 {{ number.format(item.usage.input_tokens) }}
+              <template v-if="item.usage.cached_input_tokens">
+                （缓存 {{ number.format(item.usage.cached_input_tokens) }}）
+              </template>
+              · 输出 {{ number.format(item.usage.output_tokens) }} Token
+            </template>
           </p>
           <p>
             {{ item.config.model }} · 配置版本 {{ item.config.version }}

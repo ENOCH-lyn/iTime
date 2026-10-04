@@ -6,13 +6,21 @@ export type AIConfigCapability =
   | 'conversation'
   | 'planning'
   | 'review'
+  | 'transcription'
 
-export interface AIConfigPricing {
-  currency: string
-  input_per_million_tokens: string
-  cached_input_per_million_tokens: string
-  output_per_million_tokens: string
-}
+export type AIConfigPricing =
+  | {
+      basis: 'token'
+      currency: string
+      input_per_million_tokens: string
+      cached_input_per_million_tokens: string
+      output_per_million_tokens: string
+    }
+  | {
+      basis: 'audio_minute'
+      currency: string
+      audio_per_minute: string
+    }
 
 export interface AIConfigVersion {
   id: string
@@ -21,7 +29,7 @@ export interface AIConfigVersion {
   endpoint_url: string
   model: string
   timeout_seconds: number
-  max_output_tokens: number
+  max_output_tokens: number | null
   pricing: AIConfigPricing | null
   pricing_configured: boolean
   key_configured: true
@@ -62,13 +70,8 @@ export async function createAIConfig(capability: AIConfigCapability, input: {
   model: string
   api_key: string
   timeout_seconds: number
-  max_output_tokens: number
-  pricing: {
-    currency: string
-    input_per_million_tokens: string
-    cached_input_per_million_tokens?: string
-    output_per_million_tokens: string
-  }
+  max_output_tokens: number | null
+  pricing: AIConfigPricing
 }) {
   return api<AIConfigVersion>('/admin/ai-configs', {
     capability,

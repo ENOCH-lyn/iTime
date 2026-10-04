@@ -34,6 +34,7 @@ const capabilityLabels: Record<AIConfigCapability, string> = {
   conversation: '全局对话',
   planning: '日周规划',
   review: '每日复盘',
+  transcription: '语音转写',
 }
 const statusLabels: Record<BodyLogStatus, string> = {
   running: '执行中',
@@ -141,6 +142,9 @@ onMounted(() => void load())
           <option value="all">全部</option>
           <option value="conversation">全局对话</option>
           <option value="calendar_screenshot">截图识别</option>
+          <option value="planning">日周规划</option>
+          <option value="review">每日复盘</option>
+          <option value="transcription">语音转写</option>
         </select>
       </div>
       <div class="field">

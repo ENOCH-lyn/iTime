@@ -357,7 +357,7 @@ test('管理列表可从网络失败和版本冲突恢复并适配窄屏', async
   await screenshot(page, info, 'registration-320')
 })
 
-test('分别创建、测试和发布截图与对话配置', async ({
+test('分别创建、测试和发布截图、转写与对话配置', async ({
   page,
   browser,
   request,
@@ -401,6 +401,36 @@ test('分别创建、测试和发布截图与对话配置', async ({
   await expect(page.getByRole('status')).toContainText('已回滚到版本')
   await expect(page.locator('.ai-config-list').getByText('当前发布', { exact: true })).toHaveCount(1)
   await expect(row.getByText('历史版本', { exact: true })).toBeVisible()
+
+  await page.locator('.ai-capability-switch label').filter({
+    hasText: '语音转写',
+  }).click()
+  await expect(page.getByRole('heading', { name: '语音转写配置' })).toBeVisible()
+  await expect(page.getByLabel('最大输出 Token', { exact: true })).toHaveCount(0)
+  await expect(
+    page.getByLabel('输入价格（每百万 Token）', { exact: true }),
+  ).toHaveCount(0)
+  const transcriptionModel = (
+    `transcription-ui-${info.project.name}-${randomUUID().slice(0, 8)}`
+  )
+  await page.getByLabel('OpenAI 兼容端点', { exact: true }).fill(data.ai_endpoint)
+  await page.getByLabel('模型', { exact: true }).fill(transcriptionModel)
+  await page.getByLabel('API Key', { exact: true })
+    .fill(`sk-transcription-ui-${randomUUID()}`)
+  await page.getByLabel('单次超时（秒）', { exact: true }).fill('10')
+  await page.getByLabel('币种代码', { exact: true }).fill('cny')
+  await page.getByLabel('音频价格（每分钟）', { exact: true }).fill('0.006')
+  await page.getByRole('button', { name: '保存新版本', exact: true }).click()
+  const transcriptionRow = page.locator('.ai-config-list li').filter({
+    hasText: transcriptionModel,
+  })
+  await expect(transcriptionRow.getByText('草稿', { exact: true })).toBeVisible()
+  await expect(transcriptionRow).toContainText('CNY 音频 0.006 / 分钟')
+  await expect(transcriptionRow).not.toContainText('百万 Token')
+  await transcriptionRow.getByRole('button', { name: '测试', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已通过合成音频测试')
+  await transcriptionRow.getByRole('button', { name: '发布', exact: true }).click()
+  await expect(transcriptionRow.getByText('当前发布', { exact: true })).toBeVisible()
 
   expect(await page.locator('vite-error-overlay').count()).toBe(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -576,5 +606,16 @@ test('分别创建、测试和发布截图与对话配置', async ({
       .toBe(true)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, 'chat-fallback-route-320-large-dark')
+    await page.locator('.ai-capability-switch label').filter({
+      hasText: '语音转写',
+    }).click()
+    await expect(page.getByRole('heading', { name: '语音转写配置' })).toBeVisible()
+    await expect(page.getByLabel('音频价格（每分钟）')).toBeVisible()
+    await expect(page.getByLabel('最大输出 Token')).toHaveCount(0)
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    )).toBe(true)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await screenshot(page, info, 'transcription-config-320-large-dark')
   }
 })

@@ -10,9 +10,43 @@ export type ProviderCostStatus =
   | 'timed_out'
   | 'cancelled'
   | 'abandoned'
-export type ProviderUsageSource = 'provider' | 'estimated' | 'not_sent'
+export type ProviderUsageSource = 'provider' | 'estimated' | 'measured' | 'not_sent'
+export type ProviderCostUsage =
+  | {
+      input_tokens: number
+      cached_input_tokens: number
+      output_tokens: number
+      total_tokens: number
+      details: Record<string, unknown>
+    }
+  | {
+      audio_duration_ms: number
+      details: Record<string, unknown>
+    }
+export type ProviderCostPricing =
+  | {
+      currency: string
+      input_per_million_tokens: string
+      cached_input_per_million_tokens: string
+      output_per_million_tokens: string
+    }
+  | {
+      currency: string
+      audio_per_minute: string
+    }
+export type ProviderCostAmounts =
+  | {
+      input: string
+      cached_input: string
+      output: string
+      total: string
+    }
+  | {
+      audio: string
+      total: string
+    }
 
-export interface ProviderCost {
+interface ProviderCostBase {
   id: string
   job_id: string
   owner: GovernanceOwner
@@ -32,27 +66,26 @@ export interface ProviderCost {
   usage_source: ProviderUsageSource
   estimation_reason: string | null
   estimator_version: string | null
-  usage: {
-    input_tokens: number
-    cached_input_tokens: number
-    output_tokens: number
-    total_tokens: number
-    details: Record<string, unknown>
-  }
-  pricing: {
-    currency: string
-    input_per_million_tokens: string
-    cached_input_per_million_tokens: string
-    output_per_million_tokens: string
-  } | null
-  amounts: {
-    input: string
-    cached_input: string
-    output: string
-    total: string
-  } | null
   created_at: string
 }
+
+export type ProviderCost = ProviderCostBase & (
+  | {
+      billing_basis: 'token'
+      usage: Extract<ProviderCostUsage, { input_tokens: number }>
+      pricing: Extract<
+        ProviderCostPricing,
+        { input_per_million_tokens: string }
+      > | null
+      amounts: Extract<ProviderCostAmounts, { input: string }> | null
+    }
+  | {
+      billing_basis: 'audio_minute'
+      usage: Extract<ProviderCostUsage, { audio_duration_ms: number }>
+      pricing: Extract<ProviderCostPricing, { audio_per_minute: string }> | null
+      amounts: Extract<ProviderCostAmounts, { audio: string }> | null
+    }
+)
 
 export function listProviderCosts(query: URLSearchParams) {
   return api<Page<ProviderCost>>(`/admin/provider-costs?${query}`)
