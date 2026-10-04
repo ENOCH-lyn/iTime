@@ -136,6 +136,15 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
             owner_id = seed_user(connection, "owner")
             other_id = seed_user(connection, "other")
             config_id = seed_transcription_config(connection)
+            with pytest.raises(CheckViolation):
+                connection.execute(
+                    """
+                    UPDATE ai_config_versions
+                    SET audio_price_nanos_per_minute=7000000
+                    WHERE id=%s
+                    """,
+                    (config_id,),
+                )
             media_id = seed_voice_media(connection, owner_id)
             job_id = seed_voice_job(connection, owner_id, config_id, media_id)
             transcription_id = uuid4()

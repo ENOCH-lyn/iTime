@@ -4,6 +4,7 @@ import ipaddress
 import json
 import socket
 from dataclasses import dataclass
+from importlib import resources
 from urllib.parse import urlsplit
 
 import httpx
@@ -32,7 +33,7 @@ class ProviderConfig:
     model: str
     api_key_ciphertext: bytes
     timeout_seconds: int
-    max_output_tokens: int
+    max_output_tokens: int | None
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,21 @@ def _valid_chat_response(body: bytes, capability: str) -> bool:
     return recognized == {"marker": "09:00"}
 
 
+def _valid_transcription_response(body: bytes) -> bool:
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    text = payload.get("text")
+    return (
+        isinstance(text, str)
+        and 1 <= len(text.strip()) <= 4000
+        and "\x00" not in text
+    )
+
+
 async def _network_test(
     config: ProviderConfig,
     settings: Settings,
@@ -182,7 +198,31 @@ async def _network_test(
             status=422,
         )
 
-    if capability == "conversation":
+    if capability != "transcription" and config.max_output_tokens is None:
+        return _failure(
+            "ai_config_test_invalid",
+            "当前能力缺少最大输出 Token 配置。",
+            "configuration",
+            status=422,
+        )
+
+    if capability == "transcription":
+        request_body = None
+        request_data = {
+            "model": config.model,
+            "response_format": "json",
+        }
+        request_files = {
+            "file": (
+                "itime-voice-check.wav",
+                resources.files("itime.ai")
+                .joinpath("assets/transcription_probe.wav")
+                .read_bytes(),
+                "audio/wav",
+            )
+        }
+        endpoint = config.endpoint_url + "/audio/transcriptions"
+    elif capability == "conversation":
         request_body = {
             "model": config.model,
             "messages": [
@@ -198,6 +238,9 @@ async def _network_test(
             "max_tokens": min(config.max_output_tokens, 32),
             "temperature": 0,
         }
+        request_data = None
+        request_files = None
+        endpoint = config.endpoint_url + "/chat/completions"
     elif capability in {"planning", "review"}:
         test_tool = (
             PLANNING_TEST_TOOL
@@ -244,6 +287,9 @@ async def _network_test(
             "max_tokens": min(config.max_output_tokens, 64),
             "temperature": 0,
         }
+        request_data = None
+        request_files = None
+        endpoint = config.endpoint_url + "/chat/completions"
     else:
         request_body = {
             "model": config.model,
@@ -276,6 +322,9 @@ async def _network_test(
             "response_format": {"type": "json_object"},
             "max_tokens": config.max_output_tokens,
         }
+        request_data = None
+        request_files = None
+        endpoint = config.endpoint_url + "/chat/completions"
     timeout = httpx.Timeout(float(config.timeout_seconds))
     try:
         async with httpx.AsyncClient(
@@ -285,12 +334,13 @@ async def _network_test(
         ) as client:
             async with client.stream(
                 "POST",
-                config.endpoint_url + "/chat/completions",
+                endpoint,
                 headers={
                     "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
                 },
                 json=request_body,
+                data=request_data,
+                files=request_files,
             ) as response:
                 if response.status_code in {401, 403}:
                     return _failure(
@@ -351,7 +401,12 @@ async def _network_test(
             retryable=True,
         )
 
-    if not _valid_chat_response(b"".join(chunks), capability):
+    valid_response = (
+        _valid_transcription_response(b"".join(chunks))
+        if capability == "transcription"
+        else _valid_chat_response(b"".join(chunks), capability)
+    )
+    if not valid_response:
         return _failure(
             "ai_config_test_invalid_response",
             "response",

@@ -228,3 +228,55 @@ def test_quota_policy_currency_is_stable_after_first_version(
     )
     assert changed.status_code == 409
     assert changed.json()["error"]["code"] == "ai_quota_currency_locked"
+
+
+def test_published_transcription_price_participates_in_policy_validation(
+    client,
+    database_url,
+):
+    setup_admin(client, database_url)
+    seed_published_ai_configs(database_url)
+    settings = Settings(database_url=database_url, environment="test")
+    cipher = Fernet(
+        (settings.ai_encryption_key or settings.encryption_key).get_secret_value()
+    )
+    config_id = uuid4()
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            """
+            INSERT INTO ai_config_versions (
+                id, capability, version, endpoint_url, model,
+                api_key_ciphertext, timeout_seconds, max_output_tokens,
+                pricing_basis, price_currency, audio_price_nanos_per_minute,
+                status, last_test_id, last_test_started_at,
+                last_test_completed_at, published_at
+            ) VALUES (
+                %s, 'transcription', 1, 'https://ai.example.com/v1',
+                'transcribe-model', %s, 60, NULL, 'audio_minute',
+                'USD', 6000000, 'published', %s, now(), now(), now()
+            )
+            """,
+            (config_id, cipher.encrypt(b"quota-key"), uuid4()),
+        )
+        connection.execute(
+            """
+            UPDATE ai_config_capabilities
+            SET current_version_id=%s, next_version=2, updated_at=now()
+            WHERE capability='transcription'
+            """,
+            (config_id,),
+        )
+
+    policy = create_policy(client)
+    response = client.post(
+        f"{POLICIES}/{policy.json()['id']}/publish",
+        json={"operation_id": str(uuid4())},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ai_quota_pricing_unavailable"
+    assert response.json()["error"]["details"]["capabilities"] == [
+        "transcription"
+    ]

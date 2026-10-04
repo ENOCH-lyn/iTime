@@ -2,11 +2,16 @@ from decimal import Decimal, InvalidOperation
 
 NANOS_PER_CURRENCY_UNIT = 1_000_000_000
 TOKENS_PER_PRICE_UNIT = 1_000_000
+MILLISECONDS_PER_MINUTE = 60_000
 MAX_PRICE_NANOS_PER_MILLION = 1_000_000_000_000_000
 MAX_STORED_NANOS = 9_000_000_000_000_000_000
 
 
 def parse_price_per_million(value: str) -> int:
+    return parse_currency_amount(value)
+
+
+def parse_price_per_minute(value: str) -> int:
     return parse_currency_amount(value)
 
 
@@ -30,6 +35,10 @@ def format_price_per_million(nanos: int) -> str:
     return format_currency_nanos(nanos)
 
 
+def format_price_per_minute(nanos: int) -> str:
+    return format_currency_nanos(nanos)
+
+
 def format_currency_nanos(nanos: int) -> str:
     amount = Decimal(nanos) / NANOS_PER_CURRENCY_UNIT
     return format(amount, "f").rstrip("0").rstrip(".") or "0"
@@ -40,6 +49,23 @@ def rounded_token_cost(tokens: int, price_nanos_per_million: int) -> int:
         raise ValueError("Token 数和价格必须位于支持范围内")
     numerator = tokens * price_nanos_per_million
     return (numerator + TOKENS_PER_PRICE_UNIT - 1) // TOKENS_PER_PRICE_UNIT
+
+
+def audio_duration_cost(
+    duration_ms: int,
+    price_nanos_per_minute: int,
+) -> int:
+    if duration_ms < 1:
+        raise ValueError("音频时长必须为正数")
+    if not 0 <= price_nanos_per_minute <= MAX_PRICE_NANOS_PER_MILLION:
+        raise ValueError("价格必须位于支持范围内")
+    numerator = duration_ms * price_nanos_per_minute
+    result = (
+        numerator + MILLISECONDS_PER_MINUTE - 1
+    ) // MILLISECONDS_PER_MINUTE
+    if result > MAX_STORED_NANOS:
+        raise ValueError("成本超过可存储范围")
+    return result
 
 
 def token_cost_breakdown(

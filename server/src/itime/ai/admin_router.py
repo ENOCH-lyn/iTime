@@ -12,7 +12,12 @@ from itime.ai.models import (
     AIConfigFallback,
     AIConfigVersion,
 )
-from itime.ai.pricing import format_price_per_million, parse_price_per_million
+from itime.ai.pricing import (
+    format_price_per_million,
+    format_price_per_minute,
+    parse_price_per_million,
+    parse_price_per_minute,
+)
 from itime.ai.provider import (
     EndpointPolicyError,
     ProviderConfig,
@@ -42,27 +47,47 @@ router = APIRouter(prefix="/api/v1/admin/ai-configs", tags=["后台 AI 配置"])
 
 
 def config_result(config: AIConfigVersion) -> dict:
-    prices = (
+    token_prices = (
         config.input_price_nanos_per_million_tokens,
         config.cached_input_price_nanos_per_million_tokens,
         config.output_price_nanos_per_million_tokens,
     )
-    pricing_configured = config.price_currency is not None and all(
-        price is not None for price in prices
+    pricing_configured = (
+        config.price_currency is not None
+        and (
+            (
+                config.pricing_basis == "token"
+                and all(price is not None for price in token_prices)
+            )
+            or (
+                config.pricing_basis == "audio_minute"
+                and config.audio_price_nanos_per_minute is not None
+            )
+        )
     )
     pricing = None
-    if pricing_configured:
-        input_price, cached_input_price, output_price = prices
+    if pricing_configured and config.pricing_basis == "token":
+        input_price, cached_input_price, output_price = token_prices
         assert input_price is not None
         assert cached_input_price is not None
         assert output_price is not None
         pricing = {
+            "basis": "token",
             "currency": config.price_currency,
             "input_per_million_tokens": format_price_per_million(input_price),
             "cached_input_per_million_tokens": format_price_per_million(
                 cached_input_price
             ),
             "output_per_million_tokens": format_price_per_million(output_price),
+        }
+    elif pricing_configured:
+        assert config.audio_price_nanos_per_minute is not None
+        pricing = {
+            "basis": "audio_minute",
+            "currency": config.price_currency,
+            "audio_per_minute": format_price_per_minute(
+                config.audio_price_nanos_per_minute
+            ),
         }
     return {
         "id": config.id,
@@ -254,12 +279,26 @@ async def create_config(data: AIConfigCreateInput, request: Request) -> dict:
     ciphertext = request.app.state.security.ai_cipher.encrypt(
         data.api_key.get_secret_value().encode()
     )
-    input_price = parse_price_per_million(data.pricing.input_per_million_tokens)
-    cached_input_price = parse_price_per_million(
-        data.pricing.cached_input_per_million_tokens
-        or data.pricing.input_per_million_tokens
-    )
-    output_price = parse_price_per_million(data.pricing.output_per_million_tokens)
+    if data.pricing.basis == "token":
+        assert data.pricing.input_per_million_tokens is not None
+        assert data.pricing.output_per_million_tokens is not None
+        input_price = parse_price_per_million(
+            data.pricing.input_per_million_tokens
+        )
+        cached_input_price = parse_price_per_million(
+            data.pricing.cached_input_per_million_tokens
+            or data.pricing.input_per_million_tokens
+        )
+        output_price = parse_price_per_million(
+            data.pricing.output_per_million_tokens
+        )
+        audio_price = None
+    else:
+        assert data.pricing.audio_per_minute is not None
+        input_price = None
+        cached_input_price = None
+        output_price = None
+        audio_price = parse_price_per_minute(data.pricing.audio_per_minute)
     async with authorized_admin(request, write=True) as identity:
         state = await locked_capability(identity.session, data.capability)
         config = AIConfigVersion(
@@ -270,10 +309,12 @@ async def create_config(data: AIConfigCreateInput, request: Request) -> dict:
             api_key_ciphertext=ciphertext,
             timeout_seconds=data.timeout_seconds,
             max_output_tokens=data.max_output_tokens,
+            pricing_basis=data.pricing.basis,
             price_currency=data.pricing.currency,
             input_price_nanos_per_million_tokens=input_price,
             cached_input_price_nanos_per_million_tokens=cached_input_price,
             output_price_nanos_per_million_tokens=output_price,
+            audio_price_nanos_per_minute=audio_price,
             created_by_user_id=identity.user.id,
         )
         state.next_version += 1
@@ -416,11 +457,17 @@ async def publish_config(config_id: UUID, request: Request) -> dict:
         )
         if config is None:
             raise config_not_found()
+        pricing_missing = (
+            config.audio_price_nanos_per_minute is None
+            if config.pricing_basis == "audio_minute"
+            else (
+                config.input_price_nanos_per_million_tokens is None
+                or config.cached_input_price_nanos_per_million_tokens is None
+                or config.output_price_nanos_per_million_tokens is None
+            )
+        )
         if quota_policy is not None and (
-            config.price_currency != quota_policy.currency
-            or config.input_price_nanos_per_million_tokens is None
-            or config.cached_input_price_nanos_per_million_tokens is None
-            or config.output_price_nanos_per_million_tokens is None
+            config.price_currency != quota_policy.currency or pricing_missing
         ):
             raise AppError(
                 "ai_quota_pricing_unavailable",

@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased
 from itime.admin.security import authorized_admin
 from itime.ai.models import AIConfigCapability, AIConfigVersion, AIJob
 from itime.ai.pricing import format_currency_nanos, parse_currency_amount
+from itime.ai.routing_service import pricing_complete
 from itime.auth.models import User
 from itime.auth.security import now
 from itime.auth.session import audit
@@ -47,7 +48,10 @@ REQUIRED_AI_CAPABILITIES = (
     "calendar_screenshot",
     "conversation",
     "planning",
+    "review",
+    "transcription",
 )
+BASELINE_AI_CAPABILITIES = {"calendar_screenshot", "conversation"}
 LedgerKind = Literal["usage_charge", "admin_credit", "admin_debit"]
 
 
@@ -398,17 +402,15 @@ async def validate_pricing_currency(session, currency: str) -> None:
             if state is not None and state.current_version_id is not None
             else None
         )
-        if capability == "planning" and config is None:
-            # A quota policy may predate the first rollout of a new capability.
-            # Once planning is published, every later policy must price it.
+        if capability not in BASELINE_AI_CAPABILITIES and config is None:
+            # A quota policy may predate a later capability rollout. Once the
+            # capability is published, every later policy must price it.
             continue
         if (
             config is None
             or config.status != "published"
             or config.price_currency != currency
-            or config.input_price_nanos_per_million_tokens is None
-            or config.cached_input_price_nanos_per_million_tokens is None
-            or config.output_price_nanos_per_million_tokens is None
+            or not pricing_complete(config)
         ):
             invalid_capabilities.append(capability)
     if invalid_capabilities:

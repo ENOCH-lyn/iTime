@@ -114,6 +114,71 @@ def _replace_config_constraints(*, expanded: bool) -> None:
         )
 
 
+def _replace_config_immutability(*, expanded: bool) -> None:
+    extra_new = (
+        """
+                NEW.pricing_basis,
+                NEW.audio_price_nanos_per_minute,
+        """
+        if expanded
+        else ""
+    )
+    extra_old = (
+        """
+                OLD.pricing_basis,
+                OLD.audio_price_nanos_per_minute,
+        """
+        if expanded
+        else ""
+    )
+    op.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION prevent_ai_config_version_mutation()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF ROW(
+                NEW.id,
+                NEW.capability,
+                NEW.version,
+                NEW.endpoint_url,
+                NEW.model,
+                NEW.api_key_ciphertext,
+                NEW.timeout_seconds,
+                NEW.max_output_tokens,
+                NEW.price_currency,
+                NEW.input_price_nanos_per_million_tokens,
+                NEW.cached_input_price_nanos_per_million_tokens,
+                NEW.output_price_nanos_per_million_tokens,
+                {extra_new}
+                NEW.created_at
+            ) IS DISTINCT FROM ROW(
+                OLD.id,
+                OLD.capability,
+                OLD.version,
+                OLD.endpoint_url,
+                OLD.model,
+                OLD.api_key_ciphertext,
+                OLD.timeout_seconds,
+                OLD.max_output_tokens,
+                OLD.price_currency,
+                OLD.input_price_nanos_per_million_tokens,
+                OLD.cached_input_price_nanos_per_million_tokens,
+                OLD.output_price_nanos_per_million_tokens,
+                {extra_old}
+                OLD.created_at
+            ) THEN
+                RAISE EXCEPTION 'AI configuration version fields are immutable'
+                    USING ERRCODE = '23514';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+
+
 def _replace_media_constraints(*, expanded: bool) -> None:
     for name in (
         "purpose",
@@ -409,6 +474,7 @@ def upgrade() -> None:
         nullable=True,
     )
     _replace_config_constraints(expanded=True)
+    _replace_config_immutability(expanded=True)
 
     op.add_column(
         "temporary_media",
@@ -724,6 +790,7 @@ def downgrade() -> None:
         type_="check",
     )
     _replace_config_constraints(expanded=False)
+    _replace_config_immutability(expanded=False)
     op.drop_column("ai_config_versions", "audio_price_nanos_per_minute")
     op.drop_column("ai_config_versions", "pricing_basis")
     op.alter_column(

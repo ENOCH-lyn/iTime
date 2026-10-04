@@ -5,6 +5,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from email.parser import BytesParser
+from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 
@@ -43,6 +45,30 @@ def upstream_handler(state: UpstreamState, database_url: str):
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length)
+            is_transcription = self.path.endswith("/audio/transcriptions")
+            if is_transcription:
+                message = BytesParser(policy=default).parsebytes(
+                    (
+                        f"Content-Type: {self.headers['Content-Type']}\r\n"
+                        "MIME-Version: 1.0\r\n\r\n"
+                    ).encode()
+                    + body
+                )
+                request_body = {}
+                for part in message.iter_parts():
+                    name = part.get_param("name", header="content-disposition")
+                    payload = part.get_payload(decode=True) or b""
+                    request_body[name] = (
+                        {
+                            "filename": part.get_filename(),
+                            "content_type": part.get_content_type(),
+                            "content": payload,
+                        }
+                        if part.get_filename()
+                        else payload.decode()
+                    )
+            else:
+                request_body = json.loads(body)
             with psycopg.connect(psycopg_url(database_url)) as connection:
                 idle = connection.execute(
                     "SELECT count(*) FROM pg_stat_activity"
@@ -56,7 +82,7 @@ def upstream_handler(state: UpstreamState, database_url: str):
                     {
                         "path": self.path,
                         "authorization": self.headers.get("Authorization"),
-                        "body": json.loads(body),
+                        "body": request_body,
                     }
                 )
                 state.idle_transactions.append(idle)
@@ -66,44 +92,39 @@ def upstream_handler(state: UpstreamState, database_url: str):
             if mode == "timeout":
                 time.sleep(1.2)
 
-            request_body = json.loads(body)
-            is_planning_test = bool(request_body.get("tools"))
-            is_conversation_test = isinstance(
-                request_body["messages"][0]["content"],
-                str,
-            ) and not is_planning_test
-            success_message = (
-                {
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "planning-test-call",
-                            "type": "function",
-                            "function": {
-                                "name": "submit_itime_planning_test",
-                                "arguments": '{"marker":"09:00"}',
-                            },
-                        }
-                    ],
-                }
-                if is_planning_test
-                else {
-                    "content": (
-                        "ITIME_CHAT_OK"
-                        if is_conversation_test
-                        else '{"marker":"09:00"}'
-                    )
-                }
+            is_planning_test = not is_transcription and bool(request_body.get("tools"))
+            is_conversation_test = (
+                not is_transcription
+                and isinstance(request_body["messages"][0]["content"], str)
+                and not is_planning_test
+            )
+            success_message = {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "planning-test-call",
+                        "type": "function",
+                        "function": {
+                            "name": "submit_itime_planning_test",
+                            "arguments": '{"marker":"09:00"}',
+                        },
+                    }
+                ],
+            } if is_planning_test else {
+                "content": (
+                    "ITIME_CHAT_OK"
+                    if is_conversation_test
+                    else '{"marker":"09:00"}'
+                )
+            }
+            successful_response = (
+                {"text": "语音测试", "language": "zh"}
+                if is_transcription
+                else {"choices": [{"message": success_message}]}
             )
             status, response = {
-                "success": (
-                    200,
-                    {"choices": [{"message": success_message}]},
-                ),
-                "blocked": (
-                    200,
-                    {"choices": [{"message": success_message}]},
-                ),
+                "success": (200, successful_response),
+                "blocked": (200, successful_response),
                 "authentication": (401, {"error": UPSTREAM_BODY_SECRET}),
                 "rate_limit": (429, {"error": UPSTREAM_BODY_SECRET}),
                 "server_error": (503, {"error": UPSTREAM_BODY_SECRET}),
@@ -171,6 +192,7 @@ def reset_ai_configs(database_url):
         connection.execute("DELETE FROM ai_job_attempts")
         connection.execute("DELETE FROM ai_jobs")
         connection.execute("DELETE FROM temporary_media")
+        connection.execute("DELETE FROM ai_config_fallbacks")
         connection.execute("DELETE FROM ai_config_versions")
     yield
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
@@ -183,6 +205,7 @@ def reset_ai_configs(database_url):
         connection.execute("DELETE FROM ai_job_attempts")
         connection.execute("DELETE FROM ai_jobs")
         connection.execute("DELETE FROM temporary_media")
+        connection.execute("DELETE FROM ai_config_fallbacks")
         connection.execute("DELETE FROM ai_config_versions")
 
 
@@ -234,6 +257,7 @@ def create_config(
     capability: str = "calendar_screenshot",
     pricing: dict | None = None,
 ) -> httpx.Response:
+    transcription = capability == "transcription"
     return client.post(
         AI_CONFIGS,
         json={
@@ -242,14 +266,23 @@ def create_config(
             "model": model,
             "api_key": key,
             "timeout_seconds": timeout,
-            "max_output_tokens": 321,
+            "max_output_tokens": None if transcription else 321,
             "pricing": pricing
-            or {
-                "currency": "cny",
-                "input_per_million_tokens": "1.25",
-                "cached_input_per_million_tokens": "0.5",
-                "output_per_million_tokens": "4.75",
-            },
+            or (
+                {
+                    "basis": "audio_minute",
+                    "currency": "cny",
+                    "audio_per_minute": "0.006",
+                }
+                if transcription
+                else {
+                    "basis": "token",
+                    "currency": "cny",
+                    "input_per_million_tokens": "1.25",
+                    "cached_input_per_million_tokens": "0.5",
+                    "output_per_million_tokens": "4.75",
+                }
+            ),
         },
     )
 
@@ -277,6 +310,7 @@ def test_create_list_detail_constraints_encryption_and_audit(
     assert item["status"] == "draft"
     assert item["key_configured"] is True
     assert item["pricing"] == {
+        "basis": "token",
         "currency": "CNY",
         "input_per_million_tokens": "1.25",
         "cached_input_per_million_tokens": "0.5",
@@ -474,6 +508,118 @@ def test_conversation_config_uses_text_only_synthetic_probe(
         }
     ]
     assert "response_format" not in request
+
+
+def test_transcription_config_uses_audio_probe_and_audio_minute_price(
+    client,
+    database_url,
+    upstream,
+):
+    setup_admin(client, database_url)
+    state, endpoint = upstream
+
+    created = create_config(
+        client,
+        endpoint,
+        model="transcribe-model",
+        capability="transcription",
+    )
+    assert created.status_code == 201, created.text
+    config = created.json()
+    assert config["max_output_tokens"] is None
+    assert config["pricing"] == {
+        "basis": "audio_minute",
+        "currency": "CNY",
+        "audio_per_minute": "0.006",
+    }
+
+    tested = client.post(f"{AI_CONFIGS}/{config['id']}/test")
+    assert tested.status_code == 200, tested.text
+    request = state.requests[-1]
+    assert request["path"] == "/v1/audio/transcriptions"
+    assert request["authorization"] == "Bearer sk-ai-config-private-key"
+    assert request["body"]["model"] == "transcribe-model"
+    assert request["body"]["response_format"] == "json"
+    assert request["body"]["file"]["filename"] == "itime-voice-check.wav"
+    assert request["body"]["file"]["content_type"] == "audio/wav"
+    assert request["body"]["file"]["content"].startswith(b"RIFF")
+
+    published = client.post(f"{AI_CONFIGS}/{config['id']}/publish")
+    assert published.status_code == 200, published.text
+    route = client.get(f"{AI_CONFIGS}/routing/transcription")
+    assert route.status_code == 200
+    assert route.json()["primary"]["id"] == config["id"]
+
+    backup = create_config(
+        client,
+        endpoint,
+        model="transcribe-backup",
+        capability="transcription",
+        pricing={
+            "basis": "audio_minute",
+            "currency": "CNY",
+            "audio_per_minute": "0.008",
+        },
+    ).json()
+    assert client.post(f"{AI_CONFIGS}/{backup['id']}/test").status_code == 200
+    saved_route = client.put(
+        f"{AI_CONFIGS}/routing/transcription",
+        json={
+            "expected_routing_version": route.json()["routing_version"],
+            "fallback_config_ids": [backup["id"]],
+        },
+    )
+    assert saved_route.status_code == 200, saved_route.text
+    assert saved_route.json()["fallbacks"][0]["config"]["id"] == backup["id"]
+
+    usd_backup = create_config(
+        client,
+        endpoint,
+        model="transcribe-usd",
+        capability="transcription",
+        pricing={
+            "basis": "audio_minute",
+            "currency": "USD",
+            "audio_per_minute": "0.006",
+        },
+    ).json()
+    assert client.post(f"{AI_CONFIGS}/{usd_backup['id']}/test").status_code == 200
+    mismatch = client.put(
+        f"{AI_CONFIGS}/routing/transcription",
+        json={
+            "expected_routing_version": saved_route.json()["routing_version"],
+            "fallback_config_ids": [usd_backup["id"]],
+        },
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json()["error"]["code"] == "ai_config_route_currency_mismatch"
+
+    token_price = create_config(
+        client,
+        endpoint,
+        model="wrong-transcription-price",
+        capability="transcription",
+        pricing={
+            "basis": "token",
+            "currency": "CNY",
+            "input_per_million_tokens": "1",
+            "output_per_million_tokens": "2",
+        },
+    )
+    assert token_price.status_code == 422
+
+    audio_price = create_config(
+        client,
+        endpoint,
+        model="wrong-conversation-price",
+        capability="conversation",
+        pricing={
+            "basis": "audio_minute",
+            "currency": "CNY",
+            "audio_per_minute": "0.006",
+        },
+    )
+    assert audio_price.status_code == 422
 
 
 def test_planning_config_requires_synthetic_tool_call(

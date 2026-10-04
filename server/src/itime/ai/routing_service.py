@@ -90,9 +90,17 @@ async def read_config_route(
     return state, primary, fallback_rows
 
 
-def _pricing_complete(config: AIConfigVersion) -> bool:
+def pricing_complete(config: AIConfigVersion) -> bool:
+    if config.price_currency is None:
+        return False
+    if config.pricing_basis == "audio_minute":
+        return (
+            config.capability == "transcription"
+            and config.audio_price_nanos_per_minute is not None
+        )
     return (
-        config.price_currency is not None
+        config.pricing_basis == "token"
+        and config.capability != "transcription"
         and config.input_price_nanos_per_million_tokens is not None
         and config.cached_input_price_nanos_per_million_tokens is not None
         and config.output_price_nanos_per_million_tokens is not None
@@ -118,7 +126,7 @@ async def load_active_config_route(
         )
     configs = (primary, *(config for _row, config in fallback_rows))
     currency = primary.price_currency
-    if not _pricing_complete(primary):
+    if not pricing_complete(primary):
         raise AppError(
             "ai_quota_pricing_unavailable",
             "当前 AI 配置缺少价格，暂时不能接收新请求。",
@@ -136,7 +144,7 @@ async def load_active_config_route(
                 status=503,
                 retryable=True,
             )
-        if not _pricing_complete(config) or config.price_currency != currency:
+        if not pricing_complete(config) or config.price_currency != currency:
             raise AppError(
                 "ai_quota_pricing_unavailable",
                 "AI 主备配置价格币种不一致，暂时不能接收新请求。",
@@ -218,7 +226,7 @@ async def replace_fallbacks(
                 "备用配置必须先通过最近一次合成测试。",
                 status=409,
             )
-        if not _pricing_complete(config):
+        if not pricing_complete(config):
             raise AppError(
                 "ai_config_route_pricing_unavailable",
                 "备用配置必须提供完整价格。",

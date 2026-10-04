@@ -1,6 +1,7 @@
 import pytest
 
 from itime.ai.pricing import (
+    audio_duration_cost,
     format_price_per_million,
     parse_price_per_million,
     token_cost_breakdown,
@@ -36,6 +37,15 @@ def test_price_conversion_and_aggregate_rounding_are_exact():
             cached_input_price=10**15,
             output_price=10**15,
         )
+
+
+def test_audio_duration_cost_rounds_once_in_nano_units():
+    assert audio_duration_cost(1_000, 6_000_000) == 100_000
+    assert audio_duration_cost(250, 1) == 1
+    with pytest.raises(ValueError, match="正数"):
+        audio_duration_cost(0, 1)
+    with pytest.raises(ValueError, match="可存储范围"):
+        audio_duration_cost(600_000_000, 1_000_000_000_000_000)
 
 
 def test_provider_usage_aliases_and_invalid_values():
