@@ -47,12 +47,49 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL('/ai')
 }
 
+async function configureTimeZone(page: Page) {
+  const session = await (await page.request.get('/api/v1/auth/me')).json()
+  const settings = (await (
+    await page.request.get('/api/v1/time-settings')
+  ).json()).settings
+  const response = await page.request.put('/api/v1/time-settings', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      expected_version: settings.version,
+      time_zone: 'Asia/Shanghai',
+      week_starts_on: 1,
+      activity_day_start_minute: 240,
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
 function taskVoiceControl(page: Page) {
   return page.getByRole('region', { name: '任务名称语音输入' })
 }
 
 async function recordTaskVoice(page: Page) {
   const control = taskVoiceControl(page)
+  await control.getByRole('button', {
+    name: /^(开始语音输入|重新录制语音)$/,
+  }).click()
+  await expect(control.getByRole('status')).toContainText('正在录音')
+  await page.waitForTimeout(500)
+  await control.getByRole('button', { name: '停止录音' }).click()
+  await expect(control.getByLabel('转写草稿')).toHaveValue(
+    '周五前完成论文提纲',
+    { timeout: 15_000 },
+  )
+  return control
+}
+
+function difficultyVoiceControl(page: Page) {
+  return page.getByRole('region', { name: '困难正文语音输入' })
+}
+
+async function recordDifficultyVoice(page: Page) {
+  const control = difficultyVoiceControl(page)
   await control.getByRole('button', {
     name: /^(开始语音输入|重新录制语音)$/,
   }).click()
@@ -182,4 +219,66 @@ test('已归档和回收站任务不提供语音入口', async ({ page, request 
     .filter({ hasText: '语音入口生命周期' }).getByRole('button').click()
   await expect(page.getByText('此任务在回收站中')).toBeVisible()
   await expect(taskVoiceControl(page)).toHaveCount(0)
+})
+
+test('困难语音草稿可校对后关联当前专注并保存', async ({ page, request }) => {
+  await account(page, request)
+  await configureTimeZone(page)
+  await page.goto('/focus')
+  await page.locator('.focus-setup').getByLabel('专注内容').fill('拆分论文结构')
+  await page.getByRole('button', { name: '开始专注', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '拆分论文结构' })).toBeVisible()
+
+  const control = await recordDifficultyVoice(page)
+  await control.getByLabel('转写草稿').fill('不知道如何拆分这一章')
+  await control.getByRole('button', { name: '应用到困难正文' }).click()
+  await expect(page.getByLabel('遇到了什么困难？')).toHaveValue(
+    '不知道如何拆分这一章',
+  )
+  await expect(control).toContainText('尚未保存')
+  await expect(page.getByLabel('分类 可选')).toHaveValue('')
+  await expect(page.getByLabel('感受 可选')).toHaveValue('')
+  await expect(page.getByLabel('关联').locator('option:checked')).toContainText(
+    '当前专注',
+  )
+
+  await page.getByRole('button', { name: '记录困难', exact: true }).click()
+  await expect(page.getByText('困难已记录。')).toBeVisible()
+  await expect(page.locator('.difficulty-list li').filter({
+    hasText: '不知道如何拆分这一章',
+  })).toBeVisible()
+  await expect(page).toHaveURL('/focus')
+  expect(await new AxeBuilder({ page }).analyze()).toMatchObject({ violations: [] })
+})
+
+test('困难转写限制、丢弃、编辑态和回收站门禁正确', async ({ page, request }) => {
+  await account(page, request)
+  await configureTimeZone(page)
+  await page.goto('/focus')
+  await expect(page.getByRole('heading', { name: '专注', exact: true })).toBeVisible()
+  await page.getByLabel('遇到了什么困难？').fill('保留这段手写困难')
+
+  const control = await recordDifficultyVoice(page)
+  await control.getByLabel('转写草稿').fill('难'.repeat(2001))
+  await expect(control.getByText('困难正文不能超过 2000 个字符')).toBeVisible()
+  await expect(control.getByRole('button', { name: '替换当前内容' })).toBeDisabled()
+  await control.getByLabel('转写草稿').fill('不采用这段转写')
+  await control.getByRole('button', { name: '丢弃', exact: true }).click()
+  await expect(page.getByLabel('遇到了什么困难？')).toHaveValue(
+    '保留这段手写困难',
+  )
+  await page.getByRole('button', { name: '记录困难', exact: true }).click()
+  await expect(page.getByText('困难已记录。')).toBeVisible()
+
+  const item = page.locator('.difficulty-list li').filter({
+    hasText: '保留这段手写困难',
+  })
+  await item.getByRole('button', { name: /编辑困难/ }).click()
+  await expect(page.getByLabel('编辑困难', { exact: true })).toHaveValue(
+    '保留这段手写困难',
+  )
+  await expect(difficultyVoiceControl(page)).toBeVisible()
+  await page.getByRole('group', { name: '困难范围' })
+    .getByRole('button', { name: '回收站', exact: true }).click()
+  await expect(difficultyVoiceControl(page)).toHaveCount(0)
 })

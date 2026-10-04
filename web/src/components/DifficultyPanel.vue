@@ -9,6 +9,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import StatusMessage from './StatusMessage.vue'
+import VoiceTranscriptionControl from './VoiceTranscriptionControl.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
   createDifficulty,
@@ -68,6 +69,16 @@ function resetForm() {
   emotion.value = ''
   association.value = props.focus ? `focus:${props.focus.id}` : ''
   operation = null
+}
+
+function replaceVoiceContent(text: string) {
+  content.value = text
+  error.value = null
+}
+
+function appendVoiceContent(text: string) {
+  content.value = [content.value.trim(), text].filter(Boolean).join('\n')
+  error.value = null
 }
 
 async function load() {
@@ -240,6 +251,15 @@ function formatDateTime(value: string | null) {
           maxlength="2000"
           :disabled="pending"
           placeholder="用一句话记下当前卡住的位置"
+        />
+        <VoiceTranscriptionControl
+          purpose="difficulty_content"
+          target-label="困难正文"
+          :field-limit="2000"
+          :current-text="content"
+          :disabled="pending"
+          @replace="replaceVoiceContent"
+          @append="appendVoiceContent"
         />
       </div>
       <div class="difficulty-fields">
