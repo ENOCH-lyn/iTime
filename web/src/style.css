@@ -310,6 +310,13 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .ai-config-list li { align-items: center; }
 .ai-config-list .management-primary > p + p { margin-top: 2px; }
 .ai-config-list .warning-text { color: var(--notice-text); }
+.ai-route-form { max-width: 760px; }
+.ai-route-primary { margin: 0 0 18px; }
+.ai-route-primary div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; }
+.ai-route-primary dt { color: var(--muted); font-size: .8125rem; }
+.ai-route-primary dd { min-width: 0; overflow-wrap: anywhere; font-weight: 550; }
+.ai-route-selects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.ai-route-selects select { width: 100%; min-height: 48px; }
 .state-label[data-state="published"], .state-label[data-state="tested"] { color: var(--accent); border-color: var(--accent); }
 .state-label[data-state="draft"] { color: var(--notice-text); border-color: var(--notice-border); }
 .state-label[data-state="succeeded"], .state-label[data-state="reviewed"], .state-label[data-state="acceptable"] { color: var(--accent); border-color: var(--accent); }
@@ -396,7 +403,9 @@ dialog p { font-size: .9375rem; color: var(--muted); }
   .recovery-code-list { grid-template-columns: 1fr; }
   .recovery-actions .button { width: 100%; }
   .ai-config-number-grid { grid-template-columns: 1fr; }
+  .ai-route-selects { grid-template-columns: 1fr; }
   .ai-config-submit { width: 100%; }
+  .ai-route-form .inline-actions .button { width: 100%; }
   .admin-quota-tabs { width: 100%; }
   .admin-quota-tabs button { flex: 1 1 88px; }
   .quota-policy-form .button, .quota-user-search .button { width: 100%; }

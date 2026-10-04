@@ -38,6 +38,18 @@ export interface AIConfigVersion {
   retired_at: string | null
 }
 
+export interface AIConfigFallback {
+  position: 1 | 2
+  config: AIConfigVersion
+}
+
+export interface AIConfigRoute {
+  capability: AIConfigCapability
+  routing_version: number
+  primary: AIConfigVersion | null
+  fallbacks: AIConfigFallback[]
+}
+
 export async function listAIConfigs(capability: AIConfigCapability) {
   return (await api<{
     items: AIConfigVersion[]
@@ -75,4 +87,22 @@ export async function testAIConfig(id: string, timeoutSeconds: number) {
 
 export async function publishAIConfig(id: string) {
   return api<AIConfigVersion>(`/admin/ai-configs/${id}/publish`, {})
+}
+
+export async function getAIConfigRoute(capability: AIConfigCapability) {
+  return api<AIConfigRoute>(`/admin/ai-configs/routing/${capability}`)
+}
+
+export async function saveAIConfigRoute(
+  route: AIConfigRoute,
+  fallbackConfigIds: string[],
+) {
+  return api<AIConfigRoute>(
+    `/admin/ai-configs/routing/${route.capability}`,
+    {
+      expected_routing_version: route.routing_version,
+      fallback_config_ids: fallbackConfigIds,
+    },
+    'PUT',
+  )
 }

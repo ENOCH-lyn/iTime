@@ -395,6 +395,18 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 if message.get("role") == "user"
             ]
             user_prompt = str(user_messages[-1] if user_messages else "")
+            model = str(body.get("model", ""))
+            if (
+                "备用切换测试" in user_prompt
+                and model.startswith("chat-backup-one-")
+            ):
+                encoded = json.dumps({"error": "primary rate limited"}).encode()
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
             if "触发失败" in user_prompt:
                 encoded = json.dumps({"error": "private-upstream-body"}).encode()
                 self.send_response(503)
@@ -403,7 +415,9 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(encoded)
                 return
-            if "检查记忆上下文" in user_prompt:
+            if "备用切换测试" in user_prompt:
+                parts = ["备用服务已接管并完成回复。"]
+            elif "检查记忆上下文" in user_prompt:
                 parts = [
                     (
                         "已读取长期记忆。"

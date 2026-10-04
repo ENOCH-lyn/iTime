@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
-import { FlaskConical, RotateCcw, Rocket, ServerCog } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import {
+  FlaskConical,
+  GitBranch,
+  RotateCcw,
+  Rocket,
+  Save,
+  ServerCog,
+} from 'lucide-vue-next'
 import FormField from './FormField.vue'
 import StatusMessage from './StatusMessage.vue'
 import {
   createAIConfig,
+  getAIConfigRoute,
   listAIConfigs,
   publishAIConfig,
+  saveAIConfigRoute,
   testAIConfig,
   type AIConfigCapability,
+  type AIConfigRoute,
   type AIConfigStatus,
   type AIConfigVersion,
 } from '../lib/admin-ai'
@@ -19,8 +29,11 @@ import { localDate } from '../lib/admin-management'
 const configs = ref<AIConfigVersion[]>([])
 const loaded = ref(false)
 const loading = ref(false)
+const route = ref<AIConfigRoute | null>(null)
+const firstFallbackId = ref('')
+const secondFallbackId = ref('')
 const pendingId = ref('')
-const pendingAction = ref<'create' | 'test' | 'publish' | ''>('')
+const pendingAction = ref<'create' | 'test' | 'publish' | 'route' | ''>('')
 const error = ref<Failure | null>(null)
 const success = ref('')
 const endpoint = ref('')
@@ -78,6 +91,32 @@ const stageLabels: Record<string, string> = {
   response: '响应格式',
 }
 
+const fallbackCandidates = computed(() => configs.value.filter(config => (
+  config.id !== route.value?.primary?.id
+  && ['tested', 'retired'].includes(config.status)
+  && config.pricing_configured
+)))
+const secondFallbackCandidates = computed(() => fallbackCandidates.value.filter(
+  config => config.id !== firstFallbackId.value,
+))
+const routeDirty = computed(() => {
+  if (!route.value) return false
+  const saved = route.value.fallbacks.map(item => item.config.id)
+  const draft = [firstFallbackId.value, secondFallbackId.value].filter(Boolean)
+  return saved.join(':') !== draft.join(':')
+})
+
+function resetRouteEditor(next: AIConfigRoute | null) {
+  firstFallbackId.value = next?.fallbacks[0]?.config.id ?? ''
+  secondFallbackId.value = next?.fallbacks[1]?.config.id ?? ''
+}
+
+function routeRole(configId: string) {
+  if (route.value?.primary?.id === configId) return '主服务'
+  const fallback = route.value?.fallbacks.find(item => item.config.id === configId)
+  return fallback ? `备用 ${fallback.position}` : ''
+}
+
 function validPrice(value: string) {
   const normalized = value.trim()
   const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/.exec(normalized)
@@ -97,7 +136,7 @@ async function handleError(reason: unknown) {
   return current
 }
 
-async function loadConfigs(keepStatus = false) {
+async function loadConfigs(keepStatus = false, preserveRouteDraft = false) {
   if (loading.value) return
   loading.value = true
   if (!keepStatus) {
@@ -105,7 +144,13 @@ async function loadConfigs(keepStatus = false) {
     success.value = ''
   }
   try {
-    configs.value = await listAIConfigs(capability.value)
+    const [nextConfigs, nextRoute] = await Promise.all([
+      listAIConfigs(capability.value),
+      getAIConfigRoute(capability.value),
+    ])
+    configs.value = nextConfigs
+    route.value = nextRoute
+    if (!preserveRouteDraft) resetRouteEditor(nextRoute)
     loaded.value = true
   } catch (reason) {
     error.value = await handleError(reason)
@@ -244,13 +289,64 @@ async function publishConfig(config: AIConfigVersion) {
   }
 }
 
+async function saveRoute() {
+  if (!route.value || pendingAction.value) return
+  const fallbackIds = [
+    firstFallbackId.value,
+    secondFallbackId.value,
+  ].filter(Boolean)
+  if (new Set(fallbackIds).size !== fallbackIds.length) {
+    error.value = {
+      code: 'invalid_input',
+      message: '两个备用位置不能选择同一配置。',
+      request_id: null,
+      saved: 'not_saved',
+      retryable: false,
+    }
+    return
+  }
+  pendingAction.value = 'route'
+  error.value = null
+  success.value = ''
+  try {
+    const updated = await saveAIConfigRoute(route.value, fallbackIds)
+    route.value = updated
+    resetRouteEditor(updated)
+    success.value = fallbackIds.length
+      ? '备用服务调用顺序已保存。'
+      : '备用服务已清空；失败时将继续重试主服务。'
+  } catch (reason) {
+    const current = await handleError(reason)
+    error.value = current
+    if (current.code === 'ai_config_route_version_conflict') {
+      try {
+        route.value = await getAIConfigRoute(capability.value)
+        error.value = {
+          ...current,
+          message: '调用顺序已被其他管理员修改；当前选择仍保留，可基于最新版重试。',
+        }
+      } catch {
+        // Keep the original conflict and route draft for a later retry.
+      }
+    }
+  } finally {
+    pendingAction.value = ''
+  }
+}
+
 onMounted(() => void loadConfigs())
 watch(capability, () => {
   configs.value = []
+  route.value = null
+  resetRouteEditor(null)
   loaded.value = false
   error.value = null
   success.value = ''
   void loadConfigs()
+})
+watch(firstFallbackId, value => {
+  if (!value) secondFallbackId.value = ''
+  if (secondFallbackId.value === value) secondFallbackId.value = ''
 })
 </script>
 
@@ -325,6 +421,64 @@ watch(capability, () => {
       </form>
     </section>
 
+    <section class="management-section ai-route-section" aria-labelledby="ai-route-title">
+      <div class="section-intro">
+        <div>
+          <h2 id="ai-route-title">调用顺序</h2>
+          <p class="page-description">仅可重试故障进入下一服务，三次尝试共享原作业截止时间。</p>
+        </div>
+        <GitBranch :size="24" aria-hidden="true" />
+      </div>
+      <p v-if="loading && !route" role="status" class="muted">正在读取调用顺序…</p>
+      <p v-else-if="!route?.primary" class="empty-state">
+        发布一个主配置后才能设置备用服务。
+      </p>
+      <form v-else class="ai-route-form" @submit.prevent="saveRoute">
+        <dl class="ai-route-primary">
+          <div>
+            <dt>主服务</dt>
+            <dd>版本 {{ route.primary.version }} · {{ route.primary.model }}</dd>
+          </div>
+        </dl>
+        <div class="ai-route-selects">
+          <div class="field">
+            <label for="ai-fallback-one">备用 1</label>
+            <select id="ai-fallback-one" v-model="firstFallbackId"
+              :disabled="!!pendingAction">
+              <option value="">不设置</option>
+              <option v-for="config in fallbackCandidates" :key="config.id"
+                :value="config.id">
+                版本 {{ config.version }} · {{ config.model }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ai-fallback-two">备用 2</label>
+            <select id="ai-fallback-two" v-model="secondFallbackId"
+              :disabled="!!pendingAction || !firstFallbackId">
+              <option value="">不设置</option>
+              <option v-for="config in secondFallbackCandidates" :key="config.id"
+                :value="config.id">
+                版本 {{ config.version }} · {{ config.model }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button type="button" class="button secondary"
+            :disabled="!!pendingAction || !routeDirty"
+            @click="resetRouteEditor(route)">
+            <RotateCcw :size="16" aria-hidden="true" />撤销调整
+          </button>
+          <button type="submit" class="button"
+            :disabled="!!pendingAction || !routeDirty">
+            <Save :size="16" aria-hidden="true" />
+            {{ pendingAction === 'route' ? '正在保存…' : '保存调用顺序' }}
+          </button>
+        </div>
+      </form>
+    </section>
+
     <section class="management-section" aria-labelledby="ai-config-history-title">
       <div class="section-intro">
         <div>
@@ -347,6 +501,10 @@ watch(capability, () => {
               <strong>版本 {{ config.version }} · {{ config.model }}</strong>
               <span class="state-label" :data-state="config.status">
                 {{ statusLabels[config.status] }}
+              </span>
+              <span v-if="routeRole(config.id)" class="state-label"
+                :data-state="route?.primary?.id === config.id ? 'active' : 'pending'">
+                {{ routeRole(config.id) }}
               </span>
             </div>
             <p class="wrap-anywhere">{{ config.endpoint_url }}</p>
