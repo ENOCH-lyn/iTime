@@ -1177,8 +1177,8 @@ OpenAPI 包含同步变更、状态和两类步骤端点，`http://localhost:517
 未认证同步状态请求返回 401，`itime_test_%` 测试数据库残留为 0。
 
 Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright Chromium。账号
-注销随后已由 M6-G 实现；完成本模块不代表其他对象回收、困难语音、公开链接、其他业务对象提案、
-正式模型质量、M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
+注销和公开链接随后分别由 M6-G、M4-F 实现；完成本模块不代表其他对象回收、困难语音、其他业务
+对象提案、正式模型质量、M8 性能分位数、真实 Edge/实体设备、备份恢复或生产部署已经完成。
 
 ## M6-G：7 天可撤销账号注销
 
@@ -1238,5 +1238,73 @@ worker、生产构建预览和 Playwright Chromium 153 中执行：
 收口时开发 API、Vite 和 `itime.account_deletion.worker` 已运行；`GET /api/ready` 返回 200，
 OpenAPI 包含申请与撤销路由，`http://localhost:5173/account/data` 返回 200，`itime_test_%`
 测试数据库残留为 0。实施计划明确要求仓库 Playwright，因此使用 Chromium 执行真实浏览器流程。
-本模块不代表其他对象单项回收、困难/任务语音、公开链接、其他业务对象提案、正式模型质量、
-M8 性能分位数、真实 Edge/实体设备、备份恢复删除台账重放或生产部署已经完成。
+公开链接随后由 M4-F 实现。本模块不代表其他对象单项回收、困难/任务语音、其他业务对象提案、
+正式模型质量、M8 性能分位数、真实 Edge/实体设备、备份恢复删除台账重放或生产部署已经完成。
+
+## M4-F：任务公开链接受限读取
+
+对应 Git 提交：`0faf20d`、`0f66948`、`9deea1b`、`057c1d5`、`f24713b`、`e87b9ec`、
+`069ddc7`、`349f48d`、`f6bf74d`、`dea8457`、`9503cac`、`456d8e7`、`e459084`、
+`03812a9`、`ea2e0a8`、`1df3c90`、`02b0660`。实际代码为迁移
+`0030_public_task_links`、`server/src/itime/network/restricted_http.py`、
+`server/src/itime/public_links/`、任务/规划/对话/导出/注销接入、
+`web/src/components/TaskEditor.vue`、任务 API/CSS 及 `web/e2e/public-links.spec.ts`；合同见
+[公开链接读取设计](../设计/iTime-公开链接读取设计.md)。
+
+已实现：
+
+- 新增任务链接或修改 URL 后异步排队；同 URL 改标题/顺序保留链接 ID 和成功快照，URL 变化递增
+  revision、清除旧正文并使晚到结果失效。本人可通过
+  `POST /api/v1/tasks/{task_id}/links/{link_id}/refresh` 手动刷新，30 秒内重复刷新受限。
+- ICS 订阅与公开链接共用受限 HTTP 传输，生产/开发只接受 HTTPS，并逐跳校验 URL、全部 DNS
+  结果和实际 peer；不使用系统代理、Cookie、用户凭据或平台 Key。跳转、连接/总时间、压缩体、
+  解压体和压缩比均有硬上限。
+- HTML/XHTML/纯文本经结构化解析、字符集回退、NFKC 和隐藏节点过滤生成确定性标题、摘要与
+  有界正文。摘要不是 AI 生成结论；任务页显示状态、来源主机、取得时间和哈希。
+- 独立 `itime.public_links.worker` 使用数据库租约，单账号同时最多一个 running，10 分钟最多
+  领取 20 次；可重试失败按 1/5 分钟退避，最多 3 次。写回二次检查账号、任务、链接 revision、
+  attempt 和 lease；归档、回收、删除或注销后旧请求不能恢复正文。
+- 刷新失败保留最近成功快照并明确显示；成功或最终失败发出 `task_link` 失效事件，其他标签页
+  重读任务详情而不覆盖正在编辑的草稿。
+- 规划把候选任务来源复制进不可变 `PlanningInputSnapshot`；普通对话按相关性选择最多三个来源
+  并复制进 `ChatGeneration.public_source_context`。两种 provider 都把网页标为不可信资料，
+  页面中的指令不能扩大权限、调用工具或直接修改业务对象。
+- 本人导出包含用户可见来源、摘要、正文、哈希和状态但排除租约；任务到期清理和账号注销级联
+  清除正文并使在途 claim 失效。
+
+2026-10-04 在 macOS、本地 PostgreSQL 18.6、真实 Uvicorn、受控 HTTP 来源、公开链接/AI 等
+业务 worker、生产构建预览和 Playwright Chromium 中执行：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| 公开链接专项及受影响服务端组合回归 | **189 passed** | 共享网络、日历兼容、迁移/回退、解析、抓取、租约、API、规划/对话快照、导出、注销与相邻任务流程 |
+| `cd server && uv run pytest -q` | **488 passed in 388.08s** | 服务端真实 PostgreSQL/HTTP 全量回归 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv run alembic upgrade head`、`current`、`check` | `0030_public_task_links (head)`，无模型漂移 | 开发库迁移与 ORM 一致性 |
+| `cd server && uv run python -m itime.public_links.worker --once` | 通过 | 无待处理链接时受控退出 |
+| `cd server && uv build --no-sources` | 通过 | sdist 和 wheel |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 检查与 Vite 生产构建 |
+| `cd web && pnpm test:e2e -- e2e/public-links.spec.ts` | **4 passed, 2 skipped** | 成功/刷新流程三视口；深度失败与 AI 注入矩阵只在 desktop 执行一次 |
+| 任务、规划、AI、导出、注销及日历受影响 Chromium 回归 | **55 passed, 2 skipped** | 公开资料接入页面和相邻业务流程 |
+| `cd web && pnpm test:e2e` | **220 passed, 2 skipped in 11.6m** | 全部用户端、后台和公开页面 Chromium 全量回归 |
+
+浏览器流程通过真实页面创建任务并观察 `queued → running → ready`，核对摘要、来源、时间、哈希
+和手动刷新；另覆盖失败保留旧摘要、第二标签同步、链接编辑使旧响应失效，以及真实 AI 上游只收到
+带独立不可信边界的网页资料。每个视口检查 axe、控制台、Vite 错误层和根级横向溢出。截图位于
+`/tmp/itime-ui-evidence/{desktop,mobile,tablet}-public-links-{ready,refreshed}.png`、
+`/tmp/itime-ui-evidence/desktop-public-links-{failed-with-stale,ai-untrusted-source}.png` 和
+`/tmp/itime-ui-evidence/desktop-public-links-320-large-dark.png`，已人工检查无重叠、裁切或
+空白画面。
+
+实现与回归过程中修正了同账号双 worker 串行领取、PostgreSQL/应用时钟毫秒竞态、空成功快照
+约束、HTML 换行清洗、窄屏来源状态布局，以及完整日历回归在周日跨周选日的问题。Browser
+DOM/控制台检查与 Playwright 截图均完成；Browser 截图工具超时时未把未取得的证据记为通过。
+
+收口时已用当前代码重启开发 API、AI/导出 worker 并启动 `itime.public_links.worker`，Vite
+继续运行；`GET /api/ready` 返回 200，OpenAPI 包含链接刷新路由，
+`http://localhost:5173/tasks` 返回 200。环境核查发现 6 个中止浏览器回归留下且无活动连接的
+`itime_test_%` 数据库，按测试资源命名边界清理后残留为 0；开发数据库未删除或重建。
+
+`REQ-LINK-01` 首版范围已完成。本模块不代表任务实例补做 Web 入口、任务/困难语音、其他对象
+单项回收、其他业务对象提案、正式公网兼容性、生产受限出口、正式模型质量、M8 性能分位数、
+真实 Edge/实体设备、备份恢复或生产部署已经完成。

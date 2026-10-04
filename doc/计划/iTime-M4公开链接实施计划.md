@@ -909,7 +909,7 @@ Expected: 三视口成功、失败、恢复、同步和 AI 边界全部通过。
 - Modify: `doc/验收/iTime-产品验收清单.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 执行服务端专项和受影响回归**
+- [x] **Step 1: 执行服务端专项和受影响回归**
 
 ```bash
 cd server
@@ -934,7 +934,7 @@ uv run ruff check .
 
 Expected: 全部通过。
 
-- [ ] **Step 2: 执行迁移、worker、构建和服务端全量**
+- [x] **Step 2: 执行迁移、worker、构建和服务端全量**
 
 ```bash
 cd server
@@ -949,7 +949,7 @@ uv run pytest -q
 Expected: head 为 `0030_public_task_links`，无 ORM 漂移，worker 空队列正常退出，构建及全量测试
 通过。
 
-- [ ] **Step 3: 执行前端专项、受影响和全量回归**
+- [x] **Step 3: 执行前端专项、受影响和全量回归**
 
 ```bash
 cd web
@@ -962,7 +962,7 @@ pnpm test:e2e
 
 Expected: 生产构建、公开链接三视口、受影响页面和完整 Chromium 套件通过。
 
-- [ ] **Step 4: 检查环境和证据**
+- [x] **Step 4: 检查环境和证据**
 
 ```bash
 curl --fail --silent http://127.0.0.1:8000/api/ready
@@ -970,21 +970,22 @@ curl --fail --silent http://localhost:5173/tasks
 git status --short
 ```
 
-确认 API、Vite、AI worker、导出 worker、同步清理 worker、注销 worker 和 public-link worker
-均从当前代码运行；隔离测试数据库残留为 0。逐张检查截图不存在空白、裁切、文字重叠或横向溢出。
+确认 API、Vite 及本模块改动涉及的 AI、导出和 public-link worker 从当前代码运行；隔离测试
+数据库残留为 0。逐张检查截图不存在空白、裁切、文字重叠或横向溢出。
 
-- [ ] **Step 5: 同步文档**
+- [x] **Step 5: 同步文档**
 
 记录：
 
 - 迁移、状态、路由、worker、共享网络层、解析器、AI 上下文和 Web 入口的实际文件位置。
 - 每个测试命令的实际通过数量、耗时、视口和截图。
 - `REQ-LINK-01` 已完成范围及仍未验证的正式网页兼容性、Edge/真机、正式模型质量和生产出口。
-- 修正追踪矩阵及验收清单中已由 `CalendarOccurrencePanel.vue`、任务 occurrence API 和
-  `calendar.spec.ts` 证明完成的“任务实例补做 UI”陈旧描述；语音/AI 校对仍保持未完成。
+- 核对任务实例补做的当前边界：服务端 occurrence API 已实现，但
+  `CalendarOccurrencePanel.vue` 与 `calendar.spec.ts` 只覆盖固定日历事件补课，任务补做 Web
+  入口及 E2E 仍未实现；语音/AI 校对同样保持未完成。
 - 不把本次专项通过写成完整 Web 首版已交付。
 
-- [ ] **Step 6: 文档提交**
+- [x] **Step 6: 文档提交**
 
 ```bash
 git diff --check
