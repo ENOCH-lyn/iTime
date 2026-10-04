@@ -4,7 +4,7 @@ from math import ceil
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -49,9 +49,11 @@ async def claim_next_public_link(
     *,
     lease_seconds: int,
 ) -> ClaimedPublicLink | None:
-    current = now()
     blocked_owners: set[UUID] = set()
     async with database.transaction() as session:
+        current = await session.scalar(select(func.clock_timestamp()))
+        if not isinstance(current, datetime):
+            raise RuntimeError("database did not return a public-link claim timestamp")
         for _ in range(CLAIM_SCAN_LIMIT):
             candidate = aliased(TaskLink)
             active = aliased(TaskLink)

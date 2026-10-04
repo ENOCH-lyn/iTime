@@ -26,6 +26,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture(autouse=True)
 def reset_public_links(database_url):
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute("DELETE FROM task_links")
         connection.execute(
             "DELETE FROM users WHERE email LIKE 'public-link-service-%'"
         )

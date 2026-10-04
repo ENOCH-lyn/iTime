@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.auth.models import User
@@ -112,8 +112,10 @@ async def claim_next_export(
     *,
     lease_seconds: int,
 ) -> ClaimedExport | None:
-    current = now()
     async with database.transaction() as session:
+        current = await session.scalar(select(func.clock_timestamp()))
+        if not isinstance(current, datetime):
+            raise RuntimeError("database did not return an export claim timestamp")
         for _ in range(EXPORT_CLEANUP_BATCH_SIZE):
             job = await session.scalar(
                 select(DataExportJob)

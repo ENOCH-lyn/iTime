@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.ai.conversation_models import AIJobEvent, ChatGeneration
@@ -220,8 +220,10 @@ async def claim_next_job(
     terminal_only: bool = False,
 ) -> ClaimedJob | None:
     for _ in range(20):
-        current = now()
         async with database.transaction() as session:
+            current = await session.scalar(select(func.clock_timestamp()))
+            if not isinstance(current, datetime):
+                raise RuntimeError("database did not return an AI claim timestamp")
             statement = (
                 select(AIJob)
                 .join(User, User.id == AIJob.owner_id)
