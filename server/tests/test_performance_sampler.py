@@ -36,6 +36,20 @@ def test_parse_docker_stats_with_iec_and_si_units():
     assert sample.pids == 3
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1e+03kB", 1_000_000),
+        ("1.25E+02MiB", 125 * 1024 * 1024),
+    ],
+)
+def test_parse_bytes_accepts_docker_scientific_notation(
+    value: str,
+    expected: int,
+):
+    assert sampler.parse_bytes(value) == expected
+
+
 @pytest.mark.parametrize("value", ["", "unknown", "1XB", "-1MiB"])
 def test_parse_bytes_rejects_unknown_or_negative_values(value: str):
     with pytest.raises(ValueError):

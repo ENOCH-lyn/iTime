@@ -17,7 +17,10 @@ import psycopg
 from psycopg.rows import dict_row
 
 COMPOSE_PROJECT = re.compile(r"^itime-perf-[0-9a-f]{8,32}$")
-SIZE_PATTERN = re.compile(r"^(?P<value>\d+(?:\.\d+)?)(?P<unit>[kmgt]?i?b)$", re.IGNORECASE)
+SIZE_PATTERN = re.compile(
+    r"^(?P<value>\d+(?:\.\d+)?(?:e[+-]?\d+)?)(?P<unit>[kmgt]?i?b)$",
+    re.IGNORECASE,
+)
 SIZE_FACTORS = {
     "b": 1,
     "kb": 1000,
