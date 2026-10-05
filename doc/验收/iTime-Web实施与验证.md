@@ -1,6 +1,6 @@
 # iTime Web 实施与验证
 
-更新：2026-10-04。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
+更新：2026-10-05。此文件记录已落地模块和真实验证，不替代[全量验收清单](iTime-产品验收清单.md)。用户要求完整 Web 用户端与后台、逐模块提交、详细服务及真实 UI 测试。
 
 ## M1-A：服务运行基础
 
@@ -1547,8 +1547,8 @@ desktop、mobile、tablet 均检查页面标题、非空内容、目标交互、
 
 收口时开发 API 与 AI worker 已按当前代码重启，`GET /api/ready` 返回 200，OpenAPI 包含
 `/api/v1/admin/ai-configs/routing/{capability}`，Vite `/admin/ai` 可访问，`itime_test_%`
-数据库残留为 0。AI 备用服务路由首版范围已完成；正式第三方供应商质量、数据处理地区、
-Edge/实体设备、M8 性能/恢复和生产部署仍未完成或验证。
+数据库残留为 0。AI 备用服务路由首版范围已完成；本模块收口时，正式第三方供应商质量、
+数据处理地区、Edge/实体设备、M8 性能/恢复和生产部署尚未完成或验证。
 
 ## M6-H：日历系列与 ICS 订阅源 30 天生命周期
 
@@ -1692,8 +1692,8 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 一次性 AI worker 正常退出，`GET /api/ready` 返回 200，OpenAPI 包含三个语音转写路由，
 `http://localhost:5173/tasks` 返回 200，`itime_test_%` 数据库
 残留为 0；开发 API、AI worker、订阅/日历清理、公开链接、数据导出 worker 和 Vite 已按当前
-代码运行。任务/困难纯语音转写首版范围已完成；多任务/属性语音解析、正式第三方模型质量、
-真实 Edge/实体设备、M8 性能与备份恢复、生产部署仍未完成或验证。
+代码运行。任务/困难纯语音转写首版范围已完成；本模块收口时，多任务/属性语音解析、正式
+第三方模型质量、真实 Edge/实体设备、M8 性能与备份恢复、生产部署尚未完成或验证。
 
 ## M7-D：完整 Web 用户闭环与真实 Chrome/Edge 兼容
 
@@ -1765,5 +1765,131 @@ multipart 上游、Chromium 假麦克风和生产构建预览中执行：
 `tests.web_environment` 或 4173 预览进程；`GET /api/ready` 与
 `http://localhost:5173/tasks` 均返回 200。`E2E-01`、真实 Chrome desktop 核心流程和真实
 Edge 三视口全部页面兼容验证已完成；学期、项目、AI 会话删除语义仍待产品确认且当前无删除
-旁路。实体设备、正式最低版本矩阵、正式第三方模型质量、其他业务对象提案、M8
-性能/容量/备份恢复及生产部署仍未完成，不能据此宣称 Web 首版已经发布。
+旁路。M7-D 收口时，实体设备、正式最低版本矩阵、正式第三方模型质量、其他业务对象提案、
+M8 性能/容量/备份恢复及生产部署尚未完成，不能据此宣称 Web 首版已经发布。
+
+## M8-A：固定资源性能与容量基线
+
+对应 Git 提交从 `282c79c build: 添加性能测试运行镜像` 到
+`2a9a1aa test: 隔离负载下浏览器用例`；每个运行边界、数据集、负载、门禁、采样、异步场景和
+UI 验证均独立提交。实际代码为 `server/performance/`、`server/Dockerfile.performance`、
+`compose.performance.yaml`、`server/tests/test_performance_*.py`、
+`web/playwright.performance.config.ts` 和 `web/e2e/performance-under-load.spec.ts`。
+
+### 参考环境与数据
+
+2026-10-05 在以下本地隔离环境执行：
+
+| 项目 | 实际值 |
+| --- | --- |
+| 主机 | macOS 26.6.2（25G83），arm64 |
+| 容器运行时 | Colima 0.10.3；Docker Engine 29.5.2；Compose 5.3.1 |
+| 被测资源 | 2 vCPU；4,094,382,080 bytes 内存；负载、协议桩、Vite 和浏览器在边界外 |
+| 服务 | PostgreSQL 18.6；2 个 Uvicorn worker；2 个 AI worker；邮件/订阅/公开链接/导出各 1 个 worker |
+| 数据库 | `max_connections=50`；API、worker、迁移/采样/维护理论连接预算 20；实测峰值 17 |
+| 工具 | Python 3.13.14；uv 0.11.29；Locust 2.46.7；Node.js 24.18.0；pnpm 11.15.0；Playwright 1.63.0 |
+| 浏览器 | Chrome for Testing 153.0.8010.12；Google Chrome 149.0.7827.54；Microsoft Edge 154.0.4258.53 |
+
+标准数据集固定种子 `20261005`，创建 100 个账号，其中 50 个供负载使用，并包含 15,000 个任务、
+29,400 个步骤、40,000 条对话消息、9,000 个专注会话及 150,000 条同步事件。重历史数据集使用
+10 个互不复用的活动账号，并包含 10,000 个任务、19,600 个步骤、50,000 条对话消息、50,000
+条订阅事件、3,650 个专注会话及 100,000 条同步事件。所有账号、凭据、上游和数据库均为本次
+随机隔离运行创建，不访问开发业务数据或公网服务。
+
+### 最终一键基线
+
+`cd server && uv run python -m performance.run baseline` 在干净提交 `cef08e1` 依次执行八个场景；
+每个 `summary.json` 均为 `passed: true`，没有 failure 或 warning。普通 Locust 聚合分位数包含
+登录；饱和场景为 30 个独立一分钟窗口，表内采用 100 用户代表档各路由最大分位数；AI、队列和
+维护使用各自结构化业务结果，不把不同事件强行合并为一个延迟。
+
+| 场景 / run ID | 有效时长与负载 | 实际请求/吞吐 | P50/P95/P99 | CPU / 内存 / 连接 |
+| --- | --- | --- | --- | --- |
+| steady `c4d6f805` | 900 s，20 用户 | 9,991，11.115 req/s，0 失败 | 9/19/23 ms | 9.0% / 24.0% / 28% |
+| peak `0065f99a` | 300 s，50 用户 | 8,326，27.830 req/s，0 失败 | 8/17/28 ms | 13.4% / 24.0% / 30% |
+| history `d3ced98f` | 600 s，10 个独立重账号 | 2,738，4.567 req/s，0 失败 | 聚合 25/730/990 ms；日历路由 440/870/1,400 ms | 34.0% / 28.8% / 32% |
+| saturation `51b71e51` | 10—100 用户，每档 3×60 s | 30 窗口共 54,962，0 失败 | 100 用户档路由最大 12/21/28 ms | 17.2% / 24.9% / 30% |
+| ai-isolation `edb93be4` | 60 s 基线 + 300 s；20 普通用户 + 20 AI 作业 | 普通请求 3,342；AI 观测 120；均 0 失败 | 普通 10/20/23 ms；AI 聚合 240/2,800/3,300 ms | 9.4% / 25.1% / 30% |
+| queues `30e69fb1` | 三类各至少观察 30 s；20 普通用户 | 普通请求 989，0 失败 | 各路由最大 15/24/72 ms | 11.8% / 24.9% / 34% |
+| maintenance `15f4538b` | 60 s 基线 + 60 s 维护；20 用户 | 基线/维护请求 659/666，均 0 失败 | 维护窗路由最大 15/24/36 ms | 8.5% / 17.8% / 24% |
+| soak `f644da29` | 3,600 s，20 用户 | 39,932，11.095 req/s，0 失败 | 10/19/23 ms | 9.1% / 24.2% / 32% |
+
+容量阶梯的 10、20、30、40、50、60、70、80、90、100 用户档和全部 30 个窗口均完成；最低
+50 用户门禁通过，100 用户为本次测试上限内最高稳定档，首个不稳定档和真实容量边界均未观察到。
+因此只能陈述“至少通过 100 个带思考时间的本地并发用户”，不能将 100 写成系统极限或生产
+容量承诺。
+
+AI 隔离场景创建 20 个不同 owner 的作业，最终恰有 20 个成功作业、20 次成功尝试、20 条
+供应商成本、20 个已结算预留和 20 条用量账本；queued/running/failed/cancelled/timed_out、
+活动预留和不一致作业均为 0。数据库领取 P95 为 2,741.282 ms，端到端 P99 为 3,164.963 ms；
+普通读/写 P95 相对无 AI 基线为 1.000/0.792 倍。该结果使用受控本机 OpenAI 兼容上游，只验证
+队列、流、隔离、终态和金额，不证明正式模型质量或公网时延。
+
+队列场景分别创建订阅、公开链接和导出积压各 50 条：排空时间为 13.537、13.339、4.093 秒，
+吞吐为 3.694、3.749、12.216 jobs/s，全部成功且无遗留 queued/running/failed。维护场景在
+普通请求持续运行时清理任务、日历系列、困难、记忆各 100 条及同步事件 1,000 条，总耗时
+0.472 秒；普通读/写 P95 相对基线为 0.815/1.091 倍。60 分钟耐久内存增长为 0.603%，没有
+持续 CPU 高位、连接池超时、5xx、超过 2 秒锁等待、队列积压或业务不变量异常。
+
+所有最终场景的连接峰值不超过 17/50，采样最大间隔 1 秒，连接池超时、5xx 和超过 2 秒锁等待
+均为 0。`pg_stat_statements` 只保存 query ID 和统计，不保存 SQL 正文；所有最终运行中最高
+采样平均执行时间为 28.518 ms。重历史场景累计出现 310,472 个临时块写入，已作为 M8-C
+生产候选环境复核 `work_mem`、索引和查询计划的观测项；本次重历史 HTTP 门禁仍通过。
+
+### 负载下真实浏览器
+
+`ui-load` 最终运行 `4402349a` 基于干净提交 `2a9a1aa`：20 个背景用户持续真实 HTTP 请求，
+浏览器完成后提前结束，约 39 秒内共 452 个请求、0 失败；普通业务路由最大 P95/P99 为
+20/30 ms，CPU 均值 11.5%、内存峰值 23.6%、连接峰值 28%。Browser 插件未在当前执行环境
+暴露，因此按前端测试规范使用仓库 Playwright：
+
+| 命令 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `pnpm test:e2e:performance` | **3 passed** | Chromium desktop、mobile、tablet；任务创建与跨端同步、日历、规划、专注、复盘、统计 |
+| `ITIME_E2E_BROWSER_EXECUTABLE_PATH=.../Microsoft Edge pnpm exec playwright test --config playwright.performance.config.ts --project=desktop` | **1 passed** | 真实 Microsoft Edge 154 desktop 同一负载流程 |
+
+四项浏览器流程均检查 axe、控制台、API 5xx、Vite 错误层、根级横向溢出和 5 秒跨端可见。
+截图位于：
+
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-performance-under-load.png`
+- `/tmp/itime-ui-evidence/desktop-edge-performance-under-load.png`
+
+四张截图已人工检查，页面非空，任务、日历、计划、专注、复盘、统计和同步状态无重叠、裁切或
+异常位移。视口验证不替代实体手机或平板。
+
+### 失败、修复与全量回归
+
+实测失败没有通过放宽门禁、缩小数据或跳过请求解决：
+
+- history `44e0ebee` 的日历查询 476/476 返回 422，原因是长窗口展开超过 API 的 2,000
+  occurrence 安全上限；`5402c92` 将负载改为仍覆盖重历史的七天窗口，最终 `d3ced98f` 通过。
+- history `867aa417` 暴露首版夹具实际只有 5 个活动重账号，无法满足 10 用户不复用合同；
+  `bc4639a` 为 10 个重历史账号生成独立数据，随后完整复跑。
+- saturation `de34ed9a` 因 Docker 返回科学计数法单位 `1e+03kB` 导致采样器退出；
+  `ae564a3` 增加解析回归，最终 `51b71e51` 完成全部 30 个窗口。
+- `6574272` 固定跨午夜日历测试日期，`065bb55` 固定性能 worker 时间基准，`2a9a1aa` 隔离
+  默认与性能 Playwright 产物；这些修复均保持业务门禁不变。
+
+最终验证：
+
+| 命令 | 实际结果 |
+| --- | --- |
+| `cd server && uv run pytest -q tests/test_performance_*.py` | **89 passed, 2 skipped** |
+| `cd server && uv run ruff check .` | 通过 |
+| `cd server && uv build --no-sources` | 通过 |
+| `cd server && uv run alembic current` / `uv run alembic check` | `0036_transcription_quota_usage (head)`；无模型漂移 |
+| `cd server && uv run pytest -q` | **670 passed, 2 skipped in 584.94s** |
+| `cd web && pnpm build` | 通过 |
+| `cd web && pnpm test:e2e` | **277 passed, 20 skipped in 16.9m**；Chromium 三视口 |
+
+测试结束后 `uv run python -m performance.run verify-clean` 返回
+`{"remaining_resources":[]}`；开发 PostgreSQL 中 `itime_perf_%`、`itime_test_%` 均为 0，
+性能 context 中 `itime-perf-*` 容器、卷和网络均为 0。独立进程扫描随后发现并终止了一个已脱离
+精确运行清单的 `performance.upstream` 进程；再次执行运行清单、数据库、Docker 和进程检查后，
+Locust、性能 Vite、协议桩及其他性能资源均为 0。`verify-clean` 继续只核对带精确 run ID 的清单，
+避免跨 checkout 扫描或清理同名进程。
+
+M8-A 完成 `PERF-01` 和受控本地范围的 `PERF-02`，并为 `NFR-PERF-01/NFR-CAP-01` 提供本地
+参考数据。M8-B 每日备份、RPO/RTO、24 小时恢复和删除台账重放，M8-C 生产候选网络/资源、
+真实邮件与 AI 供应商、月度成本、告警、域名/TLS、隐私披露、发布与回滚，以及正式模型质量和
+实体设备仍未完成；不能据此宣称 Web 首版已经发布。
