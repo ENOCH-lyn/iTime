@@ -20,6 +20,14 @@ from cryptography.fernet import Fernet
 from itime import __version__
 from itime.config import Settings
 from itime.database import Database
+from performance.ai_isolation import (
+    AI_BASELINE_SECONDS,
+    AI_JOB_USERS,
+    AI_STANDARD_USERS,
+    AIIsolationState,
+    build_ai_isolation_summary,
+    read_ai_isolation_state,
+)
 from performance.contracts import (
     SCENARIOS,
     AccountCredential,
@@ -1388,6 +1396,193 @@ def _run_maintenance(state: RunState) -> None:
         _stop_process(load)
 
 
+async def _read_ai_isolation(
+    state: RunState,
+) -> AIIsolationState:
+    database = Database(_settings(state))
+    try:
+        return await read_ai_isolation_state(database)
+    finally:
+        await database.close()
+
+
+def _locust_shard_environment(
+    state: RunState,
+    *,
+    index: int,
+    ready_dir: Path | None = None,
+    start_gate: Path | None = None,
+) -> dict[str, str]:
+    environment = {
+        **state.env,
+        "ITIME_PERF_WORKER_INDEX": str(index),
+        "ITIME_PERF_WORKER_COUNT": "2",
+    }
+    if ready_dir is not None and start_gate is not None:
+        environment["ITIME_PERF_AI_READY_DIR"] = str(ready_dir)
+        environment["ITIME_PERF_AI_START_GATE"] = str(start_gate)
+    return environment
+
+
+def _wait_for_ai_users_ready(
+    process: ManagedProcess,
+    ready_dir: Path,
+    *,
+    expected: int,
+    timeout: float = 60,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        _require_process_alive(process, "AI 隔离负载")
+        if len(tuple(ready_dir.iterdir())) == expected:
+            return
+        time.sleep(0.05)
+    raise TimeoutError(f"AI 用户未在 {timeout:g} 秒内全部就绪")
+
+
+def _run_ai_isolation(state: RunState) -> None:
+    assert state.scenario_config is not None
+    ordinary_port = _available_port()
+    ai_port = _available_port()
+    ordinary_origin = f"http://127.0.0.1:{ordinary_port}"
+    ai_origin = f"http://127.0.0.1:{ai_port}"
+    ready_dir = state.config.output_dir / "ai-ready"
+    ready_dir.mkdir(mode=0o700)
+    start_gate = state.config.output_dir / ".ai-start"
+    state.env["ITIME_PERF_WORKLOAD"] = state.scenario
+    ordinary = _start_process(
+        state,
+        "locust-ai-ordinary",
+        _locust_command(
+            state,
+            users=AI_STANDARD_USERS,
+            spawn_rate=state.scenario_config.spawn_rate,
+            duration_seconds=(
+                AI_BASELINE_SECONDS + state.scenario_config.duration_seconds
+            ),
+            prefix="ai-ordinary",
+            user_classes=("StandardUser",),
+            web_port=ordinary_port,
+            autostart=False,
+        ),
+        env=_locust_shard_environment(state, index=0),
+    )
+    ai_load: ManagedProcess | None = None
+    try:
+        _wait_http(ordinary_origin, ordinary, path="/stats/requests")
+        with httpx.Client(
+            base_url=ordinary_origin,
+            timeout=10,
+            trust_env=False,
+        ) as ordinary_client:
+            _set_locust_users(
+                ordinary,
+                ordinary_client,
+                ordinary_origin,
+                AI_STANDARD_USERS,
+            )
+            _reset_locust_stats(ordinary, ordinary_client)
+            baseline_started = datetime.now(UTC)
+            time.sleep(AI_BASELINE_SECONDS)
+            baseline_ended = datetime.now(UTC)
+            baseline_requests, baseline_resources = _capture_locust_window(
+                state,
+                ordinary,
+                ordinary_client,
+                started_at=baseline_started,
+                ended_at=baseline_ended,
+            )
+
+            initial = asyncio.run(_read_ai_isolation(state))
+            ai_load = _start_process(
+                state,
+                "locust-ai-jobs",
+                _locust_command(
+                    state,
+                    users=AI_JOB_USERS,
+                    spawn_rate=state.scenario_config.spawn_rate,
+                    duration_seconds=state.scenario_config.duration_seconds,
+                    prefix="ai-jobs",
+                    user_classes=("AIUser",),
+                    web_port=ai_port,
+                    autostart=False,
+                ),
+                env=_locust_shard_environment(
+                    state,
+                    index=1,
+                    ready_dir=ready_dir,
+                    start_gate=start_gate,
+                ),
+            )
+            _wait_http(ai_origin, ai_load, path="/stats/requests")
+            with httpx.Client(
+                base_url=ai_origin,
+                timeout=20,
+                trust_env=False,
+            ) as ai_client:
+                _set_locust_users(
+                    ai_load,
+                    ai_client,
+                    ai_origin,
+                    AI_JOB_USERS,
+                )
+                _wait_for_ai_users_ready(
+                    ai_load,
+                    ready_dir,
+                    expected=AI_JOB_USERS,
+                )
+                _reset_locust_stats(ordinary, ordinary_client)
+                _reset_locust_stats(ai_load, ai_client)
+                active_started = datetime.now(UTC)
+                start_gate.touch(mode=0o600)
+                time.sleep(state.scenario_config.duration_seconds)
+                active_ended = datetime.now(UTC)
+                ordinary_requests, active_resources = (
+                    _capture_locust_window(
+                        state,
+                        ordinary,
+                        ordinary_client,
+                        started_at=active_started,
+                        ended_at=active_ended,
+                    )
+                )
+                _require_process_alive(ai_load, "AI 隔离负载")
+                response = ai_client.get("/stats/requests")
+                response.raise_for_status()
+                ai_requests = locust_request_stats(response.json())
+                response = ai_client.get("/stop")
+                response.raise_for_status()
+            response = ordinary_client.get("/stop")
+            response.raise_for_status()
+
+        final = asyncio.run(_read_ai_isolation(state))
+        summary = build_ai_isolation_summary(
+            initial=initial,
+            final=final,
+            ordinary_baseline_requests=baseline_requests,
+            ordinary_active_requests=ordinary_requests,
+            ai_requests=ai_requests,
+            baseline_resources=baseline_resources,
+            active_resources=active_resources,
+            duration_seconds=state.scenario_config.duration_seconds,
+        )
+        _write_json_atomic(
+            state.config.output_dir / "ai-isolation.json",
+            {
+                "schema_version": 1,
+                **asdict(summary),
+            },
+        )
+    finally:
+        if ai_load is not None:
+            _stop_process(ai_load)
+        _stop_process(ordinary)
+        start_gate.unlink(missing_ok=True)
+        for marker in ready_dir.iterdir():
+            marker.unlink()
+        ready_dir.rmdir()
+
+
 def _stage_warmup(state: RunState) -> None:
     assert state.scenario_config is not None
     _run_locust(
@@ -1451,8 +1646,6 @@ def _stage_start_sampler(state: RunState) -> None:
 def _formal_user_classes(state: RunState) -> tuple[str, ...]:
     if state.scenario == "history":
         return ("HistoryUser",)
-    if state.scenario == "ai-isolation":
-        return ("StandardUser", "AIUser")
     if state.scenario == "smoke":
         return ("SyncUser",)
     return ("StandardUser",)
@@ -1469,6 +1662,8 @@ def _stage_run_locust(state: RunState) -> None:
             _run_queues(state)
         elif state.scenario == Scenario.MAINTENANCE:
             _run_maintenance(state)
+        elif state.scenario == Scenario.AI_ISOLATION:
+            _run_ai_isolation(state)
         else:
             _run_locust(
                 state,

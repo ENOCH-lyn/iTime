@@ -563,3 +563,88 @@ def test_maintenance_report_uses_measured_cleanup_window(tmp_path: Path):
     assert "| read | 1.2x |" in report
     assert "- sync_events: 1000" in report
     assert not (tmp_path / "requests_stats.csv").exists()
+
+
+def test_ai_isolation_report_uses_ordinary_load_and_job_evidence(
+    tmp_path: Path,
+):
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "scenario": "ai-isolation",
+                "users": 40,
+                "environment": "test",
+                "commit": "abc1234",
+            }
+        )
+    )
+    ordinary_requests = [
+        asdict(RequestStat("read::tasks.list", 300, 120, 300, 600, 0)),
+        asdict(RequestStat("write::tasks.create", 30, 250, 500, 900, 0)),
+    ]
+    ai_state = {
+        "jobs": 20,
+        "distinct_owners": 20,
+        "queued": 0,
+        "running": 0,
+        "succeeded": 20,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "attempts": 20,
+        "succeeded_attempts": 20,
+        "provider_costs": 20,
+        "reservations_reserved": 0,
+        "reservations_settled": 20,
+        "reservations_released": 0,
+        "usage_ledger_entries": 20,
+        "inconsistent_jobs": 0,
+        "claimed_p95_ms": 500,
+        "end_to_end_p99_ms": 1500,
+    }
+    (tmp_path / "ai-isolation.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "standard_users": 20,
+                "ai_users": 20,
+                "duration_seconds": 300,
+                "passed": True,
+                "violations": [],
+                "degradation_ratios": {"read": 1.2, "write": 1.1},
+                "initial": {**ai_state, "jobs": 0, "distinct_owners": 0},
+                "final": ai_state,
+                "ordinary_baseline_requests": ordinary_requests,
+                "ordinary_active_requests": ordinary_requests,
+                "ai_requests": [
+                    asdict(
+                        RequestStat(
+                            "ai::messages.accept",
+                            20,
+                            100,
+                            500,
+                            800,
+                            0,
+                        )
+                    )
+                ],
+                "baseline_resources": asdict(healthy_resources()),
+                "active_resources": asdict(healthy_resources()),
+            }
+        )
+    )
+    (tmp_path / "invariants.json").write_text(
+        json.dumps({"orphan_tasks": 0})
+    )
+
+    result = build_report(tmp_path)
+
+    assert result.passed
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["ai_isolation"]["standard_users"] == 20
+    assert summary["ai_isolation"]["ai_users"] == 20
+    assert summary["ai_isolation"]["final"]["inconsistent_jobs"] == 0
+    report = (tmp_path / "report.md").read_text()
+    assert "- Ordinary users: 20" in report
+    assert "- AI users/jobs: 20" in report
+    assert "| write | 1.1x |" in report

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -13,9 +14,16 @@ import performance.locustfile as workloads
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict):
+    def __init__(
+        self,
+        status_code: int,
+        payload: dict,
+        *,
+        lines: tuple[str, ...] = (),
+    ):
         self.status_code = status_code
         self.payload = payload
+        self.lines = lines
         self.failures: list[str] = []
         self.successes = 0
 
@@ -31,6 +39,9 @@ class FakeResponse:
 
     def success(self) -> None:
         self.successes += 1
+
+    def iter_lines(self):
+        return iter(self.lines)
 
     def __enter__(self):
         return self
@@ -220,6 +231,7 @@ def test_ai_user_submits_once_and_emits_claim_and_completion_metrics(
     monkeypatch.setenv("ITIME_PERF_CREDENTIALS", str(credentials_path))
     monkeypatch.setenv("ITIME_PERF_ANCHOR_DATE", "2026-10-05")
     workloads.reset_credential_pools()
+    event_time = datetime.now(UTC).isoformat()
 
     responses = [
         FakeResponse(200, {"csrf_token": "csrf-value"}),
@@ -236,7 +248,42 @@ def test_ai_user_submits_once_and_emits_claim_and_completion_metrics(
                 "job": {"id": "job-1", "status": "queued"},
             },
         ),
-        FakeResponse(200, {"id": "job-1", "status": "running"}),
+        FakeResponse(
+            200,
+            {},
+            lines=(
+                "event: job_state",
+                "data: "
+                + json.dumps(
+                    {
+                        "sequence": 1,
+                        "kind": "job_state",
+                        "payload": {"status": "running"},
+                        "created_at": event_time,
+                    }
+                ),
+                "event: content_delta",
+                "data: "
+                + json.dumps(
+                    {
+                        "sequence": 2,
+                        "kind": "content_delta",
+                        "payload": {"text": "完成"},
+                        "created_at": event_time,
+                    }
+                ),
+                "event: job_state",
+                "data: "
+                + json.dumps(
+                    {
+                        "sequence": 3,
+                        "kind": "job_state",
+                        "payload": {"status": "succeeded"},
+                        "created_at": event_time,
+                    }
+                ),
+            ),
+        ),
         FakeResponse(
             200,
             {
@@ -266,6 +313,7 @@ def test_ai_user_submits_once_and_emits_claim_and_completion_metrics(
     UUID(submit["json"]["operation_id"])
     assert [item["name"] for item in fired] == [
         "ai::accepted-to-claimed",
+        "ai::sse-visible-lag",
         "ai::end-to-end",
     ]
     assert all(item["exception"] is None for item in fired)

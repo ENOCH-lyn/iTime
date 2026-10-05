@@ -1,10 +1,11 @@
+import hashlib
 import json
 import os
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -93,6 +94,45 @@ def contains_change(payload: dict[str, Any], entity_id: str) -> bool:
         and str(item.get("entity_id")) == entity_id
         for item in events_payload
     )
+
+
+def sse_payloads(lines: Any) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for line in lines:
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not isinstance(line, str) or not line.startswith("data:"):
+            continue
+        raw = line.removeprefix("data:").strip()
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def wait_for_ai_start(credential: dict[str, str]) -> None:
+    ready_root = os.environ.get("ITIME_PERF_AI_READY_DIR")
+    start_gate = os.environ.get("ITIME_PERF_AI_START_GATE")
+    if not ready_root and not start_gate:
+        return
+    if not ready_root or not start_gate:
+        raise RuntimeError("AI 性能启动门缺少路径")
+    ready_dir = Path(ready_root)
+    ready_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    marker = hashlib.sha256(credential["email"].encode()).hexdigest()
+    (ready_dir / marker).touch(mode=0o600, exist_ok=True)
+    deadline = time.monotonic() + 60
+    gate = Path(start_gate)
+    while time.monotonic() < deadline:
+        if gate.is_file():
+            return
+        gevent.sleep(0.05)
+    raise RuntimeError("AI 性能启动门等待超时")
 
 
 class CredentialPool:
@@ -601,6 +641,8 @@ class AIUser(AuthenticatedUser):
         self.conversation_id = str(conversation["conversation"]["id"])
         self.conversation_version = int(conversation["conversation"]["version"])
         self.generation_submitted = False
+        assert self.credential is not None
+        wait_for_ai_start(self.credential)
 
     @task
     def generate_reply(self) -> None:
@@ -627,8 +669,91 @@ class AIUser(AuthenticatedUser):
             return
         self.conversation_version = int(submitted["conversation"]["version"])
         job_id = str(submitted["job"]["id"])
+        accepted_at = datetime.now(UTC)
         claimed_recorded = False
+        first_delta_recorded = False
+        terminal_seen = False
         deadline = started + 65
+        cursor = 0
+        while time.perf_counter() < deadline:
+            with self.client.get(
+                f"/api/v1/ai/jobs/{job_id}/events",
+                name="ai-stream::events",
+                params={"after": cursor},
+                stream=True,
+                catch_response=True,
+            ) as response:
+                if response.status_code != 200:
+                    response.failure(
+                        f"unexpected status {response.status_code}, expected 200"
+                    )
+                    return
+                for event in sse_payloads(response.iter_lines()):
+                    try:
+                        cursor = max(cursor, int(event["sequence"]))
+                    except (KeyError, TypeError, ValueError):
+                        response.failure("SSE event sequence is invalid")
+                        return
+                    kind = event.get("kind")
+                    payload = event.get("payload")
+                    created_at = event.get("created_at")
+                    if (
+                        not claimed_recorded
+                        and kind == "job_state"
+                        and isinstance(payload, dict)
+                        and payload.get("status") == "running"
+                        and isinstance(created_at, str)
+                    ):
+                        claimed_at = datetime.fromisoformat(
+                            created_at.replace("Z", "+00:00")
+                        )
+                        events.request.fire(
+                            request_type="AI",
+                            name="ai::accepted-to-claimed",
+                            response_time=max(
+                                0,
+                                (claimed_at - accepted_at).total_seconds()
+                                * 1000,
+                            ),
+                            response_length=0,
+                            exception=None,
+                            context={},
+                        )
+                        claimed_recorded = True
+                    if (
+                        not first_delta_recorded
+                        and kind == "content_delta"
+                        and isinstance(created_at, str)
+                    ):
+                        emitted_at = datetime.fromisoformat(
+                            created_at.replace("Z", "+00:00")
+                        )
+                        events.request.fire(
+                            request_type="AI",
+                            name="ai::sse-visible-lag",
+                            response_time=max(
+                                0,
+                                (
+                                    datetime.now(UTC) - emitted_at
+                                ).total_seconds()
+                                * 1000,
+                            ),
+                            response_length=0,
+                            exception=None,
+                            context={},
+                        )
+                        first_delta_recorded = True
+                    if (
+                        kind == "job_state"
+                        and isinstance(payload, dict)
+                        and payload.get("status")
+                        in {"succeeded", "failed", "timed_out", "cancelled"}
+                    ):
+                        terminal_seen = True
+                response.success()
+            if terminal_seen:
+                break
+
         while time.perf_counter() < deadline:
             job = self.request_json(
                 "GET",
@@ -640,13 +765,7 @@ class AIUser(AuthenticatedUser):
                 return
             status = str(job["status"])
             elapsed_ms = (time.perf_counter() - started) * 1000
-            if not claimed_recorded and status in {
-                "running",
-                "succeeded",
-                "failed",
-                "timed_out",
-                "cancelled",
-            }:
+            if not claimed_recorded and status == "running":
                 events.request.fire(
                     request_type="AI",
                     name="ai::accepted-to-claimed",
@@ -657,6 +776,17 @@ class AIUser(AuthenticatedUser):
                 )
                 claimed_recorded = True
             if status == "succeeded":
+                if not first_delta_recorded:
+                    events.request.fire(
+                        request_type="AI",
+                        name="ai::sse-visible-lag",
+                        response_time=elapsed_ms,
+                        response_length=0,
+                        exception=RuntimeError(
+                            "AI job succeeded without a visible SSE delta"
+                        ),
+                        context={},
+                    )
                 encoded = json.dumps(
                     job.get("output") or {},
                     ensure_ascii=False,

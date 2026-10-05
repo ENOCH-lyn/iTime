@@ -62,9 +62,15 @@ def _loopback_host(hostname: str) -> bool:
 def enforce_endpoint_policy(endpoint_url: str, settings: Settings) -> None:
     parsed = urlsplit(endpoint_url)
     if parsed.scheme == "http":
-        if settings.environment != "test" or not _loopback_host(parsed.hostname or ""):
+        hostname = (parsed.hostname or "").lower()
+        test_http_allowed = settings.environment == "test" and (
+            _loopback_host(hostname)
+            or hostname in settings.ai_private_endpoint_hosts
+        )
+        if not test_http_allowed:
             raise EndpointPolicyError(
-                "非测试环境只允许 HTTPS；测试 HTTP 端点必须使用回环地址。"
+                "非测试环境只允许 HTTPS；测试 HTTP 端点必须使用回环地址"
+                "或显式私网白名单。"
             )
 
 

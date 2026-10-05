@@ -537,6 +537,56 @@ def _maintenance_inputs(
     )
 
 
+def _ai_isolation_inputs(
+    run_dir: Path,
+) -> tuple[tuple[RequestStat, ...], ResourceSummary, int, dict[str, Any]]:
+    payload = read_json(run_dir / "ai-isolation.json")
+    violations = payload.get("violations")
+    degradation = payload.get("degradation_ratios")
+    initial = payload.get("initial")
+    final = payload.get("final")
+    ai_requests = payload.get("ai_requests")
+    if (
+        payload.get("schema_version") != 1
+        or not isinstance(violations, list)
+        or not all(isinstance(item, str) for item in violations)
+        or not isinstance(degradation, Mapping)
+        or not isinstance(initial, Mapping)
+        or not isinstance(final, Mapping)
+        or not isinstance(ai_requests, list)
+    ):
+        raise ValueError("ai-isolation.json 格式无效")
+    try:
+        standard_users = int(payload["standard_users"])
+        ai_users = int(payload["ai_users"])
+        duration_seconds = int(payload["duration_seconds"])
+        degradation_ratios = {
+            str(key): float(value)
+            for key, value in degradation.items()
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("ai-isolation.json 摘要字段无效") from exc
+    if standard_users != 20 or ai_users != 20 or duration_seconds <= 0:
+        raise ValueError("AI 隔离负载必须为 20 个普通用户和 20 个 AI 用户")
+    metadata = {
+        "standard_users": standard_users,
+        "ai_users": ai_users,
+        "duration_seconds": duration_seconds,
+        "passed": payload.get("passed") is True,
+        "violations": violations,
+        "degradation_ratios": degradation_ratios,
+        "initial": dict(initial),
+        "final": dict(final),
+        "ai_requests": ai_requests,
+    }
+    return (
+        _request_stats(payload.get("ordinary_active_requests")),
+        _resource_summary(payload.get("active_resources")),
+        standard_users,
+        metadata,
+    )
+
+
 def _markdown_report(
     manifest: Mapping[str, Any],
     requests: tuple[RequestStat, ...],
@@ -546,6 +596,7 @@ def _markdown_report(
     saturation: Mapping[str, Any] | None = None,
     queues: Mapping[str, Any] | None = None,
     maintenance: Mapping[str, Any] | None = None,
+    ai_isolation: Mapping[str, Any] | None = None,
 ) -> str:
     lines = [
         f"# iTime performance report: {result.scenario}",
@@ -629,6 +680,29 @@ def _markdown_report(
             )
         )
         lines.append("")
+    if ai_isolation is not None:
+        final = ai_isolation["final"]
+        lines.extend(
+            [
+                "## AI Isolation",
+                "",
+                f"- Ordinary users: {ai_isolation['standard_users']}",
+                f"- AI users/jobs: {ai_isolation['ai_users']}",
+                f"- Succeeded jobs: {final['succeeded']}",
+                f"- Active reservations: {final['reservations_reserved']}",
+                f"- Inconsistent jobs: {final['inconsistent_jobs']}",
+                "",
+                "| Category | P95 degradation |",
+                "| --- | ---: |",
+            ]
+        )
+        lines.extend(
+            f"| {category} | {_number(ratio)}x |"
+            for category, ratio in sorted(
+                ai_isolation["degradation_ratios"].items()
+            )
+        )
+        lines.append("")
     lines.extend(
         [
             "## Requests",
@@ -683,6 +757,7 @@ def build_report(run_dir: Path) -> GateResult:
     saturation: dict[str, Any] | None = None
     queues: dict[str, Any] | None = None
     maintenance: dict[str, Any] | None = None
+    ai_isolation: dict[str, Any] | None = None
     if scenario == "saturation":
         requests, resources, users, saturation = _saturation_inputs(run_dir)
         report_manifest = {**manifest, "users": users}
@@ -691,6 +766,11 @@ def build_report(run_dir: Path) -> GateResult:
         report_manifest = {**manifest, "users": users}
     elif scenario == "maintenance":
         requests, resources, users, maintenance = _maintenance_inputs(run_dir)
+        report_manifest = {**manifest, "users": users}
+    elif scenario == "ai-isolation":
+        requests, resources, users, ai_isolation = _ai_isolation_inputs(
+            run_dir
+        )
         report_manifest = {**manifest, "users": users}
     else:
         requests = read_locust_csv(run_dir / "requests_stats.csv")
@@ -731,6 +811,8 @@ def build_report(run_dir: Path) -> GateResult:
         failures.extend(queues["violations"])
     if maintenance is not None:
         failures.extend(maintenance["violations"])
+    if ai_isolation is not None:
+        failures.extend(ai_isolation["violations"])
     result = GateResult(
         scenario=scenario,
         passed=not failures,
@@ -744,6 +826,8 @@ def build_report(run_dir: Path) -> GateResult:
         summary["queues"] = queues
     if maintenance is not None:
         summary["maintenance"] = maintenance
+    if ai_isolation is not None:
+        summary["ai_isolation"] = ai_isolation
     artifact = {
         "manifest": manifest,
         "requests": [asdict(item) for item in requests],
@@ -765,6 +849,7 @@ def build_report(run_dir: Path) -> GateResult:
             saturation=saturation,
             queues=queues,
             maintenance=maintenance,
+            ai_isolation=ai_isolation,
         ),
     )
     return result
