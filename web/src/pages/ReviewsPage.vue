@@ -517,6 +517,8 @@ async function logout() {
         />
       </div>
 
+      <h1 v-if="view === 'review' && !detail" class="sr-only">每日复盘</h1>
+
       <MemoryManager v-if="view === 'memories'" :key="memorySyncRevision" />
 
       <template v-else>
