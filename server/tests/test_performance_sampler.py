@@ -225,6 +225,27 @@ def test_sampler_loop_never_overlaps_slow_samples(
     assert maximum_active == 1
 
 
+def test_sampler_ignores_inflight_command_failure_after_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    stop = asyncio.Event()
+
+    async def interrupted_write_sample(config, *, sampling_gap_seconds=0):
+        stop.set()
+        raise sampler.SamplerError("采样命令失败：docker")
+
+    monkeypatch.setattr(sampler, "write_sample", interrupted_write_sample)
+    config = sampler.SamplerConfig(
+        docker_context="colima-itime-perf",
+        compose_project="itime-perf-abc12345",
+        database_url="postgresql+psycopg://itime:test@127.0.0.1/itime_perf_abc12345",
+        output_dir=tmp_path,
+    )
+
+    asyncio.run(sampler.sample_until_stopped(config, stop))
+
+
 def test_write_sample_flushes_aggregate_container_database_and_queue_csv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

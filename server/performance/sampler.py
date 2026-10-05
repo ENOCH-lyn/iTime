@@ -539,7 +539,12 @@ async def sample_until_stopped(
                 int(started - last_started - config.interval_seconds),
             )
         )
-        await write_sample(config, sampling_gap_seconds=sampling_gap)
+        try:
+            await write_sample(config, sampling_gap_seconds=sampling_gap)
+        except SamplerError:
+            if stop.is_set():
+                return
+            raise
         last_started = started
         try:
             await asyncio.wait_for(
