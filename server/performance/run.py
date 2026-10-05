@@ -658,7 +658,7 @@ def _wait_for_locust_users(
 def _profile_for(state: RunState) -> SeedProfile:
     assert state.scenario_config is not None
     if state.scenario_config.dataset == "history":
-        return SeedProfile.history()
+        return SeedProfile.history(accounts=state.scenario_config.users)
     if state.scenario == "smoke":
         return SeedProfile.standard(
             accounts=2,

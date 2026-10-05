@@ -142,6 +142,18 @@ def test_performance_anchor_uses_the_0400_utc_activity_day_boundary():
     )
 
 
+def test_history_profile_has_one_distinct_account_per_virtual_user(tmp_path: Path):
+    run_state = state(tmp_path)
+    run_state.scenario = "history"
+    run_state.scenario_config = SCENARIOS[Scenario.HISTORY]
+
+    profile = performance_run._profile_for(run_state)
+
+    assert profile.accounts == run_state.scenario_config.users
+    assert profile.active_accounts == run_state.scenario_config.users
+    assert profile.history_accounts == run_state.scenario_config.users
+
+
 def test_ui_load_contract_and_browser_environment_are_bounded(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
