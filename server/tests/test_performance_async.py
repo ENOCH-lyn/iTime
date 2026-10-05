@@ -16,6 +16,7 @@ import pytest
 
 from itime.config import Settings
 from itime.database import Database
+from itime.public_links import service as public_link_service
 from performance.contracts import SeedProfile
 from performance.seed import seed_dataset
 from performance.synthetic_workers import run_public_link, run_subscription
@@ -176,7 +177,9 @@ def test_upstream_stream_failures_and_smtp_sink_do_not_echo_credentials(
 def test_synthetic_workers_keep_production_lease_and_writeback_semantics(
     admin_url: str,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.setattr(public_link_service, "now", lambda: BASE_TIME)
     with isolated_database(admin_url) as database_url:
         settings = Settings(
             environment="test",
@@ -211,14 +214,17 @@ def test_synthetic_workers_keep_production_lease_and_writeback_semantics(
                     lease_id=NULL, lease_until=NULL
                 """
             )
-            connection.execute(
+            link_id = connection.execute(
                 """
                 UPDATE task_links
-                SET fetch_status='queued', available_at=now(),
+                SET fetch_status='queued', available_at=%s,
+                    attempt_count=0, last_attempt_at=NULL,
                     lease_id=NULL, lease_until=NULL
                 WHERE id=(SELECT id FROM task_links ORDER BY id LIMIT 1)
-                """
-            )
+                RETURNING id
+                """,
+                (BASE_TIME,),
+            ).fetchone()[0]
 
         async def process() -> tuple[bool, bool]:
             database = Database(settings)
@@ -251,9 +257,9 @@ def test_synthetic_workers_keep_production_lease_and_writeback_semantics(
                 SELECT fetch_status, lease_id, lease_until,
                        last_error_code, summary
                 FROM task_links
-                ORDER BY id
-                LIMIT 1
-                """
+                WHERE id=%s
+                """,
+                (link_id,),
             ).fetchone()
         assert subscription == ("idle", None, None, None)
         assert link[:4] == ("ready", None, None, None)
