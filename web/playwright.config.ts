@@ -9,6 +9,7 @@ const browserExecutablePath = process.env.ITIME_E2E_BROWSER_EXECUTABLE_PATH
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'performance-under-load.spec.ts',
   timeout: 45_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,

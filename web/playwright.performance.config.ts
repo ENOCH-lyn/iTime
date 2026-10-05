@@ -9,6 +9,7 @@ if (!baseURL?.startsWith('http://localhost:')) {
 export default defineConfig({
   ...base,
   testMatch: 'performance-under-load.spec.ts',
+  testIgnore: [],
   timeout: 60_000,
   outputDir: '/tmp/itime-ui-performance-results',
   use: {
