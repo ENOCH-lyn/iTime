@@ -398,7 +398,7 @@ git commit -m "build: 固定备份恢复服务拓扑"
 - Create: `server/recovery/ledger.py`
 - Create: `server/tests/test_recovery_ledger.py`
 
-- [ ] **Step 1: 写快照结构和敏感字段失败测试**
+- [x] **Step 1: 写快照结构和敏感字段失败测试**
 
 测试在随机迁移数据库写入：
 
@@ -426,7 +426,7 @@ path = write_encrypted_snapshot(
 - 同输入产生相同 canonical payload 和 digest；
 - 错误 Fernet key、篡改 token、链摘要不匹配全部失败。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -435,7 +435,7 @@ uv run pytest -q tests/test_recovery_ledger.py
 
 Expected: FAIL，台账模块不存在。
 
-- [ ] **Step 3: 定义台账类型**
+- [x] **Step 3: 定义台账类型**
 
 在 `contracts.py` 增加：
 
@@ -464,7 +464,7 @@ class RecoveryLedger:
 账号条目的 `subject` 只保存现有 `subject_digest`、`owner_id=None`；单项对象保存 UUID 和 owner
 UUID，但整个 payload 必须加密。
 
-- [ ] **Step 4: 实现查询、规范化、加密和链校验**
+- [x] **Step 4: 实现查询、规范化、加密和链校验**
 
 `ledger.py` 提供：
 
@@ -494,7 +494,7 @@ def read_encrypted_snapshot(
 使用现有 `Settings`/`Database`、`cryptography.fernet.Fernet`、原子 rename、`fsync` 和 `0600`
 文件权限。异常消息只包含阶段和文件名，不包含 token 或解密错误原文。
 
-- [ ] **Step 5: 运行真实 PostgreSQL 测试并提交**
+- [x] **Step 5: 运行真实 PostgreSQL 测试并提交**
 
 ```bash
 cd server

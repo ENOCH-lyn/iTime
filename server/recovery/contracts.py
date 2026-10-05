@@ -41,3 +41,24 @@ class CleanupManifest:
     restore_spool_volume: str
     network: str
     output_dir: Path
+
+
+@dataclass(frozen=True)
+class LedgerEntry:
+    kind: str
+    subject: str
+    owner_id: str | None
+    state: str
+    deleted_at: str
+    purge_after: str
+    purged_at: str | None
+    version: int
+
+
+@dataclass(frozen=True)
+class RecoveryLedger:
+    schema_version: int
+    generated_at: str
+    source_system_identifier: str
+    previous_digest: str | None
+    entries: tuple[LedgerEntry, ...]
