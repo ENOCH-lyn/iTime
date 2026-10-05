@@ -929,7 +929,7 @@ git commit -m "test: 验证恢复删除重放与故障拒绝"
 - Modify: `web/package.json`
 - Modify: `server/recovery/run.py`
 
-- [ ] **Step 1: 写连接恢复栈的 Playwright 配置**
+- [x] **Step 1: 写连接恢复栈的 Playwright 配置**
 
 `web/playwright.recovery.config.ts` 复用普通配置，但要求：
 
@@ -947,7 +947,7 @@ if (!baseURL?.startsWith('http://localhost:')) {
 "test:e2e:recovery": "playwright test --config playwright.recovery.config.ts"
 ```
 
-- [ ] **Step 2: 实现旧会话拒绝和恢复后核心流程**
+- [x] **Step 2: 实现旧会话拒绝和恢复后核心流程**
 
 测试读取权限 `0600` 的账号、旧 storage state 和 run manifest，覆盖：
 
@@ -964,7 +964,7 @@ test('恢复后撤销旧会话并保持数据与同步可用', async ({ browser 
 每页执行 axe、控制台、API 5xx、Vite overlay 和根级横向溢出检查；截图按视口写
 `/tmp/itime-ui-evidence/<project>-recovery-after-restore.png`。
 
-- [ ] **Step 3: 将 UI 接入恢复 orchestrator**
+- [x] **Step 3: 将 UI 接入恢复 orchestrator**
 
 `scenario ui` 在 finalizer/verify 后：
 
@@ -977,7 +977,7 @@ test('恢复后撤销旧会话并保持数据与同步可用', async ({ browser 
 
 浏览器失败不能仍生成 PASS 报告。
 
-- [ ] **Step 4: 执行 Chromium 和 Edge**
+- [x] **Step 4: 执行 Chromium 和 Edge**
 
 ```bash
 cd web
@@ -991,9 +991,10 @@ ITIME_E2E_BROWSER_EXECUTABLE_PATH="$HOME/Applications/Microsoft Edge.app/Content
   --project=desktop
 ```
 
-Expected: Chromium 3 passed；Edge desktop 1 passed；截图人工检查无空白、重叠、裁切或错误状态。
+Run `15687668`: Chromium 10 passed、2 skipped（仅 desktop 重复执行会话恢复语义）；
+Edge desktop 4 passed；截图人工检查无空白、重叠、裁切或错误状态。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git diff --check

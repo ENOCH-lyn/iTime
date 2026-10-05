@@ -101,7 +101,7 @@ services:
     environment:
       ITIME_ENVIRONMENT: test
       ITIME_DATABASE_URL: postgresql+psycopg://itime:${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}@restore-postgres:5432/${ITIME_RECOVERY_RESTORE_DATABASE:?required}
-      ITIME_PUBLIC_ORIGIN: http://127.0.0.1:${ITIME_RECOVERY_WEB_PORT:-4175}
+      ITIME_PUBLIC_ORIGIN: http://localhost:${ITIME_RECOVERY_WEB_PORT:-4175}
       ITIME_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
       ITIME_ENCRYPTION_KEY: ${ITIME_RECOVERY_ENCRYPTION_KEY:?required}
       ITIME_AI_ENCRYPTION_KEY: ${ITIME_RECOVERY_AI_ENCRYPTION_KEY:?required}

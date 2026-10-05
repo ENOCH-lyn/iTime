@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import psycopg
@@ -22,7 +22,7 @@ from psycopg import sql
 
 from itime import __version__
 from itime.account_deletion.service import (
-    claim_next_deletion,
+    ClaimedDeletion,
     purge_claimed_account,
 )
 from itime.calendar.lifecycle_service import cleanup_expired_calendar_items
@@ -72,6 +72,7 @@ from recovery.verify import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "server"
+WEB = ROOT / "web"
 COMPOSE_FILE = ROOT / "compose.recovery.yaml"
 CONTAINER_TMP = Path("/", "tmp")
 HOST_ENVIRONMENT_KEYS = (
@@ -143,6 +144,8 @@ class RunState:
     probe_ids: list[str] = field(default_factory=list)
     probe_committed_at: list[datetime] = field(default_factory=list)
     deletion_expectations: dict[str, str] = field(default_factory=dict)
+    deletion_labels: dict[str, str] = field(default_factory=dict)
+    deleted_account_email: str | None = None
     expected_counts: dict[str, int] = field(default_factory=dict)
     archived_wal: str | None = None
     target_at: datetime | None = None
@@ -154,6 +157,7 @@ class RunState:
     verification: RecoveryVerification | None = None
     encryption_verification: EncryptionVerification | None = None
     fault_results: dict[str, bool] = field(default_factory=dict)
+    ui_passed: bool = False
     gate_result: RecoveryGateResult | None = None
     failed_stage: str | None = None
 
@@ -382,6 +386,30 @@ def _write_secret(path: Path, content: str) -> None:
         raise
 
 
+def _write_browser_session_state(path: Path, session_cookie: str) -> None:
+    _write_secret(
+        path,
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "itime_session",
+                        "value": session_cookie,
+                        "domain": "localhost",
+                        "path": "/api",
+                        "expires": int(time.time()) + 86400,
+                        "httpOnly": True,
+                        "secure": False,
+                        "sameSite": "Lax",
+                    }
+                ],
+                "origins": [],
+            },
+            separators=(",", ":"),
+        ),
+    )
+
+
 def _available_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -521,6 +549,7 @@ def _start_process(
     command: list[str],
     *,
     env: Mapping[str, str],
+    cwd: Path = SERVER,
 ) -> ManagedProcess:
     log_dir = state.config.output_dir / "logs"
     log_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -529,7 +558,7 @@ def _start_process(
     os.chmod(log_path, 0o600)
     process = subprocess.Popen(  # noqa: S603
         command,
-        cwd=SERVER,
+        cwd=cwd,
         env=dict(env),
         text=True,
         stdout=log_handle,
@@ -689,6 +718,9 @@ def _stage_prepare_secrets(state: RunState) -> None:
         (
             private_dir / "ledger-before.bin",
             private_dir / "ledger-after.bin",
+            private_dir / "old-session.json",
+            private_dir / "primary-session.json",
+            private_dir / "ui-run.json",
         )
     )
 
@@ -1001,7 +1033,9 @@ def _lifecycle_targets(
     queries = {
         "task": """
             SELECT id::text, version FROM tasks
-            WHERE owner_id=%s AND deleted_at IS NULL
+            WHERE owner_id=%s
+              AND deleted_at IS NULL
+              AND NOT (id = ANY(%s::uuid[]))
             ORDER BY id LIMIT 1
         """,
         "difficulty": """
@@ -1025,7 +1059,14 @@ def _lifecycle_targets(
         connect_timeout=3,
     ) as connection:
         targets = {
-            kind: connection.execute(query, (owner_id,)).fetchone()
+            kind: connection.execute(
+                query,
+                (
+                    (owner_id, state.probe_ids)
+                    if kind == "task"
+                    else (owner_id,)
+                ),
+            ).fetchone()
             for kind, query in queries.items()
         }
     if any(value is None for value in targets.values()):
@@ -1131,30 +1172,39 @@ def _complete_account_deletion(
         _psycopg_url(state.source_database_url),
         connect_timeout=3,
     ) as connection:
-        connection.execute(
+        claimed = connection.execute(
             """
             UPDATE account_deletions
-            SET purge_after=clock_timestamp(),
-                available_at=clock_timestamp()
+            SET status='processing',
+                purge_after=requested_at + interval '1 microsecond',
+                available_at=requested_at + interval '1 microsecond',
+                lease_id=%s,
+                lease_until=clock_timestamp() + interval '1 day',
+                attempt_count=attempt_count + 1,
+                started_at=COALESCE(started_at, clock_timestamp()),
+                last_error_code=NULL,
+                last_error_message=NULL,
+                updated_at=clock_timestamp()
             WHERE user_id=%s AND status='pending'
+            RETURNING id, lease_id, attempt_count
             """,
-            (owner_id,),
-        )
+            (uuid4(), owner_id),
+        ).fetchone()
+        if claimed is None:
+            raise RuntimeError("注销 worker 未找到目标账号")
         connection.commit()
-    time.sleep(0.02)
+    claim = ClaimedDeletion(
+        id=claimed[0],
+        user_id=UUID(owner_id),
+        lease_id=claimed[1],
+        attempt_number=claimed[2],
+    )
 
     async def purge() -> None:
         database = Database(_settings(state, restored=False))
         try:
-            for _ in range(100):
-                claim = await claim_next_deletion(database)
-                if claim is None:
-                    raise RuntimeError("注销 worker 未领取目标账号")
-                if not await purge_claimed_account(database, claim):
-                    raise RuntimeError("注销 worker 未完成已领取账号")
-                if str(claim.user_id) == owner_id:
-                    return
-            raise RuntimeError("注销 worker 在上限内未处理目标账号")
+            if not await purge_claimed_account(database, claim):
+                raise RuntimeError("注销 worker 未完成目标账号")
         finally:
             await database.close()
 
@@ -1180,6 +1230,28 @@ def _perform_deletion_replay_changes(
     if owner is None:
         raise RuntimeError("删除重放控制账号不存在")
     targets = _lifecycle_targets(state, owner[0])
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        state.deletion_labels = {
+            "task": connection.execute(
+                "SELECT title FROM tasks WHERE id=%s",
+                (targets["task"][0],),
+            ).fetchone()[0],
+            "difficulty": connection.execute(
+                "SELECT content FROM difficulty_records WHERE id=%s",
+                (targets["difficulty"][0],),
+            ).fetchone()[0],
+            "memory": connection.execute(
+                "SELECT title FROM memories WHERE id=%s",
+                (targets["memory"][0],),
+            ).fetchone()[0],
+            "calendar-series": connection.execute(
+                "SELECT name FROM calendar_series WHERE id=%s",
+                (targets["calendar-series"][0],),
+            ).fetchone()[0],
+        }
     endpoints = {
         "task": "/api/v1/tasks/{id}",
         "difficulty": "/api/v1/difficulties/{id}",
@@ -1197,6 +1269,7 @@ def _perform_deletion_replay_changes(
         state,
         state.seed_manifest.credentials[1],
     )
+    state.deleted_account_email = state.seed_manifest.credentials[1].email
     state.deletion_expectations = {
         **{kind: value[0] for kind, value in targets.items()},
         "account": deleted_account_id,
@@ -1237,6 +1310,16 @@ def _stage_write_after_backup(state: RunState) -> None:
         if login.status_code != 200:
             raise RuntimeError(f"恢复探针登录失败：HTTP {login.status_code}")
         client.headers["x-csrf-token"] = login.json()["csrf_token"]
+        if state.scenario == RecoveryScenario.UI:
+            if state.private_dir is None:
+                raise RuntimeError("恢复 UI 私有目录未配置")
+            session_cookie = client.cookies.get("itime_session")
+            if not session_cookie:
+                raise RuntimeError("恢复 UI 场景未取得旧会话")
+            _write_browser_session_state(
+                state.private_dir / "old-session.json",
+                session_cookie,
+            )
         before_id = _write_http_probe(client, title=PROBE_TITLES[0])
         state.probe_ids.append(before_id)
         state.probe_committed_at.append(_probe_time(state, before_id))
@@ -1254,7 +1337,10 @@ def _stage_write_after_backup(state: RunState) -> None:
         after_id = _write_http_probe(client, title=PROBE_TITLES[1])
         state.probe_ids.append(after_id)
         state.probe_committed_at.append(_probe_time(state, after_id))
-        if state.scenario == RecoveryScenario.DELETION_REPLAY:
+        if state.scenario in {
+            RecoveryScenario.DELETION_REPLAY,
+            RecoveryScenario.UI,
+        }:
             _perform_deletion_replay_changes(state, client)
     state.failure_at = _database_clock(state)
 
@@ -1334,6 +1420,7 @@ def _restore_arguments(state: RunState) -> tuple[str, ...]:
     if state.scenario in {
         RecoveryScenario.PITR,
         RecoveryScenario.DELETION_REPLAY,
+        RecoveryScenario.UI,
     }:
         if state.target_at is None:
             raise RuntimeError("PITR 恢复目标尚未记录")
@@ -1997,13 +2084,17 @@ def _stage_verify(state: RunState) -> None:
         in {
             RecoveryScenario.PITR,
             RecoveryScenario.DELETION_REPLAY,
+            RecoveryScenario.UI,
         }
         else state.probe_ids
     )
     if [row[0] for row in rows] != expected_probe_ids:
         raise RuntimeError("恢复探针范围与恢复目标不一致")
     state.probe_committed_at = [row[1] for row in rows]
-    if state.scenario == RecoveryScenario.DELETION_REPLAY:
+    if state.scenario in {
+        RecoveryScenario.DELETION_REPLAY,
+        RecoveryScenario.UI,
+    }:
         _verify_deletion_expectations(state)
     expected_counts = state.expected_counts or {
         "users": state.seed_manifest.counts["users"],
@@ -2027,6 +2118,161 @@ def _stage_verify(state: RunState) -> None:
         )
 
 
+def _edge_executable_path() -> str | None:
+    configured = os.environ.get("ITIME_E2E_BROWSER_EXECUTABLE_PATH", "")
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_file():
+            raise RuntimeError(f"指定的 Microsoft Edge 不存在：{path}")
+        return str(path)
+    candidates = (
+        Path.home()
+        / "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+    )
+    return next((str(path) for path in candidates if path.is_file()), None)
+
+
+def _write_ui_run_input(state: RunState) -> Path:
+    if (
+        state.private_dir is None
+        or state.deleted_account_email is None
+        or not state.deletion_expectations
+        or not state.deletion_labels
+    ):
+        raise RuntimeError("恢复 UI 场景缺少删除与账号证据")
+    path = state.private_dir / "ui-run.json"
+    objects = {
+        kind: {
+            "id": object_id,
+            "label": state.deletion_labels[kind],
+        }
+        for kind, object_id in state.deletion_expectations.items()
+        if kind != "account"
+    }
+    _write_secret(
+        path,
+        json.dumps(
+            {
+                "run_id": state.config.run_id,
+                "scenario": state.scenario,
+                "service_version": __version__,
+                "probes": {
+                    "before": PROBE_TITLES[0],
+                    "after": PROBE_TITLES[1],
+                },
+                "deletions": {
+                    "account_email": state.deleted_account_email,
+                    "objects": objects,
+                },
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    )
+    return path
+
+
+def _write_restored_browser_session(state: RunState) -> Path:
+    if state.private_dir is None or state.seed_manifest is None:
+        raise RuntimeError("恢复 UI 场景缺少主账号")
+    credential = state.seed_manifest.credentials[0]
+    with httpx.Client(
+        base_url=state.config.http_origin,
+        timeout=10,
+        trust_env=False,
+    ) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": credential.email,
+                "password": credential.password,
+                "device_name": "M8 restored browser",
+            },
+        )
+        if login.status_code != 200:
+            raise RuntimeError(
+                f"恢复 UI 主账号会话创建失败：HTTP {login.status_code}"
+            )
+        session_cookie = client.cookies.get("itime_session")
+        if not session_cookie:
+            raise RuntimeError("恢复 UI 主账号会话缺少 Cookie")
+    path = state.private_dir / "primary-session.json"
+    _write_browser_session_state(path, session_cookie)
+    return path
+
+
+def _run_recovery_ui(state: RunState) -> None:
+    if state.private_dir is None:
+        raise RuntimeError("恢复 UI 私有目录未配置")
+    web_port = int(state.env["ITIME_RECOVERY_WEB_PORT"])
+    web_origin = f"http://localhost:{web_port}"
+    preview_environment = {
+        **_host_environment(),
+        "ITIME_API_ORIGIN": state.config.http_origin,
+    }
+    checked(
+        ["pnpm", "build"],
+        env=preview_environment,
+        timeout=300,
+        cwd=WEB,
+    )
+    preview = _start_process(
+        state,
+        "web-preview",
+        ["pnpm", "preview", "--port", str(web_port)],
+        env=preview_environment,
+        cwd=WEB,
+    )
+    _wait_http(web_origin, preview)
+    run_file = _write_ui_run_input(state)
+    primary_state_file = _write_restored_browser_session(state)
+    browser_environment = {
+        **_host_environment(),
+        "ITIME_RECOVERY_WEB_ORIGIN": web_origin,
+        "ITIME_RECOVERY_ACCOUNT_FILE": str(
+            state.private_dir / "accounts.json"
+        ),
+        "ITIME_RECOVERY_RUN_FILE": str(run_file),
+        "ITIME_RECOVERY_OLD_STORAGE_STATE": str(
+            state.private_dir / "old-session.json"
+        ),
+        "ITIME_RECOVERY_PRIMARY_STORAGE_STATE": str(primary_state_file),
+        "ITIME_RECOVERY_RUN_ID": state.config.run_id,
+        "ITIME_RECOVERY_BROWSER_LABEL": "chromium",
+    }
+    checked(
+        ["pnpm", "test:e2e:recovery"],
+        env=browser_environment,
+        timeout=20 * 60,
+        cwd=WEB,
+    )
+    edge_environment = {
+        **browser_environment,
+        "ITIME_RECOVERY_BROWSER_LABEL": "edge",
+    }
+    edge_path = _edge_executable_path()
+    if edge_path is None:
+        edge_environment["ITIME_E2E_BROWSER_CHANNEL"] = "msedge"
+    else:
+        edge_environment["ITIME_E2E_BROWSER_EXECUTABLE_PATH"] = edge_path
+    checked(
+        [
+            "pnpm",
+            "exec",
+            "playwright",
+            "test",
+            "--config",
+            "playwright.recovery.config.ts",
+            "--project=desktop",
+        ],
+        env=edge_environment,
+        timeout=20 * 60,
+        cwd=WEB,
+    )
+    state.ui_passed = True
+
+
 def _stage_start_app(state: RunState) -> None:
     checked(
         state.compose("up", "-d", "--wait", "restore-api"),
@@ -2040,6 +2286,8 @@ def _stage_start_app(state: RunState) -> None:
     )
     require_safe_run(state.config)
     _wait_http(state.config.http_origin)
+    if state.scenario == RecoveryScenario.UI:
+        _run_recovery_ui(state)
     state.service_ready_at = datetime.now(UTC)
 
 
@@ -2120,8 +2368,8 @@ def _stage_build_report(state: RunState) -> RecoveryGateResult:
         ),
         finalizer_passed=not state.finalization_summary.inconsistencies,
         invariants_passed=state.verification.passed,
-        ui_required=False,
-        ui_passed=True,
+        ui_required=state.scenario == RecoveryScenario.UI,
+        ui_passed=state.ui_passed,
         remaining_resources=(),
     )
     state.gate_result = write_recovery_report(
@@ -2342,6 +2590,9 @@ def cleanup_run(run_id: str) -> tuple[str, ...]:
             "accounts.json",
             "ledger-before.bin",
             "ledger-after.bin",
+            "old-session.json",
+            "primary-session.json",
+            "ui-run.json",
         ):
             (private_dir / name).unlink(missing_ok=True)
         private_dir.rmdir()
