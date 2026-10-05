@@ -600,7 +600,7 @@ git commit -m "feat: 重放恢复删除台账"
 - Create: `server/recovery/finalize.py`
 - Create: `server/tests/test_recovery_finalize.py`
 
-- [ ] **Step 1: 写恢复收尾失败测试**
+- [x] **Step 1: 写恢复收尾失败测试**
 
 真实数据库预置：
 
@@ -620,7 +620,7 @@ summary = asyncio.run(finalize_recovered_database(settings, at=recovery_time))
 断言全部会话撤销、旧令牌失效、活动 lease 清空、running 进入各领域允许的恢复状态、开放专注
 abandoned、到期数据已清理、控制终态及金额不变。重复执行第二次变化数为 0。
 
-- [ ] **Step 2: 写金额和不可恢复状态阻断测试**
+- [x] **Step 2: 写金额和不可恢复状态阻断测试**
 
 制造：
 
@@ -632,7 +632,7 @@ abandoned、到期数据已清理、控制终态及金额不变。重复执行�
 `finalize_recovered_database` 必须抛 `RecoveryFinalizationError` 并回滚本轮，不通过修改金额自动
 “修复”审计事实。
 
-- [ ] **Step 3: 实现 finalizer**
+- [x] **Step 3: 实现 finalizer**
 
 定义：
 
@@ -665,7 +665,7 @@ async def finalize_recovered_database(
 
 任何外部网络函数在恢复模式中禁止调用。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 cd server
