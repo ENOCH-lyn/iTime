@@ -127,6 +127,21 @@ def test_cli_contract_accepts_all_planned_commands():
         assert parsed.scenario == scenario
 
 
+def test_performance_anchor_uses_the_0400_utc_activity_day_boundary():
+    assert (
+        performance_run._performance_anchor_date(
+            datetime(2026, 10, 5, 3, 59, tzinfo=UTC)
+        )
+        == "2026-10-04"
+    )
+    assert (
+        performance_run._performance_anchor_date(
+            datetime(2026, 10, 5, 4, 0, tzinfo=UTC)
+        )
+        == "2026-10-05"
+    )
+
+
 def test_ui_load_contract_and_browser_environment_are_bounded(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

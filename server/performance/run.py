@@ -20,6 +20,7 @@ from cryptography.fernet import Fernet
 from itime import __version__
 from itime.config import Settings
 from itime.database import Database
+from itime.statistics.time_math import activity_date_at
 from performance.ai_isolation import (
     AI_BASELINE_SECONDS,
     AI_JOB_USERS,
@@ -392,6 +393,10 @@ def _settings(state: RunState) -> Settings:
         db_pool_size=2,
         db_max_overflow=0,
     )
+
+
+def _performance_anchor_date(at: datetime) -> str:
+    return activity_date_at(at, "UTC").isoformat()
 
 
 def _start_process(
@@ -833,7 +838,9 @@ def _stage_seed(state: RunState) -> None:
             ),
         )
         state.env["ITIME_PERF_BROWSER_CREDENTIALS"] = str(browser_credentials)
-    state.env["ITIME_PERF_ANCHOR_DATE"] = datetime.now(UTC).date().isoformat()
+    state.env["ITIME_PERF_ANCHOR_DATE"] = _performance_anchor_date(
+        datetime.now(UTC)
+    )
     _write_json_atomic(
         state.config.output_dir / "seed-manifest.json",
         state.manifest.to_public_dict(),
