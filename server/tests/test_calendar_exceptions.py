@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
@@ -511,11 +512,14 @@ def test_split_rejects_first_occurrence_or_orphaned_future_exception(
     client,
     database_url,
 ):
+    future_start = datetime.now(UTC).date() + timedelta(days=30)
+    split_date = future_start + timedelta(days=2)
+    exception_date = future_start + timedelta(days=3)
     create_account(client, database_url)
     series = create_series(
         client,
         name="不可错误拆分",
-        start_date="2026-10-05",
+        start_date=future_start.isoformat(),
         recurrence=recurrence("daily", count=4),
     )["series"]
     first = client.post(
@@ -523,11 +527,12 @@ def test_split_rejects_first_occurrence_or_orphaned_future_exception(
         json={
             "operation_id": str(uuid4()),
             "expected_version": 1,
-            "occurrence_key": "2026-10-05T09:00:00",
+            "occurrence_key": f"{future_start.isoformat()}T09:00:00",
             "replacement": {
                 key: value
                 for key, value in fixed_payload(
                     name="从首日修改",
+                    start_date=future_start.isoformat(),
                     recurrence=recurrence("daily", count=4),
                 ).items()
                 if key != "operation_id"
@@ -541,14 +546,14 @@ def test_split_rejects_first_occurrence_or_orphaned_future_exception(
         f"/api/v1/calendar/series/{series['id']}/exceptions",
         json=exception_payload(
             expected_series_version=1,
-            occurrence_key="2026-10-08T09:00:00",
+            occurrence_key=f"{exception_date.isoformat()}T09:00:00",
             action="cancelled",
         ),
     )
     assert exception.status_code == 201
     replacement = fixed_payload(
         name="只保留一次",
-        start_date="2026-10-07",
+        start_date=split_date.isoformat(),
         recurrence=recurrence("none"),
     )
     replacement.pop("operation_id")
@@ -557,7 +562,7 @@ def test_split_rejects_first_occurrence_or_orphaned_future_exception(
         json={
             "operation_id": str(uuid4()),
             "expected_version": 2,
-            "occurrence_key": "2026-10-07T09:00:00",
+            "occurrence_key": f"{split_date.isoformat()}T09:00:00",
             "replacement": replacement,
         },
     )
