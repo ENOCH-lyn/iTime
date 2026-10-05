@@ -287,7 +287,7 @@ git commit -m "test: 隔离备份恢复运行边界"
 - Create: `compose.recovery.yaml`
 - Modify: `server/tests/test_recovery_runtime.py`
 
-- [ ] **Step 1: 写 Compose 合同失败测试**
+- [x] **Step 1: 写 Compose 合同失败测试**
 
 测试使用最小无敏感占位环境执行
 `docker compose -f compose.recovery.yaml config --format json`，断言：
@@ -301,7 +301,7 @@ git commit -m "test: 隔离备份恢复运行边界"
 - 仓库配置和密钥文件只读挂载，PostgreSQL 数据目录不可跨服务复用；
 - 服务内存总额不超过恢复 profile 的 4 GiB。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -310,7 +310,7 @@ uv run pytest -q tests/test_recovery_runtime.py -k compose
 
 Expected: FAIL，Compose 文件尚不存在。
 
-- [ ] **Step 3: 创建恢复 Compose**
+- [x] **Step 3: 创建恢复 Compose**
 
 `compose.recovery.yaml` 使用以下服务边界：
 
@@ -371,7 +371,7 @@ volumes:
 完整文件补 healthcheck、`read_only`/tmpfs、`no-new-privileges`、内存、PID、停止期限和所需应用
 环境。源和恢复 PostgreSQL 数据卷挂载父目录，以兼容官方镜像 18 的版本目录布局。
 
-- [ ] **Step 4: 验证静态配置和真实启动**
+- [x] **Step 4: 验证静态配置和真实启动**
 
 ```bash
 colima start --profile itime-recovery --cpu 2 --memory 4 --disk 30
@@ -384,7 +384,7 @@ docker --context colima-itime-recovery compose \
 
 Expected: pytest PASS；Compose 可解析；只启动源库时恢复库/API 不出现。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git diff --check

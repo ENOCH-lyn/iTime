@@ -1,0 +1,142 @@
+name: itime-recovery-${ITIME_RECOVERY_RUN_ID:?required}
+
+x-postgres: &postgres
+  image: itime-recovery-postgres:${ITIME_RECOVERY_IMAGE_TAG:-local}
+  environment:
+    POSTGRES_USER: itime
+    POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+    PGDATA: /var/lib/postgresql/18/docker
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - pg_isready -U itime
+    interval: 1s
+    timeout: 2s
+    retries: 60
+    start_period: 2s
+  mem_limit: 1g
+  pids_limit: 128
+  read_only: true
+  restart: "no"
+  security_opt:
+    - no-new-privileges:true
+  shm_size: 128mb
+  stop_grace_period: 30s
+  tmpfs:
+    - /tmp:size=32m,mode=1777
+    - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+
+services:
+  source-postgres:
+    <<: *postgres
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=60s
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_command=pgbackrest --stanza=itime archive-push %p
+      - -c
+      - max_connections=50
+    environment:
+      POSTGRES_USER: itime
+      POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${ITIME_RECOVERY_SOURCE_DATABASE:?required}
+      POSTGRES_INITDB_ARGS: --data-checksums
+      PGDATA: /var/lib/postgresql/18/docker
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - source_data:/var/lib/postgresql
+      - repository:/var/lib/pgbackrest
+      - spool:/var/spool/pgbackrest
+      - ${ITIME_RECOVERY_SOURCE_CONFIG:?required}:/etc/pgbackrest/pgbackrest.conf:ro
+
+  restore-postgres:
+    <<: *postgres
+    profiles:
+      - restore
+      - app
+    environment:
+      POSTGRES_USER: itime
+      POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${ITIME_RECOVERY_RESTORE_DATABASE:?required}
+      PGDATA: /var/lib/postgresql/18/docker
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - restore_data:/var/lib/postgresql
+      - repository:/var/lib/pgbackrest:ro
+      - restore_spool:/var/spool/pgbackrest
+      - ${ITIME_RECOVERY_RESTORE_CONFIG:?required}:/etc/pgbackrest/pgbackrest.conf:ro
+
+  restore-api:
+    profiles:
+      - app
+    image: itime-performance:${ITIME_RECOVERY_APP_IMAGE_TAG:-local}
+    build:
+      context: ./server
+      dockerfile: Dockerfile.performance
+    command:
+      - uvicorn
+      - itime.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-access-log
+    depends_on:
+      restore-postgres:
+        condition: service_healthy
+    environment:
+      ITIME_ENVIRONMENT: test
+      ITIME_DATABASE_URL: postgresql+psycopg://itime:${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}@restore-postgres:5432/${ITIME_RECOVERY_RESTORE_DATABASE:?required}
+      ITIME_PUBLIC_ORIGIN: http://127.0.0.1:${ITIME_RECOVERY_WEB_PORT:-4175}
+      ITIME_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
+      ITIME_ENCRYPTION_KEY: ${ITIME_RECOVERY_ENCRYPTION_KEY:?required}
+      ITIME_AI_ENCRYPTION_KEY: ${ITIME_RECOVERY_AI_ENCRYPTION_KEY:?required}
+      ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY: ${ITIME_RECOVERY_CALENDAR_KEY:?required}
+      ITIME_EXPORT_ENCRYPTION_KEY: ${ITIME_RECOVERY_EXPORT_KEY:?required}
+      ITIME_DB_POOL_SIZE: "2"
+      ITIME_DB_MAX_OVERFLOW: "0"
+      ITIME_SMTP_HOST: 127.0.0.1
+      ITIME_SMTP_STARTTLS: "false"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen("http://127.0.0.1:8000/api/ready", timeout=2)
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    init: true
+    mem_limit: 768m
+    pids_limit: 128
+    ports:
+      - "127.0.0.1::8000"
+    read_only: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  source_data:
+  restore_data:
+  repository:
+  spool:
+  restore_spool:
