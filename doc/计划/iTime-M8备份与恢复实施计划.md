@@ -688,7 +688,7 @@ git commit -m "feat: 收敛恢复数据库运行状态"
 - Create: `server/recovery/report.py`
 - Create: `server/tests/test_recovery_report.py`
 
-- [ ] **Step 1: 写命令构造和 JSON 解析失败测试**
+- [x] **Step 1: 写命令构造和 JSON 解析失败测试**
 
 断言命令始终为参数数组：
 
@@ -710,7 +710,7 @@ assert runner.command("backup", "--type=full") == [
 测试 `info --output=json` 的 backup label、类型、开始/结束、WAL start/stop 和大小解析；缺字段、
 非 JSON、超时、非零退出和输出含密钥时返回稳定脱敏错误。
 
-- [ ] **Step 2: 写报告门禁测试**
+- [x] **Step 2: 写报告门禁测试**
 
 定义 `RecoveryEvidence`，测试：
 
@@ -720,13 +720,13 @@ assert runner.command("backup", "--type=full") == [
 - repository key、Fernet、JWT、Cookie、database URL、正文哨兵递归拒绝；
 - `summary.json` 原子写入且不接受符号链接目标。
 
-- [ ] **Step 3: 实现无 shell pgBackRest 包装**
+- [x] **Step 3: 实现无 shell pgBackRest 包装**
 
 `pgbackrest.py` 使用 `subprocess.run(..., shell=False, check=True, capture_output=True,
 timeout=...)`，只向日志和异常暴露阶段、退出码及安全化 stderr 分类。配置文件由 orchestrator
 以 `0600` 生成，命令行不出现 cipher pass。
 
-- [ ] **Step 4: 实现业务验证和报告**
+- [x] **Step 4: 实现业务验证和报告**
 
 `verify.py` 复用 M8-A `collect_invariants`，再检查：
 
@@ -741,7 +741,7 @@ timeout=...)`，只向日志和异常暴露阶段、退出码及安全化 stderr
 `report.py` 输出 `manifest.json`、`backup.json`、`restore.json`、`summary.json` 和 `report.md`，
 并复用 `performance.report.assert_no_sensitive_artifacts`。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
