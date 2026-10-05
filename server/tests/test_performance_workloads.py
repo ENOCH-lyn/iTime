@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -86,6 +86,15 @@ def test_workload_registry_and_request_names():
         )
         == "history::statistics.read"
     )
+
+
+def test_history_range_is_a_trailing_seven_day_window():
+    dataset = workloads.AccountDataset(anchor_date=date(2026, 10, 5))
+
+    assert dataset.history_range == {
+        "start": "2026-09-29",
+        "end": "2026-10-06",
+    }
 
 
 def test_credentials_are_validated_sharded_and_never_shared(tmp_path: Path):

@@ -225,7 +225,7 @@ class AccountDataset:
     @property
     def history_range(self) -> dict[str, str]:
         return {
-            "start": (self.anchor_date - timedelta(days=92)).isoformat(),
+            "start": (self.anchor_date - timedelta(days=6)).isoformat(),
             "end": (self.anchor_date + timedelta(days=1)).isoformat(),
         }
 
