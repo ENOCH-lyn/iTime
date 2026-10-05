@@ -124,7 +124,7 @@ select backup + target time
 2. 源、目标数据库和 Compose 项目名分别匹配 `itime_backup_<run_id>`、
    `itime_restore_<run_id>` 和精确 run ID。
 3. 输出目录固定在 `/tmp/itime-recovery/<run_id>`，权限为 `0700`。
-4. 仓库口令、应用根密钥和删除台账 HMAC 密钥通过权限受限临时文件注入，不出现在命令行、
+4. 仓库口令、应用根密钥和删除台账 Fernet 密钥通过权限受限临时文件注入，不出现在命令行、
    Compose 渲染、日志、报告或进程环境快照中。
 5. 恢复目标必须为空且与源数据卷、仓库卷不同；禁止使用开发或生产数据库名称。
 6. 运行锁不存在；清理只操作本次 manifest 中的容器、卷、网络、数据库、目录和进程。
@@ -146,7 +146,7 @@ select backup + target time
 
 快照不含邮箱、标题、正文、URL、密码摘要、Cookie、AI Key、对象数量画像或错误原文。规范 JSON
 按类型、ID 排序，包含 schema version、生成时间、源数据库系统标识、最晚状态时间和前一快照
-摘要；使用独立 HMAC-SHA256 密钥签名。报告只保存快照摘要和计数。
+摘要；使用独立 Fernet 密钥加密并以其 HMAC-SHA256 验证完整性。报告只保存密文摘要和计数。
 
 ### 6.2 重放语义
 
