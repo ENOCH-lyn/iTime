@@ -212,6 +212,7 @@ class PgBackRest:
     binary: str
     stanza: str
     config: Path
+    command_prefix: tuple[str, ...] = ()
 
     def command(self, operation: str, *arguments: str) -> list[str]:
         if not _SAFE_COMMAND.fullmatch(operation):
@@ -220,7 +221,13 @@ class PgBackRest:
                 stage="command",
                 category="invalid_argument",
             )
-        values = (self.binary, str(self.config), self.stanza, *arguments)
+        values = (
+            *self.command_prefix,
+            self.binary,
+            str(self.config),
+            self.stanza,
+            *arguments,
+        )
         if any(
             not value
             or "\x00" in value
@@ -234,6 +241,7 @@ class PgBackRest:
                 category="sensitive_argument",
             )
         return [
+            *self.command_prefix,
             self.binary,
             f"--config={self.config}",
             f"--stanza={self.stanza}",
@@ -246,16 +254,25 @@ class PgBackRest:
         operation: str,
         *arguments: str,
         timeout: int = 300,
+        env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         command = self.command(operation, *arguments)
+        options: dict[str, object] = {
+            "capture_output": True,
+            "check": True,
+            "shell": False,
+            "text": True,
+            "timeout": timeout,
+        }
+        if env is not None:
+            options["env"] = dict(env)
+        if cwd is not None:
+            options["cwd"] = cwd
         try:
             result = subprocess.run(  # noqa: S603
                 command,
-                capture_output=True,
-                check=True,
-                shell=False,
-                text=True,
-                timeout=timeout,
+                **options,
             )
         except subprocess.TimeoutExpired as error:
             raise PgBackRestError(
@@ -289,6 +306,18 @@ class PgBackRest:
             )
         return result
 
-    def info(self, *, timeout: int = 30) -> tuple[PgBackRestBackup, ...]:
-        result = self.run("info", "--output=json", timeout=timeout)
+    def info(
+        self,
+        *,
+        timeout: int = 30,
+        env: Mapping[str, str] | None = None,
+        cwd: Path | None = None,
+    ) -> tuple[PgBackRestBackup, ...]:
+        result = self.run(
+            "info",
+            "--output=json",
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+        )
         return parse_backup_info(result.stdout, stanza=self.stanza)

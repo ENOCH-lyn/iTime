@@ -82,6 +82,7 @@ def expected_cleanup_manifest(config: RecoveryConfig) -> CleanupManifest:
         source_spool_volume=f"{project}_spool",
         restore_spool_volume=f"{project}_restore_spool",
         network=f"{project}_default",
+        host_network=f"{project}_host_access",
         output_dir=config.output_dir,
     )
 

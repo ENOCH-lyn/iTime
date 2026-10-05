@@ -159,6 +159,7 @@ def test_safe_cleanup_requires_every_resource_to_match_exact_run():
         "source_spool_volume": "itime-recovery-deadbeef_spool",
         "restore_spool_volume": "itime-recovery-deadbeef_restore_spool",
         "network": "itime-recovery-deadbeef_default",
+        "host_network": "itime-recovery-deadbeef_host_access",
         "output_dir": OUTPUT_ROOT / "deadbeef",
     }
     assert {field.name for field in fields(CleanupManifest)} == set(replacements)

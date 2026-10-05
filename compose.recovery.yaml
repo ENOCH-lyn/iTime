@@ -5,6 +5,7 @@ x-postgres: &postgres
   environment:
     POSTGRES_USER: itime
     POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+    PGUSER: itime
     PGDATA: /var/lib/postgresql/18/docker
   healthcheck:
     test:
@@ -20,6 +21,9 @@ x-postgres: &postgres
   restart: "no"
   security_opt:
     - no-new-privileges:true
+  networks:
+    - default
+    - host_access
   shm_size: 128mb
   stop_grace_period: 30s
   tmpfs:
@@ -44,11 +48,12 @@ services:
     environment:
       POSTGRES_USER: itime
       POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+      PGUSER: itime
       POSTGRES_DB: ${ITIME_RECOVERY_SOURCE_DATABASE:?required}
       POSTGRES_INITDB_ARGS: --data-checksums
       PGDATA: /var/lib/postgresql/18/docker
     ports:
-      - "127.0.0.1::5432"
+      - "127.0.0.1:${ITIME_RECOVERY_SOURCE_DB_PORT:?required}:5432"
     volumes:
       - source_data:/var/lib/postgresql
       - repository:/var/lib/pgbackrest
@@ -63,10 +68,11 @@ services:
     environment:
       POSTGRES_USER: itime
       POSTGRES_PASSWORD: ${ITIME_RECOVERY_POSTGRES_PASSWORD:?required}
+      PGUSER: itime
       POSTGRES_DB: ${ITIME_RECOVERY_RESTORE_DATABASE:?required}
       PGDATA: /var/lib/postgresql/18/docker
     ports:
-      - "127.0.0.1::5432"
+      - "127.0.0.1:${ITIME_RECOVERY_RESTORE_DB_PORT:?required}:5432"
     volumes:
       - restore_data:/var/lib/postgresql
       - repository:/var/lib/pgbackrest:ro
@@ -121,18 +127,22 @@ services:
     mem_limit: 768m
     pids_limit: 128
     ports:
-      - "127.0.0.1::8000"
+      - "127.0.0.1:${ITIME_RECOVERY_API_PORT:?required}:8000"
     read_only: true
     restart: "no"
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 10s
+    networks:
+      - default
+      - host_access
     tmpfs:
       - /tmp:size=64m,mode=1777
 
 networks:
   default:
     internal: true
+  host_access:
 
 volumes:
   source_data:

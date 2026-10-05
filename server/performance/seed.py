@@ -28,8 +28,12 @@ def require_safe_seed_settings(settings: Settings) -> None:
         raise ValueError("性能数据只允许写入 test 环境")
     if url.host not in LOOPBACK_DATABASE_HOSTS:
         raise ValueError("性能数据只允许写入本地或专用 Compose 数据库")
-    if not database_name.startswith(("itime_perf_", "itime_test_")):
-        raise ValueError("性能数据库名必须以 itime_perf_ 或 itime_test_ 开头")
+    if not database_name.startswith(
+        ("itime_perf_", "itime_test_", "itime_backup_")
+    ):
+        raise ValueError(
+            "性能数据数据库名必须使用 itime_perf_、itime_test_ 或 itime_backup_ 前缀"
+        )
 
 
 def require_safe_upstream_origin(origin: str) -> None:

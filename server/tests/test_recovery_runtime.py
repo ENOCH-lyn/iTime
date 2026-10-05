@@ -30,6 +30,9 @@ def recovery_environment(tmp_path: Path) -> dict[str, str]:
         "ITIME_RECOVERY_AI_ENCRYPTION_KEY": key,
         "ITIME_RECOVERY_CALENDAR_KEY": key,
         "ITIME_RECOVERY_EXPORT_KEY": key,
+        "ITIME_RECOVERY_SOURCE_DB_PORT": "15432",
+        "ITIME_RECOVERY_RESTORE_DB_PORT": "15433",
+        "ITIME_RECOVERY_API_PORT": "18000",
     }
 
 
@@ -88,6 +91,8 @@ def test_recovery_image_keeps_build_dependencies_out_of_final_stage():
         "COPY --from=build /usr/local/bin/pgbackrest "
         "/usr/local/bin/pgbackrest"
     ) in final_stage
+    assert "/var/lib/pgbackrest" in final_stage
+    assert "chown -R postgres:postgres" in final_stage
 
 
 def test_recovery_compose_separates_source_restore_repository_and_profiles(
@@ -125,6 +130,7 @@ def test_recovery_compose_separates_source_restore_repository_and_profiles(
         {
             "mode": "ingress",
             "target": 8000,
+            "published": "18000",
             "host_ip": "127.0.0.1",
             "protocol": "tcp",
         }
@@ -174,6 +180,13 @@ def test_recovery_compose_separates_source_restore_repository_and_profiles(
     networks = config["networks"]
     assert networks["default"]["name"] == "itime-recovery-abc12345_default"
     assert networks["default"]["internal"] is True
+    assert (
+        networks["host_access"]["name"]
+        == "itime-recovery-abc12345_host_access"
+    )
+    assert networks["host_access"].get("internal", False) is False
+    for service in services.values():
+        assert set(service["networks"]) == {"default", "host_access"}
 
 
 def test_recovery_compose_stays_inside_runtime_security_budget(tmp_path: Path):
@@ -192,7 +205,7 @@ def test_recovery_compose_stays_inside_runtime_security_budget(tmp_path: Path):
     for name in ("source-postgres", "restore-postgres", "restore-api"):
         service = services[name]
         assert service["ports"][0]["host_ip"] == "127.0.0.1"
-        assert "published" not in service["ports"][0]
+        assert int(service["ports"][0]["published"]) > 0
 
     assert services["restore-api"]["read_only"] is True
     assert f"{TEMP_DIR}:size=64m,mode=1777" in services["restore-api"]["tmpfs"]

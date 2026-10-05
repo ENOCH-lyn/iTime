@@ -46,6 +46,7 @@ addopts = "-ra --strict-markers"
 markers = [
     "integration: 需要隔离的真实 PostgreSQL",
     "performance: 仅在隔离性能环境显式执行的高数据量测试",
+    "recovery: 仅在隔离恢复环境显式执行的真实备份恢复测试",
 ]
 filterwarnings = ["error"]
 

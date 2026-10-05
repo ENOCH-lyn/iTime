@@ -761,7 +761,7 @@ git commit -m "feat: 生成备份恢复门禁报告"
 - Create: `server/tests/test_recovery_integration.py`
 - Modify: `server/pyproject.toml`
 
-- [ ] **Step 1: 写真实恢复烟测并默认跳过**
+- [x] **Step 1: 写真实恢复烟测并默认跳过**
 
 ```python
 @pytest.mark.recovery
@@ -778,7 +778,7 @@ def test_real_full_backup_and_latest_restore():
 在 `server/pyproject.toml` 注册 `recovery` marker。普通 `pytest` 只执行静态/纯数据库测试，不启动
 Colima；显式运行才执行容器恢复。
 
-- [ ] **Step 2: 定义阶段和 CLI**
+- [x] **Step 2: 定义阶段和 CLI**
 
 `run.py` 固定：
 
@@ -814,7 +814,7 @@ python -m recovery.run cleanup --run-id <id>
 python -m recovery.run verify-clean
 ```
 
-- [ ] **Step 3: 实现源库、迁移、播种与备份**
+- [x] **Step 3: 实现源库、迁移、播种与备份**
 
 复用：
 
@@ -828,7 +828,7 @@ python -m recovery.run verify-clean
 生成的配置固定 `repo1-retention-full=4`、客户端加密、压缩和 archive timeout；场景先执行 full，
 再写入增量并执行 differential，断言 info 中两个备份集及其 WAL 范围完整。
 
-- [ ] **Step 4: 实现恢复到最新和指定时间**
+- [x] **Step 4: 实现恢复到最新和指定时间**
 
 停止源库后：
 
@@ -840,13 +840,13 @@ python -m recovery.run verify-clean
 6. 执行台账、finalizer 和 verify；
 7. 只有全部通过才启动 restore API。
 
-- [ ] **Step 5: 实现异常清理和断点报告**
+- [x] **Step 5: 实现异常清理和断点报告**
 
 捕获 timeout、Docker、pgBackRest、数据库、台账和门禁错误，写 `partial-report.json`，finally
 按 manifest 停止进程、Compose down `--volumes --remove-orphans`、删除临时密钥和输出中注册的
 私有文件。`cleanup --run-id` 只接收已存在且校验通过的 manifest。
 
-- [ ] **Step 6: 执行真实 smoke**
+- [x] **Step 6: 执行真实 smoke**
 
 ```bash
 cd server
@@ -857,7 +857,7 @@ uv run python -m recovery.run verify-clean
 
 Expected: full backup、WAL、latest restore、迁移、finalizer、不变量和零残留全部通过。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git diff --check
