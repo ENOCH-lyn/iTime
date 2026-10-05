@@ -170,7 +170,7 @@ git commit -m "build: 添加备份恢复运行镜像"
 - Create: `server/recovery/safety.py`
 - Create: `server/tests/test_recovery_safety.py`
 
-- [ ] **Step 1: 写配置、路径、锁和清理失败测试**
+- [x] **Step 1: 写配置、路径、锁和清理失败测试**
 
 `server/tests/test_recovery_safety.py` 使用：
 
@@ -216,7 +216,7 @@ def test_safe_recovery_accepts_only_exact_isolated_boundary():
 另测 8—32 位小写十六进制 run ID、源/目标不同、回环 URL、符号链接逃逸、`0600` 运行锁和
 manifest 中所有资源精确匹配。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -225,7 +225,7 @@ uv run pytest -q tests/test_recovery_safety.py
 
 Expected: FAIL，`recovery.contracts` 尚不存在。
 
-- [ ] **Step 3: 实现不可变运行合同**
+- [x] **Step 3: 实现不可变运行合同**
 
 `server/recovery/contracts.py` 至少定义：
 
@@ -262,13 +262,13 @@ class RecoveryConfig:
 
 再定义 `CleanupManifest`，明确 source/restore 数据卷、仓库卷、网络、输出目录和 Compose 项目。
 
-- [ ] **Step 4: 实现安全校验与私有运行锁**
+- [x] **Step 4: 实现安全校验与私有运行锁**
 
 复用 M8-A 的正则、路径 resolve 和 `O_EXCL` 模式，但使用独立
 `/tmp/itime-recovery`、`itime_backup_`、`itime_restore_` 和 `colima-itime-recovery`。
 `require_safe_cleanup` 对 manifest 做完整 dataclass 相等检查，不接受前缀或模糊匹配。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
