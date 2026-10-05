@@ -218,6 +218,10 @@ def _validate_ledger(ledger: RecoveryLedger) -> None:
         _validate_entry(entry)
 
 
+def validate_ledger(ledger: RecoveryLedger) -> None:
+    _validate_ledger(ledger)
+
+
 def _ledger_from_payload(payload: bytes) -> RecoveryLedger:
     raw = json.loads(payload)
     if not isinstance(raw, dict) or set(raw) != LEDGER_FIELDS:

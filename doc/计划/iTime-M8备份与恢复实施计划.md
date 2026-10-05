@@ -513,7 +513,7 @@ git commit -m "feat: 生成加密恢复删除台账"
 - Create: `server/recovery/replay.py`
 - Create: `server/tests/test_recovery_replay.py`
 
-- [ ] **Step 1: 写目标早于删除状态的失败测试**
+- [x] **Step 1: 写目标早于删除状态的失败测试**
 
 在源测试库生成台账，在另一随机恢复库保留删除前数据。覆盖：
 
@@ -534,12 +534,12 @@ assert second.applied == 0
 断言 completed 账号及本人数据消失，pending 账号冻结且可按原期限处理，purged 正文/URL/直接
 明细为空，trashed 保持回收状态，控制账号不变。
 
-- [ ] **Step 2: 写冲突与签名失败测试**
+- [x] **Step 2: 写冲突与签名失败测试**
 
 同对象 ID 属于不同 owner、目标状态比台账更新、版本倒退、未知 kind、错误系统标识和过期台账
 分别测试。所有者冲突、未知类型和签名错误阻断恢复；目标更新时只跳过，不倒退状态。
 
-- [ ] **Step 3: 实现账号 digest 匹配和重放**
+- [x] **Step 3: 实现账号 digest 匹配和重放**
 
 `replay.py` 定义：
 
@@ -567,7 +567,7 @@ async def replay_ledger(
 及最小完成回执。操作在恢复数据库单事务中按 `users → account_deletions → aggregate` 锁顺序
 执行。
 
-- [ ] **Step 4: 复用生命周期清理实现单项重放**
+- [x] **Step 4: 复用生命周期清理实现单项重放**
 
 trashed 只恢复服务端删除/到期时间并使旧操作/租约失效。purged 先设置到期状态，再调用现有：
 
@@ -578,7 +578,7 @@ trashed 只恢复服务端删除/到期时间并使旧操作/租约失效。purg
 
 每次用真实 `at` 和有界批量循环到无待处理项。不得在恢复模块复制正文清空字段列表。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
