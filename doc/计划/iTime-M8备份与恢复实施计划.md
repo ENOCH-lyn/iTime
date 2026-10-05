@@ -52,7 +52,7 @@
 - Create: `server/tests/test_recovery_runtime.py`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: 写工具版本与镜像合同失败测试**
+- [x] **Step 1: 写工具版本与镜像合同失败测试**
 
 在 `server/tests/test_recovery_runtime.py` 解析 Dockerfile 并断言：
 
@@ -79,7 +79,7 @@ def test_recovery_image_pins_postgres_and_safe_pgbackrest():
 
 同时断言最终镜像没有 `build-base`、`meson`、`ninja`，并存在 `/usr/local/bin/pgbackrest`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -90,7 +90,7 @@ uv run pytest -q tests/test_recovery_runtime.py
 
 Expected: FAIL，恢复镜像尚不存在。
 
-- [ ] **Step 3: 创建多阶段恢复镜像**
+- [x] **Step 3: 创建多阶段恢复镜像**
 
 `server/Dockerfile.recovery-postgres`：
 
@@ -101,25 +101,29 @@ ARG PGBACKREST_VERSION=2.59.3
 ARG PGBACKREST_SHA256=14037901db002e5536a948bf9f0fc0ff6cde31f4e675d3e9b46f129071bf2e5f
 
 RUN apk add --no-cache \
-      build-base bzip2-dev curl libssh2-dev libxml2-dev lz4-dev \
-      meson ninja openssl-dev pkgconf postgresql-dev zstd-dev \
+      build-base bzip2-dev curl curl-dev libxml2-dev lz4-dev meson ninja \
+      openssl-dev pkgconf postgresql-dev zlib-dev zstd-dev \
     && curl -fL --retry 3 \
       -o /tmp/pgbackrest.tar.gz \
       "https://github.com/pgbackrest/pgbackrest/releases/download/release/${PGBACKREST_VERSION}/pgbackrest-${PGBACKREST_VERSION}.tar.gz" \
     && echo "${PGBACKREST_SHA256}  /tmp/pgbackrest.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/pgbackrest.tar.gz -C /tmp \
     && meson setup /tmp/build "/tmp/pgbackrest-${PGBACKREST_VERSION}" \
-      --buildtype=release -Dlibsystemd=disabled \
+      --buildtype=release -Dlibssh2=disabled -Dlibsystemd=disabled \
     && ninja -C /tmp/build \
     && install -m 0755 /tmp/build/src/pgbackrest /usr/local/bin/pgbackrest
 
+RUN install -m 0755 \
+    "$(readlink -f /usr/lib/libbz2.so.1)" \
+    /usr/local/lib/libbz2.so.1
+
 FROM postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
 
-RUN apk add --no-cache bzip2-libs libssh2 libxml2 lz4-libs zstd-libs \
-    && mkdir -p /etc/pgbackrest /var/log/pgbackrest /var/spool/pgbackrest \
+RUN mkdir -p /etc/pgbackrest /var/log/pgbackrest /var/spool/pgbackrest \
     && chown -R postgres:postgres /etc/pgbackrest /var/log/pgbackrest /var/spool/pgbackrest
 
 COPY --from=build /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
+COPY --from=build /usr/local/lib/libbz2.so.1 /usr/lib/libbz2.so.1
 
 USER postgres
 ```
@@ -130,7 +134,7 @@ USER postgres
 在根 `.gitignore` 增加 `recovery-results/`，防止手工覆盖输出目录时提交仓库或恢复数据；标准
 编排仍只写 `/tmp/itime-recovery/`。
 
-- [ ] **Step 4: 构建并验证工具、身份和动态链接**
+- [x] **Step 4: 构建并验证工具、身份和动态链接**
 
 Run:
 
@@ -146,7 +150,7 @@ docker --context colima-itime-perf run --rm \
 
 Expected: `pgBackRest 2.59.3`；UID 为 PostgreSQL 非 root 用户；无缺失动态库。
 
-- [ ] **Step 5: 完成测试和提交**
+- [x] **Step 5: 完成测试和提交**
 
 ```bash
 cd server

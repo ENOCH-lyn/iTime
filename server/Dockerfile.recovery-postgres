@@ -1,0 +1,50 @@
+FROM postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873 AS build
+
+ARG PGBACKREST_VERSION=2.59.3
+ARG PGBACKREST_SHA256=14037901db002e5536a948bf9f0fc0ff6cde31f4e675d3e9b46f129071bf2e5f
+
+RUN apk add --no-cache \
+      build-base \
+      bzip2-dev \
+      curl \
+      curl-dev \
+      libxml2-dev \
+      lz4-dev \
+      meson \
+      ninja \
+      openssl-dev \
+      pkgconf \
+      postgresql-dev \
+      zlib-dev \
+      zstd-dev \
+    && curl -fL --retry 3 \
+      -o /tmp/pgbackrest.tar.gz \
+      "https://github.com/pgbackrest/pgbackrest/releases/download/release/${PGBACKREST_VERSION}/pgbackrest-${PGBACKREST_VERSION}.tar.gz" \
+    && echo "${PGBACKREST_SHA256}  /tmp/pgbackrest.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pgbackrest.tar.gz -C /tmp \
+    && meson setup /tmp/build "/tmp/pgbackrest-${PGBACKREST_VERSION}" \
+      --buildtype=release \
+      -Dlibssh2=disabled \
+      -Dlibsystemd=disabled \
+    && ninja -C /tmp/build \
+    && install -m 0755 /tmp/build/src/pgbackrest /usr/local/bin/pgbackrest
+
+RUN install -m 0755 \
+    "$(readlink -f /usr/lib/libbz2.so.1)" \
+    /usr/local/lib/libbz2.so.1
+
+FROM postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+
+RUN mkdir -p \
+      /etc/pgbackrest \
+      /var/log/pgbackrest \
+      /var/spool/pgbackrest \
+    && chown -R postgres:postgres \
+      /etc/pgbackrest \
+      /var/log/pgbackrest \
+      /var/spool/pgbackrest
+
+COPY --from=build /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
+COPY --from=build /usr/local/lib/libbz2.so.1 /usr/lib/libbz2.so.1
+
+USER postgres

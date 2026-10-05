@@ -32,6 +32,7 @@ coverage/
 playwright-report/
 test-results/
 performance-results/
+recovery-results/
 .venv/
 __pycache__/
 .pytest_cache/
