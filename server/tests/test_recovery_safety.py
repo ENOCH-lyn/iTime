@@ -158,6 +158,8 @@ def test_safe_cleanup_requires_every_resource_to_match_exact_run():
         "repository_volume": "itime-recovery-deadbeef_repository",
         "source_spool_volume": "itime-recovery-deadbeef_spool",
         "restore_spool_volume": "itime-recovery-deadbeef_restore_spool",
+        "fault_repository_volume": "itime-recovery-deadbeef_fault_repository",
+        "fault_restore_data_volume": "itime-recovery-deadbeef_fault_restore_data",
         "network": "itime-recovery-deadbeef_default",
         "host_network": "itime-recovery-deadbeef_host_access",
         "output_dir": OUTPUT_ROOT / "deadbeef",

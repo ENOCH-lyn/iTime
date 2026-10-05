@@ -39,6 +39,8 @@ class CleanupManifest:
     repository_volume: str
     source_spool_volume: str
     restore_spool_volume: str
+    fault_repository_volume: str
+    fault_restore_data_volume: str
     network: str
     host_network: str
     output_dir: Path

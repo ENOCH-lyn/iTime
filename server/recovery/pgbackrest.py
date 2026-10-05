@@ -261,6 +261,7 @@ class PgBackRest:
         options: dict[str, object] = {
             "capture_output": True,
             "check": True,
+            "errors": "replace",
             "shell": False,
             "text": True,
             "timeout": timeout,
@@ -281,10 +282,15 @@ class PgBackRest:
                 category="timeout",
             ) from error
         except subprocess.CalledProcessError as error:
+            stdout = error.stdout if isinstance(error.stdout, str) else ""
             stderr = error.stderr if isinstance(error.stderr, str) else ""
-            category = _classify_failure(stderr)
+            output = "\n".join(part for part in (stdout, stderr) if part)
+            category = _classify_failure(output)
+            detail = ""
+            if output.strip() and category != "sensitive_output":
+                detail = "；" + " ".join(output.split())[-600:]
             raise PgBackRestError(
-                "pgBackRest 执行失败，详细输出未写入报告。",
+                f"pgBackRest 执行失败{detail}",
                 stage=operation,
                 category=category,
                 returncode=error.returncode,

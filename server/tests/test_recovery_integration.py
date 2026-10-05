@@ -137,3 +137,55 @@ def test_real_full_backup_and_latest_restore():
     result = recovery_run.run_recovery_scenario("smoke")
     assert result.passed, result.error
     assert result.remaining_resources == ()
+
+
+@pytest.mark.recovery
+@pytest.mark.skipif(
+    os.environ.get("ITIME_RUN_RECOVERY") != "1",
+    reason="设置 ITIME_RUN_RECOVERY=1 执行真实备份恢复",
+)
+def test_real_point_in_time_restore_excludes_later_commit():
+    result = recovery_run.run_recovery_scenario("pitr")
+    assert result.passed, result.error
+    assert result.remaining_resources == ()
+
+
+@pytest.mark.recovery
+@pytest.mark.skipif(
+    os.environ.get("ITIME_RUN_RECOVERY") != "1",
+    reason="设置 ITIME_RUN_RECOVERY=1 执行真实备份恢复",
+)
+def test_real_pitr_replays_deletions_newer_than_restore_target():
+    result = recovery_run.run_recovery_scenario("deletion-replay")
+    assert result.passed, result.error
+    assert result.remaining_resources == ()
+    restore = json.loads((result.run_dir / "restore.json").read_text())
+    assert restore["replay"]["accounts_purged"] == 1
+    assert restore["replay"]["objects_purged"] >= 4
+
+
+@pytest.mark.recovery
+@pytest.mark.skipif(
+    os.environ.get("ITIME_RUN_RECOVERY") != "1",
+    reason="设置 ITIME_RUN_RECOVERY=1 执行真实备份恢复",
+)
+def test_real_faults_are_rejected_before_clean_restore():
+    result = recovery_run.run_recovery_scenario("faults")
+    assert result.passed, result.error
+    assert result.remaining_resources == ()
+    restore = json.loads((result.run_dir / "restore.json").read_text())
+    assert set(restore["fault_results"]) == {
+        "corrupted_backup",
+        "disk_full",
+        "missing_wal",
+        "occupied_restore_volume",
+        "stale_ledger",
+        "truncated_ledger",
+        "wrong_ai_encryption_key",
+        "wrong_calendar_subscription_encryption_key",
+        "wrong_encryption_key",
+        "wrong_export_encryption_key",
+        "wrong_ledger_key",
+        "wrong_repository_key",
+    }
+    assert all(restore["fault_results"].values())

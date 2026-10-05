@@ -4,8 +4,10 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 
+from itime.auth.security import Security
 from itime.config import Settings
 from itime.database import Database
 from performance.seed_verify import COUNT_QUERIES, collect_invariants
@@ -125,9 +127,83 @@ class RecoveryVerification:
         }
 
 
+@dataclass(frozen=True)
+class EncryptionVerification:
+    passed: bool
+    sample_counts: dict[str, int]
+    failures: tuple[str, ...]
+
+    def to_public_dict(self) -> dict[str, object]:
+        return {
+            "passed": self.passed,
+            "sample_counts": dict(sorted(self.sample_counts.items())),
+            "failures": list(self.failures),
+        }
+
+
 def expected_alembic_revision() -> str:
     config = Config(str(SERVER_ROOT / "alembic.ini"))
     return ScriptDirectory.from_config(config).get_current_head()
+
+
+async def verify_encryption_keys(settings: Settings) -> EncryptionVerification:
+    security = Security(settings)
+    calendar_key = (
+        settings.calendar_subscription_encryption_key
+        or settings.encryption_key
+    ).get_secret_value()
+    export_key = (
+        settings.export_encryption_key or settings.encryption_key
+    ).get_secret_value()
+    decryptors = {
+        "base": security.cipher,
+        "ai": security.ai_cipher,
+        "calendar": Fernet(calendar_key),
+        "export": Fernet(export_key),
+    }
+    queries = {
+        "base": """
+            SELECT encrypted_message FROM mail_outbox
+            WHERE encrypted_message IS NOT NULL
+            ORDER BY id LIMIT 1
+        """,
+        "ai": """
+            SELECT api_key_ciphertext FROM ai_config_versions
+            ORDER BY id LIMIT 1
+        """,
+        "calendar": """
+            SELECT encrypted_url FROM calendar_subscriptions
+            ORDER BY source_id LIMIT 1
+        """,
+        "export": """
+            SELECT artifact_ciphertext FROM data_export_jobs
+            WHERE artifact_ciphertext IS NOT NULL
+            ORDER BY id LIMIT 1
+        """,
+    }
+    counts: dict[str, int] = {}
+    failures: list[str] = []
+    database = Database(settings)
+    try:
+        async with database.sessions() as session:
+            for name, query in queries.items():
+                encrypted = await session.scalar(text(query))
+                if encrypted is None:
+                    counts[name] = 0
+                    failures.append(f"{name} encryption sample missing")
+                    continue
+                counts[name] = 1
+                try:
+                    decryptors[name].decrypt(bytes(encrypted))
+                except (InvalidToken, TypeError, ValueError):
+                    failures.append(f"{name} encryption key mismatch")
+    finally:
+        await database.close()
+    return EncryptionVerification(
+        passed=not failures,
+        sample_counts=counts,
+        failures=tuple(failures),
+    )
 
 
 async def verify_recovered_database(

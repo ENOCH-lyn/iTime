@@ -155,6 +155,7 @@ def test_pgbackrest_execution_uses_no_shell_and_sanitizes_failures(monkeypatch):
             {
                 "capture_output": True,
                 "check": True,
+                "errors": "replace",
                 "shell": False,
                 "text": True,
                 "timeout": 12,

@@ -10,7 +10,7 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -21,7 +21,16 @@ from cryptography.fernet import Fernet
 from psycopg import sql
 
 from itime import __version__
+from itime.account_deletion.service import (
+    claim_next_deletion,
+    purge_claimed_account,
+)
+from itime.calendar.lifecycle_service import cleanup_expired_calendar_items
 from itime.config import Settings
+from itime.database import Database
+from itime.execution.difficulty_service import cleanup_expired_difficulties
+from itime.review.memory_service import cleanup_expired_memories
+from itime.tasks.lifecycle_service import cleanup_expired_tasks
 from performance.contracts import SeedManifest, SeedProfile
 from performance.seed import seed_dataset
 from recovery.contracts import (
@@ -31,13 +40,14 @@ from recovery.contracts import (
 )
 from recovery.finalize import FinalizationSummary, finalize_recovered_database
 from recovery.ledger import (
+    LedgerError,
     build_ledger_snapshot,
     ledger_digest,
     read_encrypted_snapshot,
     write_encrypted_snapshot,
 )
-from recovery.pgbackrest import PgBackRest, PgBackRestBackup
-from recovery.replay import ReplaySummary, replay_ledger
+from recovery.pgbackrest import PgBackRest, PgBackRestBackup, PgBackRestError
+from recovery.replay import RecoveryReplayError, ReplaySummary, replay_ledger
 from recovery.report import (
     RecoveryEvidence,
     RecoveryGateResult,
@@ -53,11 +63,17 @@ from recovery.safety import (
     require_safe_cleanup,
     require_safe_run,
 )
-from recovery.verify import RecoveryVerification, verify_recovered_database
+from recovery.verify import (
+    EncryptionVerification,
+    RecoveryVerification,
+    verify_encryption_keys,
+    verify_recovered_database,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "server"
 COMPOSE_FILE = ROOT / "compose.recovery.yaml"
+CONTAINER_TMP = Path("/", "tmp")
 HOST_ENVIRONMENT_KEYS = (
     "CI",
     "FORCE_COLOR",
@@ -126,6 +142,9 @@ class RunState:
     source_api: ManagedProcess | None = None
     probe_ids: list[str] = field(default_factory=list)
     probe_committed_at: list[datetime] = field(default_factory=list)
+    deletion_expectations: dict[str, str] = field(default_factory=dict)
+    expected_counts: dict[str, int] = field(default_factory=dict)
+    archived_wal: str | None = None
     target_at: datetime | None = None
     failure_at: datetime | None = None
     restore_started_at: datetime | None = None
@@ -133,6 +152,8 @@ class RunState:
     replay_summary: ReplaySummary | None = None
     finalization_summary: FinalizationSummary | None = None
     verification: RecoveryVerification | None = None
+    encryption_verification: EncryptionVerification | None = None
+    fault_results: dict[str, bool] = field(default_factory=dict)
     gate_result: RecoveryGateResult | None = None
     failed_stage: str | None = None
 
@@ -708,6 +729,115 @@ def _stage_migrate_source(state: RunState) -> None:
         )
 
 
+def _seed_encryption_probes(state: RunState) -> None:
+    if state.source_database_url is None or state.seed_manifest is None:
+        raise RuntimeError("加密探针缺少源数据库或账号")
+    owner_email = state.seed_manifest.credentials[0].email
+    base_cipher = Fernet(state.env["ITIME_RECOVERY_ENCRYPTION_KEY"])
+    calendar_cipher = Fernet(state.env["ITIME_RECOVERY_CALENDAR_KEY"])
+    export_cipher = Fernet(state.env["ITIME_RECOVERY_EXPORT_KEY"])
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        owner = connection.execute(
+            "SELECT id FROM users WHERE email=%s",
+            (owner_email,),
+        ).fetchone()
+        if owner is None:
+            raise RuntimeError("加密探针账号不存在")
+        owner_id = owner[0]
+        token_id = uuid4()
+        source_id = uuid4()
+        now_value = datetime.now(UTC)
+        connection.execute(
+            """
+            INSERT INTO email_tokens (
+                id, user_id, purpose, token_hash, created_at, expires_at
+            ) VALUES (
+                %s, %s, 'reset', %s, %s, %s
+            )
+            """,
+            (
+                token_id,
+                owner_id,
+                secrets.token_hex(32),
+                now_value,
+                now_value + timedelta(hours=1),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO mail_outbox (
+                id, token_id, encrypted_message, available_at
+            ) VALUES (%s, %s, %s, %s)
+            """,
+            (
+                uuid4(),
+                token_id,
+                base_cipher.encrypt(b"recovery-key-probe"),
+                now_value,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO calendar_sources (
+                id, owner_id, kind, name
+            ) VALUES (%s, %s, 'ics_subscription', '恢复密钥探针')
+            """,
+            (source_id, owner_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO calendar_subscriptions (
+                source_id, owner_id, encrypted_url, url_hmac,
+                display_url, display_host, default_time_zone,
+                lifecycle_status, refresh_status, refresh_interval_minutes,
+                next_refresh_at, fetch_revision, generation,
+                attempt_count, consecutive_failures
+            ) VALUES (
+                %s, %s, %s, %s,
+                'https://recovery.invalid/…', 'recovery.invalid', 'UTC',
+                'active', 'idle', 360,
+                %s, 1, 0, 0, 0
+            )
+            """,
+            (
+                source_id,
+                owner_id,
+                calendar_cipher.encrypt(b"https://recovery.invalid/calendar"),
+                secrets.token_hex(32),
+                now_value + timedelta(hours=1),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO data_export_jobs (
+                id, owner_id, status, schema_version, attempt_count,
+                max_attempts, available_at, snapshot_at,
+                artifact_ciphertext, artifact_sha256, artifact_byte_size,
+                filename, expires_at, finished_at
+            ) VALUES (
+                %s, %s, 'succeeded', 1, 1,
+                3, %s, %s,
+                %s, %s, 18,
+                'recovery-probe.zip', %s, %s
+            )
+            """,
+            (
+                uuid4(),
+                owner_id,
+                now_value,
+                now_value,
+                export_cipher.encrypt(b"recovery-key-probe"),
+                "9" * 64,
+                now_value + timedelta(hours=1),
+                now_value,
+            ),
+        )
+        connection.commit()
+
+
 def _stage_seed_source(state: RunState) -> None:
     if state.private_dir is None:
         raise RuntimeError("恢复私有目录未配置")
@@ -728,6 +858,7 @@ def _stage_seed_source(state: RunState) -> None:
             upstream_origin="http://127.0.0.1:18081",
         )
     )
+    _seed_encryption_probes(state)
 
 
 def _stage_create_stanza(state: RunState) -> None:
@@ -841,6 +972,250 @@ def _database_clock(state: RunState) -> datetime:
     return value[0].astimezone(UTC)
 
 
+def _delete_json(
+    client: httpx.Client,
+    path: str,
+    *,
+    expected_version: int,
+) -> None:
+    response = client.request(
+        "DELETE",
+        path,
+        json={
+            "operation_id": str(uuid4()),
+            "expected_version": expected_version,
+        },
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"恢复删除场景请求失败：{path} HTTP {response.status_code}"
+        )
+
+
+def _lifecycle_targets(
+    state: RunState,
+    owner_id: str,
+) -> dict[str, tuple[str, int]]:
+    if state.source_database_url is None:
+        raise RuntimeError("源数据库尚未启动")
+    queries = {
+        "task": """
+            SELECT id::text, version FROM tasks
+            WHERE owner_id=%s AND deleted_at IS NULL
+            ORDER BY id LIMIT 1
+        """,
+        "difficulty": """
+            SELECT id::text, version FROM difficulty_records
+            WHERE owner_id=%s AND deleted_at IS NULL
+            ORDER BY id LIMIT 1
+        """,
+        "memory": """
+            SELECT id::text, version FROM memories
+            WHERE owner_id=%s AND deleted_at IS NULL
+            ORDER BY id LIMIT 1
+        """,
+        "calendar-series": """
+            SELECT id::text, version FROM calendar_series
+            WHERE owner_id=%s AND deleted_at IS NULL
+            ORDER BY id LIMIT 1
+        """,
+    }
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        targets = {
+            kind: connection.execute(query, (owner_id,)).fetchone()
+            for kind, query in queries.items()
+        }
+    if any(value is None for value in targets.values()):
+        raise RuntimeError("删除重放场景缺少代表业务对象")
+    return {
+        kind: (str(value[0]), int(value[1]))
+        for kind, value in targets.items()
+        if value is not None
+    }
+
+
+def _expire_deleted_objects(
+    state: RunState,
+    targets: Mapping[str, tuple[str, int]],
+    *,
+    at: datetime,
+) -> None:
+    if state.source_database_url is None:
+        raise RuntimeError("源数据库尚未启动")
+    table_names = {
+        "task": "tasks",
+        "difficulty": "difficulty_records",
+        "memory": "memories",
+        "calendar-series": "calendar_series",
+    }
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        for kind, (object_id, _) in targets.items():
+            connection.execute(
+                sql.SQL(
+                    "UPDATE {} SET purge_after=GREATEST(deleted_at, %s) "
+                    "WHERE id=%s"
+                ).format(sql.Identifier(table_names[kind])),
+                (at, object_id),
+            )
+        connection.commit()
+
+    async def cleanup() -> None:
+        database = Database(_settings(state, restored=False))
+        try:
+            await cleanup_expired_tasks(database)
+            await cleanup_expired_difficulties(database)
+            await cleanup_expired_memories(database)
+            await cleanup_expired_calendar_items(database)
+        finally:
+            await database.close()
+
+    asyncio.run(cleanup())
+
+
+def _complete_account_deletion(
+    state: RunState,
+    credential,
+) -> str:
+    if state.source_database_url is None:
+        raise RuntimeError("源数据库尚未启动")
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        owner = connection.execute(
+            "SELECT id::text FROM users WHERE email=%s",
+            (credential.email,),
+        ).fetchone()
+    if owner is None:
+        raise RuntimeError("注销场景账号不存在")
+    owner_id = owner[0]
+
+    with httpx.Client(
+        base_url=state.config.http_origin,
+        timeout=10,
+        trust_env=False,
+    ) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": credential.email,
+                "password": credential.password,
+                "device_name": "M8 deletion replay",
+            },
+        )
+        if login.status_code != 200:
+            raise RuntimeError(
+                f"注销场景登录失败：HTTP {login.status_code}"
+            )
+        client.headers["x-csrf-token"] = login.json()["csrf_token"]
+        requested = client.post(
+            "/api/v1/account-deletion",
+            json={
+                "operation_id": str(uuid4()),
+                "email_confirmation": credential.email,
+                "current_password": credential.password,
+            },
+        )
+        if requested.status_code != 202:
+            raise RuntimeError(
+                f"注销场景申请失败：HTTP {requested.status_code}"
+            )
+
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE account_deletions
+            SET purge_after=clock_timestamp(),
+                available_at=clock_timestamp()
+            WHERE user_id=%s AND status='pending'
+            """,
+            (owner_id,),
+        )
+        connection.commit()
+    time.sleep(0.02)
+
+    async def purge() -> None:
+        database = Database(_settings(state, restored=False))
+        try:
+            for _ in range(100):
+                claim = await claim_next_deletion(database)
+                if claim is None:
+                    raise RuntimeError("注销 worker 未领取目标账号")
+                if not await purge_claimed_account(database, claim):
+                    raise RuntimeError("注销 worker 未完成已领取账号")
+                if str(claim.user_id) == owner_id:
+                    return
+            raise RuntimeError("注销 worker 在上限内未处理目标账号")
+        finally:
+            await database.close()
+
+    asyncio.run(purge())
+    return owner_id
+
+
+def _perform_deletion_replay_changes(
+    state: RunState,
+    client: httpx.Client,
+) -> None:
+    if state.seed_manifest is None or state.source_database_url is None:
+        raise RuntimeError("删除重放场景尚未完成数据播种")
+    owner_email = state.seed_manifest.credentials[0].email
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        owner = connection.execute(
+            "SELECT id::text FROM users WHERE email=%s",
+            (owner_email,),
+        ).fetchone()
+    if owner is None:
+        raise RuntimeError("删除重放控制账号不存在")
+    targets = _lifecycle_targets(state, owner[0])
+    endpoints = {
+        "task": "/api/v1/tasks/{id}",
+        "difficulty": "/api/v1/difficulties/{id}",
+        "memory": "/api/v1/memories/{id}",
+        "calendar-series": "/api/v1/calendar/series/{id}",
+    }
+    for kind, (object_id, version) in targets.items():
+        _delete_json(
+            client,
+            endpoints[kind].format(id=object_id),
+            expected_version=version,
+        )
+    _expire_deleted_objects(state, targets, at=datetime.now(UTC))
+    deleted_account_id = _complete_account_deletion(
+        state,
+        state.seed_manifest.credentials[1],
+    )
+    state.deletion_expectations = {
+        **{kind: value[0] for kind, value in targets.items()},
+        "account": deleted_account_id,
+    }
+    with psycopg.connect(
+        _psycopg_url(state.source_database_url),
+        connect_timeout=3,
+    ) as connection:
+        state.expected_counts = {
+            "users": int(
+                connection.execute("SELECT count(*) FROM users").fetchone()[0]
+            ),
+            "tasks": int(
+                connection.execute("SELECT count(*) FROM tasks").fetchone()[0]
+            )
+            - 1,
+        }
+
+
 def _stage_write_after_backup(state: RunState) -> None:
     if state.seed_manifest is None:
         raise RuntimeError("恢复数据尚未播种")
@@ -879,6 +1254,8 @@ def _stage_write_after_backup(state: RunState) -> None:
         after_id = _write_http_probe(client, title=PROBE_TITLES[1])
         state.probe_ids.append(after_id)
         state.probe_committed_at.append(_probe_time(state, after_id))
+        if state.scenario == RecoveryScenario.DELETION_REPLAY:
+            _perform_deletion_replay_changes(state, client)
     state.failure_at = _database_clock(state)
 
 
@@ -896,6 +1273,7 @@ def _stage_archive_wal(state: RunState) -> None:
     if switched is None:
         raise RuntimeError("无法取得待归档 WAL")
     target_wal = switched[0]
+    state.archived_wal = target_wal
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         with psycopg.connect(
@@ -953,22 +1331,477 @@ def _stage_stop_source(state: RunState) -> None:
 
 def _restore_arguments(state: RunState) -> tuple[str, ...]:
     arguments = ["--archive-mode=off"]
-    if state.scenario == RecoveryScenario.PITR:
+    if state.scenario in {
+        RecoveryScenario.PITR,
+        RecoveryScenario.DELETION_REPLAY,
+    }:
         if state.target_at is None:
             raise RuntimeError("PITR 恢复目标尚未记录")
         arguments.extend(
             (
                 "--type=time",
                 "--target="
-                + state.target_at.isoformat(timespec="microseconds"),
+                + state.target_at.astimezone(UTC).strftime(
+                    "%Y-%m-%d %H:%M:%S.%f+00"
+                ),
                 "--target-action=promote",
             )
         )
     return tuple(arguments)
 
 
+def _reset_fault_volume(state: RunState, name: str) -> None:
+    existing = _resource_names(state, "volume")
+    if name in existing:
+        checked(
+            [
+                "docker",
+                "--context",
+                state.config.docker_context,
+                "volume",
+                "rm",
+                name,
+            ],
+            env=state.env,
+            timeout=30,
+        )
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "volume",
+            "create",
+            "--label",
+            f"com.docker.compose.project={state.config.compose_project}",
+            name,
+        ],
+        env=state.env,
+        timeout=30,
+    )
+
+
+def _copy_repository(
+    state: RunState,
+    *,
+    destination: str,
+) -> None:
+    manifest = expected_cleanup_manifest(state.config)
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--mount",
+            (
+                "type=volume,"
+                f"src={manifest.repository_volume},"
+                "dst=/source,readonly"
+            ),
+            "--mount",
+            f"type=volume,src={destination},dst=/destination",
+            "--entrypoint",
+            "cp",
+            "itime-recovery-postgres:local",
+            "-a",
+            "/source/.",
+            "/destination/",
+        ],
+        env=state.env,
+        timeout=120,
+    )
+
+
+def _fault_container_prefix(
+    state: RunState,
+    *,
+    config_path: Path,
+    repository_volume: str,
+    restore_volume: str | None = None,
+    tiny_restore_tmpfs: bool = False,
+) -> tuple[str, ...]:
+    prefix = [
+        "docker",
+        "--context",
+        state.config.docker_context,
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--user",
+        "postgres",
+        "--mount",
+        (
+            "type=volume,"
+            f"src={repository_volume},"
+            "dst=/var/lib/pgbackrest,readonly"
+        ),
+        "--mount",
+        (
+            "type=bind,"
+            f"src={config_path.resolve()},"
+            "dst=/etc/pgbackrest/pgbackrest.conf,readonly"
+        ),
+        "--tmpfs",
+        f"{CONTAINER_TMP}:size=32m,mode=1777",
+        "--tmpfs",
+        "/var/run/postgresql:size=16m,mode=0770,uid=70,gid=70",
+    ]
+    if restore_volume is not None:
+        prefix.extend(
+            (
+                "--mount",
+                (
+                    "type=volume,"
+                    f"src={restore_volume},"
+                    "dst=/var/lib/postgresql"
+                ),
+            )
+        )
+    elif tiny_restore_tmpfs:
+        prefix.extend(
+            (
+                "--tmpfs",
+                "/var/lib/postgresql:size=1m,mode=0700,uid=70,gid=70",
+            )
+        )
+    prefix.append("itime-recovery-postgres:local")
+    return tuple(prefix)
+
+
+def _expect_pgbackrest_failure(
+    runner: PgBackRest,
+    operation: str,
+    *arguments: str,
+    state: RunState,
+    label: str,
+) -> None:
+    try:
+        runner.run(
+            operation,
+            *arguments,
+            timeout=180,
+            env=state.env,
+            cwd=ROOT,
+        )
+    except PgBackRestError:
+        state.fault_results[label] = True
+        return
+    raise RuntimeError(f"恢复故障未被拒绝：{label}")
+
+
+def _run_repository_faults(state: RunState) -> None:
+    if state.private_dir is None or state.archived_wal is None:
+        raise RuntimeError("恢复故障场景缺少仓库或 WAL 证据")
+    manifest = expected_cleanup_manifest(state.config)
+    wrong_config = state.private_dir / "wrong-repository.conf"
+    _write_secret(
+        wrong_config,
+        "\n".join(
+            (
+                "[global]",
+                "repo1-path=/var/lib/pgbackrest",
+                "repo1-cipher-type=aes-256-cbc",
+                f"repo1-cipher-pass={secrets.token_urlsafe(48)}",
+                "log-level-console=warn",
+                "log-level-file=off",
+                "",
+                "[itime]",
+                "pg1-path=/var/lib/postgresql/18/docker",
+                "",
+            )
+        ),
+    )
+    state.registered_paths.append(wrong_config)
+    _reset_fault_volume(state, manifest.fault_restore_data_volume)
+    wrong_key = PgBackRest(
+        binary="pgbackrest",
+        stanza="itime",
+        config=Path("/etc/pgbackrest/pgbackrest.conf"),
+        command_prefix=_fault_container_prefix(
+            state,
+            config_path=wrong_config,
+            repository_volume=manifest.repository_volume,
+            restore_volume=manifest.fault_restore_data_volume,
+        ),
+    )
+    _expect_pgbackrest_failure(
+        wrong_key,
+        "restore",
+        "--archive-mode=off",
+        state=state,
+        label="wrong_repository_key",
+    )
+
+    _reset_fault_volume(state, manifest.fault_restore_data_volume)
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--mount",
+            (
+                "type=volume,"
+                f"src={manifest.fault_restore_data_volume},"
+                "dst=/var/lib/postgresql"
+            ),
+            "--entrypoint",
+            "mkdir",
+            "itime-recovery-postgres:local",
+            "-p",
+            "/var/lib/postgresql/18/docker",
+        ],
+        env=state.env,
+        timeout=30,
+    )
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--mount",
+            (
+                "type=volume,"
+                f"src={manifest.fault_restore_data_volume},"
+                "dst=/var/lib/postgresql"
+            ),
+            "--entrypoint",
+            "touch",
+            "itime-recovery-postgres:local",
+            "/var/lib/postgresql/18/docker/occupied",
+        ],
+        env=state.env,
+        timeout=30,
+    )
+    occupied = PgBackRest(
+        binary="pgbackrest",
+        stanza="itime",
+        config=Path("/etc/pgbackrest/pgbackrest.conf"),
+        command_prefix=_fault_container_prefix(
+            state,
+            config_path=Path(state.env["ITIME_RECOVERY_RESTORE_CONFIG"]),
+            repository_volume=manifest.repository_volume,
+            restore_volume=manifest.fault_restore_data_volume,
+        ),
+    )
+    _expect_pgbackrest_failure(
+        occupied,
+        "restore",
+        "--archive-mode=off",
+        state=state,
+        label="occupied_restore_volume",
+    )
+
+    tiny = PgBackRest(
+        binary="pgbackrest",
+        stanza="itime",
+        config=Path("/etc/pgbackrest/pgbackrest.conf"),
+        command_prefix=_fault_container_prefix(
+            state,
+            config_path=Path(state.env["ITIME_RECOVERY_RESTORE_CONFIG"]),
+            repository_volume=manifest.repository_volume,
+            tiny_restore_tmpfs=True,
+        ),
+    )
+    _expect_pgbackrest_failure(
+        tiny,
+        "restore",
+        "--archive-mode=off",
+        state=state,
+        label="disk_full",
+    )
+
+    _reset_fault_volume(state, manifest.fault_repository_volume)
+    _copy_repository(
+        state,
+        destination=manifest.fault_repository_volume,
+    )
+    corrupt_script = (
+        "from pathlib import Path;"
+        "files=[p for p in Path('/repo/backup').rglob('*') "
+        "if p.is_file() and 'manifest' not in p.name];"
+        "p=max(files,key=lambda item:item.stat().st_size);"
+        "data=bytearray(p.read_bytes());"
+        "data[len(data)//2]^=255;"
+        "p.write_bytes(data)"
+    )
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--mount",
+            (
+                "type=volume,"
+                f"src={manifest.fault_repository_volume},dst=/repo"
+            ),
+            "itime-performance:local",
+            "python",
+            "-c",
+            corrupt_script,
+        ],
+        env=state.env,
+        timeout=60,
+    )
+    _reset_fault_volume(state, manifest.fault_restore_data_volume)
+    corrupted = PgBackRest(
+        binary="pgbackrest",
+        stanza="itime",
+        config=Path("/etc/pgbackrest/pgbackrest.conf"),
+        command_prefix=_fault_container_prefix(
+            state,
+            config_path=Path(state.env["ITIME_RECOVERY_RESTORE_CONFIG"]),
+            repository_volume=manifest.fault_repository_volume,
+            restore_volume=manifest.fault_restore_data_volume,
+        ),
+    )
+    _expect_pgbackrest_failure(
+        corrupted,
+        "restore",
+        "--archive-mode=off",
+        state=state,
+        label="corrupted_backup",
+    )
+
+    _reset_fault_volume(state, manifest.fault_repository_volume)
+    _copy_repository(
+        state,
+        destination=manifest.fault_repository_volume,
+    )
+    remove_wal_script = (
+        "from pathlib import Path;"
+        f"name={state.archived_wal!r};"
+        "matches=[p for p in Path('/repo/archive').rglob(name+'*') if p.is_file()];"
+        "[p.unlink() for p in matches];"
+        "assert matches"
+    )
+    checked(
+        [
+            "docker",
+            "--context",
+            state.config.docker_context,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--mount",
+            (
+                "type=volume,"
+                f"src={manifest.fault_repository_volume},dst=/repo"
+            ),
+            "itime-performance:local",
+            "python",
+            "-c",
+            remove_wal_script,
+        ],
+        env=state.env,
+        timeout=60,
+    )
+    missing_wal = PgBackRest(
+        binary="pgbackrest",
+        stanza="itime",
+        config=Path("/etc/pgbackrest/pgbackrest.conf"),
+        command_prefix=_fault_container_prefix(
+            state,
+            config_path=Path(state.env["ITIME_RECOVERY_RESTORE_CONFIG"]),
+            repository_volume=manifest.fault_repository_volume,
+        ),
+    )
+    _expect_pgbackrest_failure(
+        missing_wal,
+        "archive-get",
+        state.archived_wal,
+        str(CONTAINER_TMP / "recovered-wal"),
+        state=state,
+        label="missing_wal",
+    )
+
+    ledger_path = state.private_dir / "ledger-after.bin"
+    try:
+        read_encrypted_snapshot(
+            ledger_path,
+            Fernet.generate_key(),
+            expected_previous_digest=(
+                ledger_digest(state.ledger_before)
+                if state.ledger_before is not None
+                else None
+            ),
+        )
+    except LedgerError:
+        state.fault_results["wrong_ledger_key"] = True
+    else:
+        raise RuntimeError("错误删除台账密钥未被拒绝")
+
+    truncated_path = state.private_dir / "ledger-truncated.bin"
+    truncated = ledger_path.read_bytes()[:-8]
+    _write_secret(truncated_path, truncated.decode("ascii"))
+    state.registered_paths.append(truncated_path)
+    try:
+        read_encrypted_snapshot(
+            truncated_path,
+            state.ledger_key,
+            expected_previous_digest=(
+                ledger_digest(state.ledger_before)
+                if state.ledger_before is not None
+                else None
+            ),
+        )
+    except LedgerError:
+        state.fault_results["truncated_ledger"] = True
+    else:
+        raise RuntimeError("截断删除台账未被拒绝")
+
+    assert state.ledger_after is not None
+    stale_ledger = replace(
+        state.ledger_after,
+        generated_at=(
+            datetime.now(UTC) - timedelta(hours=2)
+        ).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+    )
+    try:
+        asyncio.run(
+            replay_ledger(
+                _settings(state, restored=False),
+                stale_ledger,
+                at=datetime.now(UTC),
+            )
+        )
+    except RecoveryReplayError:
+        state.fault_results["stale_ledger"] = True
+    else:
+        raise RuntimeError("过期删除台账未被拒绝")
+
+
 def _stage_restore(state: RunState) -> None:
     state.restore_started_at = datetime.now(UTC)
+    if state.scenario == RecoveryScenario.FAULTS:
+        _run_repository_faults(state)
     empty = checked(
         state.compose(
             "run",
@@ -1059,6 +1892,33 @@ def _stage_replay_ledger(state: RunState) -> None:
             at=datetime.now(UTC),
         )
     )
+    settings = _settings(state, restored=True)
+    state.encryption_verification = asyncio.run(
+        verify_encryption_keys(settings)
+    )
+    if not state.encryption_verification.passed:
+        raise RuntimeError(
+            "恢复数据库密钥验证失败："
+            + "; ".join(state.encryption_verification.failures)
+        )
+    if state.scenario == RecoveryScenario.FAULTS:
+        for field, expected_failure in (
+            ("encryption_key", "base encryption key mismatch"),
+            ("ai_encryption_key", "ai encryption key mismatch"),
+            (
+                "calendar_subscription_encryption_key",
+                "calendar encryption key mismatch",
+            ),
+            ("export_encryption_key", "export encryption key mismatch"),
+        ):
+            values = settings.model_dump()
+            values[field] = Fernet.generate_key().decode()
+            result = asyncio.run(verify_encryption_keys(Settings(**values)))
+            if result.passed or expected_failure not in result.failures:
+                raise RuntimeError(
+                    f"错误 {field} 未被恢复密钥门禁拒绝"
+                )
+            state.fault_results[f"wrong_{field}"] = True
 
 
 def _stage_finalize(state: RunState) -> None:
@@ -1089,6 +1949,39 @@ def _probe_rows(state: RunState) -> list[tuple[str, datetime]]:
     return [(row[0], row[1].astimezone(UTC)) for row in rows]
 
 
+def _verify_deletion_expectations(state: RunState) -> None:
+    if state.restore_database_url is None:
+        raise RuntimeError("恢复数据库尚未启动")
+    table_names = {
+        "task": "tasks",
+        "difficulty": "difficulty_records",
+        "memory": "memories",
+        "calendar-series": "calendar_series",
+    }
+    with psycopg.connect(
+        _psycopg_url(state.restore_database_url),
+        connect_timeout=3,
+    ) as connection:
+        account_id = state.deletion_expectations.get("account")
+        if account_id is None or connection.execute(
+            "SELECT 1 FROM users WHERE id=%s",
+            (account_id,),
+        ).fetchone() is not None:
+            raise RuntimeError("删除台账未保持已注销账号的删除状态")
+        for kind, table_name in table_names.items():
+            object_id = state.deletion_expectations.get(kind)
+            if object_id is None:
+                raise RuntimeError(f"删除台账缺少 {kind} 验证目标")
+            row = connection.execute(
+                sql.SQL(
+                    "SELECT purged_at IS NOT NULL FROM {} WHERE id=%s"
+                ).format(sql.Identifier(table_name)),
+                (object_id,),
+            ).fetchone()
+            if row != (True,):
+                raise RuntimeError(f"删除台账未保持 {kind} 清理状态")
+
+
 def _stage_verify(state: RunState) -> None:
     if (
         state.seed_manifest is None
@@ -1100,13 +1993,19 @@ def _stage_verify(state: RunState) -> None:
     rows = _probe_rows(state)
     expected_probe_ids = (
         state.probe_ids[:1]
-        if state.scenario == RecoveryScenario.PITR
+        if state.scenario
+        in {
+            RecoveryScenario.PITR,
+            RecoveryScenario.DELETION_REPLAY,
+        }
         else state.probe_ids
     )
     if [row[0] for row in rows] != expected_probe_ids:
         raise RuntimeError("恢复探针范围与恢复目标不一致")
     state.probe_committed_at = [row[1] for row in rows]
-    expected_counts = {
+    if state.scenario == RecoveryScenario.DELETION_REPLAY:
+        _verify_deletion_expectations(state)
+    expected_counts = state.expected_counts or {
         "users": state.seed_manifest.counts["users"],
         "tasks": state.seed_manifest.counts["tasks"] + len(expected_probe_ids),
     }
@@ -1151,6 +2050,7 @@ def _stage_build_report(state: RunState) -> RecoveryGateResult:
         or state.replay_summary is None
         or state.finalization_summary is None
         or state.verification is None
+        or state.encryption_verification is None
         or state.target_at is None
         or state.failure_at is None
         or state.restore_started_at is None
@@ -1197,6 +2097,10 @@ def _stage_build_report(state: RunState) -> RecoveryGateResult:
         "replay": asdict(state.replay_summary),
         "finalizer": asdict(state.finalization_summary),
         "verification": state.verification.to_public_dict(),
+        "encryption_verification": (
+            state.encryption_verification.to_public_dict()
+        ),
+        "fault_results": dict(sorted(state.fault_results.items())),
     }
     evidence = RecoveryEvidence(
         run_id=state.config.run_id,
@@ -1277,6 +2181,8 @@ def _remove_resources(state: RunState) -> None:
         manifest.repository_volume,
         manifest.source_spool_volume,
         manifest.restore_spool_volume,
+        manifest.fault_repository_volume,
+        manifest.fault_restore_data_volume,
     }
     if not set(volumes) <= expected_volumes:
         raise RuntimeError("恢复清理发现清单外数据卷")

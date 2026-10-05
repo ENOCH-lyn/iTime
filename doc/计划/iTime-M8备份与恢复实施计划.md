@@ -872,7 +872,7 @@ git commit -m "feat: 编排 PostgreSQL 时间点恢复"
 - Modify: `server/tests/test_recovery_integration.py`
 - Modify: `server/recovery/run.py`
 
-- [ ] **Step 1: 增加删除重放真实场景**
+- [x] **Step 1: 增加删除重放真实场景**
 
 在 full backup 后通过真实 API/worker：
 
@@ -885,7 +885,7 @@ git commit -m "feat: 编排 PostgreSQL 时间点恢复"
 
 恢复后断言台账重新应用上述状态，控制数据完整。
 
-- [ ] **Step 2: 增加故障注入场景**
+- [x] **Step 2: 增加故障注入场景**
 
 复制仓库到本次临时故障卷后分别：
 
@@ -901,7 +901,7 @@ git commit -m "feat: 编排 PostgreSQL 时间点恢复"
 
 每种场景必须在启动 API 前失败，源库与原仓库保持可用，错误不含密钥或正文。
 
-- [ ] **Step 3: 执行专项**
+- [x] **Step 3: 执行专项**
 
 ```bash
 cd server
@@ -913,7 +913,7 @@ uv run python -m recovery.run verify-clean
 
 Expected: 正常场景 PASS；故障场景被预期拒绝；零残留。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git diff --check
