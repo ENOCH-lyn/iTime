@@ -29,7 +29,8 @@ def reset_registration_state(database_url):
         connection.execute("DELETE FROM registration_invitations")
         connection.execute(
             "UPDATE registration_policies"
-            " SET mode='open', version=version+1, updated_at=now(),"
+            " SET mode='open', require_email_verification=true,"
+            " version=version+1, updated_at=now(),"
             " updated_by_user_id=NULL WHERE id=1"
         )
     yield
@@ -37,7 +38,8 @@ def reset_registration_state(database_url):
         connection.execute("DELETE FROM registration_invitations")
         connection.execute(
             "UPDATE registration_policies"
-            " SET mode='open', version=version+1, updated_at=now(),"
+            " SET mode='open', require_email_verification=true,"
+            " version=version+1, updated_at=now(),"
             " updated_by_user_id=NULL WHERE id=1"
         )
 
@@ -96,6 +98,31 @@ def invitation_token(invite_url: str) -> str:
     return match.group(1)
 
 
+def test_registration_policy_controls_email_verification(
+    client,
+    database_url,
+):
+    setup_admin(client, database_url)
+    policy = client.get(f"{ADMIN}/registration-policy").json()
+    assert policy["require_email_verification"] is True
+
+    updated = client.put(
+        f"{ADMIN}/registration-policy",
+        json={
+            "mode": "open",
+            "require_email_verification": False,
+            "expected_version": policy["version"],
+        },
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["require_email_verification"] is False
+    assert updated.json()["version"] == policy["version"] + 1
+    assert client.get(f"{AUTH}/policy").json()[
+        "require_email_verification"
+    ] is False
+
+
 def test_invitation_policy_is_email_bound_single_account_and_recoverable(
     client, database_url, live_server
 ):
@@ -105,13 +132,21 @@ def test_invitation_policy_is_email_bound_single_account_and_recoverable(
     policy = client.get(f"{ADMIN}/registration-policy").json()
     switched = client.put(
         f"{ADMIN}/registration-policy",
-        json={"mode": "invite", "expected_version": policy["version"]},
+        json={
+            "mode": "invite",
+            "require_email_verification": True,
+            "expected_version": policy["version"],
+        },
     )
     assert switched.status_code == 200
     assert switched.json()["mode"] == "invite"
     stale = client.put(
         f"{ADMIN}/registration-policy",
-        json={"mode": "open", "expected_version": policy["version"]},
+        json={
+            "mode": "open",
+            "require_email_verification": True,
+            "expected_version": policy["version"],
+        },
     )
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "registration_policy_version_conflict"
@@ -207,7 +242,11 @@ def test_invitation_policy_is_email_bound_single_account_and_recoverable(
     current = client.get(f"{ADMIN}/registration-policy").json()
     opened = client.put(
         f"{ADMIN}/registration-policy",
-        json={"mode": "open", "expected_version": current["version"]},
+        json={
+            "mode": "open",
+            "require_email_verification": True,
+            "expected_version": current["version"],
+        },
     )
     assert opened.status_code == 200
     with browser(live_server) as visitor:

@@ -22,6 +22,7 @@ class Input(BaseModel):
 
 class RegistrationPolicyInput(Input):
     mode: Literal["open", "invite"]
+    require_email_verification: bool
     expected_version: int = Field(ge=1)
 
 
@@ -55,6 +56,7 @@ def validate_cursor(before_time: datetime | None, before_id: UUID | None) -> Non
 def registration_policy_result(policy: RegistrationPolicy) -> dict:
     return {
         "mode": policy.mode,
+        "require_email_verification": policy.require_email_verification,
         "version": policy.version,
         "updated_at": policy.updated_at,
     }
@@ -137,8 +139,19 @@ async def update_registration_policy(
             )
         if policy.version != data.expected_version:
             raise version_conflict("registration_policy", policy.version)
-        if policy.mode != data.mode:
+        before = {
+            "mode": policy.mode,
+            "require_email_verification": policy.require_email_verification,
+        }
+        after = {
+            "mode": data.mode,
+            "require_email_verification": data.require_email_verification,
+        }
+        if before != after:
             policy.mode = data.mode
+            policy.require_email_verification = (
+                data.require_email_verification
+            )
             policy.version += 1
             policy.updated_at = now()
             policy.updated_by_user_id = identity.user.id
@@ -146,7 +159,8 @@ async def update_registration_policy(
                 request,
                 identity.session,
                 identity.user,
-                f"registration_{data.mode}_enabled",
+                "registration_policy_updated",
+                details={"before": before, "after": after},
             )
         return registration_policy_result(policy)
 
