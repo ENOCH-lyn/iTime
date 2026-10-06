@@ -154,6 +154,7 @@ def test_review_request_body_uses_purpose_specific_single_tool(provider_context)
 
     assert question["tool_choice"]["function"]["name"] == REVIEW_QUESTION_TOOL
     assert report["tool_choice"]["function"]["name"] == REVIEW_REPORT_TOOL
+    assert "allowed_fact_source_keys" in report["messages"][0]["content"]
     assert question["parallel_tool_calls"] is False
     assert report["stream"] is True
     assert question["tools"][0]["function"]["parameters"]["additionalProperties"] is False

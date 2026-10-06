@@ -9,6 +9,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host localhost",
     "test:e2e": "playwright test",
+    "test:e2e:deepseek": "playwright test --config playwright.deepseek.config.ts",
     "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
     "test:e2e:recovery": "playwright test --config playwright.recovery.config.ts"
   },

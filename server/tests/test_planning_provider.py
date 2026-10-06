@@ -142,6 +142,7 @@ def test_planning_request_body_fixes_tool_choice_and_uses_model_schema(
     body = planning_request_body(config, messages)
 
     assert body["model"] == "planning-model"
+    assert "include exactly one estimates item" in body["messages"][0]["content"]
     assert body["messages"][-1] == messages[0]
     assert body["max_tokens"] == 2048
     assert body["temperature"] == 0

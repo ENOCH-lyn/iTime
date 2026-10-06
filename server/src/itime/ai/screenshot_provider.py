@@ -69,10 +69,12 @@ def _prompt(context: dict) -> str:
         'object shaped as {"items":[{"raw_text":"...","confidence":0.0,'
         '"warnings":[],"draft":{...}}]}. Include only entries supported by the image. '
         "Use null only where the schema permits it, use 24-hour HH:MM:SS times, ISO dates, "
-        "and the supplied IANA timezone. For timetable courses, use a supplied term_id and "
-        "its week/period information only when the image supports that mapping. Otherwise "
-        "produce a fixed event and add a warning. Never invent an event to avoid an empty "
-        f"result. Recognition context: {context_json}. Draft JSON schema: {series_schema}"
+        "and the supplied IANA timezone. Write user-visible names, locations, and warnings "
+        "in concise Simplified Chinese when the image is Chinese. For timetable courses, "
+        "use a supplied term_id and its week/period information only when the image supports "
+        "that mapping. Otherwise produce a fixed event and add a warning. Never invent an "
+        f"event to avoid an empty result. Recognition context: {context_json}. "
+        f"Draft JSON schema: {series_schema}"
     )
 
 

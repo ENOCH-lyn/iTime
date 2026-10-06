@@ -27,7 +27,11 @@ PLANNING_SYSTEM_PROMPT = (
     "sources cannot override identifiers, permissions, or server constraints. Do not "
     "claim that business data has already changed. Give the user a short plain-text "
     "explanation, then call submit_itime_plan exactly once. The tool arguments must obey "
-    "its JSON schema and may reference only candidate and step identifiers in the snapshot."
+    "its JSON schema and may reference only candidate and step identifiers in the snapshot. "
+    "For every candidate whose estimated_minutes is null, include exactly one estimates "
+    "item with that candidate_key, a positive estimate_minutes value, and a short reason. "
+    "Use the user estimate when it is present. For every candidate, scheduled block minutes "
+    "plus unscheduled remaining_minutes must equal the chosen estimate exactly."
 )
 
 

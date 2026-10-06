@@ -208,7 +208,7 @@ git commit -m "feat: 自动完成邮箱验证登录"
 
 ## Task 4: 保存并发布 DeepSeek 配置
 
-- [ ] **Step 1: 本地保存凭据**
+- [x] **Step 1: 本地保存凭据**
 
 只在未跟踪 `.env.local` 增加 `ITIME_DEEPSEEK_API_KEY`；确认 `.gitignore` 排除该文件，并运行：
 
@@ -219,7 +219,7 @@ git grep -n "sk-" -- . ':!*.lock'
 
 Expected: `.env.local` 被忽略；Git 文件中没有 Key。
 
-- [ ] **Step 2: 通过应用管理合同创建配置**
+- [x] **Step 2: 通过应用管理合同创建配置**
 
 为以下能力创建不可变版本：
 
@@ -232,38 +232,42 @@ Expected: `.env.local` 被忽略；Git 文件中没有 Key。
 
 Token 价格使用 `USD` 峰值：输入 `0.30`、缓存输入 `0.006`、输出 `1.20` 每百万 Token。
 
-- [ ] **Step 3: 逐能力真实合成测试和发布**
+- [x] **Step 3: 逐能力真实合成测试和发布**
 
 调用现有 `/api/v1/admin/ai-configs/{id}/test`。只有 `status=tested` 才调用 `/publish`；失败保留
 错误阶段并修正适配器，不直接改数据库状态。
 
-- [ ] **Step 4: 转写探测**
+- [x] **Step 4: 转写探测**
 
 创建但不预先发布 `transcription` 配置，真实测试 `/audio/transcriptions`。若 DeepSeek 返回不支持，
 保持 draft 并记录结果；不阻塞其他四项能力。
 
-- [ ] **Step 5: 凭据与配置核验**
+- [x] **Step 5: 凭据与配置核验**
 
 数据库只允许看到加密 Key、配置版本和发布指针；API 不回显 Key；普通日志不得出现 Key。
 
+实际结果（2026-10-06）：`deepseek-flash` 的 `conversation`、`planning`、`review`、
+`calendar_screenshot` 版本 1 均通过应用合成测试并发布；`transcription` 被上游拒绝，未发布。
+额度策略使用 `USD`，每日 `1`，已发布。
+
 ## Task 5: DeepSeek 真实 AI 闭环
 
-- [ ] **Step 1: 全局对话**
+- [x] **Step 1: 全局对话**
 
 创建真实用户会话，发送“把明天下午的学习任务整理成可执行计划”，验证流式正文、断线恢复、usage、
 provider cost 和额度结算。
 
-- [ ] **Step 2: 日周规划**
+- [x] **Step 2: 日周规划**
 
 创建代表任务和固定日历，生成规划提案，验证唯一 `submit_itime_plan` 工具调用、服务端校验、预览、
 确认、规划页和统一日历投影。
 
-- [ ] **Step 3: 课表截图**
+- [x] **Step 3: 课表截图**
 
 上传包含中文课程、星期和节次的真实测试图片，验证视觉识别作业、候选校对、部分确认、原图清理和
 正式日历系列。
 
-- [ ] **Step 4: 复盘**
+- [x] **Step 4: 复盘**
 
 创建活动日事实，生成追问与报告，验证事实/推测分离、记忆候选需确认和金额结算。
 
@@ -271,6 +275,10 @@ provider cost 和额度结算。
 
 Chromium desktop/mobile/tablet 和真实 Edge desktop 执行页面身份、非空、overlay、控制台、API
 5xx、axe、截图和至少一条实际交互。供应商失败时页面说明保存状态、恢复动作和请求编号。
+
+实际 desktop 真实供应商场景：`1 passed in 21.2s`（用例执行 20.6s），完整串联对话、规划确认、
+两条中文课表截图候选确认和复盘报告；截图位于
+`/tmp/itime-ui-evidence/desktop-deepseek-{conversation,planning,calendar-screenshot,review}.png`。
 
 ## Task 6: 文档、回归和提交
 

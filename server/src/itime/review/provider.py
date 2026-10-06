@@ -36,7 +36,10 @@ REPORT_SYSTEM_PROMPT = (
     "separate recorded facts, user statements, AI inferences, next actions, and "
     "uncertainties. Never diagnose mental health. Memory candidates may only restate "
     "explicit user statements or confirmed memories, never AI inference. Call "
-    "submit_itime_review_report exactly once."
+    "submit_itime_review_report exactly once. Every facts item must copy source_key "
+    "exactly from allowed_fact_source_keys; never invent or rewrite a source key, and "
+    "return an empty facts list when no source applies. Every memory candidate "
+    "source_keys value must copy only values from allowed_memory_source_keys."
 )
 
 

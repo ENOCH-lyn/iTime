@@ -433,10 +433,11 @@ async def load_review_work(
                 "复盘配置已不可用，请重新生成。",
                 "configuration",
             )
-        purpose: ReviewPurpose = (
-            "question" if snapshot.purpose == "question" else "report"
-        )
+        purpose: ReviewPurpose = "question" if snapshot.purpose == "question" else "report"
         payload = review_snapshot_payload(snapshot)
+        fact_sources, candidate_sources = _allowed_sources(snapshot)
+        payload["allowed_fact_source_keys"] = sorted(fact_sources)
+        payload["allowed_memory_source_keys"] = sorted(candidate_sources)
         payload["memory_context"] = await memory_context(
             session,
             claim.owner_id,
@@ -492,9 +493,11 @@ def _validated_report(
 ) -> tuple[list[dict], list[dict], list[str]]:
     fact_sources, candidate_sources = _allowed_sources(snapshot)
     facts = [item.model_dump(mode="json") for item in output.facts]
-    unknown = [
-        item["source_key"] for item in facts if item["source_key"] not in fact_sources
-    ]
+    if "user:supplemental_facts" in fact_sources:
+        for item in facts:
+            if item["source_key"] == "supplemental_facts":
+                item["source_key"] = "user:supplemental_facts"
+    unknown = [item["source_key"] for item in facts if item["source_key"] not in fact_sources]
     if unknown:
         raise AppError(
             "review_fact_source_invalid",
@@ -502,17 +505,20 @@ def _validated_report(
             status=422,
             details={"source_keys": unknown[:10]},
         )
-    candidates = [
-        item.model_dump(mode="json")
-        for item in output.memory_candidates
-        if set(item.source_keys).issubset(candidate_sources)
-    ]
+    candidates = []
+    for item in output.memory_candidates:
+        candidate = item.model_dump(mode="json")
+        if "user:supplemental_facts" in candidate_sources:
+            candidate["source_keys"] = [
+                ("user:supplemental_facts" if source == "supplemental_facts" else source)
+                for source in candidate["source_keys"]
+            ]
+        if set(candidate["source_keys"]).issubset(candidate_sources):
+            candidates.append(candidate)
     uncertainties = list(output.uncertainties)
     removed = len(output.memory_candidates) - len(candidates)
     if removed and len(uncertainties) < 20:
-        uncertainties.append(
-            f"{removed} 项记忆建议因缺少用户明确来源而未保留。"
-        )
+        uncertainties.append(f"{removed} 项记忆建议因缺少用户明确来源而未保留。")
     return facts, candidates, uncertainties
 
 
@@ -690,10 +696,7 @@ async def complete_review_job(
                 summary=result.output.summary,
                 facts=facts,
                 user_statements=list(result.output.user_statements),
-                insights=[
-                    item.model_dump(mode="json")
-                    for item in result.output.insights
-                ],
+                insights=[item.model_dump(mode="json") for item in result.output.insights],
                 next_actions=list(result.output.next_actions),
                 uncertainties=uncertainties,
                 created_at=current,
