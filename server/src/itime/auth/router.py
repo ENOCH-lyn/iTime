@@ -57,6 +57,7 @@ class RegisterInput(EmailInput):
     password: Password
     invitation_token: InvitationToken | None = None
     time_zone: str | None = Field(default=None, min_length=1, max_length=64)
+    device_name: str = Field(default="网页浏览器", min_length=1, max_length=100)
 
     @field_validator("time_zone")
     @classmethod
@@ -71,7 +72,7 @@ class LoginInput(EmailInput):
 
 class VerifyInput(Input):
     token: Token
-    password: Password
+    device_name: str = Field(default="网页浏览器", min_length=1, max_length=100)
 
 
 class ResetInput(Input):
@@ -117,15 +118,24 @@ async def policy(request: Request) -> dict:
         "password_reset_minutes": settings.password_reset_minutes,
         "mail_cooldown_seconds": settings.mail_cooldown_seconds,
         "registration_mode": registration.mode,
+        "require_email_verification": (
+            registration.require_email_verification
+        ),
     }
 
 
 @router.post("/register", status_code=202)
-async def register(data: RegisterInput, request: Request) -> dict:
+async def register(
+    data: RegisterInput,
+    request: Request,
+    response: Response,
+) -> dict:
     await rate_limit(request, "register", data.email)
     time_zone = validate_time_zone(data.time_zone) if data.time_zone is not None else None
     security = request.app.state.security
     encoded = await security.hash_password(data.password.get_secret_value())
+    session_payload = None
+    session_token = None
     async with request.app.state.database.transaction() as session:
         registration = await session.scalar(
             select(RegistrationPolicy)
@@ -206,9 +216,41 @@ async def register(data: RegisterInput, request: Request) -> dict:
                 "registered_by_invitation" if invitation is not None else "registered",
                 invitation.id if invitation is not None else None,
             )
-        if user.email_verified_at is None and user.status == "active":
+            if not registration.require_email_verification:
+                user.email_verified_at = now()
+                device, session_token = await create_session(
+                    request,
+                    session,
+                    user,
+                    data.device_name,
+                )
+                session_payload = session_result(
+                    request,
+                    user,
+                    device,
+                    session_token,
+                )
+                audit(
+                    request,
+                    session,
+                    user,
+                    "logged_in_after_registration",
+                    device.id,
+                )
+        if (
+            registration.require_email_verification
+            and user.email_verified_at is None
+            and user.status == "active"
+        ):
             await queue_email(request, session, user, "verify")
-    return EMAIL_RESULT
+        verification_required = registration.require_email_verification
+    if session_token is not None:
+        set_session_cookie(request, response, session_token)
+    return {
+        **EMAIL_RESULT,
+        "verification_required": verification_required,
+        "session": session_payload,
+    }
 
 
 @router.post("/resend-verification", status_code=202)
@@ -257,24 +299,44 @@ async def consume_token(session, raw: str, purpose: str, user_id: UUID) -> None:
 
 
 @router.post("/verify-email")
-async def verify(data: VerifyInput, request: Request) -> dict:
+async def verify(
+    data: VerifyInput,
+    request: Request,
+    response: Response,
+) -> dict:
     raw = data.token.get_secret_value()
     await rate_limit(request, "verify-token")
-    user_id, encoded = await token_snapshot(request, raw, "verify")
-    if not await request.app.state.security.verify_password(
-        data.password.get_secret_value(), encoded
-    ):
-        raise invalid_credentials()
+    user_id, _ = await token_snapshot(request, raw, "verify")
     async with request.app.state.database.transaction() as session:
         user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
-        if user is None or user.password_hash != encoded:
+        if user is None:
             raise invalid_token()
         await consume_token(session, raw, "verify", user_id)
         if user.status != "active":
             raise AppError("account_suspended", "账号已停用，请联系管理员。", status=403)
         user.email_verified_at = now()
+        device, session_token = await create_session(
+            request,
+            session,
+            user,
+            data.device_name,
+        )
         audit(request, session, user, "email_verified")
-    return {"status": "verified", "message": "邮箱已验证，现在可以登录。"}
+        audit(
+            request,
+            session,
+            user,
+            "logged_in_after_email_verification",
+            device.id,
+        )
+        result = session_result(
+            request,
+            user,
+            device,
+            session_token,
+        )
+    set_session_cookie(request, response, session_token)
+    return result
 
 
 @router.post("/login")

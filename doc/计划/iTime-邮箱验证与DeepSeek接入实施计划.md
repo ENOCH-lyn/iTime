@@ -36,7 +36,7 @@
 
 ## Task 1: 注册策略邮箱验证开关
 
-- [ ] **Step 1: 写迁移和服务失败测试**
+- [x] **Step 1: 写迁移和服务失败测试**
 
 在 `server/tests/test_admin_management.py` 增加：
 
@@ -56,7 +56,7 @@ assert updated.json()["require_email_verification"] is False
 
 同时断言旧版本提交返回 `registration_policy_version_conflict`，安全事件只记录布尔策略前后值。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -65,7 +65,7 @@ uv run pytest -q tests/test_admin_management.py -k registration
 
 Expected: FAIL，模型和 API 尚无 `require_email_verification`。
 
-- [ ] **Step 3: 新增迁移和模型**
+- [x] **Step 3: 新增迁移和模型**
 
 迁移 `0037_registration_email_verification`：
 
@@ -83,12 +83,12 @@ op.add_column(
 
 降级只删除该列；默认 `true`。
 
-- [ ] **Step 4: 扩展管理 API**
+- [x] **Step 4: 扩展管理 API**
 
 `RegistrationPolicyInput` 增加 `require_email_verification: bool`，输出返回该字段。只有模式或开关实际
 变化才递增一次版本，并记录 `registration_policy_updated` 审计详情。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server
@@ -105,7 +105,7 @@ git commit -m "feat: 管理新账号邮箱验证策略"
 
 ## Task 2: 邮件链接自动验证并登录
 
-- [ ] **Step 1: 写服务失败测试**
+- [x] **Step 1: 写服务失败测试**
 
 修改 `server/tests/test_auth.py`，验证只提交令牌和设备名：
 
@@ -123,7 +123,7 @@ assert client.get(f"{API}/me").status_code == 200
 另测并发单次消费、停用账号不创建会话、旧令牌失败、验证关闭时首次注册直接返回会话且邮件队列
 为空、重复注册不能取得会话。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd server
@@ -132,7 +132,7 @@ uv run pytest -q tests/test_auth.py -k "verification or register"
 
 Expected: FAIL，验证仍要求密码，注册仍总是排队邮件。
 
-- [ ] **Step 3: 实现验证直登**
+- [x] **Step 3: 实现验证直登**
 
 `VerifyInput` 改为：
 
@@ -145,12 +145,12 @@ class VerifyInput(Input):
 验证事务消费令牌、设置验证时间、调用 `create_session()`，提交后 `set_session_cookie()`，返回
 `session_result()`。
 
-- [ ] **Step 4: 实现关闭验证后的首次注册直登**
+- [x] **Step 4: 实现关闭验证后的首次注册直登**
 
 注册事务仅在 `new_id` 为真且策略关闭时设置验证时间并创建会话；重复注册继续返回统一受理结果，
 不创建会话。响应增加 `verification_required` 和可空 `session`。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```bash
 cd server

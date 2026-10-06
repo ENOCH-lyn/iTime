@@ -33,6 +33,21 @@ MAILPIT = "http://127.0.0.1:58025"
 def clean_rate_buckets(database_url):
     with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
         connection.execute("DELETE FROM auth_rate_buckets")
+        connection.execute(
+            "UPDATE registration_policies "
+            "SET mode='open', require_email_verification=true, "
+            "version=version+1, updated_at=now(), "
+            "updated_by_user_id=NULL WHERE id=1"
+        )
+    yield
+    with psycopg.connect(psycopg_url(database_url), autocommit=True) as connection:
+        connection.execute("DELETE FROM auth_rate_buckets")
+        connection.execute(
+            "UPDATE registration_policies "
+            "SET mode='open', require_email_verification=true, "
+            "version=version+1, updated_at=now(), "
+            "updated_by_user_id=NULL WHERE id=1"
+        )
 
 
 def address() -> str:
@@ -87,14 +102,23 @@ def login(client, email, password=PASSWORD, device="测试浏览器"):
     return response
 
 
+def verify(client, token, device="邮件验证浏览器"):
+    response = client.post(
+        f"{API}/verify-email",
+        json={"token": token, "device_name": device},
+    )
+    if response.status_code == 200:
+        client.headers["x-csrf-token"] = response.json()["csrf_token"]
+    return response
+
+
 @pytest.fixture
 def account(client, database_url):
     email = address()
     register(client, email)
     token = email_token(database_url, email)
-    response = client.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD})
+    response = verify(client, token)
     assert response.status_code == 200, response.text
-    login(client, email)
     return email
 
 
@@ -122,17 +146,15 @@ def test_real_mail_verification_login_and_secret_storage(client, database_url, l
         ).fetchone()[0]
         assert b"#token=" not in cipher and email.encode() not in cipher
     token = email_token(database_url, email)
-    wrong = client.post(f"{API}/verify-email", json={"token": token, "password": NEW_PASSWORD})
-    assert wrong.status_code == 401
-    verified = client.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD})
+    verified = verify(client, token)
     assert verified.status_code == 200
     assert (
-        client.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD}).json()[
-            "error"
-        ]["code"]
+        client.post(f"{API}/verify-email", json={"token": token}).json()["error"][
+            "code"
+        ]
         == "invalid_email_token"
     )
-    response = login(client, email)
+    response = verified
     raw = client.cookies.get(COOKIE_NAME)
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=lax" in response.headers["set-cookie"]
@@ -155,11 +177,96 @@ def test_real_mail_verification_login_and_secret_storage(client, database_url, l
         actions = connection.execute(
             "SELECT action FROM security_events WHERE user_id=%s", (user_id,)
         ).fetchall()
-        assert {a[0] for a in actions} >= {"registered", "email_verified", "logged_in"}
+        assert {a[0] for a in actions} >= {
+            "registered",
+            "email_verified",
+            "logged_in_after_email_verification",
+        }
     client.get("/api/health")
     logs = live_server.log_path.read_text()
     for secret in (PASSWORD, email, token, raw, cipher.decode()):
         assert secret not in logs
+
+
+def test_email_verification_token_creates_session_without_password(
+    client,
+    database_url,
+):
+    email = address()
+    register(client, email)
+    token = email_token(database_url, email)
+
+    verified = client.post(
+        f"{API}/verify-email",
+        json={"token": token, "device_name": "邮件验证浏览器"},
+    )
+
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["user"]["email"] == email
+    assert client.cookies.get(COOKIE_NAME)
+    assert client.get(f"{API}/me").status_code == 200
+
+
+def test_registration_without_email_verification_logs_in_only_new_account(
+    client,
+    database_url,
+    live_server,
+):
+    with psycopg.connect(
+        psycopg_url(database_url),
+        autocommit=True,
+    ) as connection:
+        connection.execute(
+            "UPDATE registration_policies "
+            "SET require_email_verification=false, version=version+1 "
+            "WHERE id=1"
+        )
+    email = address()
+
+    registered = client.post(
+        f"{API}/register",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "device_name": "注册直登浏览器",
+        },
+    )
+
+    assert registered.status_code == 202, registered.text
+    assert registered.json()["verification_required"] is False
+    assert registered.json()["session"]["user"]["email"] == email
+    assert client.cookies.get(COOKIE_NAME)
+    with psycopg.connect(psycopg_url(database_url)) as connection:
+        counts = connection.execute(
+            """
+            SELECT
+              (SELECT count(*) FROM email_tokens WHERE user_id=users.id),
+              (SELECT count(*) FROM mail_outbox AS mail
+               JOIN email_tokens AS token ON token.id=mail.token_id
+               WHERE token.user_id=users.id)
+            FROM users
+            WHERE email=%s
+            """,
+            (email,),
+        ).fetchone()
+    assert counts == (0, 0)
+
+    with browser(live_server) as duplicate:
+        replayed = duplicate.post(
+            f"{API}/register",
+            json={"email": email, "password": NEW_PASSWORD},
+        )
+        assert replayed.status_code == 202
+        assert replayed.json()["session"] is None
+        assert duplicate.cookies.get(COOKIE_NAME) is None
+        assert duplicate.post(
+            f"{API}/login",
+            json={"email": email, "password": NEW_PASSWORD},
+        ).status_code == 401
+        assert duplicate.post(
+            f"{API}/login",
+            json={"email": email, "password": PASSWORD},
+        ).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -214,10 +321,7 @@ def test_duplicate_concurrent_registration_and_resend_are_bounded(
             == 1
         )
     token = email_token(database_url, email)
-    assert (
-        client.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD}).status_code
-        == 200
-    )
+    assert verify(client, token).status_code == 200
 
 
 def test_expired_replaced_and_cross_purpose_tokens(client, database_url):
@@ -230,7 +334,7 @@ def test_expired_replaced_and_cross_purpose_tokens(client, database_url):
             " expires_at=now()-interval '1 second' WHERE token_hash=%s",
             (digest(old_token),),
         )
-    expired = client.post(f"{API}/verify-email", json={"token": old_token, "password": PASSWORD})
+    expired = client.post(f"{API}/verify-email", json={"token": old_token})
     assert expired.json()["error"]["code"] == "invalid_email_token"
     client.post(f"{API}/resend-verification", json={"email": email})
     token = email_token(database_url, email)
@@ -241,10 +345,7 @@ def test_expired_replaced_and_cross_purpose_tokens(client, database_url):
         ).status_code
         == 400
     )
-    assert (
-        client.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD}).status_code
-        == 200
-    )
+    assert verify(client, token).status_code == 200
 
 
 def test_csrf_device_isolation_revocation_and_logout(client, account, live_server):
@@ -296,8 +397,7 @@ def test_authenticated_account_cannot_revoke_another_users_session(
         email = address()
         register(stranger, email)
         token = email_token(database_url, email)
-        stranger.post(f"{API}/verify-email", json={"token": token, "password": PASSWORD})
-        sid = login(stranger, email).json()["session_id"]
+        sid = verify(stranger, token).json()["session_id"]
         response = client.delete(f"{API}/sessions/{sid}")
         assert response.status_code == 404
         assert stranger.get(f"{API}/me").status_code == 200
