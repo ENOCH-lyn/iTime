@@ -273,6 +273,8 @@ dialog p { font-size: .9375rem; color: var(--muted); }
 .management-section .section-intro { margin-bottom: 20px; }
 .management-section .page-description { margin: 6px 0 0; }
 .policy-control { max-width: 420px; }
+.policy-verification-row { max-width: 620px; margin-top: 20px; }
+.management-section .policy-verification-row h2 { font-size: 1rem; }
 .inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
 .inline-form { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 720px; }
 .invite-submit, .filter-submit { align-self: end; }

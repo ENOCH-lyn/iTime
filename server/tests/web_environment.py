@@ -903,6 +903,7 @@ async def seed_admins(
                 "recovery",
                 "password",
                 "layout",
+                "email-verification",
                 "registration",
                 "users",
                 "account-deletion",

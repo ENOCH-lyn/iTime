@@ -5,6 +5,7 @@ export type AIAccess = 'allowed' | 'frozen'
 
 export interface RegistrationPolicy {
   mode: RegistrationMode
+  require_email_verification: boolean
   version: number
   updated_at: string
 }

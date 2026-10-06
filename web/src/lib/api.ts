@@ -234,6 +234,7 @@ export interface Policy {
   password_reset_minutes: number
   mail_cooldown_seconds: number
   registration_mode: 'open' | 'invite'
+  require_email_verification: boolean
 }
 
 export function passwordError(value: string, policy: Policy) {

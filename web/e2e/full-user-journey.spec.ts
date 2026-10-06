@@ -126,10 +126,7 @@ async function registerAndLogin(page: Page, request: APIRequestContext) {
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, email))
-  await page.getByLabel('密码', { exact: true }).fill(password)
-  await page.getByRole('button', { name: '验证邮箱', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '邮箱已验证' })).toBeVisible()
-  await login(page, email)
+  await expect(page).toHaveURL('/ai')
   await initializeTimeSettings(page)
   return { email }
 }

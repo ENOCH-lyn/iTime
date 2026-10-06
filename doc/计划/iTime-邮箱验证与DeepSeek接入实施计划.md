@@ -162,12 +162,12 @@ git commit -am "feat: 邮件链接验证后自动登录"
 
 ## Task 3: Web 自动流转和后台开关
 
-- [ ] **Step 1: 改写浏览器失败测试**
+- [x] **Step 1: 改写浏览器失败测试**
 
 `web/e2e/auth.spec.ts` 打开验证链接后直接断言 `/ai`，不查找密码字段。新增后台关闭验证后注册即
 进入 `/ai` 的 desktop/mobile/tablet 用例。
 
-- [ ] **Step 2: 运行受影响用例确认失败**
+- [x] **Step 2: 运行受影响用例确认失败**
 
 ```bash
 cd web
@@ -175,7 +175,7 @@ pnpm exec playwright test e2e/auth.spec.ts e2e/admin-management.spec.ts \
   --project=desktop
 ```
 
-- [ ] **Step 3: 实现 Vue 自动验证**
+- [x] **Step 3: 实现 Vue 自动验证**
 
 `AuthPage.vue`：
 
@@ -187,7 +187,7 @@ pnpm exec playwright test e2e/auth.spec.ts e2e/admin-management.spec.ts \
 
 后台组件增加原生 checkbox/toggle，策略保存一次提交模式和邮箱验证布尔值。
 
-- [ ] **Step 4: 浏览器验证**
+- [x] **Step 4: 浏览器验证**
 
 ```bash
 cd web
@@ -197,7 +197,7 @@ pnpm exec playwright test e2e/auth.spec.ts e2e/admin-management.spec.ts
 
 Expected: Chromium desktop/mobile/tablet 通过；axe、控制台和根级溢出为零。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add web/src/pages/AuthPage.vue web/src/components/AdminRegistrationSettings.vue \

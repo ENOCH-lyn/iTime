@@ -16,6 +16,7 @@ import {
 
 const policy = ref<RegistrationPolicy | null>(null)
 const selectedMode = ref<RegistrationMode>('open')
+const requireEmailVerification = ref(true)
 const policyLoading = ref(false)
 const policyPending = ref(false)
 const policyError = ref<Failure | null>(null)
@@ -37,7 +38,10 @@ const cursor = ref<Page<Invitation>['next_cursor']>(null)
 const selectedInvitation = ref<Invitation | null>(null)
 const dialog = ref<HTMLDialogElement | null>(null)
 
-const policyChanged = computed(() => policy.value?.mode !== selectedMode.value)
+const policyChanged = computed(() => (
+  policy.value?.mode !== selectedMode.value
+  || policy.value?.require_email_verification !== requireEmailVerification.value
+))
 const statusLabels: Record<InvitationStatus, string> = {
   pending: '待使用',
   consumed: '已使用',
@@ -62,6 +66,7 @@ async function loadPolicy(keepError = false) {
   try {
     policy.value = await api<RegistrationPolicy>('/admin/registration-policy')
     selectedMode.value = policy.value.mode
+    requireEmailVerification.value = policy.value.require_email_verification
   } catch (reason) {
     policyError.value = await handleAdminError(reason)
   } finally {
@@ -77,12 +82,16 @@ async function savePolicy() {
   try {
     policy.value = await api<RegistrationPolicy>(
       '/admin/registration-policy',
-      { mode: selectedMode.value, expected_version: policy.value.version },
+      {
+        mode: selectedMode.value,
+        require_email_verification: requireEmailVerification.value,
+        expected_version: policy.value.version,
+      },
       'PUT',
     )
-    policySuccess.value = policy.value.mode === 'open'
-      ? '开放注册已生效。'
-      : '邀请注册已生效；已有账号仍可登录和找回。'
+    selectedMode.value = policy.value.mode
+    requireEmailVerification.value = policy.value.require_email_verification
+    policySuccess.value = '注册策略已保存。'
   } catch (reason) {
     policyError.value = await handleAdminError(reason)
     if (policyError.value.code === 'registration_policy_version_conflict') {
@@ -213,9 +222,31 @@ onMounted(() => {
           <input v-model="selectedMode" type="radio" value="invite" />仅限邀请
         </label>
       </fieldset>
+      <section
+        class="privacy-setting-row policy-verification-row"
+        aria-labelledby="email-verification-title"
+      >
+        <div>
+          <h2 id="email-verification-title">要求邮箱验证</h2>
+          <p>
+            关闭后，新账号注册完成会直接登录；已有待验证账号仍可使用原邮件链接。
+          </p>
+        </div>
+        <label class="switch-control">
+          <span class="sr-only">要求邮箱验证</span>
+          <input
+            v-model="requireEmailVerification"
+            type="checkbox"
+            role="switch"
+            :disabled="policyPending"
+            @change="policySuccess = ''"
+          />
+          <span aria-hidden="true"></span>
+        </label>
+      </section>
       <div class="inline-actions">
         <button class="button" :disabled="!policyChanged || policyPending" @click="savePolicy">
-          {{ policyPending ? '正在保存…' : '保存注册方式' }}
+          {{ policyPending ? '正在保存…' : '保存注册策略' }}
         </button>
         <span class="field-hint">最近更新 {{ localDate(policy.updated_at) }}</span>
       </div>

@@ -22,14 +22,14 @@ const router = useRouter()
 const copy: Record<string, { title: string; description: string; action: string }> = {
   login: { title: '欢迎回来', description: '登录 iTime，继续整理你的时间。', action: '登录' },
   register: { title: '创建你的账号', description: '从一件想完成的事开始。', action: '创建账号' },
-  'verify-email': { title: '验证邮箱', description: '请输入注册时设置的密码，确认这是你的账号。', action: '验证邮箱' },
+  'verify-email': { title: '验证邮箱', description: '正在确认邮件链接并登录 iTime。', action: '验证邮箱' },
   'resend-verification': { title: '重新发送验证邮件', description: '输入注册邮箱，获取新的验证链接。', action: '发送验证邮件' },
   'forgot-password': { title: '找回密码', description: '我们会向你的邮箱发送重设密码的链接。', action: '发送重设邮件' },
   'reset-password': { title: '设置新密码', description: '重设后，所有登录设备将退出。', action: '重设密码' },
 }
 const info = computed(() => copy[props.mode]!)
 const needsEmail = computed(() => !['verify-email', 'reset-password'].includes(props.mode))
-const needsPassword = computed(() => ['login', 'register', 'verify-email', 'reset-password'].includes(props.mode))
+const needsPassword = computed(() => ['login', 'register', 'reset-password'].includes(props.mode))
 const needsConfirmation = computed(() => ['register', 'reset-password'].includes(props.mode))
 const needsToken = computed(() => ['verify-email', 'reset-password'].includes(props.mode))
 const values = reactive({ email: '', password: '', confirmation: '' })
@@ -43,6 +43,7 @@ const finished = ref(false)
 const token = ref('')
 const invitationToken = ref('')
 const cooldown = ref(0)
+const registrationAwaitingVerification = ref(false)
 const pendingDeletion = ref<{
   requested_at: string
   purge_after: string
@@ -56,7 +57,15 @@ const passwordHint = computed(() => policy.value
   ? `${policy.value.password_min_length}—${policy.value.password_max_length} 个字符，可使用短语。`
   : '')
 const passwordLabel = computed(() => props.mode === 'reset-password' ? '新密码' : '密码')
-const mailFlow = computed(() => ['register', 'resend-verification', 'forgot-password'].includes(props.mode))
+const mailFlow = computed(() => (
+  ['resend-verification', 'forgot-password'].includes(props.mode)
+  || (props.mode === 'register' && registrationAwaitingVerification.value)
+))
+const finishedTitle = computed(() => {
+  if (mailFlow.value) return '去邮箱看看吧'
+  if (props.mode === 'register') return '注册请求已受理'
+  return '密码已重设'
+})
 const invitationRequired = computed(() =>
   props.mode === 'register' && policy.value?.registration_mode === 'invite')
 
@@ -88,7 +97,8 @@ onMounted(() => {
   ) {
     deletionRequestNotice.value = { purge_after: state.purgeAfter }
   }
-  void loadPolicy()
+  if (props.mode === 'verify-email') loadingPolicy.value = false
+  else void loadPolicy()
   timer = window.setInterval(() => { cooldown.value = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) }, 500)
 })
 onUnmounted(() => {
@@ -102,6 +112,7 @@ onUnmounted(() => {
 watch(() => props.mode, () => {
   pendingDeletion.value = null
   restored.value = false
+  registrationAwaitingVerification.value = false
   values.password = ''
 })
 
@@ -119,6 +130,37 @@ function browserTimeZone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined }
   catch { return undefined }
 }
+function browserDeviceName() {
+  return `网页浏览器 · ${navigator.userAgent.includes('Mobile') ? '手机' : '电脑/平板'}`
+}
+async function verifyEmail() {
+  if (props.mode !== 'verify-email' || pending.value || !token.value) return
+  pending.value = true
+  error.value = null
+  try {
+    const session = await api<Session>('/auth/verify-email', {
+      token: token.value,
+      device_name: browserDeviceName(),
+    })
+    acceptSession(session)
+    notifySessionChange()
+    token.value = ''
+    await router.replace('/ai')
+  } catch (reason) {
+    error.value = failure(reason)
+    await nextTick()
+    document.querySelector<HTMLElement>('.error-status')?.focus()
+  } finally {
+    pending.value = false
+  }
+}
+watch(
+  [() => props.mode, token],
+  ([mode, currentToken]) => {
+    if (mode === 'verify-email' && currentToken) void verifyEmail()
+  },
+  { immediate: true },
+)
 async function submit() {
   if (pending.value || !policy.value) return
   error.value = null
@@ -143,29 +185,44 @@ async function submit() {
     if (props.mode === 'login') {
       const session = await api<Session>('/auth/login', {
         email, password: values.password,
-        device_name: `网页浏览器 · ${navigator.userAgent.includes('Mobile') ? '手机' : '电脑/平板'}`,
+        device_name: browserDeviceName(),
       })
       acceptSession(session)
       notifySessionChange()
       await router.replace('/ai')
+    } else if (props.mode === 'register') {
+      const result = await api<{
+        message: string
+        verification_required: boolean
+        session: Session | null
+      }>('/auth/register', {
+        email,
+        password: values.password,
+        invitation_token: invitationToken.value || undefined,
+        time_zone: browserTimeZone(),
+        device_name: browserDeviceName(),
+      })
+      if (result.session) {
+        acceptSession(result.session)
+        notifySessionChange()
+        await router.replace('/ai')
+        return
+      }
+      registrationAwaitingVerification.value = result.verification_required
+      success.value = result.message
+      finished.value = true
+      if (result.verification_required) startCooldown()
     } else {
       const body = needsToken.value
-        ? { token: token.value, [props.mode === 'reset-password' ? 'new_password' : 'password']: values.password }
+        ? { token: token.value, new_password: values.password }
         : {
             email,
-            ...(props.mode === 'register'
-              ? {
-                  password: values.password,
-                  invitation_token: invitationToken.value || undefined,
-                  time_zone: browserTimeZone(),
-                }
-              : {}),
           }
       const result = await api<{ message: string }>(`/auth/${props.mode}`, body)
       success.value = result.message
       finished.value = true
       if (mailFlow.value) startCooldown()
-      else { token.value = ''; invitationToken.value = ''; notifySessionChange() }
+      else { token.value = ''; invitationToken.value = '' }
     }
     values.password = ''; values.confirmation = ''
   } catch (err) {
@@ -206,7 +263,7 @@ async function restoreAccount() {
     const result = await cancelAccountDeletion({
       email: values.email.trim(),
       password: values.password,
-      device_name: `网页浏览器 · ${navigator.userAgent.includes('Mobile') ? '手机' : '电脑/平板'}`,
+      device_name: browserDeviceName(),
     })
     acceptSession(result.session)
     notifySessionChange()
@@ -304,7 +361,7 @@ async function resend() {
           </template>
           <template v-else-if="finished">
             <MailCheck v-if="mailFlow" class="success-icon" :size="32" aria-hidden="true" />
-            <h1 tabindex="-1">{{ mailFlow ? '去邮箱看看吧' : (mode === 'verify-email' ? '邮箱已验证' : '密码已重设') }}</h1>
+            <h1 tabindex="-1">{{ finishedTitle }}</h1>
             <p v-if="mailFlow" class="page-description wrap-anywhere">发送至 {{ values.email.trim() }}。邮件可能需要一点时间。</p>
             <StatusMessage :error="error" :success="success" />
             <template v-if="mailFlow">
@@ -334,8 +391,19 @@ async function resend() {
             </div>
             <p v-if="needsToken && !token" class="status error-status" role="alert">链接不完整或已从地址栏清除。请重新打开邮件中的链接。</p>
             <StatusMessage :error="error" :retry-label="!policy && !loadingPolicy ? '重新连接' : undefined" @retry="loadPolicy" />
+            <p v-if="mode === 'verify-email' && pending" role="status" class="muted">
+              正在验证邮箱并创建登录会话…
+            </p>
+            <button
+              v-if="mode === 'verify-email' && token && !pending && error"
+              class="button full-width"
+              type="button"
+              @click="verifyEmail"
+            >
+              重新验证
+            </button>
             <p v-if="loadingPolicy" role="status" class="muted">正在连接账号服务…</p>
-            <form v-if="policy" novalidate :aria-busy="pending" @submit.prevent="submit">
+            <form v-if="policy && mode !== 'verify-email'" novalidate :aria-busy="pending" @submit.prevent="submit">
               <p v-if="invitationRequired" class="invitation-notice" :class="{ 'missing-invitation': !invitationToken }">
                 {{ invitationToken ? '此注册将使用邮箱专属邀请。' : '当前仅接受邀请注册，请打开管理员提供的邀请链接。' }}
               </p>
@@ -358,7 +426,6 @@ async function resend() {
             <p v-else-if="mode === 'register'" class="auth-switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
             <RouterLink v-if="['verify-email', 'login'].includes(mode)" to="/resend-verification" class="secondary-link">重新发送验证邮件</RouterLink>
             <RouterLink v-if="mode === 'reset-password'" to="/forgot-password" class="secondary-link">重新获取重设链接</RouterLink>
-            <RouterLink v-if="mode === 'verify-email'" to="/forgot-password" class="secondary-link">忘记注册密码？</RouterLink>
           </template>
         </div>
       </section>

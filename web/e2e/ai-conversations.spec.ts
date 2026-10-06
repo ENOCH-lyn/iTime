@@ -43,12 +43,6 @@ async function account(page: Page, request: APIRequestContext) {
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
-  await page.getByLabel('密码', { exact: true }).fill(password)
-  await page.getByRole('button', { name: '验证邮箱', exact: true }).click()
-  await page.getByRole('link', { name: '前往登录' }).click()
-  await page.getByLabel('邮箱', { exact: true }).fill(address)
-  await page.getByLabel('密码', { exact: true }).fill(password)
-  await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page).toHaveURL('/ai')
   await expect(page).toHaveTitle('AI 对话 · iTime')
 }

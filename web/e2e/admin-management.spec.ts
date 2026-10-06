@@ -70,12 +70,22 @@ async function setRegistrationMode(page: Page, mode: 'open' | 'invite') {
     await page.locator('.segmented-field label').filter({
       hasText: mode === 'open' ? '开放注册' : '仅限邀请',
     }).click()
-    await page.getByRole('button', { name: '保存注册方式', exact: true }).click()
+    await page.getByRole('button', { name: '保存注册策略', exact: true }).click()
     await expect(
       page.getByRole('region', { name: '注册方式' }).getByRole('status'),
-    ).toContainText(
-      mode === 'open' ? '开放注册已生效' : '邀请注册已生效',
-    )
+    ).toContainText('注册策略已保存')
+  }
+}
+
+async function setEmailVerification(page: Page, required: boolean) {
+  await page.goto('/admin/registration')
+  const control = page.getByRole('switch', { name: '要求邮箱验证' })
+  if ((await control.isChecked()) !== required) {
+    await control.setChecked(required)
+    await page.getByRole('button', { name: '保存注册策略', exact: true }).click()
+    await expect(
+      page.getByRole('region', { name: '注册方式' }).getByRole('status'),
+    ).toContainText('注册策略已保存')
   }
 }
 
@@ -106,12 +116,6 @@ async function registerAndLogin(page: Page, request: APIRequestContext, email: s
   await page.getByRole('button', { name: '创建账号', exact: true }).click()
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, email))
-  await page.getByLabel('密码', { exact: true }).fill(userPassword)
-  await page.getByRole('button', { name: '验证邮箱', exact: true }).click()
-  await page.goto('/login')
-  await page.getByLabel('邮箱', { exact: true }).fill(email)
-  await page.getByLabel('密码', { exact: true }).fill(userPassword)
-  await page.getByRole('button', { name: '登录', exact: true }).click()
   if ((page.viewportSize()?.width ?? 0) <= 700) {
     await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
   } else {
@@ -150,6 +154,47 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
+})
+
+test('关闭邮箱验证后新账号注册直接登录', async ({
+  page,
+  browser,
+}, info) => {
+  const data = await bootstrap(info)
+  await loginAdmin(page, data.active['email-verification']!, data.password)
+  await setRegistrationMode(page, 'open')
+  await setEmailVerification(page, false)
+
+  const userContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+  })
+  try {
+    const userPage = await userContext.newPage()
+    const email = `direct-ui-${randomUUID()}@example.com`
+    await userPage.goto('/register')
+    await userPage.getByLabel('邮箱', { exact: true }).fill(email)
+    await userPage.getByLabel('密码', { exact: true }).fill(userPassword)
+    await userPage.getByLabel('确认密码', { exact: true }).fill(userPassword)
+    await userPage.getByRole('button', {
+      name: '创建账号',
+      exact: true,
+    }).click()
+    if ((userPage.viewportSize()?.width ?? 0) <= 700) {
+      await expect(userPage.getByRole('button', {
+        name: '新建会话',
+        exact: true,
+      })).toBeVisible()
+    } else {
+      await expect(userPage.getByRole('heading', {
+        name: '今天想先理清哪件事？',
+      })).toBeVisible()
+    }
+    await expect(userPage).toHaveURL('/ai')
+    await screenshot(page, info, 'registration-no-email-verification')
+  } finally {
+    await userContext.close()
+    await setEmailVerification(page, true)
+  }
 })
 
 test('切换邀请注册并用邮箱专属链接完成真实注册', async ({ page, browser }, info) => {
@@ -337,12 +382,12 @@ test('管理列表可从网络失败和版本冲突恢复并适配窄屏', async
     await stalePage.goto('/admin/registration')
     await expect(stalePage.getByLabel('开放注册')).toBeChecked()
     await page.locator('.segmented-field label').filter({ hasText: '仅限邀请' }).click()
-    await page.getByRole('button', { name: '保存注册方式', exact: true }).click()
+    await page.getByRole('button', { name: '保存注册策略', exact: true }).click()
     await stalePage.locator('.segmented-field label').filter({ hasText: '仅限邀请' }).click()
-    await stalePage.getByRole('button', { name: '保存注册方式', exact: true }).click()
+    await stalePage.getByRole('button', { name: '保存注册策略', exact: true }).click()
     await expect(stalePage.getByRole('alert')).toContainText('已被其他管理操作更新')
     await page.locator('.segmented-field label').filter({ hasText: '开放注册' }).click()
-    await page.getByRole('button', { name: '保存注册方式', exact: true }).click()
+    await page.getByRole('button', { name: '保存注册策略', exact: true }).click()
   } finally {
     await stalePage.close()
   }
