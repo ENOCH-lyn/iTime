@@ -12,6 +12,7 @@ from itime.ai.provider import (
     EndpointPolicyError,
     ProviderConfig,
     enforce_endpoint_policy,
+    forced_tool_request_body,
     resolved_endpoint_allowed,
 )
 from itime.config import Settings
@@ -96,34 +97,37 @@ def review_request_body(
     purpose: ReviewPurpose,
 ) -> dict:
     tool_name, system_prompt, output_type = _tool_contract(purpose)
-    return {
-        "model": config.model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            *messages,
-        ],
-        "tools": [
-            {
+    return forced_tool_request_body(
+        config,
+        {
+            "model": config.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                *messages,
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": (
+                            "Submit the validated iTime review result for persistence."
+                        ),
+                        "parameters": output_type.model_json_schema(),
+                    },
+                }
+            ],
+            "tool_choice": {
                 "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "description": (
-                        "Submit the validated iTime review result for persistence."
-                    ),
-                    "parameters": output_type.model_json_schema(),
-                },
-            }
-        ],
-        "tool_choice": {
-            "type": "function",
-            "function": {"name": tool_name},
+                "function": {"name": tool_name},
+            },
+            "parallel_tool_calls": False,
+            "max_tokens": config.max_output_tokens,
+            "temperature": 0,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         },
-        "parallel_tool_calls": False,
-        "max_tokens": config.max_output_tokens,
-        "temperature": 0,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
+    )
 
 
 def _request_id(response: httpx.Response) -> str | None:
@@ -282,11 +286,7 @@ def _event_delta(
         choices = payload.get("choices")
         if not choices:
             return None, None, usage, False
-        if (
-            not isinstance(choices, list)
-            or len(choices) != 1
-            or not isinstance(choices[0], dict)
-        ):
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise TypeError
         delta = choices[0].get("delta")
         if not isinstance(delta, dict):
@@ -405,11 +405,7 @@ def _json_reply(
             raise TypeError
         usage = payload.get("usage")
         choices = payload["choices"]
-        if (
-            not isinstance(choices, list)
-            or len(choices) != 1
-            or not isinstance(choices[0], dict)
-        ):
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise TypeError
         message = choices[0]["message"]
         if not isinstance(message, dict) or message.get("function_call") is not None:
@@ -591,9 +587,7 @@ async def stream_review_reply(
     request_id: str | None = None
     http_status: int | None = None
     usage: object | None = None
-    timeout = httpx.Timeout(
-        max(0.1, min(float(config.timeout_seconds), timeout_seconds))
-    )
+    timeout = httpx.Timeout(max(0.1, min(float(config.timeout_seconds), timeout_seconds)))
     tool_name, _, _ = _tool_contract(purpose)
     try:
         async with asyncio.timeout(timeout_seconds):
@@ -618,10 +612,13 @@ async def stream_review_reply(
                     error = _provider_error(response, request_id)
                     if error is not None:
                         raise error
-                    if "text/event-stream" in response.headers.get(
-                        "content-type",
-                        "",
-                    ).lower():
+                    if (
+                        "text/event-stream"
+                        in response.headers.get(
+                            "content-type",
+                            "",
+                        ).lower()
+                    ):
                         content, tool_call, usage = await _stream_reply(
                             response,
                             tool_name,

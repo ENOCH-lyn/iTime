@@ -11,6 +11,7 @@ from itime.ai.provider import (
     EndpointPolicyError,
     ProviderConfig,
     enforce_endpoint_policy,
+    forced_tool_request_body,
     resolved_endpoint_allowed,
 )
 from itime.config import Settings
@@ -78,35 +79,38 @@ def planning_request_body(
     config: ProviderConfig,
     messages: list[dict[str, object]],
 ) -> dict:
-    return {
-        "model": config.model,
-        "messages": [
-            {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
-            *messages,
-        ],
-        "tools": [
-            {
+    return forced_tool_request_body(
+        config,
+        {
+            "model": config.model,
+            "messages": [
+                {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
+                *messages,
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": PLANNING_TOOL_NAME,
+                        "description": (
+                            "Submit the complete proposed iTime plan for deterministic "
+                            "server-side validation and user preview."
+                        ),
+                        "parameters": PlanningToolOutput.model_json_schema(),
+                    },
+                }
+            ],
+            "tool_choice": {
                 "type": "function",
-                "function": {
-                    "name": PLANNING_TOOL_NAME,
-                    "description": (
-                        "Submit the complete proposed iTime plan for deterministic "
-                        "server-side validation and user preview."
-                    ),
-                    "parameters": PlanningToolOutput.model_json_schema(),
-                },
-            }
-        ],
-        "tool_choice": {
-            "type": "function",
-            "function": {"name": PLANNING_TOOL_NAME},
+                "function": {"name": PLANNING_TOOL_NAME},
+            },
+            "parallel_tool_calls": False,
+            "max_tokens": config.max_output_tokens,
+            "temperature": 0,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         },
-        "parallel_tool_calls": False,
-        "max_tokens": config.max_output_tokens,
-        "temperature": 0,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
+    )
 
 
 def _request_id(response: httpx.Response) -> str | None:
@@ -265,11 +269,7 @@ def _event_delta(
         choices = payload.get("choices")
         if not choices:
             return None, None, usage, False
-        if (
-            not isinstance(choices, list)
-            or len(choices) != 1
-            or not isinstance(choices[0], dict)
-        ):
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise TypeError
         delta = choices[0].get("delta")
         if not isinstance(delta, dict):
@@ -386,11 +386,7 @@ def _json_reply(
             raise TypeError
         usage = payload.get("usage")
         choices = payload["choices"]
-        if (
-            not isinstance(choices, list)
-            or len(choices) != 1
-            or not isinstance(choices[0], dict)
-        ):
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise TypeError
         message = choices[0]["message"]
         if not isinstance(message, dict) or message.get("function_call") is not None:
@@ -574,9 +570,7 @@ async def stream_planning_reply(
     request_id: str | None = None
     http_status: int | None = None
     usage: object | None = None
-    timeout = httpx.Timeout(
-        max(0.1, min(float(config.timeout_seconds), timeout_seconds))
-    )
+    timeout = httpx.Timeout(max(0.1, min(float(config.timeout_seconds), timeout_seconds)))
     try:
         async with asyncio.timeout(timeout_seconds):
             async with httpx.AsyncClient(
@@ -600,10 +594,13 @@ async def stream_planning_reply(
                     error = _provider_error(response, request_id)
                     if error is not None:
                         raise error
-                    if "text/event-stream" in response.headers.get(
-                        "content-type",
-                        "",
-                    ).lower():
+                    if (
+                        "text/event-stream"
+                        in response.headers.get(
+                            "content-type",
+                            "",
+                        ).lower()
+                    ):
                         content, tool_call, usage = await _stream_reply(
                             response,
                             on_delta=on_delta,

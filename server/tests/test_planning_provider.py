@@ -153,6 +153,24 @@ def test_planning_request_body_fixes_tool_choice_and_uses_model_schema(
         "function": {"name": PLANNING_TOOL_NAME},
     }
     assert len(body["tools"]) == 1
+
+
+def test_deepseek_forced_tool_request_disables_thinking() -> None:
+    cipher = Fernet(Fernet.generate_key())
+    config = ProviderConfig(
+        endpoint_url="https://api.deepseek.com",
+        model="deepseek-flash",
+        api_key_ciphertext=cipher.encrypt(b"unused"),
+        timeout_seconds=30,
+        max_output_tokens=2048,
+    )
+
+    body = planning_request_body(
+        config,
+        [{"role": "user", "content": "请规划今天"}],
+    )
+
+    assert body["thinking"] == {"type": "disabled"}
     function = body["tools"][0]["function"]
     assert function["name"] == PLANNING_TOOL_NAME
     assert function["parameters"]["title"] == "PlanningToolOutput"

@@ -50,6 +50,16 @@ class EndpointPolicyError(ValueError):
     pass
 
 
+def forced_tool_request_body(
+    config: ProviderConfig,
+    body: dict[str, object],
+) -> dict[str, object]:
+    hostname = (urlsplit(config.endpoint_url).hostname or "").lower()
+    if hostname == "api.deepseek.com":
+        return {**body, "thinking": {"type": "disabled"}}
+    return body
+
+
 def _loopback_host(hostname: str) -> bool:
     if hostname.lower() == "localhost":
         return True
@@ -64,19 +74,15 @@ def enforce_endpoint_policy(endpoint_url: str, settings: Settings) -> None:
     if parsed.scheme == "http":
         hostname = (parsed.hostname or "").lower()
         test_http_allowed = settings.environment == "test" and (
-            _loopback_host(hostname)
-            or hostname in settings.ai_private_endpoint_hosts
+            _loopback_host(hostname) or hostname in settings.ai_private_endpoint_hosts
         )
         if not test_http_allowed:
             raise EndpointPolicyError(
-                "非测试环境只允许 HTTPS；测试 HTTP 端点必须使用回环地址"
-                "或显式私网白名单。"
+                "非测试环境只允许 HTTPS；测试 HTTP 端点必须使用回环地址或显式私网白名单。"
             )
 
 
-async def resolved_endpoint_allowed(
-    endpoint_url: str, settings: Settings
-) -> bool | None:
+async def resolved_endpoint_allowed(endpoint_url: str, settings: Settings) -> bool | None:
     parsed = urlsplit(endpoint_url)
     hostname = parsed.hostname or ""
     if hostname.lower() in settings.ai_private_endpoint_hosts:
@@ -129,11 +135,7 @@ def _valid_chat_response(body: bytes, capability: str) -> bool:
     if not isinstance(message, dict):
         return False
     if capability in {"planning", "review"}:
-        expected_tool = (
-            PLANNING_TEST_TOOL
-            if capability == "planning"
-            else REVIEW_TEST_TOOL
-        )
+        expected_tool = PLANNING_TEST_TOOL if capability == "planning" else REVIEW_TEST_TOOL
         tool_calls = message.get("tool_calls")
         if (
             not isinstance(tool_calls, list)
@@ -174,11 +176,7 @@ def _valid_transcription_response(body: bytes) -> bool:
     if not isinstance(payload, dict):
         return False
     text = payload.get("text")
-    return (
-        isinstance(text, str)
-        and 1 <= len(text.strip()) <= 4000
-        and "\x00" not in text
-    )
+    return isinstance(text, str) and 1 <= len(text.strip()) <= 4000 and "\x00" not in text
 
 
 async def _network_test(
@@ -221,9 +219,7 @@ async def _network_test(
         request_files = {
             "file": (
                 "itime-voice-check.wav",
-                resources.files("itime.ai")
-                .joinpath("assets/transcription_probe.wav")
-                .read_bytes(),
+                resources.files("itime.ai").joinpath("assets/transcription_probe.wav").read_bytes(),
                 "audio/wav",
             )
         }
@@ -248,11 +244,7 @@ async def _network_test(
         request_files = None
         endpoint = config.endpoint_url + "/chat/completions"
     elif capability in {"planning", "review"}:
-        test_tool = (
-            PLANNING_TEST_TOOL
-            if capability == "planning"
-            else REVIEW_TEST_TOOL
-        )
+        test_tool = PLANNING_TEST_TOOL if capability == "planning" else REVIEW_TEST_TOOL
         request_body = {
             "model": config.model,
             "messages": [
@@ -293,6 +285,7 @@ async def _network_test(
             "max_tokens": min(config.max_output_tokens, 64),
             "temperature": 0,
         }
+        request_body = forced_tool_request_body(config, request_body)
         request_data = None
         request_files = None
         endpoint = config.endpoint_url + "/chat/completions"
