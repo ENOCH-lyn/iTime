@@ -164,7 +164,7 @@ class PlanningInputSnapshot(Base):
 class Proposal(Base):
     __tablename__ = "ai_proposals"
     __table_args__ = (
-        CheckConstraint("kind IN ('plan')", name="kind"),
+        CheckConstraint("kind IN ('plan', 'task_plan')", name="kind"),
         CheckConstraint("schema_version >= 1", name="schema_version"),
         CheckConstraint(
             "status IN ('pending', 'applied', 'rejected')",
@@ -195,7 +195,8 @@ class Proposal(Base):
             "AND applied_plan_id IS NULL AND applied_plan_version_id IS NULL) "
             "OR (status = 'applied' AND applied_at IS NOT NULL "
             "AND rejected_at IS NULL AND applied_plan_id IS NOT NULL "
-            "AND applied_plan_version_id IS NOT NULL) "
+            "AND applied_plan_version_id IS NOT NULL "
+            "AND input_snapshot_id IS NOT NULL) "
             "OR (status = 'rejected' AND rejected_at IS NOT NULL "
             "AND applied_at IS NULL AND applied_plan_id IS NULL "
             "AND applied_plan_version_id IS NULL)",
@@ -263,7 +264,7 @@ class Proposal(Base):
     source_job_id: Mapped[UUID]
     conversation_id: Mapped[UUID | None]
     source_message_id: Mapped[UUID | None]
-    input_snapshot_id: Mapped[UUID]
+    input_snapshot_id: Mapped[UUID | None]
     schema_version: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(
         String(16),
@@ -308,7 +309,7 @@ class ProposalChange(Base):
             name="action",
         ),
         CheckConstraint(
-            "entity_type IN ('plan', 'scheduled_block')",
+            "entity_type IN ('plan', 'scheduled_block', 'task')",
             name="entity_type",
         ),
         CheckConstraint(

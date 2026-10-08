@@ -54,7 +54,7 @@ async def list_proposals(
                 PlanningInputSnapshot.owner_id == Proposal.owner_id,
             ),
         )
-        .where(Proposal.owner_id == owner_id)
+        .where(Proposal.owner_id == owner_id, Proposal.kind == "plan")
     )
     if before_time is not None:
         statement = statement.where(

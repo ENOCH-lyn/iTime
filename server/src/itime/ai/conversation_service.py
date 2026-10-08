@@ -1,7 +1,8 @@
 import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from itime.ai.conversation_models import (
 )
 from itime.ai.conversation_provider import (
     ConversationProviderResult,
+    agent_request_body,
     conversation_request_body,
 )
 from itime.ai.governance_service import (
@@ -37,6 +39,7 @@ from itime.ai.routing_service import (
     replace_job_config_route,
 )
 from itime.auth.security import now
+from itime.calendar.series_service import query_occurrences
 from itime.database import Database
 from itime.errors import AppError
 from itime.planning.job_service import (
@@ -46,6 +49,7 @@ from itime.planning.job_service import (
     planning_provider_messages,
     planning_snapshot_payload,
 )
+from itime.planning.models import Proposal, ProposalChange
 from itime.planning.provider import planning_request_body
 from itime.planning.schemas import PlanningRequestFields
 from itime.planning.snapshot_service import build_planning_snapshot
@@ -63,6 +67,7 @@ from itime.review.memory_service import (
     memory_references,
     memory_system_message,
 )
+from itime.tasks.models import Task
 from itime.tasks.service import emit_change, save_operation
 
 ACTIVE_JOB_STATES = {"queued", "running"}
@@ -327,8 +332,15 @@ async def enqueue_message(
             status=409,
         )
     await lock_owner_ai_job_capacity(session, owner_id)
+    current = now()
+    daily = await get_or_create_daily_allowance(
+        session,
+        owner_id,
+        accepted_at=current,
+    )
 
     capability = "planning" if response_mode == "planning" else "conversation"
+    agent_mode = response_mode == "auto"
     planning_snapshot = None
     if capability == "planning":
         if planning is None:
@@ -375,7 +387,6 @@ async def enqueue_message(
         )
         or 0
     )
-    current = now()
     memory_items = await memory_context(session, owner_id)
     messages = await conversation_provider_messages(
         session,
@@ -386,6 +397,15 @@ async def enqueue_message(
         pending_user_content=content,
         memory_items=memory_items,
         public_sources=public_sources,
+    )
+    agent_context = (
+        await _agent_context(
+            session,
+            owner_id,
+            time_zone=daily.time_zone,
+        )
+        if agent_mode
+        else None
     )
     if planning_snapshot is not None:
         provider = planning_provider_config(config)
@@ -405,6 +425,16 @@ async def enqueue_message(
             "content_sha256": planning_snapshot.content_sha256,
             "request_schema_version": PLANNING_REQUEST_SCHEMA_VERSION,
             "related_context_count": len(context_message_ids),
+        }
+    elif agent_context is not None:
+        provider = provider_config(config)
+        request_body = agent_request_body(provider, messages, agent_context)
+        input_summary = {
+            "resource_type": "agent_message",
+            "history_through_sequence": last_sequence + 1,
+            "related_context_count": len(context_message_ids),
+            "agent_mode": True,
+            "agent_context": agent_context,
         }
     else:
         provider = provider_config(config)
@@ -430,28 +460,25 @@ async def enqueue_message(
                 provider_messages,
             )
         else:
-            route_request_body = conversation_request_body(
-                provider_config(route_config),
-                messages,
+            route_provider = provider_config(route_config)
+            route_request_body = (
+                agent_request_body(route_provider, messages, agent_context)
+                if agent_context is not None
+                else conversation_request_body(route_provider, messages)
             )
         validate_request_body(route_request_body)
         route_estimates.append(
             estimate_reservation_budget(
                 route_config,
                 request_body=route_request_body,
-                input_summary=(
-                    input_summary if planning_snapshot is not None else {}
-                ),
+                input_summary=input_summary if (
+                    planning_snapshot is not None or agent_context is not None
+                ) else {},
                 capability=capability,
             )
         )
     estimate = maximum_reservation_estimate(
         route_estimates
-    )
-    daily = await get_or_create_daily_allowance(
-        session,
-        owner_id,
-        accepted_at=current,
     )
     request_message = ConversationMessage(
         id=uuid4(),
@@ -586,6 +613,60 @@ class ConversationWork:
     messages: list[dict[str, str]]
     request_body: dict
     generation: int
+    agent_context: dict | None
+
+
+async def _agent_context(
+    session: AsyncSession,
+    owner_id: UUID,
+    *,
+    time_zone: str,
+) -> dict:
+    local_today = now().astimezone(ZoneInfo(time_zone)).date()
+    tasks = list(
+        await session.scalars(
+            select(Task)
+            .where(
+                Task.owner_id == owner_id,
+                Task.status == "open",
+                Task.archived_at.is_(None),
+                Task.deleted_at.is_(None),
+                Task.purged_at.is_(None),
+            )
+            .order_by(Task.updated_at.desc(), Task.id.desc())
+            .limit(40)
+        )
+    )
+    occurrences, _ = await query_occurrences(
+        session,
+        owner_id,
+        local_today,
+        local_today + timedelta(days=15),
+    )
+    return {
+        "current_date": local_today.isoformat(),
+        "time_zone": time_zone,
+        "tasks": [
+            {
+                "id": str(task.id),
+                "title": task.title,
+                "estimated_minutes": task.estimated_minutes,
+                "priority": task.priority,
+            }
+            for task in tasks
+        ],
+        "busy_calendar": [
+            {
+                "name": item["name"],
+                "local_start_date": item["local_start_date"],
+                "local_start_time": item["local_start_time"],
+                "local_end_date": item["local_end_date"],
+                "local_end_time": item["local_end_time"],
+            }
+            for item in occurrences
+            if item.get("busy") and item.get("status") == "scheduled"
+        ][:200],
+    }
 
 
 def _bounded_current_messages(
@@ -813,12 +894,28 @@ async def load_conversation_work(
             memory_items=memory_items,
             public_sources=generation.public_source_context,
         )
+        agent_context = (
+            job.input_summary.get("agent_context")
+            if job.input_summary.get("agent_mode") is True
+            else None
+        )
+        if agent_context is not None and not isinstance(agent_context, dict):
+            raise ConversationWorkUnavailable(
+                "ai_job_input_invalid",
+                "Agent 上下文无效，请重新发送消息。",
+                "validation",
+            )
         await session.flush()
         return ConversationWork(
             config=provider,
             messages=messages,
-            request_body=conversation_request_body(provider, messages),
+            request_body=(
+                agent_request_body(provider, messages, agent_context)
+                if agent_context is not None
+                else conversation_request_body(provider, messages)
+            ),
             generation=generation.stream_generation,
+            agent_context=agent_context,
         )
 
 
@@ -984,6 +1081,15 @@ async def complete_conversation_job(
             job=job,
             provider_cost=finalized.provider_cost,
         )
+        proposal = None
+        if result.task_plan is not None:
+            proposal = _create_task_plan_proposal(
+                session,
+                job,
+                message.id,
+                result.task_plan.model_dump(mode="json"),
+                current,
+            )
         message.content = result.content
         message.status = "complete"
         message.error_code = None
@@ -994,6 +1100,11 @@ async def complete_conversation_job(
         job.output = {
             "resource_type": "conversation_message",
             "message_id": str(message.id),
+            **(
+                {"proposal_id": str(proposal.id), "proposal_kind": proposal.kind}
+                if proposal is not None
+                else {}
+            ),
         }
         job.error_code = None
         job.error_message = None
@@ -1029,6 +1140,74 @@ async def complete_conversation_job(
             retention_days=quality_sample_retention_days,
         )
         return True
+
+
+def _create_task_plan_proposal(
+    session: AsyncSession,
+    job: AIJob,
+    source_message_id: UUID,
+    payload: dict,
+    current: datetime,
+) -> Proposal:
+    proposal = Proposal(
+        id=uuid4(),
+        owner_id=job.owner_id,
+        kind="task_plan",
+        source_job_id=job.id,
+        conversation_id=job.conversation_id,
+        source_message_id=source_message_id,
+        input_snapshot_id=None,
+        schema_version=1,
+        status="pending",
+        title=f"安排 {payload['task_title']}",
+        summary=payload["assistant_message"],
+        assumptions=payload["assumptions"],
+        warnings=[],
+        payload=payload,
+        expires_at=current + EVENT_RETENTION,
+        version=1,
+        created_at=current,
+        updated_at=current,
+    )
+    session.add(proposal)
+    session.add_all(
+        [
+            ProposalChange(
+                id=uuid4(),
+                proposal_id=proposal.id,
+                owner_id=job.owner_id,
+                position=0,
+                action="create",
+                entity_type="task",
+                target_id=None,
+                before_data=None,
+                after_data={
+                    "title": payload["task_title"],
+                    "description": payload["task_description"],
+                    "estimated_minutes": payload["estimated_minutes"],
+                },
+                created_at=current,
+            ),
+            ProposalChange(
+                id=uuid4(),
+                proposal_id=proposal.id,
+                owner_id=job.owner_id,
+                position=1,
+                action="create",
+                entity_type="scheduled_block",
+                target_id=None,
+                before_data=None,
+                after_data={
+                    "task_title": payload["task_title"],
+                    "local_date": payload["local_date"],
+                    "local_starts_at": payload["starts_at"],
+                    "local_ends_at": payload["ends_at"],
+                },
+                created_at=current,
+            ),
+        ]
+    )
+    return proposal
 
 
 async def reject_or_retry_conversation_job(

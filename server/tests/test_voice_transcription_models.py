@@ -214,7 +214,7 @@ def test_voice_transcription_migration_models_and_constraints(admin_url):
         ) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone() == ("0036_transcription_quota_usage",)
+            ).fetchone() == ("0038_agent_task_plan",)
             assert connection.execute(
                 """
                 SELECT capability, next_version, current_version_id

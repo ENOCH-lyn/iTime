@@ -49,7 +49,7 @@ class ConversationMessageCreateInput(Input):
     operation_id: UUID
     expected_conversation_version: int = Field(ge=1)
     content: str = Field(min_length=1, max_length=12000)
-    response_mode: Literal["text", "planning"] = "text"
+    response_mode: Literal["auto", "text", "planning"] = "text"
     planning: PlanningRequestFields | None = None
 
     @field_validator("content")
@@ -64,6 +64,6 @@ class ConversationMessageCreateInput(Input):
     def valid_response_mode(self) -> "ConversationMessageCreateInput":
         if self.response_mode == "planning" and self.planning is None:
             raise ValueError("生成规划时必须提供规划范围")
-        if self.response_mode == "text" and self.planning is not None:
-            raise ValueError("普通回复不能包含规划参数")
+        if self.response_mode != "planning" and self.planning is not None:
+            raise ValueError("非规划兼容模式不能包含规划参数")
         return self

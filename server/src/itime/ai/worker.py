@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet
 from itime.ai.conversation_provider import (
     ConversationGenerationSuperseded,
     ConversationProviderError,
+    generate_agent_reply,
     stream_conversation_reply,
 )
 from itime.ai.conversation_service import (
@@ -239,11 +240,19 @@ async def _process_conversation(
         return await mark_provider_request_started(database, claim)
 
     try:
-        provider_result = await _with_lease_heartbeat(
-            database,
-            claim,
-            settings,
-            stream_conversation_reply(
+        operation = (
+            generate_agent_reply(
+                work.config,
+                settings,
+                cipher,
+                messages=work.messages,
+                context=work.agent_context,
+                timeout_seconds=remaining,
+                on_delta=persist_delta,
+                on_request_started=mark_started,
+            )
+            if work.agent_context is not None
+            else stream_conversation_reply(
                 work.config,
                 settings,
                 cipher,
@@ -251,7 +260,13 @@ async def _process_conversation(
                 timeout_seconds=remaining,
                 on_delta=persist_delta,
                 on_request_started=mark_started,
-            ),
+            )
+        )
+        provider_result = await _with_lease_heartbeat(
+            database,
+            claim,
+            settings,
+            operation,
         )
     except (JobLeaseLost, ConversationGenerationSuperseded):
         return

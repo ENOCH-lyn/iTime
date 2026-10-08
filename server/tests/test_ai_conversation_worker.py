@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import UUID, uuid4
 
@@ -168,6 +168,49 @@ def chat_handler(state: ChatUpstreamState):
                         "usage": (
                             CHAT_USAGE if mode == "json" else "invalid-usage"
                         ),
+                    },
+                    request_id,
+                )
+                return
+            if mode == "agent_task_plan":
+                target_date = date.today() + timedelta(days=1)
+                self._json_response(
+                    200,
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "type": "function",
+                                            "function": {
+                                                "name": "propose_itime_task_plan",
+                                                "arguments": json.dumps(
+                                                    {
+                                                        "assistant_message": (
+                                                            "建议明天上午学习线性代数。"
+                                                        ),
+                                                        "task_title": "学习线性代数",
+                                                        "task_description": "",
+                                                        "estimated_minutes": 120,
+                                                        "local_date": target_date.isoformat(),
+                                                        "starts_at": "09:00:00",
+                                                        "ends_at": "11:00:00",
+                                                        "assumptions": [
+                                                            "上午按 09:00 开始。"
+                                                        ],
+                                                    },
+                                                    ensure_ascii=False,
+                                                ),
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ],
+                        "usage": CHAT_USAGE,
                     },
                     request_id,
                 )
@@ -1381,3 +1424,86 @@ def test_committed_sse_events_resume_and_expired_events_fall_back_to_snapshot(
     ).json()["items"][-1]
     assert message["status"] == "complete"
     assert message["content"] == "前半段，后半段"
+
+
+def test_agent_task_plan_requires_confirmation_and_applies_atomically(
+    conversation_worker_client: httpx.Client,
+    conversation_worker_database_url: str,
+    chat_upstream: tuple[ChatUpstreamState, str],
+) -> None:
+    state, endpoint = chat_upstream
+    state.reset("agent_task_plan")
+    publish_conversation_config(conversation_worker_database_url, endpoint)
+    _, owner_id = create_account(
+        conversation_worker_client,
+        conversation_worker_database_url,
+    )
+    created = conversation_worker_client.post(
+        "/api/v1/ai/conversations",
+        json={"operation_id": str(uuid4())},
+    ).json()["conversation"]
+    submitted = conversation_worker_client.post(
+        f"/api/v1/ai/conversations/{created['id']}/messages",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_conversation_version": created["version"],
+            "content": "明天上午希望学习两小时线性代数",
+            "response_mode": "auto",
+        },
+    )
+    assert submitted.status_code == 202, submitted.text
+    assert run_process_once(conversation_worker_database_url)
+    snapshot = job_snapshot(
+        conversation_worker_database_url,
+        submitted.json()["job"]["id"],
+    )
+    assert snapshot["job"]["status"] == "succeeded"
+    proposal_id = snapshot["job"]["output"]["proposal_id"]
+
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM tasks WHERE owner_id=%s",
+            (owner_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT count(*) FROM plans WHERE owner_id=%s",
+            (owner_id,),
+        ).fetchone()[0] == 0
+
+    proposal = conversation_worker_client.get(
+        f"/api/v1/ai/action-proposals/{proposal_id}"
+    )
+    assert proposal.status_code == 200, proposal.text
+    assert proposal.json()["proposal"]["effective_status"] == "pending"
+    applied = conversation_worker_client.post(
+        f"/api/v1/ai/action-proposals/{proposal_id}/apply",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_proposal_version": 1,
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["proposal"]["effective_status"] == "applied"
+
+    with psycopg.connect(
+        psycopg_url(conversation_worker_database_url)
+    ) as connection:
+        assert connection.execute(
+            "SELECT title FROM tasks WHERE owner_id=%s",
+            (owner_id,),
+        ).fetchall() == [("学习线性代数",)]
+        block = connection.execute(
+            """
+            SELECT local_starts_at, local_ends_at
+            FROM scheduled_blocks
+            WHERE owner_id=%s
+            """,
+            (owner_id,),
+        ).fetchone()
+        assert [str(value) for value in block] == ["09:00:00", "11:00:00"]
+    request = state.request_snapshot()[0]["body"]
+    assert request["stream"] is True
+    assert request["stream_options"] == {"include_usage": True}
+    assert request["tools"][0]["function"]["name"] == "propose_itime_task_plan"
