@@ -1,6 +1,6 @@
 # iTime 需求追踪矩阵
 
-版本：0.2；更新：2026-10-05。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、任务与困难语音转写、任务公开链接、日历系列与 ICS 订阅源生命周期、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出、通用同步及账号注销已有分模块动态证据；全部现有 Web 页面已在 Chromium 和真实 Edge 154 三视口完成回归，`E2E-01` 完整 Web 用户闭环另在真实 Chrome 149 desktop 验收。M8-A 固定 2 vCPU / 4 GiB 性能与容量基线也已完成，实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
+版本：0.2；更新：2026-10-08。需求编号来自[现行规格](iTime-需求规格说明书.md)，用例来自[测试方案](../测试/iTime-测试方案与测试用例.md)。服务基础、账号、任务/课表、任务与困难语音转写、任务公开链接、日历系列与 ICS 订阅源生命周期、全局 AI、额度、业务提案、日周规划、执行/困难、复盘/记忆、个人统计、本人数据导出、通用同步及账号注销已有分模块动态证据；Element Plus 迁移、Agent 自动意图路由和图片/网页/文字统一课表导入已完成设计，尚未计入实现证据。实际范围见[实施与验证](../验收/iTime-Web实施与验证.md)。
 
 下表的章节指[详细设计](../设计/iTime-详细设计文档.md)，页面对应 [designer](../../designer.md)，阶段对应[开发总计划](../计划/iTime-开发总计划.md)。已确认方向下的剩余细则以[问题清单](iTime-需求访谈问题清单.md)为准。
 
@@ -15,10 +15,10 @@
 | REQ-TASK-01 | 统一任务、层级、语音、文本链接、批量检索 | 任务/目标；[语音转写设计](../设计/iTime-任务与困难语音转写设计.md)；§2、§4 | TASK-01、TASK-03 | M3 |
 | REQ-TASK-02 | 步骤顺序、重复、跨日拆分/不可拆 | 任务详情；§4 | TASK-01、TASK-02、PLAN-04 | M3/M5 |
 | REQ-CAL-01 | 学期/节次/周次/例外、固定区间 | 课表/日历；§4、§5 | CAL-01、CAL-03 | M3 |
-| REQ-CAL-02 | 截图/Excel/手工/ICS 与订阅 | 导入/校对；§4、§9 | CAL-02、MEDIA-01 | M3 |
+| REQ-CAL-02 | 图片/Excel/ICS/网页/文字/手工的统一导入 | [AI 课表统一导入设计](../设计/iTime-AI课表统一导入设计.md)；§4、§9 | CAL-02、MEDIA-01 | M3/M8 |
 | REQ-CAL-03 | 只读来源更新，提示计划冲突 | 来源状态/日历；§4 | CAL-04 | M3/M5 |
-| REQ-CHAT-01 | 多普通会话、复盘独立、相关检索 | 全局对话；§2、§7、§11 | CHAT-01、REV-02 | M4/M6 |
-| REQ-CHAT-02 | 助手业务写操作全部预览确认 | 提案差异；§6 | CHAT-02、CHAT-03 | M4/M5 |
+| REQ-CHAT-01 | 多会话、Agent 自动意图、相关检索和附件 | [AI Agent 对话编排设计](../设计/iTime-AI%20Agent对话编排设计.md)；§2、§7、§11 | CHAT-01、REV-02 | M4/M6/M8 |
+| REQ-CHAT-02 | Agent 业务写操作全部预览确认 | [AI Agent 对话编排设计](../设计/iTime-AI%20Agent对话编排设计.md)；§6 | CHAT-02、CHAT-03 | M4/M5/M8 |
 | REQ-LINK-01 | 自动读取任务公开链接 | 对话/任务来源；§9 | LINK-01、LINK-02 | M4 |
 | REQ-PLAN-01 | 用户触发日周规划、密度/缓冲/步骤 | 规划预览；§4、§6 | PLAN-01、PLAN-02、PLAN-03、PLAN-04 | M5 |
 | REQ-PLAN-02 | 手工纠错、重排预览与版本 | 预览/日历；§6 | PLAN-05、CHAT-03 | M5 |
@@ -44,7 +44,7 @@
 | NFR-REL-01 | 有界重试、每日备份、24 小时恢复 | §7、§10、§11；cloud | REL-01、REL-02 | M8 |
 | NFR-SEC-01 | 所有权、Key、TOTP、审计、生命周期 | §3、§9、§11 | AUTH-02、ADM-01、ADM-02、LINK-02、PRIV-03 | M2—M8 |
 | NFR-COMP-01 | 全尺寸 Web、Chrome/Edge 优先 | designer 平台矩阵 | UX-01、APP-01、APP-02 | M7—M10 |
-| NFR-UX-01 | 温和、主题/字号、日周月、完整状态 | designer 交互合同 | UX-01、UX-02、UX-03 | M7 |
+| NFR-UX-01 | 温和、主题/字号、Element Plus、精简文案和完整状态 | [Web 组件库迁移与文案设计](../设计/iTime-Web组件库迁移与文案设计.md) | UX-01、UX-02、UX-03 | M7/M8 |
 
 ## 2. 平台范围矩阵
 
@@ -69,11 +69,11 @@
 | REQ-DATA-01 | 迁移 `0016_task_lifecycle`、`0025_execution_difficulties`、`0026_review_memory` 与 `0034_calendar_lifecycle`，四类独立清理 worker 及对应 Web 工作区已实现任务、困难、长期记忆、日历系列和 ICS 订阅源的删除、30 天恢复、到期清理和可达回收入口；任务与日历对象保留最小墓碑，记忆删除后立即退出 AI 检索，日历删除不改写既有计划/执行/复盘事实；专项覆盖双 worker、旧操作与迟到刷新阻断、导出/同步、并发 UI 冲突及 320px 大字号；M8-A 在普通负载下清理任务/日历/困难/记忆各 100 条及同步事件 1,000 条共用 0.472 s | 学期、节次、项目、AI 会话等其他独立对象尚未开放单项删除或回收；账号注销单列 `REQ-DATA-02`，备份删除重放仍待 M8-B |
 | REQ-DATA-02 | 迁移 `0029_account_deletions`、`server/src/itime/account_deletion/`、`POST /api/v1/account-deletion`、`POST /cancel`、独立清理 worker、`/account/data` 危险区和登录恢复页已实现 7 天撤销、会话冻结、在途任务停止、到期单事务清理及最小回执；专项覆盖密码/邮箱/CSRF、并发、晚到结果、双 worker、回滚、全部 owner 表、跨标签本地清理、三视口和同邮箱新 UUID | 生产备份恢复后的删除回执重放、法务保留及其余对象单项回收仍待 M8-B 或后续模块验证 |
 | REQ-CAL-01 / REQ-CAL-03 / REQ-TIME-01 | `server/src/itime/calendar/`、`server/src/itime/planning/`、`server/src/itime/statistics/`、迁移 `0006`—`0015`、`0022`—`0024`、`0031_plan_source_conflicts`、`0032_subscription_exceptions` 与 `0034_calendar_lifecycle`、日历及统计页面；时区、学期节次、课程/固定安排、六类重复、周/月视图、DST、冲突、例外、全部导入、日历系列 30 天回收恢复、订阅 occurrence 单次取消/移动/内容覆盖/重置、当前计划块投影、来源更新后的已确认计划复核/实际重叠/保留或重排处理，以及额度和统计的 04:00 活动日已通过真实 HTTP/PostgreSQL、worker、Chromium 和真实 Edge 154 三视口测试；删除日历对象不改写既有计划/执行/复盘，刷新失败或仅非调度字段变化不制造计划冲突 | 学期不提供独立删除；真机未验证 |
-| REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`lifecycle_service.py`、`server/src/itime/ai/`、迁移 `0011`—`0015` 与 `0034_calendar_lifecycle`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue`、`CalendarSubscriptionManager.vue` 与 `CalendarTrashDialog.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停、30 天删除恢复、字段覆盖、差异与统一日历投影 Web 流程 | 已完成首版可达流程；真实第三方私密订阅源兼容性仍需部署前联调 |
+| REQ-CAL-02 | `server/src/itime/calendar/import_*.py`、`screenshot_*.py`、`subscription_*.py`、`lifecycle_service.py`、`server/src/itime/ai/`、迁移 `0011`—`0015` 与 `0034_calendar_lifecycle`、`web/src/components/CalendarImport*.vue`、`CalendarScreenshotImport.vue`、`CalendarSubscriptionManager.vue` 与 `CalendarTrashDialog.vue`；已实现 XLSX/ICS 文件、截图和 ICS URL 订阅的创建、刷新、失败保旧、暂停、30 天删除恢复、字段覆盖、差异与统一日历投影 Web 流程 | AI 会话入口、公开网页和文字课表尚未实现；真实第三方私密订阅源兼容性仍需部署前联调 |
 | REQ-MEDIA-01 | `TemporaryMedia` 已同时约束截图和规范 PCM WAV；截图确认/跳过与转写应用/丢弃后立即清理，失败/取消清理无恢复价值媒体，未解决媒体固定 24 小时到期；账号注销优先清理。真实测试覆盖格式边界、清理竞争、迟到结果、导出排除原媒体及浏览器不持久化音频 | 正式对象存储迁移与供应商侧保留规则待部署确定 |
-| REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`0022`—`0024`、`0026_review_memory`、`0030_public_task_links`、`0033_ai_fallback_routes`、`0035_voice_transcriptions` 与 `0036_transcription_quota_usage`、`server/src/itime/ai/`、通用 worker/SSE 路由及用户端 AI/语音入口已实现多普通会话、相关历史和公开资料不可变快照、消息持久化、文本流、语音转写、租约续期、重试 reset、取消、离页/断线恢复，以及与普通会话分离的单日复盘会话；五类能力新作业会冻结主配置和最多两个备用配置的尝试顺序，可重试故障切换但不重置总截止时间，非重试错误不切换 | 正式模型质量评测仍待后续模块 |
+| REQ-CHAT-01 / REQ-AI-01 | 迁移 `0017_ai_conversations`、`0022`—`0024`、`0026_review_memory`、`0030_public_task_links`、`0033_ai_fallback_routes`、`0035_voice_transcriptions` 与 `0036_transcription_quota_usage`、`server/src/itime/ai/`、通用 worker/SSE 路由及用户端 AI/语音入口已实现多普通会话、相关历史和公开资料不可变快照、消息持久化、文本流、语音转写、租约续期、重试 reset、取消、离页/断线恢复，以及与普通会话分离的单日复盘会话；五类能力新作业会冻结主配置和最多两个备用配置的尝试顺序，可重试故障切换但不重置总截止时间，非重试错误不切换 | 自动意图、工具循环、通用提案和会话附件尚未实现；正式模型质量评测仍待后续模块 |
 | REQ-LINK-01 | 迁移 `0030_public_task_links`、`server/src/itime/network/restricted_http.py`、`server/src/itime/public_links/`、任务链接刷新 API、任务来源块及 `web/e2e/public-links.spec.ts` 已实现新增/URL 变化自动排队、受限 HTTPS 读取、确定性摘要、失败保旧、手动刷新、账号级并发/频率限制、同步失效、规划和普通对话不可变不可信上下文，以及本人导出/任务清理/注销联动；已通过真实 PostgreSQL/Uvicorn/受控 HTTP/worker、Chromium 和真实 Edge 154 三视口测试 | 需登录或 JavaScript 渲染页面不在首版；正式公网兼容性、生产出口、正式模型质量和真机仍未验证 |
-| REQ-CHAT-02 / REQ-PLAN-01 / REQ-PLAN-02 | `server/src/itime/planning/`、迁移 `0022`—`0024`、`web/src/pages/PlansPage.vue` 及规划组件已实现一致输入快照、日/周 AI 提案、确定性硬约束校验、确认/拒绝、过期与版本冲突、不可变周版本、手工时间/步骤/顺序纠错、历史查看和日历投影；已通过真实 PostgreSQL/HTTP/双 worker、额度终态、Chromium 和真实 Edge 154 三视口测试 | 首版规划范围已完成；局部接受、锁定单块、任意历史恢复不在本阶段，正式模型规划质量和真机仍未验证 |
+| REQ-CHAT-02 / REQ-PLAN-01 / REQ-PLAN-02 | `server/src/itime/planning/`、迁移 `0022`—`0024`、`web/src/pages/PlansPage.vue` 及规划组件已实现一致输入快照、日/周 AI 提案、确定性硬约束校验、确认/拒绝、过期与版本冲突、不可变周版本、手工时间/步骤/顺序纠错、历史查看和日历投影；已通过真实 PostgreSQL/HTTP/双 worker、额度终态、Chromium 和真实 Edge 154 三视口测试 | 对话仍需手动选择规划模式，任务/日历/专注/复盘/记忆的通用 Agent 提案尚未实现；正式模型规划质量和真机仍未验证 |
 | REQ-EXEC-01 / REQ-DIFF-01 | 迁移 `0025_execution_difficulties`、`0035_voice_transcriptions` 与 `0036_transcription_quota_usage`、`server/src/itime/{execution,ai}/`、`web/src/pages/FocusPage.vue`、`DifficultyPanel.vue`、共享语音控件和账号/会话隔离离线队列已实现自由/任务/计划块正倒计时、单一开放专注、暂停恢复结束、步骤进度、明确任务完成、补记修订、困难增删改及 30 天恢复、困难正文语音校对、主动带到 AI 草稿；语音不推断分类/情绪且应用后仍须保存困难；已覆盖双连接并发、未知响应、主备故障、取消晚到、顺序重放、终态冲突、队列上限、Chromium 和真实 Edge 154 三视口 | 正式模型质量和真机仍未验证 |
 | REQ-REVIEW-01 / REQ-MEM-01 | 迁移 `0026_review_memory`、`server/src/itime/review/`、通用 AI worker 的 `review` 能力、`web/src/pages/ReviewsPage.vue` 和复盘组件已实现 04:00 单日事实快照、最多三轮可跳过追问、离页恢复、结构化报告、不可变版本、独立批注、记忆候选确认/拒绝、人工记忆管理、整体暂停及 30 天回收恢复；普通对话与规划在调用时重新校验有效记忆，并通过 Chromium 和真实 Edge 154 三视口测试 | 正式模型复盘质量和真机仍未验证 |
 | REQ-STATS-01 | `server/src/itime/statistics/`、`web/src/pages/StatisticsPage.vue`、统计组件/API 及 `web/e2e/statistics.spec.ts` 已实现日/自然周/自然月查询、当前计划版本、任务完成/跳过、专注完成/放弃/补记/修订、跨 04:00 分配、空态和读取失败保旧；已通过真实 PostgreSQL/HTTP、活动日数学、Chromium、真实 Edge 154 三视口及 320px 大字号验证；M8-A 重历史和 60 分钟耐久场景持续读取统计，均无失败 | 后台运营指标和真机不属于本模块或仍未验证 |
