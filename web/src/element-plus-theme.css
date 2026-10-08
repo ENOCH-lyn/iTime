@@ -1,0 +1,88 @@
+:root {
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 72%, white);
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 52%, white);
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, white);
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, white);
+  --el-color-primary-light-9: var(--selected);
+  --el-color-primary-dark-2: var(--accent-hover);
+  --el-color-danger: var(--error);
+  --el-color-danger-light-9: var(--error-bg);
+  --el-color-warning: var(--notice-text);
+  --el-color-warning-light-9: var(--notice-bg);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--canvas);
+  --el-bg-color-overlay: var(--surface);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text);
+  --el-text-color-secondary: var(--muted);
+  --el-text-color-placeholder: var(--muted);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-fill-color: var(--selected);
+  --el-fill-color-light: color-mix(in srgb, var(--selected) 72%, var(--surface));
+  --el-fill-color-lighter: color-mix(in srgb, var(--selected) 48%, var(--surface));
+  --el-fill-color-blank: var(--surface);
+  --el-mask-color: rgb(0 0 0 / 42%);
+  --el-font-family: var(--font);
+  --el-font-size-base: 0.875rem;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 999px;
+  --el-box-shadow-light: 0 10px 28px rgb(28 45 36 / 12%);
+  --el-component-size: 44px;
+  --el-component-size-small: 36px;
+  --el-component-size-large: 48px;
+}
+
+:root[data-theme="dark"] {
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 76%, black);
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 58%, black);
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 38%, black);
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 28%, black);
+  --el-mask-color: rgb(0 0 0 / 64%);
+  --el-box-shadow-light: 0 12px 32px rgb(0 0 0 / 32%);
+}
+
+.app-root {
+  display: contents;
+}
+
+.el-button,
+.el-input,
+.el-select,
+.el-textarea,
+.el-form-item,
+.el-dialog,
+.el-drawer,
+.el-alert,
+.el-menu,
+.el-table {
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+
+.el-button {
+  font-weight: 550;
+}
+
+.el-button:focus-visible,
+.el-input__wrapper:has(input:focus-visible),
+.el-textarea__inner:focus-visible,
+.el-select__wrapper:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.el-overlay {
+  backdrop-filter: none;
+}
+
+@media (max-width: 600px) {
+  .el-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    margin: 12px auto;
+  }
+}
