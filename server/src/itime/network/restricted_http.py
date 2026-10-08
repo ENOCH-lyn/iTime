@@ -6,7 +6,7 @@ import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import SplitResult, urljoin, urlsplit
+from urllib.parse import SplitResult, urljoin, urlsplit, urlunsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
@@ -386,6 +386,30 @@ def validate_url(url: str, settings: Settings) -> SplitResult:
     else:
         raise RestrictedHttpError("ip_literal", retryable=False)
     return parsed
+
+
+def safe_url_display(url: str, settings: Settings) -> tuple[str, str]:
+    parsed = validate_url(url, settings)
+    hostname = parsed.hostname or ""
+    default_port = 443 if parsed.scheme == "https" else 80
+    display_host = (
+        hostname
+        if parsed.port in {None, default_port}
+        else f"{hostname}:{parsed.port}"
+    )
+    display_path = "/" if parsed.path in {"", "/"} else "/..."
+    return (
+        urlunsplit(
+            (
+                parsed.scheme,
+                display_host,
+                display_path,
+                "",
+                "",
+            )
+        ),
+        display_host,
+    )
 
 
 def normalize_ip(

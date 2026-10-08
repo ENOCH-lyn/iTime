@@ -2,7 +2,6 @@ import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import urlunsplit
 
 from itime.config import Settings
 from itime.network.restricted_http import (
@@ -15,7 +14,7 @@ from itime.network.restricted_http import (
     RestrictedTransport,
     SystemAddressResolver,
     TransportResponse,
-    validate_url,
+    safe_url_display,
 )
 
 MAX_REDIRECTS = 3
@@ -195,27 +194,9 @@ class RestrictedCalendarFetcher:
 
 def subscription_url_metadata(url: str, settings: Settings) -> tuple[str, str]:
     try:
-        parsed = validate_url(url, settings)
+        return safe_url_display(url, settings)
     except RestrictedHttpError as exc:
         raise _calendar_error(exc) from exc
-    hostname = parsed.hostname or ""
-    default_port = 443 if parsed.scheme == "https" else 80
-    display_host = (
-        hostname
-        if parsed.port in {None, default_port}
-        else f"{hostname}:{parsed.port}"
-    )
-    display_path = "/" if parsed.path in {"", "/"} else "/..."
-    display_url = urlunsplit(
-        (
-            parsed.scheme,
-            display_host,
-            display_path,
-            "",
-            "",
-        )
-    )
-    return display_url, display_host
 
 
 def _calendar_error(error: RestrictedHttpError) -> SubscriptionFetchError:
@@ -239,7 +220,7 @@ def _validate_media_type(headers: Mapping[str, str], content: bytes) -> None:
     content_type = headers.get("content-type", "").split(";", 1)[0].strip().casefold()
     if content_type in CALENDAR_MEDIA_TYPES:
         return
-    if content_type == "text/plain" and _looks_like_complete_calendar(content):
+    if content_type == "text/plain" and looks_like_complete_calendar(content):
         return
     raise SubscriptionFetchError(
         "calendar_subscription_content_type_invalid",
@@ -248,7 +229,7 @@ def _validate_media_type(headers: Mapping[str, str], content: bytes) -> None:
     )
 
 
-def _looks_like_complete_calendar(content: bytes) -> bool:
+def looks_like_complete_calendar(content: bytes) -> bool:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -268,5 +249,6 @@ __all__ = [
     "SubscriptionFetchError",
     "SystemAddressResolver",
     "TransportResponse",
+    "looks_like_complete_calendar",
     "subscription_url_metadata",
 ]

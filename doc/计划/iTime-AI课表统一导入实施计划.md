@@ -72,19 +72,19 @@ Run: `git add server/src/itime/ai/screenshot_provider.py server/src/itime/calend
 - Modify: `server/src/itime/network/restricted_http.py`
 - Test: `server/tests/test_calendar_import_fetcher.py`
 
-- [ ] **Step 1: 写受限抓取测试**
+- [x] **Step 1: 写受限抓取测试**
 
 使用本地受控 HTTP 服务覆盖 HTML、纯文本、ICS、重定向、循环、私网、超大正文、不支持类型、压缩炸弹、超时和 DNS 变化。
 
-- [ ] **Step 2: 实现抓取器**
+- [x] **Step 2: 实现抓取器**
 
 复用现有 SSRF 与重定向校验；只接受 HTTPS 公开地址，测试环境允许显式白名单；不携带 Cookie、Authorization、系统代理或用户代理凭据。
 
-- [ ] **Step 3: 确定性 ICS 优先**
+- [x] **Step 3: 确定性 ICS 优先**
 
 响应为完整 ICS 时直接进入现有解析器；HTML/纯文本只提取有界可见正文后进入 AI。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd server && uv run pytest tests/test_calendar_import_fetcher.py tests/test_calendar_subscription_fetcher.py tests/test_public_links.py -q`
 
