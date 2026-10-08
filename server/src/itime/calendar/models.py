@@ -142,7 +142,8 @@ class CalendarSource(Base):
     __tablename__ = "calendar_sources"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('excel_file', 'ics_file', 'screenshot', 'ics_subscription')",
+            "kind IN ('excel_file', 'ics_file', 'screenshot', 'image', "
+            "'public_url', 'text', 'ics_subscription')",
             name="kind",
         ),
         CheckConstraint("length(btrim(name)) > 0", name="nonempty_name"),
@@ -823,14 +824,50 @@ class CalendarSeries(Base):
 class CalendarImportBatch(Base):
     __tablename__ = "calendar_import_batches"
     __table_args__ = (
-        CheckConstraint("format IN ('xlsx', 'ics', 'screenshot')", name="format"),
         CheckConstraint(
-            "state IN ('ready', 'partially_confirmed', 'completed', 'expired')",
+            "format IN ('xlsx', 'ics', 'screenshot', 'public_url', 'text')",
+            name="format",
+        ),
+        CheckConstraint(
+            "source_type IN ('xlsx_file', 'ics_file', 'image', 'public_url', 'text')",
+            name="source_type",
+        ),
+        CheckConstraint(
+            "(source_type = 'xlsx_file' AND format = 'xlsx') "
+            "OR (source_type = 'ics_file' AND format = 'ics') "
+            "OR (source_type = 'image' AND format = 'screenshot') "
+            "OR (source_type = 'public_url' AND format IN ('public_url', 'ics')) "
+            "OR (source_type = 'text' AND format = 'text')",
+            name="format_source",
+        ),
+        CheckConstraint(
+            "state IN ('queued', 'processing', 'needs_review', 'confirmed', "
+            "'cancelled', 'failed', 'expired')",
             name="state",
         ),
         CheckConstraint("length(btrim(filename)) > 0", name="nonempty_filename"),
-        CheckConstraint("candidate_count BETWEEN 1 AND 500", name="candidate_count"),
+        CheckConstraint("candidate_count BETWEEN 0 AND 500", name="candidate_count"),
         CheckConstraint("length(content_sha256) = 64", name="content_sha256"),
+        CheckConstraint(
+            "source_display IS NULL OR length(btrim(source_display)) > 0",
+            name="source_display",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(input_summary) = 'object'",
+            name="input_summary",
+        ),
+        CheckConstraint(
+            "(input_body_ciphertext IS NULL) = (input_body_expires_at IS NULL)",
+            name="input_body",
+        ),
+        CheckConstraint(
+            "(error_code IS NULL) = (error_message IS NULL)",
+            name="error_pair",
+        ),
+        CheckConstraint(
+            "message_id IS NULL OR conversation_id IS NOT NULL",
+            name="message_conversation",
+        ),
         ForeignKeyConstraint(
             ["source_id", "owner_id"],
             ["calendar_sources.id", "calendar_sources.owner_id"],
@@ -843,12 +880,35 @@ class CalendarImportBatch(Base):
             name="fk_calendar_import_batches_origin_job_owner",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["conversation_id", "owner_id"],
+            ["ai_conversations.id", "ai_conversations.owner_id"],
+            name="fk_calendar_import_batches_conversation_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["message_id", "owner_id", "conversation_id"],
+            [
+                "ai_conversation_messages.id",
+                "ai_conversation_messages.owner_id",
+                "ai_conversation_messages.conversation_id",
+            ],
+            name="fk_calendar_import_batches_message_owner_conversation",
+            ondelete="CASCADE",
+        ),
         UniqueConstraint("id", "owner_id", name="uq_calendar_import_batches_id_owner"),
         UniqueConstraint("source_id", name="uq_calendar_import_batches_source"),
         UniqueConstraint("origin_job_id", name="uq_calendar_import_batches_origin_job"),
         Index(
             "ix_calendar_import_batches_owner_updated",
             "owner_id",
+            "updated_at",
+            "id",
+        ),
+        Index(
+            "ix_calendar_import_batches_owner_conversation",
+            "owner_id",
+            "conversation_id",
             "updated_at",
             "id",
         ),
@@ -859,10 +919,29 @@ class CalendarImportBatch(Base):
     source_id: Mapped[UUID]
     origin_job_id: Mapped[UUID | None]
     format: Mapped[str] = mapped_column(String(16))
+    source_type: Mapped[str] = mapped_column(String(24))
     filename: Mapped[str] = mapped_column(String(255))
     content_sha256: Mapped[str] = mapped_column(String(64))
-    state: Mapped[str] = mapped_column(String(24), default="ready", server_default="ready")
+    state: Mapped[str] = mapped_column(
+        String(24),
+        default="queued",
+        server_default="queued",
+    )
     candidate_count: Mapped[int] = mapped_column(Integer)
+    source_display: Mapped[str | None] = mapped_column(String(500))
+    input_summary: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    input_body_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    input_body_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    conversation_id: Mapped[UUID | None]
+    message_id: Mapped[UUID | None]
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_message: Mapped[str | None] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -968,7 +1047,10 @@ class CalendarImportCandidate(Base):
 class CalendarImportIdentity(Base):
     __tablename__ = "calendar_import_identities"
     __table_args__ = (
-        CheckConstraint("format IN ('xlsx', 'ics', 'screenshot')", name="format"),
+        CheckConstraint(
+            "format IN ('xlsx', 'ics', 'screenshot', 'public_url', 'text')",
+            name="format",
+        ),
         CheckConstraint("length(identity_key) = 64", name="identity_key"),
         CheckConstraint("length(content_fingerprint) = 64", name="content_fingerprint"),
         ForeignKeyConstraint(

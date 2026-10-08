@@ -379,7 +379,7 @@ async def prepare_candidate_rows(
 def source_result(source: CalendarSource) -> dict:
     return {
         "id": source.id,
-        "kind": source.kind,
+        "kind": "image" if source.kind == "screenshot" else source.kind,
         "name": source.name,
         "version": source.version,
         "created_at": source.created_at,
@@ -415,7 +415,10 @@ def candidate_result(candidate: CalendarImportCandidate) -> dict:
 
 
 def effective_batch_state(batch: CalendarImportBatch) -> str:
-    if batch.state != "completed" and batch.expires_at <= now():
+    if (
+        batch.state not in {"confirmed", "cancelled", "failed", "expired"}
+        and batch.expires_at <= now()
+    ):
         return "expired"
     return batch.state
 
@@ -429,7 +432,9 @@ def batch_result(
     return {
         "id": batch.id,
         "source": source_result(source),
-        "format": batch.format,
+        "format": batch.source_type,
+        "source_type": batch.source_type,
+        "source_display": batch.source_display,
         "filename": batch.filename,
         "state": effective_batch_state(batch),
         "candidate_count": batch.candidate_count,
@@ -437,6 +442,18 @@ def batch_result(
             key: counts.get(key, 0)
             for key in ("valid", "invalid", "duplicate", "confirmed", "skipped")
         },
+        "input_summary": batch.input_summary,
+        "conversation_id": batch.conversation_id,
+        "message_id": batch.message_id,
+        "job_id": batch.origin_job_id,
+        "error": (
+            {
+                "code": batch.error_code,
+                "message": batch.error_message,
+            }
+            if batch.error_code is not None
+            else None
+        ),
         "version": batch.version,
         "expires_at": batch.expires_at,
         "created_at": batch.created_at,
@@ -490,13 +507,26 @@ def require_editable_batch(batch: CalendarImportBatch) -> None:
     if state == "expired":
         raise AppError(
             "calendar_import_expired",
-            "导入候选已过期，请重新上传文件。",
+            "导入候选已过期，请重新提交。",
             status=409,
         )
-    if state == "completed":
+    if state == "confirmed":
         raise AppError(
             "calendar_import_completed",
             "此导入批次已经处理完成。",
+            status=409,
+        )
+    if state in {"queued", "processing"}:
+        raise AppError(
+            "calendar_import_processing",
+            "导入内容仍在处理中，请稍后刷新。",
+            status=409,
+            retryable=True,
+        )
+    if state in {"cancelled", "failed"}:
+        raise AppError(
+            f"calendar_import_{state}",
+            "此导入批次已取消。" if state == "cancelled" else "此导入批次处理失败。",
             status=409,
         )
 
@@ -552,8 +582,7 @@ async def refresh_batch_state(
         )
     )
     unresolved = any(state in {"valid", "invalid"} for state in states)
-    processed = any(state in {"confirmed", "skipped"} for state in states)
-    batch.state = "completed" if not unresolved else "partially_confirmed" if processed else "ready"
+    batch.state = "needs_review" if unresolved else "confirmed"
     batch.updated_at = now()
 
 

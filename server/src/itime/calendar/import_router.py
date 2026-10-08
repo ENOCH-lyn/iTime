@@ -162,6 +162,7 @@ async def upload_calendar_file(
                 term_ids_by_name=names,
             )
             source_kind = "excel_file"
+            source_type = "xlsx_file"
         else:
             parsed = await asyncio.to_thread(
                 parse_ics,
@@ -169,6 +170,7 @@ async def upload_calendar_file(
                 default_time_zone=time_zone,
             )
             source_kind = "ics_file"
+            source_type = "ics_file"
 
         candidates = await prepare_candidate_rows(
             identity.session,
@@ -187,9 +189,15 @@ async def upload_calendar_file(
             owner_id=identity.user.id,
             source_id=source.id,
             format=format_name,
+            source_type=source_type,
             filename=filename,
             content_sha256=content_hash,
+            state="needs_review",
             candidate_count=len(candidates),
+            input_summary={
+                "filename": filename,
+                "byte_size": len(contents),
+            },
             expires_at=new_batch_expiry(),
         )
         identity.session.add(batch)

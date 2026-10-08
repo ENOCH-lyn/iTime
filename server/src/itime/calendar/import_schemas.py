@@ -6,6 +6,23 @@ from pydantic import Field, field_validator
 from itime.calendar.schemas import SeriesFields
 from itime.schemas import Input, clean_required
 
+type ImportSourceType = Literal[
+    "xlsx_file",
+    "ics_file",
+    "image",
+    "public_url",
+    "text",
+]
+type ImportBatchState = Literal[
+    "queued",
+    "processing",
+    "needs_review",
+    "confirmed",
+    "cancelled",
+    "failed",
+    "expired",
+]
+
 
 class ImportUploadOperation(Input):
     operation_id: UUID

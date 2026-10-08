@@ -251,7 +251,9 @@ def reset_vision(vision_upstream, screenshot_database_url):
         connection.execute(
             "DELETE FROM calendar_series WHERE source_type='screenshot'"
         )
-        connection.execute("DELETE FROM calendar_sources WHERE kind='screenshot'")
+        connection.execute(
+            "DELETE FROM calendar_sources WHERE kind IN ('screenshot', 'image')"
+        )
         connection.execute("DELETE FROM ai_quota_ledger_entries")
         connection.execute("DELETE FROM ai_quota_reservations")
         connection.execute("DELETE FROM ai_job_attempts")
@@ -495,8 +497,8 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
     detail = screenshot_client.get(
         f"/api/v1/calendar/imports/{batch_id}"
     ).json()
-    assert detail["batch"]["format"] == "screenshot"
-    assert detail["batch"]["source"]["kind"] == "screenshot"
+    assert detail["batch"]["format"] == "image"
+    assert detail["batch"]["source"]["kind"] == "image"
     assert detail["batch"]["counts"]["valid"] == 1
     assert detail["batch"]["counts"]["invalid"] == 1
     valid = next(item for item in detail["candidates"] if item["state"] == "valid")

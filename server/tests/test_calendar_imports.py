@@ -348,7 +348,7 @@ def test_template_real_xlsx_partial_confirmation_and_duplicate_import(
         json=first_confirmation,
     )
     assert confirmed.status_code == 200, confirmed.text
-    assert confirmed.json()["batch"]["state"] == "partially_confirmed"
+    assert confirmed.json()["batch"]["state"] == "needs_review"
     assert confirmed.json()["outcomes"][0]["outcome"] == "created"
     assert (
         import_client.post(
@@ -416,7 +416,7 @@ def test_template_real_xlsx_partial_confirmation_and_duplicate_import(
         },
     )
     assert final.status_code == 200, final.text
-    assert final.json()["batch"]["state"] == "completed"
+    assert final.json()["batch"]["state"] == "confirmed"
     created_outcomes = [item for item in final.json()["outcomes"] if item["outcome"] == "created"]
     assert len(created_outcomes) == 2
     assert any(item["conflicts"]["items"] for item in created_outcomes)
@@ -521,7 +521,7 @@ def test_ics_recurrence_invalid_rule_update_conflicts_and_uid_deduplication(
         json=confirm_payload(detail["batch"], candidates),
     )
     assert result.status_code == 200, result.text
-    assert result.json()["batch"]["state"] == "completed"
+    assert result.json()["batch"]["state"] == "confirmed"
     assert all(item["outcome"] == "created" for item in result.json()["outcomes"])
     assert all(item["conflicts"]["items"] for item in result.json()["outcomes"])
 

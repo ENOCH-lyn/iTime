@@ -49,7 +49,7 @@ def test_account_deletion_migration_constraints_and_downgrade(admin_url):
         with psycopg.connect(psycopg_url(database_url)) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone() == ("0038_agent_task_plan",)
+            ).fetchone() == ("0039_calendar_ai_import_sources",)
 
             owner_id = seed_user(connection)
             deletion_id = insert_pending_deletion(connection, owner_id)

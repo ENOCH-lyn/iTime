@@ -13,27 +13,27 @@
 ### Task 1: 扩展导入来源模型
 
 **Files:**
-- Create: `server/src/itime/migrations/versions/0038_calendar_ai_import_sources.py`
+- Create: `server/src/itime/migrations/versions/0039_calendar_ai_import_sources.py`
 - Modify: `server/src/itime/calendar/models.py`
 - Modify: `server/src/itime/calendar/import_schemas.py`
 - Modify: `server/src/itime/calendar/import_service.py`
 - Test: `server/tests/test_calendar_ai_import_models.py`
 
-- [ ] **Step 1: 写迁移和模型失败测试**
+- [x] **Step 1: 写迁移和模型失败测试**
 
 覆盖 `image|public_url|text` 来源、会话/消息可选关联、来源显示摘要、批次状态、本人复合约束和临时正文清理字段。
 
-- [ ] **Step 2: 实现迁移与兼容映射**
+- [x] **Step 2: 实现迁移与兼容映射**
 
 保留旧 `xlsx|ics|screenshot` 数据可读；新 API 统一返回 `xlsx_file|ics_file|image|public_url|text`，旧截图映射为 image。
 
-- [ ] **Step 3: 验证**
+- [x] **Step 3: 验证**
 
 Run: `cd server && uv run alembic upgrade head && uv run pytest tests/test_calendar_ai_import_models.py tests/test_calendar_imports.py tests/test_calendar_screenshot_imports.py -q`
 
 Expected: PASS。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 Run: `git add server/src/itime/migrations server/src/itime/calendar server/tests/test_calendar_ai_import_models.py && git commit -m "feat: 扩展课表导入来源模型"`
 

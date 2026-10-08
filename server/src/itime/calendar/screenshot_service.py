@@ -1,6 +1,5 @@
 import hashlib
 from dataclasses import dataclass
-from datetime import timedelta
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
@@ -24,6 +23,7 @@ from itime.ai.screenshot_provider import (
 from itime.auth.security import now
 from itime.calendar.import_parsers import ParsedCandidate
 from itime.calendar.import_service import (
+    new_batch_expiry,
     prepare_candidate_rows,
     refresh_batch_state,
 )
@@ -31,8 +31,6 @@ from itime.calendar.models import CalendarImportBatch, CalendarSource
 from itime.database import Database
 from itime.errors import AppError
 from itime.quota.service import release_reservation, settle_success
-
-SCREENSHOT_REVIEW_DAYS = 30
 
 
 class ScreenshotWorkUnavailable(Exception):
@@ -227,7 +225,7 @@ async def apply_screenshot_result(
         )
         source = CalendarSource(
             owner_id=claim.owner_id,
-            kind="screenshot",
+            kind="image",
             name=str(job.input_summary.get("filename") or "课表截图")[:255],
         )
         session.add(source)
@@ -237,10 +235,19 @@ async def apply_screenshot_result(
             source_id=source.id,
             origin_job_id=job.id,
             format="screenshot",
+            source_type="image",
             filename=source.name,
             content_sha256=str(job.input_summary["content_sha256"]),
+            state="needs_review",
             candidate_count=len(candidates),
-            expires_at=current + timedelta(days=SCREENSHOT_REVIEW_DAYS),
+            input_summary={
+                "filename": source.name,
+                "content_type": job.input_summary.get("content_type"),
+                "byte_size": job.input_summary.get("byte_size"),
+                "width": job.input_summary.get("width"),
+                "height": job.input_summary.get("height"),
+            },
+            expires_at=new_batch_expiry(),
         )
         session.add(batch)
         await session.flush()
