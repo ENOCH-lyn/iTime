@@ -60,6 +60,12 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
     fullPage: true,
   })
 }
+async function selectSetting(page: Page, label: string, option: string) {
+  const combobox = page.getByRole('combobox', { name: label, exact: true })
+  await combobox.focus()
+  await combobox.press('ArrowDown')
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
 async function login(
   page: Page,
   email: string,
@@ -70,9 +76,10 @@ async function login(
   await page.goto('/admin/login')
   await page.getByLabel('管理员邮箱', { exact: true }).fill(email)
   await page.getByLabel('密码', { exact: true }).fill(password)
-  await page.locator('.segmented-field label').filter({
-    hasText: method === 'totp' ? '身份验证器' : '恢复码',
-  }).click()
+  await page.locator('.el-segmented').getByText(
+    method === 'totp' ? '身份验证器' : '恢复码',
+    { exact: true },
+  ).click()
   const codeInput = method === 'totp'
     ? page.getByLabel('6 位验证码', { exact: true })
     : page.getByRole('textbox', { name: '恢复码', exact: true })
@@ -145,7 +152,7 @@ test('TOTP 登录防重放，恢复码可作为一次性替代', async ({ page }
   await page.getByRole('button', { name: '退出管理后台', exact: true }).click()
   await login(page, admin.email, data.password, 'totp', code)
   await expect(page.getByRole('alert')).toContainText('已经使用')
-  await page.locator('.segmented-field label').filter({ hasText: '恢复码' }).click()
+  await page.locator('.el-segmented').getByText('恢复码', { exact: true }).click()
   await page.getByRole('textbox', { name: '恢复码', exact: true }).fill(admin.recovery_code)
   await page.getByRole('button', { name: '进入管理后台', exact: true }).click()
   await expect(page.getByText('本次使用恢复码登录')).toBeVisible()
@@ -219,8 +226,8 @@ test('未认证跳转、错误恢复、响应式与无障碍状态完整', async
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.goto('/admin/appearance')
-  await page.getByLabel('外观主题').selectOption('dark')
-  await page.getByLabel('字号', { exact: true }).selectOption('larger')
+  await selectSetting(page, '外观主题', '深色')
+  await selectSetting(page, '字号', '更大')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('html')).toHaveAttribute('data-font-size', 'larger')
   await page.setViewportSize({ width: 320, height: 700 })

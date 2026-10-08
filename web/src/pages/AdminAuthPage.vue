@@ -170,9 +170,6 @@ async function copySecret() {
           @done="router.replace('/admin/security')" />
         <div v-else class="auth-form-content">
           <h1 tabindex="-1">{{ pageTitle }}</h1>
-          <p class="page-description">
-            {{ mode === 'setup' ? '使用身份验证器保护管理权限。' : '使用密码和第二重验证进入管理后台。' }}
-          </p>
           <StatusMessage :error="error" :retry-label="!adminPolicy && error?.retryable ? '重新连接' : undefined" @retry="loadPolicy" />
           <p v-if="loading" role="status" class="muted">正在连接管理认证服务…</p>
           <template v-else-if="mode === 'setup'">
@@ -181,9 +178,9 @@ async function copySecret() {
               <FormField id="admin-password" v-model="values.password" label="管理员密码"
                 type="password" autocomplete="current-password" :error="errors.password"
                 :disabled="pending" @blur="validate('password')" />
-              <button class="button full-width" :disabled="pending || !token">
+              <ElButton type="primary" native-type="submit" class="full-width" :loading="pending" :disabled="pending || !token">
                 {{ pending ? '正在验证…' : '继续设置' }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
-              </button>
+              </ElButton>
             </form>
             <div v-else class="totp-setup">
               <section aria-labelledby="scan-title">
@@ -192,9 +189,9 @@ async function copySecret() {
                 <div class="qr-frame"><QrcodeVue :value="setup.provisioning_uri" :size="196" level="M" render-as="svg" /></div>
                 <div class="secret-row">
                   <code>{{ groupedSecret }}</code>
-                  <button type="button" class="icon-button" :aria-label="secretCopied ? '设置密钥已复制' : '复制设置密钥'" @click="copySecret">
+                  <ElButton text circle class="icon-button" :aria-label="secretCopied ? '设置密钥已复制' : '复制设置密钥'" @click="copySecret">
                     <Check v-if="secretCopied" :size="18" aria-hidden="true" /><Copy v-else :size="18" aria-hidden="true" />
-                  </button>
+                  </ElButton>
                 </div>
               </section>
               <form novalidate :aria-busy="pending" @submit.prevent="confirmSetup">
@@ -203,9 +200,9 @@ async function copySecret() {
                   inputmode="numeric" :maxlength="6" autocomplete="one-time-code"
                   :error="errors.code" :disabled="pending" @blur="validate('code')" />
                 <p class="field-hint">设置链接于 {{ new Date(setup.expires_at).toLocaleString('zh-CN') }} 到期。</p>
-                <button class="button full-width" :disabled="pending">
+                <ElButton type="primary" native-type="submit" class="full-width" :loading="pending" :disabled="pending">
                   {{ pending ? '正在启用…' : '完成设置' }}<KeyRound v-if="!pending" :size="18" aria-hidden="true" />
-                </button>
+                </ElButton>
               </form>
             </div>
           </template>
@@ -214,20 +211,27 @@ async function copySecret() {
               autocomplete="username" :error="errors.email" :disabled="pending" @blur="validate('email')" />
             <FormField id="admin-password" v-model="values.password" label="密码" type="password"
               autocomplete="current-password" :error="errors.password" :disabled="pending" @blur="validate('password')" />
-            <fieldset class="segmented-field">
-              <legend>第二重验证</legend>
-              <label :class="{ selected: values.method === 'totp' }"><input v-model="values.method" type="radio" value="totp" @change="values.code = ''; errors.code = ''" />身份验证器</label>
-              <label :class="{ selected: values.method === 'recovery' }"><input v-model="values.method" type="radio" value="recovery" @change="values.code = ''; errors.code = ''" />恢复码</label>
-            </fieldset>
+            <div class="field">
+              <label for="admin-method">第二重验证</label>
+              <ElSegmented
+                id="admin-method"
+                v-model="values.method"
+                :options="[
+                  { label: '身份验证器', value: 'totp' },
+                  { label: '恢复码', value: 'recovery' },
+                ]"
+                @change="values.code = ''; errors.code = ''"
+              />
+            </div>
             <FormField id="admin-code" v-model="values.code"
               :label="values.method === 'totp' ? '6 位验证码' : '恢复码'"
               :inputmode="values.method === 'totp' ? 'numeric' : 'text'"
               :maxlength="values.method === 'totp' ? 6 : 32"
               :autocomplete="values.method === 'totp' ? 'one-time-code' : 'off'"
               :error="errors.code" :disabled="pending" @blur="validate('code')" />
-            <button class="button full-width" :disabled="pending">
+            <ElButton type="primary" native-type="submit" class="full-width" :loading="pending" :disabled="pending">
               {{ pending ? '正在验证…' : '进入管理后台' }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
-            </button>
+            </ElButton>
             <p v-if="adminPolicy" class="field-hint">管理会话最长保留 {{ adminPolicy.session_hours }} 小时。</p>
           </form>
         </div>

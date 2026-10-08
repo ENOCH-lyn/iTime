@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
   ArrowRight,
@@ -330,9 +330,9 @@ async function resend() {
               已创建新的登录会话。此前终止的 AI、导出和临时文件不会自动恢复。
             </p>
             <StatusMessage :success="success" />
-            <button class="button full-width" type="button" @click="router.replace('/ai')">
+            <ElButton type="primary" class="full-width" @click="router.replace('/ai')">
               进入 iTime<ArrowRight :size="18" aria-hidden="true" />
-            </button>
+            </ElButton>
           </template>
           <template v-else-if="pendingDeletion">
             <Clock3 class="success-icon" :size="32" aria-hidden="true" />
@@ -342,22 +342,23 @@ async function resend() {
               <strong class="wrap-anywhere">{{ localTime(pendingDeletion.purge_after) }}</strong>。
             </p>
             <StatusMessage :error="error" />
-            <button
+            <ElButton
               v-if="pendingDeletion.can_cancel"
-              class="button full-width"
-              type="button"
+              type="primary"
+              class="full-width"
               :disabled="pending"
+              :loading="pending"
               @click="restoreAccount"
             >
               <RotateCcw v-if="!pending" :size="18" aria-hidden="true" />
               {{ pending ? '正在恢复…' : '撤销注销并登录' }}
-            </button>
+            </ElButton>
             <p v-else class="status error-status" role="alert">
               7 天撤销期已经结束，账号不能再恢复。
             </p>
-            <button class="text-button full-width" type="button" :disabled="pending" @click="resetPendingLogin">
+            <ElButton link type="primary" class="full-width" :disabled="pending" @click="resetPendingLogin">
               返回登录
-            </button>
+            </ElButton>
           </template>
           <template v-else-if="finished">
             <MailCheck v-if="mailFlow" class="success-icon" :size="32" aria-hidden="true" />
@@ -366,17 +367,18 @@ async function resend() {
             <StatusMessage :error="error" :success="success" />
             <template v-if="mailFlow">
               <p class="muted">没有收到？先检查垃圾邮件。重新发送后，请使用最新链接。</p>
-              <button class="button secondary full-width" :disabled="pending || cooldown > 0" @click="resend">
+              <ElButton plain class="full-width" :disabled="pending || cooldown > 0" :loading="pending" @click="resend">
                 {{ pending ? '正在发送…' : cooldown > 0 ? `${cooldown} 秒后可重新发送` : '重新发送邮件' }}
-              </button>
-              <button class="text-button full-width" @click="finished = false; success = ''; error = null">修改邮箱</button>
+              </ElButton>
+              <ElButton link type="primary" class="full-width" @click="finished = false; success = ''; error = null">修改邮箱</ElButton>
             </template>
-            <RouterLink to="/login" class="button full-width">{{ mailFlow ? '返回登录' : '前往登录' }}<ArrowRight :size="18" aria-hidden="true" /></RouterLink>
+            <ElButton :tag="RouterLink" to="/login" type="primary" class="full-width">
+              {{ mailFlow ? '返回登录' : '前往登录' }}<ArrowRight :size="18" aria-hidden="true" />
+            </ElButton>
           </template>
           <template v-else>
             <RouterLink v-if="!['login', 'register'].includes(mode)" class="back-link" to="/login"><ArrowLeft :size="16" aria-hidden="true" />返回登录</RouterLink>
             <h1 tabindex="-1">{{ info.title }}</h1>
-            <p class="page-description">{{ info.description }}</p>
             <div
               v-if="deletionRequestNotice"
               class="status restriction-status"
@@ -394,14 +396,14 @@ async function resend() {
             <p v-if="mode === 'verify-email' && pending" role="status" class="muted">
               正在验证邮箱并创建登录会话…
             </p>
-            <button
+            <ElButton
               v-if="mode === 'verify-email' && token && !pending && error"
-              class="button full-width"
-              type="button"
+              type="primary"
+              class="full-width"
               @click="verifyEmail"
             >
               重新验证
-            </button>
+            </ElButton>
             <p v-if="loadingPolicy" role="status" class="muted">正在连接账号服务…</p>
             <form v-if="policy && mode !== 'verify-email'" novalidate :aria-busy="pending" @submit.prevent="submit">
               <p v-if="invitationRequired" class="invitation-notice" :class="{ 'missing-invitation': !invitationToken }">
@@ -415,10 +417,11 @@ async function resend() {
               <FormField v-if="needsConfirmation" id="confirmation" v-model="values.confirmation" label="确认密码" type="password"
                 autocomplete="new-password" :error="errors.confirmation" :disabled="pending" @blur="validate('confirmation')" />
               <div v-if="mode === 'login'" class="form-meta"><RouterLink to="/forgot-password">忘记密码？</RouterLink></div>
-              <button class="button full-width" type="submit"
+              <ElButton type="primary" native-type="submit" class="full-width"
+                :loading="pending"
                 :disabled="pending || (needsToken && !token) || (invitationRequired && !invitationToken)">
                 {{ pending ? '正在处理…' : info.action }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
-              </button>
+              </ElButton>
               <p v-if="mode === 'login'" class="field-hint">本次登录最长保留 {{ Math.round(policy.session_hours / 24 * 10) / 10 }} 天。公共设备使用后请退出。</p>
             </form>
             <p v-if="mode === 'login' && policy?.registration_mode === 'open'" class="auth-switch">还没有账号？<RouterLink to="/register">创建账号</RouterLink></p>

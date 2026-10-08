@@ -15,6 +15,13 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
   })
 }
 
+async function selectSetting(page: Page, label: string, option: string) {
+  const combobox = page.getByRole('combobox', { name: label, exact: true })
+  await combobox.focus()
+  await combobox.press('ArrowDown')
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
+
 async function mailLink(request: APIRequestContext, address: string) {
   let id = ''
   await expect.poll(async () => {
@@ -347,7 +354,7 @@ test('列表失败可恢复，离线创建保留输入并在恢复后只创建�
 
   await page.setViewportSize({ width: 320, height: 700 })
   await page.goto('/account/appearance')
-  await page.getByLabel('字号', { exact: true }).selectOption('larger')
+  await selectSetting(page, '字号', '更大')
   await page.goto('/tasks')
   await expect(page.locator('.task-list li').filter({ hasText: '离线后重试的任务' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
