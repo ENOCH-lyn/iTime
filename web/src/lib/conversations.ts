@@ -1,5 +1,6 @@
 import { api } from './api'
 import type { AIJob } from './ai-jobs'
+import type { CalendarImportBatch } from './calendar-imports'
 import type { PlanningFields } from './plans'
 
 export type ConversationResponseMode = 'auto' | 'text' | 'planning'
@@ -25,6 +26,7 @@ export interface ConversationMessage {
   content: string
   error: { code: string; message: string } | null
   job: AIJob | null
+  calendar_imports?: CalendarImportBatch[]
   created_at: string
   updated_at: string
   completed_at: string | null
@@ -120,6 +122,7 @@ export async function sendConversationMessage(
   content: string,
   responseMode: ConversationResponseMode = 'auto',
   planning?: PlanningFields,
+  importBatchId?: string,
 ) {
   return api<{
     operation_id: string
@@ -134,6 +137,7 @@ export async function sendConversationMessage(
       content,
       response_mode: responseMode,
       ...(responseMode === 'planning' ? { planning } : {}),
+      ...(importBatchId ? { import_batch_id: importBatchId } : {}),
     },
   )
 }

@@ -196,19 +196,19 @@ Run: `git add web/src/lib/calendar-imports.ts web/src/components/Calendar*.vue w
 - Create: `web/src/components/TimetableImportMessageCard.vue`
 - Test: `web/e2e/ai-timetable-import.spec.ts`
 
-- [ ] **Step 1: 写会话图片、URL 和文字导入 E2E**
+- [x] **Step 1: 写会话图片、URL 和文字导入 E2E**
 
 断言无需选择模式即可上传或发送，消息内出现导入批次，调整打开统一编辑器，确认后跳转日历可见。
 
-- [ ] **Step 2: 实现附件菜单**
+- [x] **Step 2: 实现附件菜单**
 
 使用 Element Plus 上传和下拉菜单；发送前显示可移除附件，禁止超大小或不支持类型，消息提交期间不重复上传。
 
-- [ ] **Step 3: 实现导入消息卡**
+- [x] **Step 3: 实现导入消息卡**
 
 显示来源、课程数量、需补充和重复数量；提供确认、调整、取消和“在日历查看”。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd web && pnpm build && pnpm exec playwright test e2e/ai-timetable-import.spec.ts e2e/ai-agent.spec.ts e2e/calendar-imports.spec.ts`
 

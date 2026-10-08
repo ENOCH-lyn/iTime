@@ -12,6 +12,7 @@ import {
 import type { Conversation, ConversationMessage } from '../lib/conversations'
 import AgentProposalMessageCard from './AgentProposalMessageCard.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
+import TimetableImportMessageCard from './TimetableImportMessageCard.vue'
 
 defineProps<{
   conversation: Conversation | null
@@ -42,6 +43,15 @@ function stateLabel(message: ConversationMessage) {
   if (message.status === 'timed_out') return '已超时，以上内容可能不完整'
   if (message.status === 'failed') return '生成失败，以上内容可能不完整'
   return ''
+}
+
+function timetableImportIds(message: ConversationMessage) {
+  const ids = new Set(
+    (message.calendar_imports ?? []).map(item => item.id),
+  )
+  const outputId = message.job?.output?.import_batch_id
+  if (outputId) ids.add(outputId)
+  return [...ids]
 }
 </script>
 
@@ -111,6 +121,11 @@ function stateLabel(message: ConversationMessage) {
             <ProposalMessageCard
               v-else-if="message.role === 'assistant' && message.job?.output?.proposal_id"
               :proposal-id="message.job.output.proposal_id"
+            />
+            <TimetableImportMessageCard
+              v-for="batchId in timetableImportIds(message)"
+              :key="batchId"
+              :batch-id="batchId"
             />
             <div v-if="stateLabel(message)" class="message-state"
               :class="{ failed: ['failed', 'timed_out'].includes(message.status) }"

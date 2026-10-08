@@ -122,6 +122,15 @@
 }
 
 .conversation-select > span {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.conversation-select > span > span {
   min-width: 0;
   display: grid;
 }
@@ -509,6 +518,21 @@
   gap: 8px;
 }
 
+.timetable-import-progress,
+.message-proposal-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timetable-import-card .status {
+  margin: 0;
+}
+
+.timetable-import-card .proposal-actions {
+  padding-top: 2px;
+}
+
 .message-proposal-error .text-button {
   min-height: 34px;
   padding-block: 4px;
@@ -551,6 +575,27 @@
   align-self: end;
 }
 
+.composer-attachment {
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--canvas);
+}
+
+.composer-attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .8125rem;
+}
+
 .conversation-composer > .el-textarea {
   grid-column: 1 / -1;
   width: 100%;
@@ -580,10 +625,39 @@
   gap: 16px;
 }
 
-.composer-actions > span {
+.composer-secondary-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.composer-secondary-actions > span {
   color: var(--muted);
   font-size: .75rem;
   font-variant-numeric: tabular-nums;
+}
+
+.composer-secondary-actions .el-upload {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.composer-secondary-actions .el-upload:hover {
+  background: var(--selected);
+  color: var(--accent);
+}
+
+.composer-attachment-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .8125rem;
+  font-weight: 550;
 }
 
 .composer-send {
@@ -757,6 +831,10 @@
   .message-proposal .button,
   .message-proposal .el-button {
     width: 100%;
+  }
+
+  .composer-secondary-actions {
+    gap: 8px;
   }
 
   .composer-send {

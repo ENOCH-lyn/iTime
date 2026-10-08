@@ -74,6 +74,7 @@ const pendingLogout = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const importOpen = ref(false)
+const importBatchId = ref<string | null>(null)
 const subscriptionTarget = ref<{ sourceId: string; eventId: string | null } | null>(null)
 const settingsOpen = ref(false)
 const trashOpen = ref(false)
@@ -233,7 +234,11 @@ onMounted(async () => {
   const eventId = typeof route.query.event === 'string'
     ? route.query.event
     : null
-  if (sourceId) await openSubscription(sourceId, eventId)
+  const requestedImport = typeof route.query.import === 'string'
+    ? route.query.import
+    : null
+  if (requestedImport) await openImport(requestedImport)
+  else if (sourceId) await openSubscription(sourceId, eventId)
 })
 
 useSyncRefresh(
@@ -444,10 +449,11 @@ function openCreate() {
   seriesOpen.value = true
 }
 
-async function openImport() {
+async function openImport(batchId?: string) {
   importOpener = document.activeElement instanceof HTMLElement
     ? document.activeElement
     : null
+  importBatchId.value = typeof batchId === 'string' ? batchId : null
   subscriptionTarget.value = null
   importOpen.value = false
   await nextTick()
@@ -458,7 +464,13 @@ async function closeImport() {
   const opener = importOpener
   importOpener = null
   importOpen.value = false
+  importBatchId.value = null
   subscriptionTarget.value = null
+  if (typeof route.query.import === 'string') {
+    const query = { ...route.query }
+    delete query.import
+    await router.replace({ path: '/calendar', query })
+  }
   await nextTick()
   if (opener?.isConnected && opener.offsetParent !== null) {
     opener.focus()
@@ -474,6 +486,7 @@ async function openTrash() {
     ? document.activeElement
     : null
   importOpen.value = false
+  importBatchId.value = null
   subscriptionTarget.value = null
   settingsOpen.value = false
   seriesOpen.value = false
@@ -510,6 +523,7 @@ async function openSubscription(sourceId: string, eventId: string | null) {
     ? document.activeElement
     : null
   subscriptionTarget.value = { sourceId, eventId }
+  importBatchId.value = null
   importOpen.value = false
   await nextTick()
   importOpen.value = true
@@ -725,6 +739,7 @@ watch(pageError, value => {
       :terms="terms"
       :time-zone="settings?.time_zone ?? browserTimeZone"
       :initial-date="anchor"
+      :initial-batch-id="importBatchId"
       :subscription-target="subscriptionTarget"
       @close="closeImport"
       @changed="onCalendarChanged"

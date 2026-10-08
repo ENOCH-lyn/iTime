@@ -17,6 +17,10 @@ import {
 } from '../lib/auth'
 import { cancelAIJob } from '../lib/ai-jobs'
 import {
+  createAIImport,
+  uploadCalendarFile,
+} from '../lib/calendar-imports'
+import {
   createConversation,
   getConversation,
   jobEventsUrl,
@@ -42,6 +46,7 @@ const selected = ref<Conversation | null>(null)
 const messages = ref<ConversationMessage[]>([])
 const olderCursor = ref<number | null>(null)
 const composer = ref('')
+const composerAttachment = ref<File | null>(null)
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const loadingOlder = ref(false)
@@ -65,6 +70,7 @@ let recoveryTimer = 0
 let recoveryDelay = 1000
 let createOperation = ''
 let sendOperation: { id: string; fingerprint: string } | null = null
+let attachmentOperation: { id: string; fingerprint: string } | null = null
 let updateOperation: { id: string; fingerprint: string } | null = null
 
 const activeJob = computed(() => selected.value?.active_job ?? null)
@@ -274,6 +280,8 @@ async function syncCurrent(silent = false) {
 async function selectConversation(conversation: Conversation) {
   if (selected.value?.id === conversation.id) return
   stopEvents()
+  composerAttachment.value = null
+  attachmentOperation = null
   selected.value = conversation
   messages.value = []
   olderCursor.value = null
@@ -459,29 +467,62 @@ async function loadOlder() {
 
 async function send() {
   if (!selected.value || sending.value || composerDisabled.value) return
-  const content = composer.value.trim()
+  const attachment = composerAttachment.value
+  const content = composer.value.trim() || (
+    attachment?.type.startsWith('image/')
+      ? '请识别这张课表并生成导入候选。'
+      : '请把这个课表文件整理成可确认的日历候选。'
+  )
   if (!content) return
-  const fingerprint = JSON.stringify({
-    conversation: selected.value.id,
-    version: selected.value.version,
-    content,
-    response_mode: 'auto',
-  })
-  sendOperation = sendOperation?.fingerprint === fingerprint
-    ? sendOperation
-    : { id: crypto.randomUUID(), fingerprint }
   sending.value = true
   error.value = null
   success.value = ''
   try {
+    let importBatchId: string | undefined
+    if (attachment) {
+      const attachmentFingerprint = [
+        selected.value.id,
+        attachment.name,
+        attachment.size,
+        attachment.lastModified,
+      ].join(':')
+      attachmentOperation = attachmentOperation?.fingerprint === attachmentFingerprint
+        ? attachmentOperation
+        : { id: crypto.randomUUID(), fingerprint: attachmentFingerprint }
+      const imported = attachment.type.startsWith('image/')
+        ? await createAIImport(
+            {
+              sourceType: 'image',
+              file: attachment,
+              conversationId: selected.value.id,
+            },
+            attachmentOperation.id,
+          )
+        : await uploadCalendarFile(attachment, attachmentOperation.id)
+      importBatchId = imported.batch.id
+    }
+    const fingerprint = JSON.stringify({
+      conversation: selected.value.id,
+      version: selected.value.version,
+      content,
+      response_mode: 'auto',
+      import_batch_id: importBatchId,
+    })
+    sendOperation = sendOperation?.fingerprint === fingerprint
+      ? sendOperation
+      : { id: crypto.randomUUID(), fingerprint }
     const result = await sendConversationMessage(
       selected.value,
       sendOperation.id,
       content,
       'auto',
+      undefined,
+      importBatchId,
     )
     sendOperation = null
+    attachmentOperation = null
     composer.value = ''
+    composerAttachment.value = null
     selected.value = result.conversation
     mergeConversation(result.conversation)
     const known = new Set(messages.value.map(message => message.id))
@@ -505,7 +546,9 @@ async function send() {
       )
       if (latestUser?.content === content) {
         sendOperation = null
+        attachmentOperation = null
         composer.value = ''
+        composerAttachment.value = null
       }
     }
   } finally {
@@ -548,6 +591,8 @@ async function scrollToLatest() {
 }
 
 async function mobileBack() {
+  composerAttachment.value = null
+  attachmentOperation = null
   selected.value = null
   messages.value = []
   eventGeneration = 0
@@ -563,6 +608,10 @@ function recoverOnFocus() {
   }
   if (selected.value) void syncCurrent(true)
   else void loadConversationList()
+}
+
+function invalidAttachment(message: string) {
+  error.value = localFailure(message)
 }
 
 async function logout() {
@@ -633,12 +682,14 @@ async function logout() {
       <ConversationComposer
         v-if="selected"
         v-model="composer"
+        v-model:attachment="composerAttachment"
         :pending="sending"
         :disabled="composerDisabled"
         :archived="selected.archived"
         :ai-frozen="identity?.user.ai_access === 'frozen'"
         :active="!!activeJob"
         @submit="send"
+        @invalid-attachment="invalidAttachment"
       />
     </main>
 

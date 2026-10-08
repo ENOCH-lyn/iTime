@@ -89,6 +89,7 @@ declare module 'vue' {
     TaskListPanel: typeof import('./components/TaskListPanel.vue')['default']
     TaskScheduleEditor: typeof import('./components/TaskScheduleEditor.vue')['default']
     TaskWorkspaceNavigation: typeof import('./components/TaskWorkspaceNavigation.vue')['default']
+    TimetableImportMessageCard: typeof import('./components/TimetableImportMessageCard.vue')['default']
     VoiceTranscriptionControl: typeof import('./components/VoiceTranscriptionControl.vue')['default']
   }
 }

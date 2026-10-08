@@ -311,6 +311,96 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 if isinstance(tool, dict)
             }
             if (
+                "propose_itime_timetable_import" in tool_names
+                and (
+                    "会话课表导入测试" in user_prompt
+                    or "会话课表网址测试：" in user_prompt
+                )
+            ):
+                url_test = "会话课表网址测试：" in user_prompt
+                arguments = json.dumps(
+                    {
+                        "assistant_message": "已整理为课表候选，请确认后导入。",
+                        "source_type": "public_url" if url_test else "text",
+                        "content": (
+                            user_prompt.split("会话课表网址测试：", 1)[1].strip()
+                            if url_test
+                            else (
+                                "每周一、三 08:00-09:30 上高等数学，"
+                                "地点 A101，持续到 2027-01-10。"
+                            )
+                        ),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                midpoint = len(arguments) // 2
+                events = [
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "playwright-agent-timetable",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "propose_itime_timetable_import",
+                                                "arguments": arguments[:midpoint],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {
+                                                "arguments": arguments[midpoint:],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 180,
+                            "completion_tokens": 80,
+                            "total_tokens": 260,
+                            "prompt_tokens_details": {"cached_tokens": 0},
+                        },
+                    },
+                ]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.send_header(
+                    "x-request-id",
+                    "playwright-fake-agent-timetable",
+                )
+                self.end_headers()
+                for event in events:
+                    self.wfile.write(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+                    )
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
+            if (
                 "propose_itime_task_plan" in tool_names
                 and "明天上午" in user_prompt
             ):
