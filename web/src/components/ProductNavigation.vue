@@ -54,18 +54,20 @@ watch(() => props.current, revealCurrent)
 
 <template>
   <nav ref="navigation" class="product-navigation" aria-label="产品">
-    <RouterLink
-      v-for="link in links"
-      :key="link.key"
-      :to="link.to"
-      class="nav-link"
-      :class="{ selected: current === link.key }"
-      :aria-current="current === link.key ? 'page' : undefined"
-      :aria-label="link.label"
-    >
-      <component :is="link.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-      <span class="product-label">{{ link.label }}</span>
-    </RouterLink>
+    <ElMenu class="product-menu" :default-active="links.find(link => link.key === current)?.to" router>
+      <ElMenuItem
+        v-for="link in links"
+        :key="link.key"
+        :index="link.to"
+        class="nav-link"
+        :class="{ selected: current === link.key }"
+        :aria-current="current === link.key ? 'page' : undefined"
+        :aria-label="link.label"
+      >
+        <component :is="link.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <span class="product-label">{{ link.label }}</span>
+      </ElMenuItem>
+    </ElMenu>
     <SyncStatusIndicator />
   </nav>
 </template>

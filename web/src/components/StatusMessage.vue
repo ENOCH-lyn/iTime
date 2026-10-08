@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleAlert, CircleCheck } from 'lucide-vue-next'
 import type { Failure } from '../lib/api'
 
 const props = defineProps<{ error?: Failure | null; success?: string; retryLabel?: string }>()
@@ -12,16 +11,28 @@ const saveText = computed(() => {
 </script>
 
 <template>
-  <div v-if="error" class="status error-status" role="alert" tabindex="-1">
-    <CircleAlert :size="20" aria-hidden="true" />
-    <div>
-      <p>{{ error.message }}</p>
-      <p class="status-detail">{{ saveText }}</p>
-      <p v-if="error.request_id" class="request-id">请求编号：{{ error.request_id }}</p>
-      <button v-if="retryLabel" type="button" class="text-button" @click="$emit('retry')">{{ retryLabel }}</button>
-    </div>
-  </div>
-  <div v-else-if="success" class="status success-status" role="status">
-    <CircleCheck :size="20" aria-hidden="true" /><p>{{ success }}</p>
-  </div>
+  <ElAlert
+    v-if="error"
+    class="status error-status"
+    type="error"
+    :closable="false"
+    show-icon
+    role="alert"
+  >
+    <template #title>{{ error.message }}</template>
+    <p class="status-detail">{{ saveText }}</p>
+    <p v-if="error.request_id" class="request-id">请求编号：{{ error.request_id }}</p>
+    <ElButton v-if="retryLabel" link type="primary" @click="$emit('retry')">
+      {{ retryLabel }}
+    </ElButton>
+  </ElAlert>
+  <ElAlert
+    v-else-if="success"
+    class="status success-status"
+    type="success"
+    :closable="false"
+    show-icon
+    role="status"
+    :title="success"
+  />
 </template>

@@ -13,6 +13,13 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
   await mkdir(evidence, { recursive: true })
   await page.screenshot({ path: `${evidence}/${info.project.name}-${name}.png`, fullPage: true })
 }
+
+async function selectSetting(page: Page, label: string, option: string) {
+  const combobox = page.getByRole('combobox', { name: label, exact: true })
+  await combobox.focus()
+  await combobox.press('ArrowDown')
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
 async function mailLink(request: APIRequestContext, address: string, purpose = 'verify') {
   let id = ''
   await expect.poll(async () => {
@@ -294,13 +301,13 @@ test('主题、字号、键盘焦点、视口布局与无障碍检查', async ({
   await expect(page).toHaveTitle('欢迎回来 · iTime')
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
   expect(await page.locator('vite-error-overlay').count()).toBe(0)
-  await page.getByLabel('外观主题').selectOption('light')
+  await selectSetting(page, '外观主题', '浅色')
   await screenshot(page, info, 'login-light')
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '显示密码', exact: true }).click()
   await expect(page.getByLabel('密码', { exact: true })).toHaveAttribute('type', 'text')
   await page.getByRole('button', { name: '隐藏密码', exact: true }).click()
-  await page.getByLabel('外观主题').selectOption('dark')
+  await selectSetting(page, '外观主题', '深色')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await screenshot(page, info, 'login-dark')
@@ -314,8 +321,8 @@ test('主题、字号、键盘焦点、视口布局与无障碍检查', async ({
     await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
-  await page.getByLabel('字号', { exact: true }).selectOption('larger')
-  await page.getByLabel('外观主题').selectOption('system')
+  await selectSetting(page, '字号', '更大')
+  await selectSetting(page, '外观主题', '跟随系统')
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.reload()

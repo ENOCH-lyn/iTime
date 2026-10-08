@@ -45,15 +45,17 @@ const count = computed(() =>
 </script>
 
 <template>
-  <RouterLink
-    to="/account/sync"
-    class="sync-status-indicator"
-    :class="{ spinning: syncStatus.phase === 'connecting' }"
-    :aria-label="label"
-    :title="label"
-    :data-state="syncStatus.phase"
-  >
-    <component :is="icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-    <span v-if="count" class="sync-status-count" aria-hidden="true">{{ count > 99 ? '99+' : count }}</span>
-  </RouterLink>
+  <ElTooltip :content="label" placement="right">
+    <ElBadge :value="count > 99 ? '99+' : count" :hidden="!count" :max="99">
+      <RouterLink
+        to="/account/sync"
+        class="sync-status-indicator"
+        :class="{ spinning: syncStatus.phase === 'connecting' }"
+        :aria-label="label"
+        :data-state="syncStatus.phase"
+      >
+        <component :is="icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+      </RouterLink>
+    </ElBadge>
+  </ElTooltip>
 </template>

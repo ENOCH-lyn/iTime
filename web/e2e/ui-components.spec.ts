@@ -18,6 +18,8 @@ test('Element Plus 根配置在所有视口生效', async ({ page }) => {
 
   await expect(page.locator('[data-ui-library="element-plus"]')).toBeVisible()
   await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible()
+  await expect(page.locator('.el-input')).toHaveCount(2)
+  await expect(page.locator('.appearance-compact .el-select')).toBeVisible()
   const theme = await page.evaluate(() => {
     const styles = getComputedStyle(document.documentElement)
     return {
