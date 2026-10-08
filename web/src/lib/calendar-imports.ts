@@ -1,13 +1,30 @@
-import { api, uploadApi } from './api'
+import { api, uploadApi, uploadFormApi } from './api'
+import {
+  cancelAIJob,
+  getAIJob,
+  type AIJob,
+} from './ai-jobs'
 import type { CalendarWriteResult, SeriesDraft } from './calendar'
 
-export type ImportFormat = 'xlsx' | 'ics' | 'screenshot'
-export type ImportState = 'ready' | 'partially_confirmed' | 'completed' | 'expired'
+export type ImportSourceType =
+  | 'xlsx_file'
+  | 'ics_file'
+  | 'image'
+  | 'public_url'
+  | 'text'
+export type ImportState =
+  | 'queued'
+  | 'processing'
+  | 'needs_review'
+  | 'confirmed'
+  | 'cancelled'
+  | 'failed'
+  | 'expired'
 export type CandidateState = 'valid' | 'invalid' | 'duplicate' | 'confirmed' | 'skipped'
 
 export interface CalendarSource {
   id: string
-  kind: 'excel_file' | 'ics_file' | 'screenshot'
+  kind: 'excel_file' | 'ics_file' | 'image' | 'public_url' | 'text'
   name: string
   version: number
   created_at: string
@@ -25,11 +42,18 @@ export interface ImportCounts {
 export interface CalendarImportBatch {
   id: string
   source: CalendarSource
-  format: ImportFormat
+  format: ImportSourceType
+  source_type: ImportSourceType
+  source_display: string | null
   filename: string
   state: ImportState
   candidate_count: number
   counts: ImportCounts
+  input_summary: Record<string, unknown>
+  conversation_id: string | null
+  message_id: string | null
+  job_id: string | null
+  error: { code: string; message: string } | null
   version: number
   expires_at: string
   created_at: string
@@ -80,6 +104,33 @@ export interface ImportOutcome {
   conflicts?: CalendarWriteResult['conflicts']
 }
 
+export interface CalendarAIImportJob extends AIJob {
+  capability: 'calendar_screenshot'
+  input_summary: Record<string, unknown> & {
+    source_type: 'image' | 'public_url' | 'text'
+    batch_id: string
+  }
+  output: {
+    resource_type: 'calendar_import_batch'
+    batch_id: string
+    candidate_count: number
+  } | null
+}
+
+export type CalendarAIImportInput =
+  | {
+      sourceType: 'image'
+      file: File
+      conversationId?: string
+      messageId?: string
+    }
+  | {
+      sourceType: 'public_url' | 'text'
+      content: string
+      conversationId?: string
+      messageId?: string
+    }
+
 export async function listCalendarImports() {
   return (await api<{
     items: CalendarImportBatch[]
@@ -100,6 +151,57 @@ export async function uploadCalendarFile(
     operation_id: string
     batch: CalendarImportBatch
   }>(`/calendar/imports/files?${params}`, file, operationId)
+}
+
+export async function createAIImport(
+  input: CalendarAIImportInput,
+  operationId: string = crypto.randomUUID(),
+) {
+  if (input.sourceType === 'image') {
+    const form = new FormData()
+    form.set('source_type', 'image')
+    form.set('file', input.file, input.file.name)
+    if (input.conversationId) form.set('conversation_id', input.conversationId)
+    if (input.messageId) form.set('message_id', input.messageId)
+    return uploadFormApi<{
+      operation_id: string
+      batch: CalendarImportBatch
+      job: CalendarAIImportJob
+    }>('/calendar/imports/ai', form, operationId, {
+      timeoutMs: 30_000,
+      timeoutMessage: '图片上传超时，请检查导入记录后重试。',
+      networkMessage: '无法上传图片。请检查网络后重试。',
+    })
+  }
+  return api<{
+    operation_id: string
+    batch: CalendarImportBatch
+    job: CalendarAIImportJob
+  }>(
+    '/calendar/imports/ai',
+    {
+      source_type: input.sourceType,
+      content: input.content,
+      ...(input.conversationId
+        ? { conversation_id: input.conversationId }
+        : {}),
+      ...(input.messageId ? { message_id: input.messageId } : {}),
+    },
+    'POST',
+    30_000,
+    { 'X-Operation-ID': operationId },
+  )
+}
+
+export async function getCalendarImportJob(id: string) {
+  return getAIJob(id) as Promise<CalendarAIImportJob>
+}
+
+export async function cancelCalendarImportJob(
+  id: string,
+  operationId: string = crypto.randomUUID(),
+) {
+  return cancelAIJob<CalendarAIImportJob>(id, operationId)
 }
 
 export async function updateImportCandidate(

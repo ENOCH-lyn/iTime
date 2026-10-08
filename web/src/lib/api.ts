@@ -36,6 +36,7 @@ export async function api<T>(
   body?: unknown,
   method = body === undefined ? 'GET' : 'POST',
   timeoutMs = 15_000,
+  additionalHeaders: Record<string, string> = {},
 ): Promise<T> {
   const requestId = crypto.randomUUID()
   const csrfToken = path.startsWith('/admin/') ? adminCsrf : csrf
@@ -49,6 +50,7 @@ export async function api<T>(
         'X-Request-ID': requestId,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(method === 'GET' || !csrfToken ? {} : { 'X-CSRF-Token': csrfToken }),
+        ...additionalHeaders,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
@@ -154,6 +156,73 @@ export async function uploadApi<T>(
         : externallyAborted
           ? '上传已停止，请先检查服务端状态。'
           : (options.networkMessage ?? '无法连接服务。文件尚未确认导入，请检查网络后重试。'),
+      request_id: requestId,
+      saved: 'unknown',
+      retryable: true,
+    })
+  } finally {
+    window.clearTimeout(timer)
+    options.signal?.removeEventListener('abort', externalAbort)
+  }
+}
+
+export async function uploadFormApi<T>(
+  path: string,
+  form: FormData,
+  operationId: string,
+  options: UploadApiOptions = {},
+): Promise<T> {
+  const requestId = crypto.randomUUID()
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, options.timeoutMs ?? 30_000)
+  const externalAbort = () => controller.abort()
+  if (options.signal?.aborted) controller.abort()
+  else options.signal?.addEventListener('abort', externalAbort, { once: true })
+  try {
+    const response = await fetch(`/api/v1${path}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'X-CSRF-Token': csrf,
+        'X-Operation-ID': operationId,
+        'X-Request-ID': requestId,
+      },
+      body: form,
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) {
+      if (result?.error?.message) throw new ApiError(result.error, response.status)
+      throw new ApiError({
+        code: 'service_unavailable',
+        message: '服务暂时不可用，请稍后重试。',
+        request_id: response.headers.get('X-Request-ID') ?? requestId,
+        saved: 'unknown',
+        retryable: true,
+      }, response.status)
+    }
+    if (result === null) throw new Error('invalid_response')
+    for (const observer of mutationObservers) observer(path, 'POST')
+    return result as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    const externallyAborted = options.signal?.aborted && !timedOut
+    throw new ApiError({
+      code: timedOut
+        ? 'request_timeout'
+        : externallyAborted
+          ? 'request_cancelled'
+          : 'network_error',
+      message: timedOut
+        ? (options.timeoutMessage ?? '文件上传超时，请检查当前状态后重试。')
+        : externallyAborted
+          ? '上传已停止，请先检查服务端状态。'
+          : (options.networkMessage ?? '无法连接服务。请检查网络后重试。'),
       request_id: requestId,
       saved: 'unknown',
       retryable: true,

@@ -1,4 +1,4 @@
-import { api, uploadApi } from './api'
+import { api } from './api'
 
 export type AIJobStatus =
   | 'queued'
@@ -30,6 +30,9 @@ export interface AIJob {
     report_id?: string
     review_session_id?: string
     transcription_id?: string
+    import_batch_id?: string
+    import_job_id?: string
+    import_error?: { code: string; message: string }
     version?: number
   } | null
   error: { code: string; message: string } | null
@@ -41,42 +44,6 @@ export interface AIJob {
   created_at: string
   updated_at: string
   finished_at: string | null
-}
-
-export interface CalendarScreenshotJob extends AIJob {
-  capability: 'calendar_screenshot'
-  input_summary: Record<string, unknown> & {
-    filename: string
-    content_type: string
-    byte_size: number
-    width: number
-    height: number
-    content_sha256: string
-  }
-  output: {
-    resource_type: 'calendar_import_batch'
-    batch_id: string
-    candidate_count: number
-  } | null
-}
-
-export async function uploadCalendarScreenshot(
-  file: File,
-  operationId: string,
-) {
-  const params = new URLSearchParams({ filename: file.name })
-  return uploadApi<{ operation_id: string; job: CalendarScreenshotJob }>(
-    `/calendar/imports/screenshots?${params}`,
-    file,
-    operationId,
-  )
-}
-
-export async function listScreenshotJobs() {
-  return (await api<{
-    items: CalendarScreenshotJob[]
-    next_cursor: { before_time: string; before_id: string } | null
-  }>('/ai/jobs?capability=calendar_screenshot&limit=20')).items
 }
 
 export async function getAIJob(id: string) {

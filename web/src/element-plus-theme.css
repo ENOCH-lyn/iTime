@@ -6,6 +6,8 @@
   --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, white);
   --el-color-primary-light-9: var(--selected);
   --el-color-primary-dark-2: var(--accent-hover);
+  --el-color-success: var(--accent);
+  --el-color-success-light-9: var(--selected);
   --el-color-danger: var(--error);
   --el-color-danger-light-9: var(--error-bg);
   --el-color-warning: var(--notice-text);

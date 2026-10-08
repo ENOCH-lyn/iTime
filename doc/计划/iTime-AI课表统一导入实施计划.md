@@ -167,19 +167,19 @@ Run: `git add server/src/itime/ai server/tests/test_agent_timetable_import.py &&
 - Modify: `web/src/pages/CalendarPage.vue`
 - Test: `web/e2e/calendar-imports.spec.ts`
 
-- [ ] **Step 1: 写图片、网址和文字入口 E2E**
+- [x] **Step 1: 写图片、网址和文字入口 E2E**
 
 从日历打开导入，分别提交三类来源，断言处理状态、候选编辑、确认结果、恢复和终态只读。
 
-- [ ] **Step 2: 实现统一来源切换**
+- [x] **Step 2: 实现统一来源切换**
 
 使用 `ElSegmented`、`ElUpload`、`ElInput`、`ElDialog`/`ElDrawer`；XLSX/ICS 保留确定性上传，图片/网址/文字调用统一 AI API。
 
-- [ ] **Step 3: 复用候选编辑器**
+- [x] **Step 3: 复用候选编辑器**
 
 所有来源进入 `CalendarImportCandidateEditor`，统一有效、需补充、无效、重复、确认和跳过状态。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd web && pnpm build && pnpm exec playwright test e2e/calendar-imports.spec.ts`
 

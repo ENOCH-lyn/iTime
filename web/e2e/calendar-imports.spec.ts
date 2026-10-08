@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 const password = 'Valid-calendar-import-ui-password-123'
 const evidence = '/tmp/itime-ui-evidence'
@@ -65,8 +65,20 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
   await expect(page).toHaveURL('/calendar')
+}
+
+async function bootstrap(info: TestInfo) {
+  const path = process.env.ITIME_E2E_BOOTSTRAP_FILE
+  if (!path) throw new Error('missing ITIME_E2E_BOOTSTRAP_FILE')
+  const values = JSON.parse(await readFile(path, 'utf8')) as {
+    project: string
+    calendar_origin: string
+  }[]
+  const value = values.find(item => item.project === info.project.name)
+  if (!value) throw new Error(`missing bootstrap for ${info.project.name}`)
+  return value
 }
 
 async function csrf(page: Page) {
@@ -110,7 +122,7 @@ test('下载 Excel 模板、上传候选、确认后进入日历并识别重复'
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '导入日历' })
   await expect(dialog).toBeVisible()
-  await dialog.locator('input[type=file]').setInputFiles(templatePath)
+  await dialog.locator('.import-file-source input[type=file]').setInputFiles(templatePath)
   await dialog.getByRole('button', { name: '读取候选', exact: true }).click()
   await expect(dialog.getByText('已读取 1 条候选，尚未写入日历。')).toBeVisible()
   await expect(dialog.getByText('高等数学', { exact: true })).toBeVisible()
@@ -132,7 +144,7 @@ test('下载 Excel 模板、上传候选、确认后进入日历并识别重复'
 
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   await expect(dialog).toBeVisible()
-  await dialog.locator('input[type=file]').setInputFiles(templatePath)
+  await dialog.locator('.import-file-source input[type=file]').setInputFiles(templatePath)
   await dialog.getByRole('button', { name: '读取候选', exact: true }).click()
   await expect(dialog.getByText('此安排已经导入，不会重复创建。')).toBeVisible()
   await expect(dialog.getByText('已存在', { exact: true })).toBeVisible()
@@ -175,7 +187,7 @@ test('ICS 部分错误可校对后确认，并展示候选间时间冲突', asyn
   await account(page, request)
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '导入日历' })
-  await dialog.locator('input[type=file]').setInputFiles(icsPath)
+  await dialog.locator('.import-file-source input[type=file]').setInputFiles(icsPath)
   await dialog.getByRole('button', { name: '读取候选', exact: true }).click()
   await expect(dialog.getByText('1 条可确认 · 1 条需校对')).toBeVisible()
   await expect(dialog.getByText('暂不支持带序号的 BYDAY 规则。'))
@@ -285,7 +297,7 @@ test('ICS 部分错误可校对后确认，并展示候选间时间冲突', asyn
   }
 })
 
-test('截图后台识别可离开后恢复并校对确认', async ({
+test('图片后台识别可离开后恢复并校对确认', async ({
   page,
   request,
 }, info) => {
@@ -294,20 +306,19 @@ test('截图后台识别可离开后恢复并校对确认', async ({
   await account(page, request)
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   let dialog = page.getByRole('dialog', { name: '导入日历' })
-  await dialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
-  await dialog.locator('.import-screenshot input[type=file]').setInputFiles(imagePath)
-  await dialog.getByRole('button', { name: '开始识别', exact: true }).click()
-  await expect(dialog.getByText('截图已提交，离开此页面也会继续识别。')).toBeVisible()
+  await dialog.locator('.import-mode-switch').getByText('图片', { exact: true }).click()
+  await dialog.locator('.import-image-source input[type=file]').setInputFiles(imagePath)
+  await dialog.getByRole('button', { name: '生成候选', exact: true }).click()
+  await expect(dialog.getByText('已提交，处理完成后可校对。')).toBeVisible()
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
   await expect(dialog).toBeHidden()
 
   await page.waitForTimeout(1200)
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   dialog = page.getByRole('dialog', { name: '导入日历' })
-  await dialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
   await expect(dialog.getByText('高等数学', { exact: true })).toBeVisible()
   await expect(dialog.getByText('可确认', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('等待校对', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('待确认', { exact: true }).first()).toBeVisible()
   await dialog.getByRole('button', { name: '确认选中 1 条', exact: true }).click()
   await expect(dialog.getByText('导入 1 条')).toBeVisible()
   await expect(dialog.getByText('已完成', { exact: true }).first()).toBeVisible()
@@ -331,11 +342,50 @@ test('截图后台识别可离开后恢复并校对确认', async ({
     await page.reload()
     await page.getByRole('button', { name: '导入日历', exact: true }).click()
     const narrowDialog = page.getByRole('dialog', { name: '导入日历' })
-    await narrowDialog.locator('.import-mode-switch label').filter({ hasText: '截图识别' }).click()
-    await expect(narrowDialog.getByText('等待校对', { exact: true })).toBeVisible()
+    await expect(narrowDialog.getByText('已完成', { exact: true }).first()).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       .toBe(true)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await screenshot(page, info, 'screenshot-320-large-font')
   }
+})
+
+test('文字描述和受控网页进入同一候选确认流', async ({
+  page,
+  request,
+}, info) => {
+  const runtime = await bootstrap(info)
+  await account(page, request)
+  await page.getByRole('button', { name: '导入日历', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '导入日历' })
+
+  await dialog.locator('.import-mode-switch').getByText('文字', { exact: true }).click()
+  await dialog.getByLabel('课表文字描述').fill(
+    '每周一 09:00–10:00 上高等数学，地点 A101，持续到 2026 年 12 月。',
+  )
+  await dialog.getByRole('button', { name: '生成候选', exact: true }).click()
+  await expect(dialog.getByText('已提交，处理完成后可校对。')).toBeVisible()
+  await expect(dialog.getByText('高等数学', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(dialog.getByText('可确认', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: /确认选中 1 条/ }).click()
+  await expect(dialog.getByText('导入 1 条')).toBeVisible()
+
+  await dialog.locator('.import-mode-switch').getByText('网址', { exact: true }).click()
+  await dialog.getByLabel('公开课表网址').fill(
+    `${runtime.calendar_origin}/calendar/${randomUUID()}/public.ics`,
+  )
+  await dialog.getByRole('button', { name: '生成候选', exact: true }).click()
+  await expect(dialog.getByText('已提交，处理完成后可校对。')).toBeVisible()
+  await expect(dialog.getByText('订阅课程', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(dialog.getByText('可确认', { exact: true })).toBeVisible()
+
+  expect((await new AxeBuilder({ page }).include('.calendar-import-dialog').analyze()).violations)
+    .toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'text-and-public-url')
 })

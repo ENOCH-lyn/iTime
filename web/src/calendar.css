@@ -879,51 +879,55 @@
   height: 36px;
 }
 
-.calendar-import-dialog {
-  width: min(980px, calc(100vw - 32px));
+.calendar-import-dialog.el-dialog {
   max-width: 980px;
   max-height: calc(100dvh - 32px);
   padding: 0;
-  contain: paint;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.calendar-import-dialog .el-dialog__header {
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-import-dialog .el-dialog__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 28px;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
-.calendar-import-dialog > section,
-.calendar-import-dialog > .status,
-.calendar-import-dialog > .dialog-actions {
-  margin-inline: 28px;
+.calendar-import-dialog .el-dialog__footer {
+  flex: 0 0 auto;
+  padding: 14px 28px max(18px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
 }
 
 .import-dialog-heading {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  align-items: flex-start;
-  padding: 24px 28px 18px;
-  margin: 0;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  backdrop-filter: blur(12px);
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 54px 18px 28px;
 }
 
-.import-dialog-heading > div {
-  min-width: 0;
-  flex: 1;
+.import-dialog-heading h2 {
+  font-size: 1.125rem;
 }
 
-.import-close {
-  margin: -8px -8px 0 auto;
+.calendar-import-dialog .el-dialog__body > .status {
+  margin: 20px 0 0;
 }
 
-.calendar-import-dialog > .status {
+.calendar-import-dialog .import-mode-switch {
+  width: min(100%, 480px);
   margin-top: 20px;
-  margin-bottom: 0;
-}
-
-.import-mode-switch {
-  max-width: 360px;
-  margin: 20px 28px 0;
 }
 
 .calendar-import-dialog .success-status p,
@@ -932,17 +936,17 @@
   color: currentColor;
 }
 
-.import-upload,
-.import-screenshot,
+.import-source,
+.import-processing,
 .import-history,
 .import-review {
   padding-block: 24px;
   border-bottom: 1px solid var(--border);
 }
 
-.import-upload,
+.import-source-heading,
 .import-section-heading,
-.import-upload-actions,
+.import-source-actions,
 .import-selection-bar,
 .import-confirm-bar,
 .import-editor-heading,
@@ -953,12 +957,14 @@
   gap: 12px;
 }
 
-.import-upload h3,
+.import-source h3,
+.import-processing h3,
 .import-section-heading h3 {
   font-size: .9375rem;
 }
 
-.import-upload p,
+.import-source p,
+.import-processing p,
 .import-section-heading p,
 .import-selection-bar,
 .import-confirm-bar,
@@ -969,104 +975,100 @@
   font-size: .75rem;
 }
 
-.import-upload-actions {
-  justify-content: flex-end;
-  flex-wrap: wrap;
+.import-source-heading {
+  align-items: flex-start;
+  margin-bottom: 16px;
 }
 
-.screenshot-upload-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.screenshot-loading {
-  margin-top: 16px;
-  font-size: .8125rem;
-}
-
-.screenshot-job-list {
-  display: grid;
-  gap: 0;
-  padding: 0;
-  margin: 18px 0 0;
-  list-style: none;
-  border-top: 1px solid var(--border);
-}
-
-.screenshot-job-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.screenshot-job-copy {
+.import-source-heading > div {
   min-width: 0;
-  flex: 1;
 }
 
-.screenshot-job-copy strong {
-  overflow-wrap: anywhere;
-  font-size: .8125rem;
-}
-
-.screenshot-job-copy > p {
+.import-source-heading p {
   margin-top: 4px;
-  color: var(--muted);
-  font-size: .75rem;
 }
 
-.screenshot-job-copy .import-candidate-error {
-  color: var(--error);
+.import-upload-control {
+  width: 100%;
 }
 
-.state-label[data-state="queued"],
-.state-label[data-state="running"] {
-  color: var(--notice-text);
-  border-color: var(--notice-border);
+.import-file-source .el-upload {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
 }
 
-.state-label[data-state="succeeded"] {
-  color: var(--accent);
+.import-file-source .el-upload:hover {
   border-color: var(--accent);
+  color: var(--accent);
 }
 
-.state-label[data-state="failed"],
-.state-label[data-state="timed_out"],
-.state-label[data-state="cancelled"] {
-  color: var(--error);
-  border-color: var(--error-border);
+.import-upload-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 550;
 }
 
-.import-file-button {
-  position: relative;
-  max-width: 260px;
+.import-upload-control .el-upload-dragger {
+  min-height: 126px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border-radius: 7px;
 }
 
-.import-file-button > span {
+.import-selected-file {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.import-selected-file > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.import-file-button input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.import-source-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
-.import-file-button:has(input:focus-visible) {
-  outline: 3px solid var(--focus);
-  outline-offset: 4px;
+.import-processing {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.import-processing > svg {
+  color: var(--accent);
+}
+
+.import-processing > div {
+  min-width: 0;
+}
+
+.import-processing p {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.import-processing .el-button {
+  min-height: 40px;
 }
 
 .import-section-heading {
@@ -1080,14 +1082,12 @@
   gap: 8px;
 }
 
-.import-history-list > button {
+.import-history-list > .el-button {
   min-width: 0;
   min-height: 58px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  height: auto;
   padding: 9px 10px;
+  margin: 0;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface);
@@ -1095,16 +1095,25 @@
   text-align: left;
 }
 
-.import-history-list > button:hover,
-.import-history-list > button.selected {
+.import-history-list > .el-button > span {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-history-list > .el-button:hover,
+.import-history-list > .el-button.selected {
   background: var(--selected);
 }
 
-.import-history-list > button.selected small {
+.import-history-list > .el-button.selected small {
   color: var(--text);
 }
 
-.import-history-list > button > span:not(.state-label) {
+.import-history-copy {
   min-width: 0;
 }
 
@@ -1122,26 +1131,31 @@
 
 .state-label[data-state="valid"],
 .state-label[data-state="confirmed"],
-.state-label[data-state="completed"] {
+.state-label[data-state="succeeded"] {
   color: var(--accent);
   border-color: var(--accent);
 }
 
 .state-label[data-state="invalid"],
-.state-label[data-state="expired"] {
+.state-label[data-state="expired"],
+.state-label[data-state="failed"],
+.state-label[data-state="timed_out"],
+.state-label[data-state="cancelled"] {
   color: var(--error);
   border-color: var(--error-border);
 }
 
 .state-label[data-state="duplicate"],
-.state-label[data-state="ready"],
-.state-label[data-state="partially_confirmed"] {
+.state-label[data-state="queued"],
+.state-label[data-state="running"],
+.state-label[data-state="processing"],
+.state-label[data-state="needs_review"] {
   color: var(--notice-text);
   border-color: var(--notice-border);
 }
 
 .import-outcome,
-.import-complete-note {
+.import-terminal-note {
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -1151,6 +1165,18 @@
   background: var(--selected);
   color: var(--accent);
   font-size: .8125rem;
+}
+
+.import-terminal-note {
+  color: var(--muted);
+  border-left-color: var(--border);
+  background: var(--canvas);
+}
+
+.import-terminal-note.error-status {
+  color: var(--error);
+  border-left-color: var(--error);
+  background: var(--error-bg);
 }
 
 .import-selection-bar {
@@ -1203,22 +1229,11 @@
   place-items: center;
   width: 28px;
   height: 36px;
-}
-
-.import-candidate-select input {
-  width: 18px;
-  min-height: 18px;
-  height: 18px;
-  padding: 0;
   margin: 0;
-  accent-color: var(--accent);
 }
 
-.calendar-import-dialog .checkbox-label input {
-  width: 18px;
-  min-height: 18px;
-  height: 18px;
-  padding: 0;
+.import-candidate-select .el-checkbox__label {
+  display: none;
 }
 
 .import-candidate-copy {
@@ -1328,15 +1343,6 @@
   min-height: 42px;
   padding: 8px 14px;
   font-size: .8125rem;
-}
-
-.import-dialog-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  padding: 16px 0 24px;
-  margin-top: 0;
-  background: var(--surface);
 }
 
 @media (max-width: 1180px) {
@@ -1529,43 +1535,26 @@
     padding-inline: 16px;
   }
 
-  .calendar-import-dialog {
-    width: 100vw;
+  .calendar-import-dialog.el-dialog {
+    width: 100vw !important;
     max-width: none;
     max-height: 100dvh;
     height: 100dvh;
+    margin: 0 !important;
     border: 0;
     border-radius: 0;
   }
 
-  .calendar-import-dialog > section,
-  .calendar-import-dialog > .status,
-  .calendar-import-dialog > .dialog-actions {
-    margin-inline: 18px;
-  }
-
-  .import-mode-switch {
-    margin-inline: 18px;
-  }
-
-  .import-dialog-heading {
+  .calendar-import-dialog .el-dialog__body {
     padding-inline: 18px;
   }
 
-  .import-upload {
-    display: grid;
+  .calendar-import-dialog .el-dialog__footer {
+    padding-inline: 18px;
   }
 
-  .import-upload-actions {
-    justify-content: stretch;
-  }
-
-  .import-upload-actions .button {
-    flex: 1 1 160px;
-  }
-
-  .screenshot-upload-actions .button {
-    flex: 1 1 180px;
+  .import-dialog-heading {
+    padding-inline: 18px 54px;
   }
 
   .import-history-list {
@@ -1836,12 +1825,26 @@
     flex: 1 1 130px;
   }
 
-  .screenshot-job-list li {
+  .calendar-import-dialog .import-mode-switch {
+    width: 100%;
+  }
+
+  .import-source-heading {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .screenshot-job-list .row-actions .button {
+  .import-source-heading .el-button,
+  .import-source-actions .el-button {
+    width: 100%;
+  }
+
+  .import-processing {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .import-processing .el-button {
+    grid-column: 1 / -1;
     width: 100%;
   }
 }
