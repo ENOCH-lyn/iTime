@@ -47,7 +47,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page).toHaveTitle('AI 对话 · iTime')
 }
 
-async function planningSetup(page: Page) {
+async function agentSetup(page: Page) {
   const sessionResponse = await page.request.get('/api/v1/auth/me')
   expect(sessionResponse.ok()).toBeTruthy()
   const session = await sessionResponse.json()
@@ -64,25 +64,10 @@ async function planningSetup(page: Page) {
     },
   })
   expect(saved.ok()).toBeTruthy()
-  const task = await page.request.post('/api/v1/tasks', {
-    headers: { 'X-CSRF-Token': session.csrf_token },
-    data: {
-      operation_id: randomUUID(),
-      title: '完成对话规划任务',
-      description: '从 AI 对话生成结构化规划提案。',
-      project_id: null,
-      estimated_minutes: 60,
-      priority: 2,
-      labels: ['规划'],
-      links: [],
-      steps: [{ title: '整理范围' }, { title: '确认输出' }],
-    },
-  })
-  expect(task.ok()).toBeTruthy()
 }
 
-function futureDate(days: number) {
-  const date = new Date()
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`)
   date.setUTCDate(date.getUTCDate() + days)
   return date.toISOString().slice(0, 10)
 }
@@ -111,6 +96,11 @@ async function newConversation(page: Page) {
 
 function conversationButton(page: Page, title: string) {
   return page.locator('.conversation-select').filter({ hasText: title })
+}
+
+function conversationScope(page: Page, label: '进行中' | '已归档') {
+  return page.getByRole('radiogroup', { name: '会话范围' })
+    .getByText(label, { exact: true })
 }
 
 async function returnToConversationList(page: Page) {
@@ -166,11 +156,11 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: '归档 论文讨论' }).click()
   if ((page.viewportSize()?.width ?? 0) <= 700) {
-    await expect(page.getByRole('button', { name: '已归档', exact: true })).toBeVisible()
+    await expect(conversationScope(page, '已归档')).toBeVisible()
   } else {
     await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
   }
-  await page.getByRole('button', { name: '已归档', exact: true }).click()
+  await conversationScope(page, '已归档').click()
   await expect(conversationButton(page, '论文讨论')).toBeVisible()
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: '重新打开 论文讨论' }).click()
@@ -178,7 +168,7 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
     ? page.locator('.conversation-navigation-status')
     : page.locator('.ai-workspace-status')
   await expect(visibleStatus.getByText('会话已重新打开。')).toBeVisible()
-  await page.getByRole('button', { name: '进行中', exact: true }).click()
+  await conversationScope(page, '进行中').click()
   await conversationButton(page, '帮我整理今天的学习安排').click()
   await expect(messageList.getByText(firstPrompt, { exact: true })).toBeVisible()
   await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
@@ -206,40 +196,70 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   }
 })
 
-test('对话显式生成结构化计划并通过提案卡进入确认页', async ({
+test('自然语言生成任务计划提案并确认写入', async ({
   page,
   request,
 }, info) => {
   await account(page, request)
-  await planningSetup(page)
+  await agentSetup(page)
   await newConversation(page)
 
-  await page.locator('.composer-mode label').filter({ hasText: '生成计划' }).click()
-  await page.getByLabel('计划日期', { exact: true }).fill(futureDate(14))
-  await page.getByLabel('消息', { exact: true }).fill('请安排这项任务，并保留清晰的检查步骤。')
-  await page.getByRole('button', { name: '生成计划', exact: true }).click()
+  await expect(page.getByText('普通回复', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('生成计划', { exact: true })).toHaveCount(0)
+  await send(page, '明天上午希望学习两小时线性代数')
 
   const messageList = page.getByRole('list', { name: '会话消息' })
-  await expect(messageList.getByText('计划草案已生成。', { exact: true })).toBeVisible({
+  await expect(messageList.getByText('建议明天上午学习线性代数。', { exact: true })).toBeVisible({
     timeout: 15_000,
   })
-  const proposal = messageList.getByRole('region', { name: '规划提案' })
-  await expect(proposal.getByText('尚未写入计划', { exact: true })).toBeVisible()
-  await expect(proposal.getByText('完成对话规划任务', { exact: false })).toBeVisible()
-  await expect(messageList).not.toContainText('submit_itime_plan')
-  await screenshot(page, info, 'planning-card')
+  const proposal = messageList.getByRole('region', { name: '任务计划提案' })
+  await expect(proposal.getByText('待确认', { exact: true })).toBeVisible()
+  await expect(proposal.getByText('学习线性代数', { exact: true })).toBeVisible()
+  await expect(proposal.getByText(/09:00–11:00 · 120 分钟/)).toBeVisible()
+  await expect(proposal.getByText('上午按 09:00 开始。', { exact: true })).toBeVisible()
+  const before = await page.request.get(
+    '/api/v1/tasks?status=all&lifecycle=active&location=all&limit=50',
+  )
+  expect((await before.json()).items).toHaveLength(0)
+  await screenshot(page, info, 'agent-proposal-pending')
 
-  const destination = await proposal.getByRole('link', { name: '查看并确认' }).getAttribute('href')
-  expect(destination).toContain('/plans')
-  expect(destination).toContain('proposal=')
-  await proposal.getByRole('link', { name: '查看并确认' }).click()
-  await expect(page).toHaveURL(/\/plans\?.*proposal=/)
-  await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible()
+  await proposal.getByRole('button', { name: '确认添加', exact: true }).click()
+  await expect(proposal.getByText('已添加', { exact: true })).toBeVisible()
+  const tasks = await page.request.get(
+    '/api/v1/tasks?status=all&lifecycle=active&location=all&limit=50',
+  )
+  expect((await tasks.json()).items.map((item: { title: string }) => item.title))
+    .toContain('学习线性代数')
+
+  const calendarLink = proposal.getByRole('link', { name: '在日历中查看' })
+  const destination = await calendarLink.getAttribute('href')
+  expect(destination).toMatch(/^\/calendar\?date=\d{4}-\d{2}-\d{2}$/)
+  const targetDate = new URL(destination!, 'http://localhost').searchParams.get('date')!
+  const blocks = await page.request.get(
+    `/api/v1/planning/blocks?start=${targetDate}&end=${addDays(targetDate, 1)}`,
+  )
+  expect((await blocks.json()).items).toEqual([
+    expect.objectContaining({
+      task_title_snapshot: '学习线性代数',
+      local_starts_at: '09:00:00',
+      local_ends_at: '11:00:00',
+    }),
+  ])
+
+  await calendarLink.click()
+  await expect(page).toHaveURL(`/calendar?date=${targetDate}`)
+  const daySelector = (page.viewportSize()?.width ?? 0) <= 840
+    ? '.agenda-day'
+    : '.calendar-day'
+  const day = page.locator(daySelector).filter({
+    has: page.locator(`time[datetime="${targetDate}"]`),
+  })
+  await expect(day.getByText('学习线性代数', { exact: false })).toBeVisible()
 
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true)
-  await screenshot(page, info, 'planning-proposal')
+  await screenshot(page, info, 'agent-proposal-applied')
 })
 
 test('离开页面后作业继续并从服务端恢复完整回复', async ({
@@ -258,9 +278,9 @@ test('离开页面后作业继续并从服务端恢复完整回复', async ({
   expect(conversationId).toBeTruthy()
 
   await returnToConversationList(page)
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('link', { name: 'AI', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'AI', exact: true }).click()
   await conversationButton(page, prompt).click()
   const restoredMessages = page.getByRole('list', { name: '会话消息' })
   await expect(

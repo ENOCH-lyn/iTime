@@ -26,6 +26,7 @@ export interface AIJob {
     candidate_count?: number
     message_id?: string
     proposal_id?: string
+    proposal_kind?: string
     report_id?: string
     review_session_id?: string
     transcription_id?: string

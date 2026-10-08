@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 from contextlib import ExitStack, contextmanager
+from datetime import date, timedelta
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -291,12 +292,105 @@ class FakeAIHandler(BaseHTTPRequestHandler):
             return
         body = json.loads(raw_body)
         prompt = json.dumps(body.get("messages", []), ensure_ascii=False)
+        user_messages = [
+            message.get("content", "")
+            for message in body.get("messages", [])
+            if message.get("role") == "user"
+        ]
+        user_prompt = str(user_messages[-1] if user_messages else "")
         if body.get("stream") is True:
+            tool_choice = body.get("tool_choice")
             tool_name = (
-                body.get("tool_choice", {})
-                .get("function", {})
-                .get("name")
+                tool_choice.get("function", {}).get("name")
+                if isinstance(tool_choice, dict)
+                else None
             )
+            tool_names = {
+                tool.get("function", {}).get("name")
+                for tool in body.get("tools", [])
+                if isinstance(tool, dict)
+            }
+            if (
+                "propose_itime_task_plan" in tool_names
+                and "明天上午" in user_prompt
+            ):
+                arguments = json.dumps(
+                    {
+                        "assistant_message": "建议明天上午学习线性代数。",
+                        "task_title": "学习线性代数",
+                        "task_description": "",
+                        "estimated_minutes": 120,
+                        "local_date": (date.today() + timedelta(days=1)).isoformat(),
+                        "starts_at": "09:00:00",
+                        "ends_at": "11:00:00",
+                        "assumptions": ["上午按 09:00 开始。"],
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                midpoint = len(arguments) // 2
+                events = [
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "playwright-agent-plan",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "propose_itime_task_plan",
+                                                "arguments": arguments[:midpoint],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {
+                                                "arguments": arguments[midpoint:],
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": 180,
+                            "completion_tokens": 80,
+                            "total_tokens": 260,
+                            "prompt_tokens_details": {"cached_tokens": 0},
+                        },
+                    },
+                ]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.send_header("x-request-id", "playwright-fake-agent-plan")
+                self.end_headers()
+                for event in events:
+                    self.wfile.write(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+                    )
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                self.close_connection = True
+                return
             if tool_name == "submit_itime_plan":
                 planning_snapshot = json.loads(body["messages"][-1]["content"])[
                     "planning_snapshot"
@@ -466,12 +560,6 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
                 self.close_connection = True
                 return
-            user_messages = [
-                message.get("content", "")
-                for message in body.get("messages", [])
-                if message.get("role") == "user"
-            ]
-            user_prompt = str(user_messages[-1] if user_messages else "")
             model = str(body.get("model", ""))
             if (
                 "备用切换测试" in user_prompt

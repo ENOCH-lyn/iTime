@@ -77,6 +77,12 @@
   --el-button-active-text-color: var(--on-accent);
   --el-button-active-bg-color: var(--accent-hover);
   --el-button-active-border-color: var(--accent-hover);
+  transition: none;
+}
+
+.app-root .el-button.el-button--primary.is-link {
+  --el-button-hover-link-text-color: var(--accent-hover);
+  --el-button-active-color: var(--accent-hover);
 }
 
 .el-button:focus-visible,

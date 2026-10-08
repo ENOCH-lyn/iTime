@@ -446,15 +446,15 @@
   font-size: .875rem;
 }
 
-.message-proposal-heading span {
+.message-proposal-heading > div > span:not(.el-tag) {
   color: var(--accent);
   font-size: .6875rem;
   font-weight: 600;
 }
 
-.message-proposal-heading span[data-state="rejected"],
-.message-proposal-heading span[data-state="expired"],
-.message-proposal-heading span[data-state="conflicted"] {
+.message-proposal-heading > div > span[data-state="rejected"],
+.message-proposal-heading > div > span[data-state="expired"],
+.message-proposal-heading > div > span[data-state="conflicted"] {
   color: var(--notice-text);
 }
 
@@ -468,6 +468,11 @@
 .message-proposal > .message-proposal-tasks {
   color: var(--text);
   font-weight: 600;
+}
+
+.message-proposal > .message-proposal-assumption {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .message-proposal dl {
@@ -493,8 +498,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.message-proposal .button {
+.message-proposal .button,
+.message-proposal .el-button {
   width: fit-content;
+}
+
+.proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .message-proposal-error .text-button {
@@ -539,86 +551,25 @@
   align-self: end;
 }
 
-.composer-mode {
-  grid-column: 1 / -1;
-  width: min(320px, 100%);
-}
-
-.composer-mode label {
-  gap: 6px;
-}
-
-.composer-planning-fields {
-  grid-column: 1 / -1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(148px, 1.4fr) repeat(5, minmax(82px, 1fr));
-  align-items: end;
-  gap: 8px;
-  padding: 10px 0 4px;
-  border-top: 1px solid var(--border);
-}
-
-.composer-plan-scope {
-  min-width: 0;
-}
-
-.composer-plan-scope legend {
-  margin-bottom: 4px;
-  font-size: .6875rem;
-}
-
-.composer-plan-scope label {
-  min-width: 0;
-  min-height: 36px;
-  padding: 5px 7px;
-}
-
-.composer-plan-field {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.composer-plan-field > span {
-  color: var(--muted);
-  font-size: .6875rem;
-  font-weight: 550;
-}
-
-.composer-plan-field input,
-.composer-plan-field select {
-  width: 100%;
-  min-width: 0;
-  min-height: 38px;
-  padding: 5px 7px;
-  border: 1px solid var(--input-border);
-  border-radius: 7px;
-  background: var(--surface);
-  font-size: .75rem;
-}
-
-.composer-plan-field input:focus,
-.composer-plan-field select:focus {
-  border-color: var(--accent);
-}
-
-.conversation-composer textarea {
+.conversation-composer > .el-textarea {
   grid-column: 1 / -1;
   width: 100%;
+}
+
+.conversation-composer .el-textarea__inner {
   height: 92px;
   min-height: 92px;
   max-height: 92px;
   resize: none;
   padding: 13px 14px;
-  border: 1px solid var(--input-border);
   border-radius: 8px;
   background: var(--surface);
+  box-shadow: 0 0 0 1px var(--input-border) inset;
   line-height: 1.55;
 }
 
-.conversation-composer textarea:focus {
-  border-color: var(--accent);
+.conversation-composer .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .composer-actions {
@@ -763,18 +714,10 @@
     padding-top: 12px;
   }
 
-  .conversation-composer textarea {
+  .conversation-composer .el-textarea__inner {
     height: 76px;
     min-height: 76px;
     max-height: 76px;
-  }
-
-  .composer-planning-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .composer-plan-scope {
-    grid-column: 1 / -1;
   }
 
   .ai-workspace-status {
@@ -811,7 +754,8 @@
     padding: 14px 12px;
   }
 
-  .message-proposal .button {
+  .message-proposal .button,
+  .message-proposal .el-button {
     width: 100%;
   }
 

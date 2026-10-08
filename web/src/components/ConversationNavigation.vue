@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import {
   Archive,
   ArchiveRestore,
@@ -13,7 +14,7 @@ import type { Conversation } from '../lib/conversations'
 import ProductNavigation from './ProductNavigation.vue'
 import StatusMessage from './StatusMessage.vue'
 
-defineProps<{
+const props = defineProps<{
   conversations: Conversation[]
   selectedId: string | null
   archived: boolean
@@ -36,6 +37,10 @@ const emit = defineEmits<{
   logout: []
   retry: []
 }>()
+const conversationScope = computed({
+  get: () => props.archived ? 'archived' : 'active',
+  set: value => emit('archivedView', value === 'archived'),
+})
 
 function readableTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', {
@@ -72,17 +77,20 @@ function activityLabel(conversation: Conversation) {
     <section class="conversation-list-section" aria-labelledby="conversation-list-title">
       <div class="conversation-list-heading">
         <h2 id="conversation-list-title">会话</h2>
-        <button type="button" class="small-icon-button" title="新建会话"
+        <ElButton text circle class="small-icon-button" title="新建会话"
           aria-label="新建会话" @click="emit('create')">
           <Plus :size="18" aria-hidden="true" />
-        </button>
+        </ElButton>
       </div>
-      <div class="conversation-tabs" role="group" aria-label="会话范围">
-        <button type="button" :class="{ selected: !archived }"
-          :aria-pressed="!archived" @click="emit('archivedView', false)">进行中</button>
-        <button type="button" :class="{ selected: archived }"
-          :aria-pressed="archived" @click="emit('archivedView', true)">已归档</button>
-      </div>
+      <ElSegmented
+        v-model="conversationScope"
+        class="conversation-tabs"
+        :options="[
+          { label: '进行中', value: 'active' },
+          { label: '已归档', value: 'archived' },
+        ]"
+        aria-label="会话范围"
+      />
 
       <p v-if="loading && !conversations.length" class="conversation-loading" role="status">
         正在读取会话…
@@ -93,7 +101,7 @@ function activityLabel(conversation: Conversation) {
       <ol v-else class="conversation-list">
         <li v-for="conversation in conversations" :key="conversation.id"
           :class="{ selected: selectedId === conversation.id }">
-          <button type="button" class="conversation-select"
+          <ElButton text class="conversation-select"
             :aria-pressed="selectedId === conversation.id"
             @click="emit('select', conversation)">
             <MessageCircleMore :size="17" aria-hidden="true" />
@@ -103,38 +111,38 @@ function activityLabel(conversation: Conversation) {
                 {{ activityLabel(conversation) || readableTime(conversation.updated_at) }}
               </small>
             </span>
-          </button>
+          </ElButton>
           <div class="conversation-row-actions">
-            <button type="button" class="small-icon-button"
+            <ElButton text circle class="small-icon-button"
               :aria-label="`重命名 ${conversation.title}`"
               :title="`重命名 ${conversation.title}`"
               @click="emit('rename', conversation)">
               <Pencil :size="14" aria-hidden="true" />
-            </button>
-            <button type="button" class="small-icon-button"
+            </ElButton>
+            <ElButton text circle class="small-icon-button"
               :aria-label="`${conversation.archived ? '重新打开' : '归档'} ${conversation.title}`"
               :title="`${conversation.archived ? '重新打开' : '归档'} ${conversation.title}`"
               :disabled="!!conversation.active_job"
               @click="emit('archive', conversation)">
               <ArchiveRestore v-if="conversation.archived" :size="15" aria-hidden="true" />
               <Archive v-else :size="15" aria-hidden="true" />
-            </button>
+            </ElButton>
           </div>
         </li>
       </ol>
-      <button v-if="hasMore" type="button" class="text-button conversation-more"
+      <ElButton v-if="hasMore" link type="primary" class="conversation-more"
         :disabled="loading" @click="emit('loadMore')">
         {{ loading ? '正在读取…' : '更早的会话' }}
-      </button>
+      </ElButton>
     </section>
 
     <div class="conversation-account">
       <p>{{ email }}</p>
-      <button type="button" class="nav-link logout-button"
-        :disabled="pendingLogout" @click="emit('logout')">
+      <ElButton text class="nav-link logout-button"
+        :loading="pendingLogout" :disabled="pendingLogout" @click="emit('logout')">
         <LogOut :size="18" aria-hidden="true" />
         {{ pendingLogout ? '正在退出…' : '退出登录' }}
-      </button>
+      </ElButton>
     </div>
   </aside>
 </template>

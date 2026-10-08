@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import type { Conversation, ConversationMessage } from '../lib/conversations'
+import AgentProposalMessageCard from './AgentProposalMessageCard.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
 
 defineProps<{
@@ -47,20 +48,20 @@ function stateLabel(message: ConversationMessage) {
 <template>
   <section class="conversation-thread" aria-labelledby="conversation-title">
     <header v-if="conversation" class="conversation-thread-header">
-      <button type="button" class="small-icon-button conversation-mobile-back"
+      <ElButton text circle class="small-icon-button conversation-mobile-back"
         aria-label="返回会话列表" title="返回会话列表" @click="emit('back')">
         <ArrowLeft :size="19" aria-hidden="true" />
-      </button>
+      </ElButton>
       <div>
         <span>{{ conversation.archived ? '已归档会话' : 'AI 对话' }}</span>
         <h1 id="conversation-title" tabindex="-1">{{ conversation.title }}</h1>
       </div>
-      <button v-if="conversation.active_job" type="button"
-        class="button secondary compact-button conversation-cancel"
+      <ElButton v-if="conversation.active_job" plain
+        class="compact-button conversation-cancel"
         :disabled="cancelling" @click="emit('cancel')">
         <XCircle :size="16" aria-hidden="true" />
         {{ cancelling ? '正在取消…' : '取消生成' }}
-      </button>
+      </ElButton>
     </header>
 
     <div v-if="!conversation" class="conversation-welcome">
@@ -70,10 +71,10 @@ function stateLabel(message: ConversationMessage) {
     </div>
 
     <div v-else ref="messageViewport" class="conversation-message-viewport">
-      <button v-if="hasOlder" type="button" class="text-button conversation-older"
+      <ElButton v-if="hasOlder" link type="primary" class="conversation-older"
         :disabled="loadingOlder" @click="emit('loadOlder')">
         {{ loadingOlder ? '正在读取…' : '读取更早消息' }}
-      </button>
+      </ElButton>
       <p v-if="loading && !messages.length" class="thread-loading" role="status">
         正在读取消息…
       </p>
@@ -101,8 +102,14 @@ function stateLabel(message: ConversationMessage) {
                 ? message.status === 'queued' ? '计划正在排队' : '正在生成并校验计划'
                 : message.status === 'queued' ? '正在排队' : '正在生成' }}
             </div>
+            <AgentProposalMessageCard
+              v-if="message.role === 'assistant'
+                && message.job?.output?.proposal_id
+                && message.job.output.proposal_kind === 'task_plan'"
+              :proposal-id="message.job.output.proposal_id"
+            />
             <ProposalMessageCard
-              v-if="message.role === 'assistant' && message.job?.output?.proposal_id"
+              v-else-if="message.role === 'assistant' && message.job?.output?.proposal_id"
               :proposal-id="message.job.output.proposal_id"
             />
             <div v-if="stateLabel(message)" class="message-state"
@@ -112,10 +119,10 @@ function stateLabel(message: ConversationMessage) {
                 :size="15" aria-hidden="true" />
               <Clock3 v-else :size="15" aria-hidden="true" />
               <span>{{ stateLabel(message) }}</span>
-              <button v-if="['failed', 'timed_out'].includes(message.status)"
-                type="button" class="text-button" @click="emit('retryMessage', message)">
+              <ElButton v-if="['failed', 'timed_out'].includes(message.status)"
+                link type="primary" @click="emit('retryMessage', message)">
                 重新发送
-              </button>
+              </ElButton>
             </div>
             <p v-if="message.error" class="message-error">
               {{ message.error.message }}
@@ -124,10 +131,10 @@ function stateLabel(message: ConversationMessage) {
         </li>
       </ol>
     </div>
-    <button v-if="conversation && !loading && !conversation.active_job" type="button"
-      class="conversation-refresh small-icon-button"
+    <ElButton v-if="conversation && !loading && !conversation.active_job"
+      text circle class="conversation-refresh small-icon-button"
       aria-label="重新读取会话" title="重新读取会话" @click="emit('refresh')">
       <RefreshCw :size="17" aria-hidden="true" />
-    </button>
+    </ElButton>
   </section>
 </template>

@@ -2,7 +2,7 @@ import { api } from './api'
 import type { AIJob } from './ai-jobs'
 import type { PlanningFields } from './plans'
 
-export type ConversationResponseMode = 'text' | 'planning'
+export type ConversationResponseMode = 'auto' | 'text' | 'planning'
 
 export interface Conversation {
   id: string
@@ -118,7 +118,7 @@ export async function sendConversationMessage(
   conversation: Conversation,
   operationId: string,
   content: string,
-  responseMode: ConversationResponseMode = 'text',
+  responseMode: ConversationResponseMode = 'auto',
   planning?: PlanningFields,
 ) {
   return api<{

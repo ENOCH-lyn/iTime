@@ -8,6 +8,7 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { failure, type Failure } from '../lib/api'
 import {
   getPlanProposal,
@@ -93,16 +94,16 @@ onMounted(load)
           <dd>{{ proposal.payload.unscheduled_items.length }}</dd>
         </div>
       </dl>
-      <RouterLink :to="destination" class="button secondary compact-button">
+      <ElButton :tag="RouterLink" :to="destination" plain class="compact-button">
         <CalendarClock :size="16" aria-hidden="true" />
         {{ proposal.effective_status === 'pending' ? '查看并确认' : '在规划页查看' }}
-      </RouterLink>
+      </ElButton>
     </template>
     <div v-else-if="error" class="message-proposal-error" role="alert">
       <p>{{ error.message }}</p>
-      <button v-if="error.retryable" type="button" class="text-button" @click="load">
+      <ElButton v-if="error.retryable" link type="primary" @click="load">
         重新读取
-      </button>
+      </ElButton>
     </div>
   </section>
 </template>

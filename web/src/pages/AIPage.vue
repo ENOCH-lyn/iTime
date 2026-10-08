@@ -28,11 +28,9 @@ import {
   type Conversation,
   type ConversationMessage,
   type ConversationPage,
-  type ConversationResponseMode,
 } from '../lib/conversations'
 import { useSyncRefresh } from '../lib/use-sync-refresh'
 import { getDifficulty } from '../lib/execution'
-import type { PlanningFields } from '../lib/plans'
 import '../ai-workspace.css'
 
 const route = useRoute()
@@ -44,17 +42,6 @@ const selected = ref<Conversation | null>(null)
 const messages = ref<ConversationMessage[]>([])
 const olderCursor = ref<number | null>(null)
 const composer = ref('')
-const responseMode = ref<ConversationResponseMode>('text')
-const planning = ref<PlanningFields>({
-  scope: 'day',
-  target_date: localDate(new Date()),
-  density: 'balanced',
-  buffer_minutes: 15,
-  availability_start: '08:00',
-  availability_end: '22:00',
-  task_ids: [],
-  instruction: '',
-})
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const loadingOlder = ref(false)
@@ -64,7 +51,7 @@ const cancelling = ref(false)
 const pendingLogout = ref(false)
 const error = ref<Failure | null>(null)
 const success = ref('')
-const renameDialog = ref<HTMLDialogElement | null>(null)
+const renameOpen = ref(false)
 const renameTarget = ref<Conversation | null>(null)
 const renameTitle = ref('')
 const renamePending = ref(false)
@@ -87,11 +74,6 @@ const composerDisabled = computed(() => (
   || identity.value?.user.ai_access === 'frozen'
   || !!activeJob.value
 ))
-
-function localDate(value: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
-}
 
 watch(authError, value => {
   if (value?.code === 'unauthenticated') void router.replace('/login')
@@ -333,7 +315,6 @@ async function prepareDifficultyDraft(difficultyId: string) {
     }
     if (!selected.value) await createNewConversation()
     if (!selected.value) return
-    responseMode.value = 'text'
     composer.value = [
       '我遇到了这个困难：',
       difficulty.content,
@@ -371,13 +352,13 @@ function openRename(conversation: Conversation) {
   renameTitle.value = conversation.title
   renameError.value = ''
   updateOperation = null
-  renameDialog.value?.showModal()
+  renameOpen.value = true
   void nextTick(() => document.getElementById('conversation-title-input')?.focus())
 }
 
 function closeRename() {
   if (renamePending.value) return
-  renameDialog.value?.close()
+  renameOpen.value = false
   renameTarget.value = null
   renameError.value = ''
 }
@@ -408,7 +389,7 @@ async function saveRename() {
       selected.value = result.conversation
     }
     success.value = '会话名称已保存。'
-    renameDialog.value?.close()
+    renameOpen.value = false
     renameTarget.value = null
     renameError.value = ''
   } catch (reason) {
@@ -480,25 +461,11 @@ async function send() {
   if (!selected.value || sending.value || composerDisabled.value) return
   const content = composer.value.trim()
   if (!content) return
-  const planningRequest = responseMode.value === 'planning'
-    ? { ...planning.value, instruction: content }
-    : undefined
-  if (
-    planningRequest
-    && (
-      !planningRequest.target_date
-      || planningRequest.availability_start >= planningRequest.availability_end
-    )
-  ) {
-    error.value = localFailure('请检查计划日期和可规划时段。')
-    return
-  }
   const fingerprint = JSON.stringify({
     conversation: selected.value.id,
     version: selected.value.version,
     content,
-    response_mode: responseMode.value,
-    planning: planningRequest,
+    response_mode: 'auto',
   })
   sendOperation = sendOperation?.fingerprint === fingerprint
     ? sendOperation
@@ -511,12 +478,10 @@ async function send() {
       selected.value,
       sendOperation.id,
       content,
-      responseMode.value,
-      planningRequest,
+      'auto',
     )
     sendOperation = null
     composer.value = ''
-    responseMode.value = 'text'
     selected.value = result.conversation
     mergeConversation(result.conversation)
     const known = new Set(messages.value.map(message => message.id))
@@ -541,7 +506,6 @@ async function send() {
       if (latestUser?.content === content) {
         sendOperation = null
         composer.value = ''
-        responseMode.value = 'text'
       }
     }
   } finally {
@@ -573,18 +537,6 @@ async function retryMessage(message: ConversationMessage) {
   )
   if (!previous) return
   composer.value = previous.content
-  if (message.job?.capability === 'planning') {
-    responseMode.value = 'planning'
-    planning.value = {
-      ...planning.value,
-      scope: message.job.input_summary.scope === 'week' ? 'week' : 'day',
-      target_date: typeof message.job.input_summary.target_date === 'string'
-        ? message.job.input_summary.target_date
-        : planning.value.target_date,
-    }
-  } else {
-    responseMode.value = 'text'
-  }
   await nextTick()
   document.getElementById('conversation-message')?.focus()
 }
@@ -681,8 +633,6 @@ async function logout() {
       <ConversationComposer
         v-if="selected"
         v-model="composer"
-        v-model:mode="responseMode"
-        v-model:planning="planning"
         :pending="sending"
         :disabled="composerDisabled"
         :archived="selected.archived"
@@ -692,30 +642,27 @@ async function logout() {
       />
     </main>
 
-    <dialog ref="renameDialog" aria-labelledby="rename-conversation-title"
-      @cancel.prevent="closeRename">
-      <h2 id="rename-conversation-title">重命名会话</h2>
+    <ElDialog
+      v-model="renameOpen"
+      title="重命名会话"
+      width="min(420px, calc(100vw - 24px))"
+      :show-close="!renamePending"
+      :close-on-click-modal="!renamePending"
+      :close-on-press-escape="!renamePending"
+    >
       <form @submit.prevent="saveRename">
-        <div class="field">
-          <label for="conversation-title-input">会话名称</label>
-          <div class="input-wrap">
-            <input id="conversation-title-input" v-model="renameTitle"
-              maxlength="120" :disabled="renamePending"
-              :aria-invalid="!!renameError"
-              :aria-describedby="renameError ? 'conversation-title-error' : undefined" />
-          </div>
-          <p v-if="renameError" id="conversation-title-error" class="field-error">
-            {{ renameError }}
-          </p>
-        </div>
+        <ElFormItem label="会话名称" :error="renameError">
+          <ElInput id="conversation-title-input" v-model="renameTitle"
+            maxlength="120" :disabled="renamePending" />
+        </ElFormItem>
         <div class="dialog-actions">
-          <button type="button" class="button secondary"
-            :disabled="renamePending" @click="closeRename">取消</button>
-          <button type="submit" class="button" :disabled="renamePending">
+          <ElButton :disabled="renamePending" @click="closeRename">取消</ElButton>
+          <ElButton type="primary" native-type="submit"
+            :loading="renamePending" :disabled="renamePending">
             {{ renamePending ? '正在保存…' : '保存名称' }}
-          </button>
+          </ElButton>
         </div>
       </form>
-    </dialog>
+    </ElDialog>
   </div>
 </template>
