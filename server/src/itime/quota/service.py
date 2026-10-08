@@ -512,6 +512,7 @@ async def settle_success(
             "provider",
             "estimated",
             "measured",
+            "not_sent",
         }
         or provider_cost.price_currency is None
         or provider_cost.total_cost_nanos is None

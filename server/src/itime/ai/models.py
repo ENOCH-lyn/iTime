@@ -372,9 +372,12 @@ class AIJob(Base):
         CheckConstraint("last_event_sequence >= 0", name="last_event_sequence"),
         CheckConstraint(
             "(capability = 'calendar_screenshot' "
-            "AND input_media_id IS NOT NULL AND conversation_id IS NULL "
+            "AND conversation_id IS NULL "
             "AND planning_snapshot_id IS NULL AND review_session_id IS NULL "
-            "AND review_snapshot_id IS NULL) "
+            "AND review_snapshot_id IS NULL "
+            "AND (input_media_id IS NOT NULL "
+            "OR (input_media_id IS NULL "
+            "AND input_summary->>'source_type' IN ('public_url', 'text')))) "
             "OR (capability = 'conversation' "
             "AND input_media_id IS NULL AND conversation_id IS NOT NULL "
             "AND planning_snapshot_id IS NULL AND review_session_id IS NULL "

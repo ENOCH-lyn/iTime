@@ -192,7 +192,7 @@ class AIQuotaReservation(Base):
         ),
         CheckConstraint(
             "usage_source IS NULL OR "
-            "usage_source IN ('provider', 'estimated', 'measured')",
+            "usage_source IN ('provider', 'estimated', 'measured', 'not_sent')",
             name="usage_source",
         ),
         CheckConstraint(
@@ -365,7 +365,7 @@ class AIQuotaLedgerEntry(Base):
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
         CheckConstraint(
             "usage_source IS NULL OR "
-            "usage_source IN ('provider', 'estimated', 'measured')",
+            "usage_source IN ('provider', 'estimated', 'measured', 'not_sent')",
             name="usage_source",
         ),
         CheckConstraint(

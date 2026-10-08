@@ -252,7 +252,8 @@ def reset_vision(vision_upstream, screenshot_database_url):
             "DELETE FROM calendar_series WHERE source_type='screenshot'"
         )
         connection.execute(
-            "DELETE FROM calendar_sources WHERE kind IN ('screenshot', 'image')"
+            "DELETE FROM calendar_sources"
+            " WHERE kind IN ('screenshot', 'image', 'public_url', 'text')"
         )
         connection.execute("DELETE FROM ai_quota_ledger_entries")
         connection.execute("DELETE FROM ai_quota_reservations")
@@ -261,7 +262,8 @@ def reset_vision(vision_upstream, screenshot_database_url):
         connection.execute("DELETE FROM temporary_media")
         connection.execute(
             "DELETE FROM user_operations"
-            " WHERE scope='calendar_screenshot.upload'"
+            " WHERE scope IN ('calendar_screenshot.upload',"
+            " 'calendar_ai_import.create')"
             " OR scope LIKE 'ai_job.cancel:%'"
         )
         connection.execute(

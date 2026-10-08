@@ -18,8 +18,8 @@ from itime.ai.screenshot_provider import screenshot_log_request_body
 from itime.auth.security import now
 from itime.auth.session import authorized, check_ai_access
 from itime.calendar.import_schemas import ImportFilename
-from itime.calendar.models import AcademicTerm, TermPeriod
 from itime.calendar.screenshot_schemas import ScreenshotUploadOperation
+from itime.calendar.screenshot_service import recognition_context
 from itime.errors import AppError
 from itime.quota.service import (
     estimate_reservation_budget,
@@ -33,52 +33,6 @@ router = APIRouter(
     prefix="/api/v1/calendar/imports/screenshots",
     tags=["日历截图识别"],
 )
-
-
-async def _recognition_context(session, owner_id, time_zone: str) -> dict:
-    terms = list(
-        await session.scalars(
-            select(AcademicTerm)
-            .where(AcademicTerm.owner_id == owner_id)
-            .order_by(AcademicTerm.updated_at.desc(), AcademicTerm.id.desc())
-            .limit(50)
-        )
-    )
-    term_ids = [term.id for term in terms]
-    periods_by_term: dict[UUID, list[dict]] = {term.id: [] for term in terms}
-    if term_ids:
-        periods = await session.scalars(
-            select(TermPeriod)
-            .where(
-                TermPeriod.owner_id == owner_id,
-                TermPeriod.term_id.in_(term_ids),
-            )
-            .order_by(TermPeriod.term_id, TermPeriod.period_number)
-        )
-        for period in periods:
-            periods_by_term[period.term_id].append(
-                {
-                    "number": period.period_number,
-                    "name": period.name,
-                    "starts_at": period.starts_at.isoformat(),
-                    "ends_at": period.ends_at.isoformat(),
-                }
-            )
-    return {
-        "time_zone": time_zone,
-        "terms": [
-            {
-                "id": str(term.id),
-                "name": term.name,
-                "start_date": term.start_date.isoformat(),
-                "end_date": term.end_date.isoformat(),
-                "first_week_monday": term.first_week_monday.isoformat(),
-                "time_zone": term.time_zone,
-                "periods": periods_by_term[term.id],
-            }
-            for term in terms
-        ],
-    }
 
 
 @router.post("", status_code=202)
@@ -158,7 +112,7 @@ async def upload_calendar_screenshot(
             identity.user.id,
             accepted_at=current,
         )
-        context = await _recognition_context(
+        context = await recognition_context(
             identity.session,
             identity.user.id,
             daily.time_zone,

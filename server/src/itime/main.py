@@ -23,6 +23,7 @@ from itime.ai.privacy_router import router as privacy_settings_router
 from itime.ai.transcription_router import router as transcription_router
 from itime.auth.router import router as auth_router
 from itime.auth.security import Security
+from itime.calendar.ai_import_router import router as calendar_ai_import_router
 from itime.calendar.import_router import router as calendar_import_router
 from itime.calendar.router import router as calendar_router
 from itime.calendar.screenshot_router import router as calendar_screenshot_router
@@ -87,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public_links_router)
     app.include_router(task_schedule_router)
     app.include_router(calendar_router)
+    app.include_router(calendar_ai_import_router)
     app.include_router(calendar_screenshot_router)
     app.include_router(calendar_import_router)
     app.include_router(calendar_subscription_router)

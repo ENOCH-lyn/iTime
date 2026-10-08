@@ -95,32 +95,37 @@ Run: `git add server/src/itime/calendar/import_fetcher.py server/src/itime/netwo
 ### Task 4: 建立统一导入 API 和作业
 
 **Files:**
+- Create: `server/src/itime/migrations/versions/0040_calendar_ai_import_jobs.py`
 - Create: `server/src/itime/calendar/ai_import_router.py`
 - Modify: `server/src/itime/calendar/screenshot_router.py`
 - Modify: `server/src/itime/ai/worker.py`
 - Modify: `server/src/itime/main.py`
+- Modify: `server/src/itime/quota/models.py`
+- Modify: `server/src/itime/quota/service.py`
+- Modify: `server/pyproject.toml`
+- Modify: `server/uv.lock`
 - Test: `server/tests/test_calendar_ai_import_api.py`
 - Test: `server/tests/test_calendar_ai_import_worker.py`
 
-- [ ] **Step 1: 写三来源 API 测试**
+- [x] **Step 1: 写三来源 API 测试**
 
 覆盖 multipart 图片、JSON URL、JSON 文字、会话关联、操作重放、AI 冻结、额度不足、并发上限和跨账号不可见。
 
-- [ ] **Step 2: 实现统一入口**
+- [x] **Step 2: 实现统一入口**
 
 提供 `POST /api/v1/calendar/imports/ai`：图片上传创建临时媒体，网址创建受限抓取作业，文字直接冻结输入；三者创建同类 AI 作业并返回批次和 job。
 
-- [ ] **Step 3: 接入 worker**
+- [x] **Step 3: 接入 worker**
 
 worker 成功后调用现有 `create_candidates`，批次进入 `needs_review`；失败、取消或超时释放额度并清理无恢复价值的临时内容。
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 Run: `cd server && uv run pytest tests/test_calendar_ai_import_api.py tests/test_calendar_ai_import_worker.py tests/test_calendar_imports.py -q`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 Run: `git add server/src/itime/calendar server/src/itime/ai/worker.py server/src/itime/main.py server/tests/test_calendar_ai_import_api.py server/tests/test_calendar_ai_import_worker.py && git commit -m "feat: 增加统一 AI 课表导入接口"`
 

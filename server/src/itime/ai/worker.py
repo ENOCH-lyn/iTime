@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable
 
@@ -30,11 +31,6 @@ from itime.ai.job_service import (
     reject_or_retry_job,
     renew_job_lease,
 )
-from itime.ai.screenshot_provider import (
-    ScreenshotGenerationSuperseded,
-    ScreenshotProviderError,
-    recognize_screenshot,
-)
 from itime.ai.transcription_provider import (
     TranscriptionGenerationSuperseded,
     TranscriptionProviderError,
@@ -48,10 +44,24 @@ from itime.ai.transcription_service import (
     reject_or_retry_transcription_job,
 )
 from itime.auth.security import now
+from itime.calendar.ai_import_provider import (
+    AIImportGenerationSuperseded,
+    AIImportProviderError,
+    ai_import_log_request_body,
+    recognize_ai_import,
+)
+from itime.calendar.import_fetcher import (
+    CalendarImportFetchError,
+    RestrictedCalendarImportFetcher,
+)
+from itime.calendar.import_parsers import parse_ics
 from itime.calendar.screenshot_service import (
     ScreenshotWorkUnavailable,
-    apply_screenshot_result,
-    load_screenshot_work,
+    apply_ai_import_result,
+    apply_deterministic_import_result,
+    cleanup_expired_calendar_import_inputs,
+    load_calendar_import_work,
+    reject_or_retry_calendar_import,
 )
 from itime.config import Settings, get_settings
 from itime.database import Database
@@ -118,13 +128,13 @@ async def _process_screenshot(
     claim: ClaimedJob,
 ) -> None:
     try:
-        work = await load_screenshot_work(
+        work = await load_calendar_import_work(
             database,
             cipher,
             claim,
         )
     except ScreenshotWorkUnavailable as exc:
-        await reject_or_retry_job(
+        await reject_or_retry_calendar_import(
             database,
             claim,
             error_code=exc.code,
@@ -133,12 +143,10 @@ async def _process_screenshot(
             retryable=False,
         )
         return
-    if not await prepare_attempt_body_log(database, claim, work.request_body):
-        return
 
     remaining = (claim.deadline_at - now()).total_seconds()
     if remaining <= 0:
-        await reject_or_retry_job(
+        await reject_or_retry_calendar_import(
             database,
             claim,
             error_code="ai_job_deadline_exceeded",
@@ -147,6 +155,78 @@ async def _process_screenshot(
             retryable=False,
         )
         return
+    source_text = work.source_text
+    source_display = None
+    if work.source_type == "public_url":
+        try:
+            fetched = await RestrictedCalendarImportFetcher(settings).fetch(
+                source_text or ""
+            )
+        except CalendarImportFetchError as exc:
+            await reject_or_retry_calendar_import(
+                database,
+                claim,
+                error_code=exc.code,
+                error_message=exc.message,
+                error_stage="fetch",
+                retryable=exc.retryable,
+                http_status=exc.http_status,
+            )
+            return
+        source_display = fetched.display_url
+        if fetched.kind == "ics":
+            if not await prepare_attempt_body_log(
+                database,
+                claim,
+                {
+                    "source_type": "public_url",
+                    "fetch": {
+                        "display_url": fetched.display_url,
+                        "media_type": fetched.media_type,
+                        "content_sha256": fetched.content_sha256,
+                        "redirect_count": fetched.redirect_count,
+                    },
+                    "provider_request": "not_required_for_ics",
+                },
+            ):
+                return
+            parsed = await asyncio.to_thread(
+                parse_ics,
+                fetched.ics_content or b"",
+                default_time_zone=str(
+                    work.context.get("time_zone") or "UTC"
+                ),
+            )
+            await apply_deterministic_import_result(
+                database,
+                claim,
+                parsed,
+                source_display=fetched.display_url,
+            )
+            return
+        source_text = fetched.text
+
+    if work.source_type == "image":
+        request_body = ai_import_log_request_body(
+            work.config,
+            source_type="image",
+            context=work.context,
+            content_type=work.content_type,
+            byte_size=len(work.image or b""),
+            content_sha256=hashlib.sha256(work.image or b"").hexdigest(),
+        )
+    else:
+        request_body = ai_import_log_request_body(
+            work.config,
+            source_type=work.source_type,
+            context=work.context,
+            source_text=source_text,
+        )
+    if not await prepare_attempt_body_log(database, claim, request_body):
+        return
+    format_name = (
+        "screenshot" if work.source_type == "image" else work.source_type
+    )
     try:
         async def mark_started() -> bool:
             return await mark_provider_request_started(database, claim)
@@ -155,21 +235,23 @@ async def _process_screenshot(
             database,
             claim,
             settings,
-            recognize_screenshot(
+            recognize_ai_import(
                 work.config,
                 settings,
                 cipher,
+                source_type=work.source_type,
                 image=work.image,
                 content_type=work.content_type,
+                source_text=source_text,
                 context=work.context,
                 timeout_seconds=remaining,
                 on_request_started=mark_started,
             ),
         )
-    except (JobLeaseLost, ScreenshotGenerationSuperseded):
+    except (JobLeaseLost, AIImportGenerationSuperseded):
         return
-    except ScreenshotProviderError as exc:
-        await reject_or_retry_job(
+    except AIImportProviderError as exc:
+        await reject_or_retry_calendar_import(
             database,
             claim,
             error_code=exc.code,
@@ -184,10 +266,12 @@ async def _process_screenshot(
     finally:
         work = None
 
-    await apply_screenshot_result(
+    await apply_ai_import_result(
         database,
         claim,
         provider_result,
+        format_name=format_name,
+        source_display=source_display,
         quality_sample_retention_days=settings.ai_quality_sample_retention_days,
     )
 
@@ -641,6 +725,7 @@ async def run(*, once: bool = False) -> None:
             try:
                 await cleanup_expired_transcriptions(database)
                 await cleanup_expired_media(database)
+                await cleanup_expired_calendar_import_inputs(database)
                 await cleanup_expired_job_events(database)
                 found = await process_one(database, settings)
             except Exception as exc:

@@ -648,7 +648,7 @@ async def confirm_calendar_import(
             created.append((candidate, series, warnings))
             await identity.session.flush()
 
-        if batch.origin_job_id is not None:
+        if batch.origin_job_id is not None and batch.source_type == "image":
             media = await identity.session.scalar(
                 select(TemporaryMedia)
                 .join(AIJob, AIJob.input_media_id == TemporaryMedia.id)
@@ -662,6 +662,9 @@ async def confirm_calendar_import(
             if media is None:
                 raise RuntimeError("screenshot import media is missing")
             delete_media(media, reason="confirmed")
+        if batch.input_body_ciphertext is not None:
+            batch.input_body_ciphertext = None
+            batch.input_body_expires_at = None
 
         for candidate, series, warnings in created:
             outcomes[candidate.id] = confirmed_series_result(

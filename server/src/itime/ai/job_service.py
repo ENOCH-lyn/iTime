@@ -138,6 +138,43 @@ async def _cancel_transcription_projection(
         delete_media(media, reason=media_reason)
 
 
+async def _cancel_calendar_import_projection(
+    session: AsyncSession,
+    job: AIJob,
+    *,
+    current: datetime,
+    media_reason: str,
+) -> None:
+    from itime.calendar.models import CalendarImportBatch
+
+    batch = await session.scalar(
+        select(CalendarImportBatch)
+        .where(
+            CalendarImportBatch.origin_job_id == job.id,
+            CalendarImportBatch.owner_id == job.owner_id,
+        )
+        .with_for_update()
+    )
+    if batch is not None:
+        batch.state = "cancelled"
+        batch.error_code = None
+        batch.error_message = None
+        batch.input_body_ciphertext = None
+        batch.input_body_expires_at = None
+        batch.updated_at = current
+    if job.input_media_id is not None:
+        media = await session.scalar(
+            select(TemporaryMedia)
+            .where(
+                TemporaryMedia.id == job.input_media_id,
+                TemporaryMedia.owner_id == job.owner_id,
+            )
+            .with_for_update()
+        )
+        if media is not None and media.encrypted_content is not None:
+            delete_media(media, reason=media_reason)
+
+
 async def cancel_job(
     session: AsyncSession,
     job: AIJob,
@@ -162,6 +199,13 @@ async def cancel_job(
             job,
             current=current,
             resolution=transcription_resolution,
+            media_reason=transcription_media_reason,
+        )
+    elif job.capability == "calendar_screenshot":
+        await _cancel_calendar_import_projection(
+            session,
+            job,
+            current=current,
             media_reason=transcription_media_reason,
         )
     message_id = (
