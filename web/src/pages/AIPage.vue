@@ -9,6 +9,7 @@ import StatusMessage from '../components/StatusMessage.vue'
 import { api, failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
+  authLoading,
   clearSession,
   confirmDiscardPendingOperations,
   identity,
@@ -295,6 +296,10 @@ async function selectConversation(conversation: Conversation) {
 
 async function createNewConversation() {
   if (creating.value) return
+  if (authLoading.value || !identity.value) {
+    await refreshSession()
+    if (!identity.value) return
+  }
   creating.value = true
   error.value = null
   success.value = ''
@@ -640,6 +645,7 @@ async function logout() {
       :loading="loadingList"
       :has-more="!!conversationCursor"
       :email="identity?.user.email ?? ''"
+      :create-disabled="authLoading || creating"
       :pending-logout="pendingLogout"
       :error="error"
       :success="success"

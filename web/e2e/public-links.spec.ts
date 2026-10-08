@@ -56,7 +56,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
 }
 
@@ -237,7 +237,7 @@ test('失败保留旧摘要，安全拒绝可判断，网页指令不产生业�
     'ready',
     { timeout: 15_000 },
   )
-  await page.getByRole('link', { name: 'AI', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'AI', exact: true }).click()
   await page.getByRole('button', { name: '新建会话', exact: true }).click()
   const prompt = '检查公开链接上下文：请根据公开课程要求链接说明。'
   await page.getByLabel('消息', { exact: true }).fill(prompt)

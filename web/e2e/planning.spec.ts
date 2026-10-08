@@ -308,9 +308,9 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
 
   await page.getByLabel('补充要求').fill('离页恢复测试')
   await page.getByRole('button', { name: '生成计划提案', exact: true }).click()
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('link', { name: '规划', exact: true }).click()
+  await page.getByRole('menuitem', { name: '规划', exact: true }).click()
   await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible({
     timeout: 15_000,
   })
@@ -349,8 +349,13 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   await expect(page.getByText('此周计划已在其他页面或设备更新，请刷新后比较再保存。')).toBeVisible()
   await expect(page.getByText(/^请求编号：/)).toBeVisible()
   await page.getByRole('button', { name: '重新读取', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '第 2 版', exact: true }))
+    .toBeVisible()
   await expect(page.getByText('有未保存调整', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '保存新版本', exact: true }).click()
+  const saveVersion = page.getByRole('button', { name: '保存新版本', exact: true })
+  await expect(saveVersion).toBeEnabled()
+  await saveVersion.click()
   await expect(page.getByText('手工调整已保存为第 3 版。')).toBeVisible()
   await expect(page.getByRole('heading', { name: '第 3 版', exact: true })).toBeVisible()
 
@@ -377,7 +382,7 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
     await screenshot(page, info, '320-large-dark')
   }
 
-  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
   await expect(page).toHaveURL('/calendar')
   await page.getByLabel('跳转日期').fill(targetDate)
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)

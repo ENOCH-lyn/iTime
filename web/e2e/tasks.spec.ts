@@ -51,7 +51,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
   return address
@@ -309,7 +309,8 @@ test('编辑冲突保留输入，确认后基于服务器最新版重试', async
 
     await page.getByRole('button', { name: '保存修改', exact: true }).first().click()
     await expect(page.getByRole('alert')).toContainText('已在其他页面或设备更新')
-    await expect(page.getByText('第二页面先保存的内容')).toBeVisible()
+    const editor = page.getByRole('region', { name: '编辑任务 并发编辑任务' })
+    await expect(editor.getByText('第二页面先保存的内容')).toBeVisible()
     await expect(page.getByLabel('正文', { exact: false })).toHaveValue('主页面保留的修改')
     await page.getByRole('button', { name: '保留填写并基于最新版重试', exact: true }).click()
     await page.getByRole('button', { name: '保存修改', exact: true }).first().click()

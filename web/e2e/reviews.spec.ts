@@ -77,7 +77,7 @@ test('daily review resumes jobs and manages report memories', async ({
     ) consoleErrors.push(message.text())
   })
   await account(page, request)
-  await page.getByRole('link', { name: '复盘', exact: true }).click()
+  await page.getByRole('menuitem', { name: '复盘', exact: true }).click()
   await expect(page).toHaveURL(/\/reviews/)
   await expect(page).toHaveTitle('复盘 · iTime')
   await expect(page.getByRole('heading', { name: '事实概览' })).toBeVisible()
@@ -110,9 +110,9 @@ test('daily review resumes jobs and manages report memories', async ({
 
   await page.getByLabel('重新生成要求').fill('离页恢复')
   await page.getByRole('button', { name: '生成新版本' }).click()
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('link', { name: '复盘', exact: true }).click()
+  await page.getByRole('menuitem', { name: '复盘', exact: true }).click()
   await expect(page.getByText('第 2 版报告已生成。')).toBeVisible({
     timeout: 15_000,
   })

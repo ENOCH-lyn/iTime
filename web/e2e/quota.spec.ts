@@ -248,11 +248,20 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   ).toBeVisible()
   await expect(page.getByText('正在生成')).toHaveCount(0)
 
+  let chargedAmount = ''
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/quota')
+    const current = (await response.json()).current as {
+      charged: string
+      reserved: string
+    }
+    chargedAmount = current.charged
+    return current.reserved === '0' && parseNanos(current.charged) > 0n
+  }, { timeout: 20_000 }).toBe(true)
   await page.goto('/account/quota')
-  const chargedAmount = (
-    await page.getByTestId('quota-charged').innerText()
-  ).replace(/\s+/g, '').replace(/^CNY/, '')
-  expect(parseNanos(chargedAmount)).toBeGreaterThan(0n)
+  await expect(page.getByTestId('quota-charged')).toHaveText(
+    new RegExp(`CNY\\s*${chargedAmount.replace('.', '\\.')}$`),
+  )
   await expect.poll(async () => (
     await page.getByTestId('quota-available').innerText()
   ).replace(/\s+/g, '')).toBe(

@@ -435,10 +435,10 @@ function watchRuntime(page: Page) {
   })
 }
 
-function consumeExpectedApiFailure(page: Page, path: string) {
+function consumeExpectedApiFailure(page: Page, path: string, status = 500) {
   const errors = runtimeErrors.get(page) ?? []
   const index = errors.findIndex(error => (
-    error.startsWith('500 ') && error.includes(path)
+    error.startsWith(`${status} `) && error.includes(path)
   ))
   expect(index).toBeGreaterThanOrEqual(0)
   errors.splice(index, 1)
@@ -494,9 +494,8 @@ test('暂停与删除订阅保持不同语义并停止活动来源', async ({
   await goCalendar(page, futureDate(14))
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const importDialog = page.getByRole('dialog', { name: '导入日历' })
-  await importDialog.locator('.import-mode-switch label').filter({
-    hasText: '订阅 URL',
-  }).click()
+  await importDialog.locator('.import-mode-switch')
+    .getByText('订阅', { exact: true }).click()
   await importDialog.getByRole('button', {
     name: /回收测试订阅/,
   }).click()
@@ -522,18 +521,29 @@ test('暂停与删除订阅保持不同语义并停止活动来源', async ({
   const deleteError = importDialog.getByRole('alert')
   await expect(deleteSuccess.or(deleteError)).toBeVisible()
   if (await deleteError.isVisible()) {
-    await expect(deleteError).toContainText('此订阅已在其他页面或设备更新')
-    await expect(deleteError).toContainText('请求编号')
-    await importDialog.getByRole('button', {
-      name: '重新读取',
+    const retryOperation = importDialog.getByRole('button', {
+      name: '重试操作',
       exact: true,
-    }).click()
-    await expect(deleteError).toHaveCount(0)
-    page.once('dialog', dialog => dialog.accept())
-    await importDialog.getByRole('button', {
-      name: '移到回收站',
-      exact: true,
-    }).click()
+    })
+    if (await retryOperation.isVisible()) {
+      await expect(deleteError).toContainText('保存状态尚未确认')
+      consumeExpectedApiFailure(page, '/api/v1/calendar/subscriptions/', 503)
+      page.once('dialog', dialog => dialog.accept())
+      await retryOperation.click()
+    } else {
+      await expect(deleteError).toContainText('此订阅已在其他页面或设备更新')
+      await expect(deleteError).toContainText('请求编号')
+      await importDialog.getByRole('button', {
+        name: '重新读取',
+        exact: true,
+      }).click()
+      await expect(deleteError).toHaveCount(0)
+      page.once('dialog', dialog => dialog.accept())
+      await importDialog.getByRole('button', {
+        name: '移到回收站',
+        exact: true,
+      }).click()
+    }
   }
   await expect(deleteSuccess).toBeVisible()
   await expect(importDialog.getByText('回收测试订阅')).toHaveCount(0)
@@ -1133,9 +1143,8 @@ test('删除刷新中的订阅会拒绝迟到结果并允许用户明确恢复',
   await goCalendar(page, '2026-10-06')
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const imports = page.getByRole('dialog', { name: '导入日历' })
-  await imports.locator('.import-mode-switch label').filter({
-    hasText: '订阅 URL',
-  }).click()
+  await imports.locator('.import-mode-switch')
+    .getByText('订阅', { exact: true }).click()
   await imports.getByLabel('名称', { exact: true }).first().fill('慢响应删除来源')
   await imports.getByLabel('ICS 订阅地址').fill(
     `${origin}/calendar/${randomUUID()}/private.ics?scenario=slow-delete&token=late-secret`,

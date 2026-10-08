@@ -21,6 +21,7 @@ const props = defineProps<{
   loading: boolean
   hasMore: boolean
   email: string
+  createDisabled: boolean
   pendingLogout: boolean
   error: Failure | null
   success: string
@@ -78,7 +79,7 @@ function activityLabel(conversation: Conversation) {
       <div class="conversation-list-heading">
         <h2 id="conversation-list-title">会话</h2>
         <ElButton text circle class="small-icon-button" title="新建会话"
-          aria-label="新建会话" @click="emit('create')">
+          aria-label="新建会话" :disabled="createDisabled" @click="emit('create')">
           <Plus :size="18" aria-hidden="true" />
         </ElButton>
       </div>

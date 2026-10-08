@@ -80,7 +80,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
 }
 
@@ -200,7 +200,7 @@ test('学期课程、固定安排和任务截止在统一日历中展示并标�
   const monday = mondayOnOrBefore(date)
   await account(page, request)
   await createTaskWithDueDate(page, '提交课程报告', date)
-  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
   await page.getByLabel('跳转日期').fill(date)
 
   await page.getByRole('button', { name: '时间与学期', exact: true }).click()

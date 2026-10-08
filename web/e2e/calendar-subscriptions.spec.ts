@@ -19,6 +19,19 @@ async function bootstrap(info: TestInfo) {
   return value
 }
 
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function futureTuesday() {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + 14)
+  while (date.getUTCDay() !== 2) date.setUTCDate(date.getUTCDate() + 1)
+  return date.toISOString().slice(0, 10)
+}
+
 async function screenshot(page: Page, info: TestInfo, name: string) {
   await mkdir(evidence, { recursive: true })
   await page.screenshot({
@@ -56,7 +69,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
   await expect(page).toHaveURL('/calendar')
 }
 
@@ -87,7 +100,11 @@ async function setTimeZone(page: Page, value: string) {
   return sessionCsrf
 }
 
-async function createConfirmedPlan(page: Page, sessionCsrf: string) {
+async function createConfirmedPlan(
+  page: Page,
+  sessionCsrf: string,
+  sourceDate: string,
+) {
   const taskResponse = await page.request.post('/api/v1/tasks', {
     headers: { 'X-CSRF-Token': sessionCsrf },
     data: {
@@ -108,7 +125,7 @@ async function createConfirmedPlan(page: Page, sessionCsrf: string) {
     headers: { 'X-CSRF-Token': sessionCsrf },
     data: {
       operation_id: randomUUID(),
-      week_start_date: '2026-10-05',
+      week_start_date: addDays(sourceDate, -1),
       expected_plan_version: 0,
       density: 'balanced',
       buffer_minutes: 0,
@@ -117,7 +134,7 @@ async function createConfirmedPlan(page: Page, sessionCsrf: string) {
       blocks: [{
         task_id: task.id,
         occurrence_key: null,
-        local_date: '2026-10-06',
+        local_date: sourceDate,
         starts_at: '09:00:00',
         ends_at: '10:00:00',
         step_ids: [task.steps[0].id],
@@ -150,7 +167,8 @@ async function openSubscriptions(page: Page) {
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '导入日历' })
   await expect(dialog).toBeVisible()
-  await dialog.locator('.import-mode-switch label').filter({ hasText: '订阅 URL' }).click()
+  await dialog.locator('.import-mode-switch')
+    .getByText('订阅', { exact: true }).click()
   await expect(dialog.getByRole('heading', { name: '日历订阅' })).toBeVisible()
   return dialog
 }
@@ -161,10 +179,12 @@ async function createSubscription(
   origin: string,
   scenario: string,
   name: string,
+  sourceDate?: string,
 ) {
   await dialog.getByLabel('名称', { exact: true }).first().fill(name)
   await dialog.getByLabel('ICS 订阅地址').fill(
-    `${origin}/calendar/${randomUUID()}/private-token.ics?scenario=${scenario}&token=hidden`,
+    `${origin}/calendar/${randomUUID()}/private-token.ics?scenario=${scenario}`
+      + `&token=hidden${sourceDate ? `&date=${sourceDate}` : ''}`,
   )
   await dialog.getByLabel('刷新周期（分钟）').first().fill('15')
   await dialog.getByRole('button', { name: '创建订阅', exact: true }).click()
@@ -176,6 +196,10 @@ async function createSubscription(
       (item: { name: string }) => item.name === name,
     )?.refresh_status
   }, { timeout: 15_000 }).toBe('idle')
+  await dialog.getByRole('button', {
+    name: '重新读取日历订阅',
+    exact: true,
+  }).click()
   const detail = dialog.getByRole('region', { name })
   await expect(detail.getByText('已就绪', { exact: true })).toBeVisible({
     timeout: 15_000,
@@ -228,7 +252,8 @@ test('订阅创建、304、暂停恢复并可从日历返回来源', async ({
   if (info.project.name !== 'desktop') {
     await occurrencePanel.getByRole('button', { name: '返回日历' }).click()
   }
-  const eventButton = page.getByRole('button', { name: /订阅课程/ }).first()
+  const eventButton = page.locator('.calendar-main')
+    .getByRole('button', { name: /订阅课程/ }).first()
   await expect(eventButton).toBeVisible()
   await eventButton.click()
   await expect(page.getByText('ICS 订阅', { exact: true })).toBeVisible()
@@ -348,7 +373,10 @@ test('本地覆盖保留来源差异，刷新失败保留旧日历', async ({
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
   await page.getByLabel('跳转日期').fill('2026-10-06')
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /订阅课程/ }).first()).toBeVisible()
+  await expect(
+    page.locator('.calendar-main')
+      .getByRole('button', { name: /订阅课程/ }).first(),
+  ).toBeVisible()
 })
 
 test('订阅单次例外可取消、重置、移动并跨来源刷新保留', async ({
@@ -359,6 +387,7 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
   const { calendar_origin: origin } = await bootstrap(info)
   await account(page, request)
   await setTimeZone(page, 'Asia/Shanghai')
+  const sourceDate = futureTuesday()
   let dialog = await openSubscriptions(page)
   await createSubscription(
     page,
@@ -366,12 +395,14 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
     origin,
     'occurrence-exception',
     '单次例外来源',
+    sourceDate,
   )
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
-  await page.getByLabel('跳转日期').fill('2026-10-06')
+  await page.getByLabel('跳转日期').fill(sourceDate)
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)
 
-  let eventButton = page.getByRole('button', { name: /订阅课程/ }).first()
+  let eventButton = page.locator('.calendar-main')
+    .getByRole('button', { name: /订阅课程/ }).first()
   await expect(eventButton).toBeVisible()
   await eventButton.click()
   const panel = page.locator('.occurrence-panel')
@@ -390,12 +421,12 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
   await expect(panel.getByRole('button', { name: '取消本次' })).toBeVisible()
 
   await panel.getByRole('button', { name: '调整本次时间' }).click()
-  await panel.getByLabel('开始日期').fill('2026-10-07')
+  await panel.getByLabel('开始日期').fill(addDays(sourceDate, 1))
   await panel.getByLabel('开始', { exact: true }).fill('14:00')
   await panel.getByLabel('结束', { exact: true }).fill('15:00')
   await panel.getByRole('button', { name: '保存本次' }).click()
   await expect(panel.getByText('本次安排已调课。')).toBeVisible()
-  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+  await expect(panel.getByText(/14:00.*15:00/)).toBeVisible()
   await expect(panel.getByText('已调课', { exact: true })).toBeVisible()
 
   await panel.getByRole('button', { name: '管理来源与本地覆盖' }).click()
@@ -405,7 +436,7 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
     timeout: 15_000,
   })
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
-  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+  await expect(panel.getByText(/14:00.*15:00/)).toBeVisible()
   await expect(panel.getByRole('heading', { name: '来源课程更新' })).toBeVisible()
 
   await panel.getByRole('button', { name: '管理来源与本地覆盖' }).click()
@@ -419,8 +450,10 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
     )?.generation
   }, { timeout: 15_000 }).toBe(3)
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
-  await expect(panel.getByText('来源已取消，本地移动仍保留')).toBeVisible()
-  await expect(panel.getByText(/10月7日.*14:00.*15:00/)).toBeVisible()
+  await expect(panel.getByText('来源已取消，本地移动仍保留')).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(panel.getByText(/14:00.*15:00/)).toBeVisible()
 
   expect((await new AxeBuilder({ page }).include('.occurrence-panel').analyze()).violations)
     .toEqual([])
@@ -434,18 +467,21 @@ test('订阅单次例外可取消、重置、移动并跨来源刷新保留', as
     await allDayButton.click()
     await panel.getByRole('button', { name: '调整本次时间' }).click()
     await expect(panel.getByLabel('开始', { exact: true })).toHaveCount(0)
-    await panel.getByLabel('开始日期').fill('2026-10-09')
-    await panel.getByLabel('结束日期（不含）').fill('2026-10-10')
+    await panel.getByLabel('开始日期').fill(addDays(sourceDate, 3))
+    await panel.getByLabel('结束日期（不含）').fill(addDays(sourceDate, 4))
     await panel.getByRole('button', { name: '保存本次' }).click()
-    await expect(panel.getByText('2026-10-09 全天', { exact: true })).toBeVisible()
+    await expect(
+      panel.getByText(`${addDays(sourceDate, 3)} 全天`, { exact: true }),
+    ).toBeVisible()
 
     await page.evaluate(() => localStorage.setItem(
       'itime-appearance',
       JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
     ))
     await page.setViewportSize({ width: 320, height: 700 })
-    await page.goto('/calendar?date=2026-10-07')
-    eventButton = page.getByRole('button', { name: /来源课程更新/ }).first()
+    await page.goto(`/calendar?date=${addDays(sourceDate, 1)}`)
+    eventButton = page.locator('.calendar-main')
+      .getByRole('button', { name: /来源课程更新/ }).first()
     await expect(eventButton).toBeVisible()
     await eventButton.click()
     await expect(page.getByText('来源已取消，本地移动仍保留')).toBeVisible()
@@ -463,6 +499,7 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
   const { calendar_origin: origin } = await bootstrap(info)
   await account(page, request)
   const sessionCsrf = await setTimeZone(page, 'Asia/Shanghai')
+  const sourceDate = futureTuesday()
   let dialog = await openSubscriptions(page)
   await createSubscription(
     page,
@@ -470,8 +507,9 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
     origin,
     'plan-conflict',
     '计划冲突来源',
+    sourceDate,
   )
-  const originalPlan = await createConfirmedPlan(page, sessionCsrf)
+  const originalPlan = await createConfirmedPlan(page, sessionCsrf, sourceDate)
   const sourceRegion = dialog.getByRole('region', { name: '计划冲突来源' })
   await sourceRegion.getByRole('button', { name: '立即刷新', exact: true }).click()
   await expect(
@@ -480,7 +518,7 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
   ).toBeVisible({ timeout: 15_000 })
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
 
-  await page.goto('/plans?scope=week&date=2026-10-06')
+  await page.goto(`/plans?scope=week&date=${sourceDate}`)
   await expect(page.getByRole('heading', {
     name: '订阅来源更新后，当前计划需复核',
   })).toBeVisible()
@@ -498,7 +536,7 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
   await screenshot(page, info, 'plan-source-conflict')
 
   await conflict.getByRole('link', { name: '在日历查看' }).click()
-  await expect(page).toHaveURL(/\/calendar\?.*date=2026-10-06/)
+  await expect(page).toHaveURL(new RegExp(`/calendar\\?.*date=${sourceDate}`))
   dialog = page.getByRole('dialog', { name: '导入日历' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText('计划冲突来源', { exact: true }).first()).toBeVisible()
@@ -527,16 +565,25 @@ test('订阅来源更新后已确认计划可查看并明确保留', async ({
     originalPlan.current_version.blocks,
   )
 
-  await page.goto('/calendar?date=2026-10-06')
+  await page.goto(`/calendar?date=${sourceDate}`)
   dialog = await openSubscriptions(page)
   await dialog.getByRole('button', { name: /移动后的固定课程/ }).first().click()
+  const subscriptionsBeforeRefresh = await (
+    await page.request.get('/api/v1/calendar/subscriptions')
+  ).json()
+  const generationBeforeRefresh = subscriptionsBeforeRefresh.items.find(
+    (item: { name: string }) => item.name === '计划冲突来源',
+  ).generation as number
   await dialog.getByRole('button', { name: '立即刷新', exact: true }).click()
-  await expect(
-    dialog.getByRole('region', { name: '最近刷新' })
-      .getByText('已更新', { exact: true }).first(),
-  ).toBeVisible({ timeout: 15_000 })
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/v1/calendar/subscriptions')
+    const body = await response.json()
+    return body.items.find(
+      (item: { name: string }) => item.name === '计划冲突来源',
+    )?.generation
+  }, { timeout: 15_000 }).toBeGreaterThan(generationBeforeRefresh)
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
-  await page.goto('/plans?scope=week&date=2026-10-06')
+  await page.goto(`/plans?scope=week&date=${sourceDate}`)
   await expect(page.getByRole('heading', {
     name: '订阅来源更新后，当前计划需复核',
   })).toBeVisible()

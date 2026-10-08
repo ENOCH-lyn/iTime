@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
@@ -422,10 +422,15 @@ def test_series_update_rejects_orphaned_exception_but_preserves_date_binding(
 
 def test_split_series_moves_future_exceptions_atomically(client, database_url):
     _, user_id = create_account(client, database_url)
+    start_date = date.today() + timedelta(days=14)
+    first_exception_date = start_date + timedelta(days=1)
+    split_date = start_date + timedelta(days=2)
+    future_exception_date = start_date + timedelta(days=3)
+    final_date = start_date + timedelta(days=4)
     series = create_series(
         client,
         name="晨间复习",
-        start_date="2026-10-05",
+        start_date=start_date.isoformat(),
         starts_at="09:00:00",
         ends_at="10:00:00",
         recurrence=recurrence("daily", count=5),
@@ -434,7 +439,7 @@ def test_split_series_moves_future_exceptions_atomically(client, database_url):
         f"/api/v1/calendar/series/{series['id']}/exceptions",
         json=exception_payload(
             expected_series_version=1,
-            occurrence_key="2026-10-06T09:00:00",
+            occurrence_key=f"{first_exception_date.isoformat()}T09:00:00",
             action="overridden",
             override_name="晨间复习（资料整理）",
         ),
@@ -443,7 +448,7 @@ def test_split_series_moves_future_exceptions_atomically(client, database_url):
         f"/api/v1/calendar/series/{series['id']}/exceptions",
         json=exception_payload(
             expected_series_version=2,
-            occurrence_key="2026-10-08T09:00:00",
+            occurrence_key=f"{future_exception_date.isoformat()}T09:00:00",
             action="cancelled",
         ),
     ).json()["exception"]
@@ -452,10 +457,10 @@ def test_split_series_moves_future_exceptions_atomically(client, database_url):
     payload = {
         "operation_id": str(operation_id),
         "expected_version": 3,
-        "occurrence_key": "2026-10-07T09:00:00",
+        "occurrence_key": f"{split_date.isoformat()}T09:00:00",
         "replacement": fixed_payload(
             name="午后复习",
-            start_date="2026-10-07",
+            start_date=split_date.isoformat(),
             starts_at="14:00:00",
             ends_at="15:00:00",
             recurrence=recurrence("daily", count=3),
@@ -472,23 +477,27 @@ def test_split_series_moves_future_exceptions_atomically(client, database_url):
     assert body["predecessor"]["recurrence"]["count"] == 2
     assert body["predecessor"]["version"] == 4
     assert successor["predecessor_id"] == series["id"]
-    assert successor["start_date"] == "2026-10-07"
+    assert successor["start_date"] == split_date.isoformat()
     assert body["moved_exception_count"] == 1
     assert client.post(
         f"/api/v1/calendar/series/{series['id']}/split",
         json=payload,
     ).json() == body
 
-    items = get_occurrences(client, "2026-10-05", "2026-10-10")
+    items = get_occurrences(
+        client,
+        start_date.isoformat(),
+        (final_date + timedelta(days=1)).isoformat(),
+    )
     assert [
         (item["local_start_date"], item["local_start_time"], item["status"])
         for item in items
     ] == [
-        ("2026-10-05", "09:00:00", "scheduled"),
-        ("2026-10-06", "09:00:00", "scheduled"),
-        ("2026-10-07", "14:00:00", "scheduled"),
-        ("2026-10-08", "14:00:00", "cancelled"),
-        ("2026-10-09", "14:00:00", "scheduled"),
+        (start_date.isoformat(), "09:00:00", "scheduled"),
+        (first_exception_date.isoformat(), "09:00:00", "scheduled"),
+        (split_date.isoformat(), "14:00:00", "scheduled"),
+        (future_exception_date.isoformat(), "14:00:00", "cancelled"),
+        (final_date.isoformat(), "14:00:00", "scheduled"),
     ]
     old_exceptions = client.get(
         f"/api/v1/calendar/series/{series['id']}/exceptions"
@@ -669,10 +678,12 @@ def test_concurrent_series_split_creates_only_one_successor(
     live_server,
 ):
     email, user_id = create_account(client, database_url)
+    start_date = date.today() + timedelta(days=14)
+    split_date = start_date + timedelta(days=2)
     series = create_series(
         client,
         name="并发拆分",
-        start_date="2026-10-05",
+        start_date=start_date.isoformat(),
         recurrence=recurrence("daily", count=4),
     )["series"]
     barrier = Barrier(2)
@@ -680,7 +691,7 @@ def test_concurrent_series_split_creates_only_one_successor(
     def split_with(session, name):
         replacement = fixed_payload(
             name=name,
-            start_date="2026-10-07",
+            start_date=split_date.isoformat(),
             recurrence=recurrence("daily", count=2),
         )
         replacement.pop("operation_id")
@@ -690,7 +701,7 @@ def test_concurrent_series_split_creates_only_one_successor(
             json={
                 "operation_id": str(uuid4()),
                 "expected_version": 1,
-                "occurrence_key": "2026-10-07T09:00:00",
+                "occurrence_key": f"{split_date.isoformat()}T09:00:00",
                 "replacement": replacement,
             },
         )

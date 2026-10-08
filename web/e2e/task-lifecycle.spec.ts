@@ -56,7 +56,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
 }

@@ -138,7 +138,7 @@ async function returnToTaskList(page: Page) {
 
 async function createProjectAndTaskThroughUI(page: Page) {
   const taskTitle = '完成跨模块验收'
-  await page.getByRole('link', { name: '任务', exact: true }).click()
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
 
@@ -212,7 +212,7 @@ async function startPlannedFocusFromCalendar(
   date: string,
   taskTitle: string,
 ) {
-  await page.getByRole('link', { name: '日历', exact: true }).click()
+  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
   await expect(page).toHaveURL('/calendar')
   await page.getByLabel('跳转日期').fill(date)
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)

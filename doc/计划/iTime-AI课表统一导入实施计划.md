@@ -223,28 +223,28 @@ Run: `git add web/src/lib web/src/components web/e2e/ai-timetable-import.spec.ts
 - Modify: `doc/测试/iTime-测试方案与测试用例.md`
 - Modify: `doc/验收/iTime-Web实施与验证.md`
 
-- [ ] **Step 1: 增加真实 DeepSeek 图片与文字课表**
+- [x] **Step 1: 增加真实 DeepSeek 图片与文字课表**
 
 使用固定测试图片和自然语言描述，断言候选内容、修改、确认和日历投影；网页使用本地受控服务，不向生产站点写入。
 
-- [ ] **Step 2: 执行服务端验证**
+- [x] **Step 2: 执行服务端验证**
 
 Run: `cd server && uv run ruff check . && uv run pytest -q && uv build --no-sources`
 
 Expected: 全部 PASS。
 
-- [ ] **Step 3: 执行 Web 验证**
+- [x] **Step 3: 执行 Web 验证**
 
 Run: `cd web && pnpm build && pnpm test:e2e && pnpm test:e2e:deepseek`
 
 Expected: Chromium 三视口和真实 DeepSeek PASS。
 
-- [ ] **Step 4: 执行真实 Edge**
+- [x] **Step 4: 执行真实 Edge**
 
-Run: `cd web && ITIME_E2E_BROWSER_CHANNEL=msedge pnpm exec playwright test e2e/ai-timetable-import.spec.ts e2e/calendar-imports.spec.ts e2e/full-user-journey.spec.ts`
+Run: `cd web && ITIME_E2E_BROWSER_EXECUTABLE_PATH="$HOME/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" pnpm exec playwright test e2e/ai-timetable-import.spec.ts e2e/calendar-imports.spec.ts e2e/full-user-journey.spec.ts`
 
 Expected: 真实 Edge 三视口 PASS。
 
-- [ ] **Step 5: 记录证据并提交**
+- [x] **Step 5: 记录证据并提交**
 
 Run: `git add web/e2e/deepseek-live.spec.ts doc/测试/iTime-测试方案与测试用例.md doc/验收/iTime-Web实施与验证.md && git commit -m "test: 验证 AI 课表统一导入"`

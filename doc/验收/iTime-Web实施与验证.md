@@ -1893,3 +1893,56 @@ M8-A 完成 `PERF-01` 和受控本地范围的 `PERF-02`，并为 `NFR-PERF-01/N
 参考数据。M8-B 每日备份、RPO/RTO、24 小时恢复和删除台账重放，M8-C 生产候选网络/资源、
 真实邮件与 AI 供应商、月度成本、告警、域名/TLS、隐私披露、发布与回滚，以及正式模型质量和
 实体设备仍未完成；不能据此宣称 Web 首版已经发布。
+
+## M7-E：AI 课表统一导入与 Agent 闭环
+
+对应实施提交 `0da01a9`、`542d10f` 及本节收口提交，实施计划见
+[AI 课表统一导入实施计划](../计划/iTime-AI课表统一导入实施计划.md)。本模块将日历入口与
+AI 会话附件统一到同一个 `CalendarImportBatch`、AI 作业、候选校对和确认事务，不建立第二套
+仅供演示的数据链。
+
+实际完成范围：
+
+- 日历“导入日历”使用 Element Plus 分段控件统一文件、图片、受控网址、文字和 ICS 订阅；
+  XLSX/ICS 直接解析，图片、网页正文和文字经服务端 AI 结构化，全部进入同一候选编辑器。
+- AI 会话支持图片、XLSX、ICS 附件，以及自然语言和公开网址 Agent 工具；消息卡可确认、调整、
+  取消或跳转日历，AI 结果不能绕过候选校对和用户确认。
+- 作业可离页继续、轮询、取消和从服务端恢复；重复、无效、需校对、冲突及部分确认状态保持
+  可见。公开网址继续使用受限读取，不携带浏览器 Cookie 或平台凭据。
+- 数据库约束修订为 `0041_ai_import_source_check`，明确拒绝无媒体且缺少
+  `source_type` 的截图能力作业，并修复 PostgreSQL `CHECK` 中 `NULL` 绕过。
+- 真实模型回归暴露并修复 Agent 忙碌日历中的 Python `date/time` 无法 JSON 序列化问题；
+  上下文现在使用 ISO 8601。首屏会话新建同时等待认证和 CSRF，避免返回用户首次点击竞态。
+
+2026-10-08 在 macOS、本地 PostgreSQL 18、真实 Uvicorn/AI worker、Vite、DeepSeek 和
+Playwright 中执行：
+
+| 命令/环境 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd server && uv run pytest -q` | **776 passed, 6 skipped in 822.95s** | 当前服务端 PostgreSQL/HTTP/worker 全量；跳过性能与真实恢复专项 |
+| `cd server && uv run ruff check .` | 通过 | 全部 Python 静态检查 |
+| `cd server && uv build --no-sources` | 通过 | sdist 与 wheel |
+| `uv run alembic current` / `uv run alembic check` | `0041_ai_import_source_check (head)`；无模型漂移 | 当前开发库与模型 |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 与 Vite 生产构建 |
+| Chromium 普通全量 | **295 passed, 20 skipped in 16.9m** | 315 项收集；desktop、mobile、tablet |
+| 导入/规划/隐私三视口增量 | **27 passed in 2.7m** | 订阅、规划冲突和隐私失败恢复 |
+| AI 会话三视口增量 | **15 passed in 1.5m** | 多会话、提案、恢复、取消与认证首屏 |
+| `pnpm test:e2e:deepseek` | **1 passed in 19.3s** | 真实 DeepSeek desktop：对话、规划、图片/文字课表、确认和复盘 |
+| Microsoft Edge 154.0.4258.62 关键路径 | **24 passed in 2.1m** | 会话课表、日历五类导入、完整用户闭环 × 三视口 |
+
+普通全量将 `deepseek-live.spec.ts`、`recovery-after-restore.spec.ts` 与性能场景从默认集合分离，
+分别由显式配置和运行环境执行，避免缺少真实账号或恢复夹具时产生伪失败。20 个普通全量跳过项
+仍是用例内限定 desktop 的到期清理、慢上游、麦克风故障和 320px 深度场景；移动和平板主流程
+实际执行。
+
+收口期间完整回归还修正了订阅 worker 完成后详情重读、窄屏来源自动同步、规划版本冲突等待、
+隐私失败后对账、额度结算等待、复盘取消夹具、任务冲突定位器和可恢复 503 删除重试。这些修改
+没有放宽业务断言；最终 Chromium 全量、当前后端全量、真实 DeepSeek 和真实 Edge 关键路径均
+独立通过。
+
+Browser 插件在本次环境未提供，因此按前端测试规范使用仓库 Playwright。Edge channel 默认只
+检查 `/Applications`，本机 Edge 实际位于用户应用目录，最终使用
+`ITIME_E2E_BROWSER_EXECUTABLE_PATH` 指向真实浏览器，不以内置 Chromium 替代。
+
+本模块当前没有未解决的功能阻断；系统化正式模型质量评测、实体设备、M8-B 恢复及 M8-C
+生产候选验证仍是独立交付项，不能由本次真实 DeepSeek 单场景或本地浏览器结果替代。

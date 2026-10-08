@@ -1,5 +1,6 @@
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from threading import Barrier
 from uuid import uuid4
 
@@ -653,13 +654,19 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
 ):
     _, user_id = create_account(client, database_url)
     initialize_settings(client)
+    start_date = date.today() + timedelta(days=14)
+    predecessor_progress_date = start_date + timedelta(days=1)
+    split_date = start_date + timedelta(days=2)
+    successor_progress_date = start_date + timedelta(days=3)
+    successor_final_date = start_date + timedelta(days=4)
+    makeup_date = start_date + timedelta(days=5)
     task = create_task(client)
     task_id = task["id"]
     old_step_ids = [step["id"] for step in task["steps"]]
     scheduled = client.put(
         f"/api/v1/tasks/{task_id}/schedule",
         json=schedule_payload(
-            due_date="2026-10-05",
+            due_date=start_date.isoformat(),
             recurrence=recurrence("daily", count=5),
         ),
     )
@@ -668,7 +675,7 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
     past = client.put(
         f"/api/v1/tasks/{task_id}/occurrences/status",
         json=occurrence_status_payload(
-            "2026-10-06",
+            predecessor_progress_date.isoformat(),
             expected_task_version=2,
             completed_step_ids=[old_step_ids[0]],
         ),
@@ -677,7 +684,7 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
     future = client.put(
         f"/api/v1/tasks/{task_id}/occurrences/status",
         json=occurrence_status_payload(
-            "2026-10-08",
+            successor_progress_date.isoformat(),
             expected_task_version=3,
             completed_step_ids=[old_step_ids[1]],
         ),
@@ -688,8 +695,8 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
         json={
             "operation_id": str(uuid4()),
             "expected_task_version": 4,
-            "original_occurrence_key": "2026-10-08",
-            "due_date": "2026-10-10",
+            "original_occurrence_key": successor_progress_date.isoformat(),
+            "due_date": makeup_date.isoformat(),
             "due_time": None,
             "ambiguous_utc_offset_minutes": None,
         },
@@ -697,7 +704,7 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
     assert makeup.status_code == 201
 
     replacement = schedule_payload(
-        due_date="2026-10-07",
+        due_date=split_date.isoformat(),
         recurrence=recurrence("daily", count=3),
     )
     replacement.pop("operation_id")
@@ -706,7 +713,7 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
     split_payload = {
         "operation_id": str(operation_id),
         "expected_task_version": 5,
-        "occurrence_key": "2026-10-07",
+        "occurrence_key": split_date.isoformat(),
         "replacement": replacement,
     }
     split = client.post(
@@ -731,25 +738,33 @@ def test_task_schedule_split_clones_template_and_moves_future_progress(
             **split_payload,
             "operation_id": str(uuid4()),
             "expected_task_version": 6,
-            "occurrence_key": "2026-10-06",
+            "occurrence_key": predecessor_progress_date.isoformat(),
         },
     )
     assert second_split.status_code == 409
     assert second_split.json()["error"]["code"] == "task_series_already_split"
 
-    items = get_occurrences(client, "2026-10-05", "2026-10-11")
+    items = get_occurrences(
+        client,
+        start_date.isoformat(),
+        (makeup_date + timedelta(days=1)).isoformat(),
+    )
     assert [
         (item["due_date"], item["status"], item["task_id"])
         for item in items
     ] == [
-        ("2026-10-05", "open", task_id),
-        ("2026-10-06", "completed", task_id),
-        ("2026-10-07", "open", successor["id"]),
-        ("2026-10-08", "completed", successor["id"]),
-        ("2026-10-09", "open", successor["id"]),
-        ("2026-10-10", "open", successor["id"]),
+        (start_date.isoformat(), "open", task_id),
+        (predecessor_progress_date.isoformat(), "completed", task_id),
+        (split_date.isoformat(), "open", successor["id"]),
+        (successor_progress_date.isoformat(), "completed", successor["id"]),
+        (successor_final_date.isoformat(), "open", successor["id"]),
+        (makeup_date.isoformat(), "open", successor["id"]),
     ]
-    moved_completed = next(item for item in items if item["due_date"] == "2026-10-08")
+    moved_completed = next(
+        item
+        for item in items
+        if item["due_date"] == successor_progress_date.isoformat()
+    )
     successor_step_ids = {step["id"] for step in successor["steps"]}
     assert set(moved_completed["completed_step_ids"]).issubset(successor_step_ids)
     assert set(moved_completed["completed_step_ids"]).isdisjoint(old_step_ids)
@@ -808,11 +823,13 @@ def test_concurrent_task_schedule_split_creates_one_successor(
 ):
     email, user_id = create_account(client, database_url)
     initialize_settings(client)
+    start_date = date.today() + timedelta(days=14)
+    split_date = start_date + timedelta(days=2)
     task = create_task(client, steps=[], links=[], labels=[])
     scheduled = client.put(
         f"/api/v1/tasks/{task['id']}/schedule",
         json=schedule_payload(
-            due_date="2026-10-05",
+            due_date=start_date.isoformat(),
             recurrence=recurrence("daily", count=4),
         ),
     )
@@ -822,7 +839,7 @@ def test_concurrent_task_schedule_split_creates_one_successor(
     def split_with(session, due_time):
         replacement = schedule_payload(
             due_kind="datetime",
-            due_date="2026-10-07",
+            due_date=split_date.isoformat(),
             due_time=due_time,
             recurrence=recurrence("daily", count=2),
         )
@@ -834,7 +851,7 @@ def test_concurrent_task_schedule_split_creates_one_successor(
             json={
                 "operation_id": str(uuid4()),
                 "expected_task_version": 2,
-                "occurrence_key": "2026-10-07",
+                "occurrence_key": split_date.isoformat(),
                 "replacement": replacement,
             },
         )

@@ -926,8 +926,16 @@
 }
 
 .calendar-import-dialog .import-mode-switch {
+  --el-segmented-color: var(--text);
+  --el-segmented-item-selected-color: var(--on-accent);
+  --el-segmented-item-selected-bg-color: var(--accent);
   width: min(100%, 480px);
   margin-top: 20px;
+}
+
+.calendar-import-dialog .import-mode-switch .el-segmented__item-selected,
+.calendar-import-dialog .import-mode-switch .el-segmented__item-label {
+  transition: none;
 }
 
 .calendar-import-dialog .success-status p,

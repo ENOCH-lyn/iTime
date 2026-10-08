@@ -1,4 +1,5 @@
 import threading
+from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from uuid import uuid4
 
@@ -19,7 +20,7 @@ from tests.test_calendar_screenshot_imports import (
     publish_config,
     vision_handler,
 )
-from tests.test_calendar_series import create_account
+from tests.test_calendar_series import create_account, create_series
 
 pytestmark = pytest.mark.integration
 pytest_plugins = ("tests.test_ai_conversation_worker",)
@@ -46,6 +47,48 @@ def _publish_import_config(database_url: str, endpoint: str) -> None:
         Settings(database_url=database_url, environment="test"),
         endpoint,
     )
+
+
+def test_agent_message_serializes_busy_calendar_context(
+    conversation_worker_client,
+    conversation_worker_database_url,
+    chat_upstream,
+):
+    _, chat_endpoint = chat_upstream
+    publish_conversation_config(
+        conversation_worker_database_url,
+        chat_endpoint,
+    )
+    create_account(
+        conversation_worker_client,
+        conversation_worker_database_url,
+    )
+    create_series(
+        conversation_worker_client,
+        name="未来课程",
+        start_date=(date.today() + timedelta(days=1)).isoformat(),
+    )
+    conversation = conversation_worker_client.post(
+        "/api/v1/ai/conversations",
+        json={"operation_id": str(uuid4())},
+    ).json()["conversation"]
+
+    submitted = conversation_worker_client.post(
+        f"/api/v1/ai/conversations/{conversation['id']}/messages",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_conversation_version": conversation["version"],
+            "content": "结合日历安排明天的任务",
+            "response_mode": "auto",
+        },
+    )
+
+    assert submitted.status_code == 202, submitted.text
+    cancelled = conversation_worker_client.post(
+        f"/api/v1/ai/jobs/{submitted.json()['job']['id']}/cancel",
+        json={"operation_id": str(uuid4())},
+    )
+    assert cancelled.status_code == 200, cancelled.text
 
 
 def test_agent_text_timetable_creates_review_batch_before_calendar_write(

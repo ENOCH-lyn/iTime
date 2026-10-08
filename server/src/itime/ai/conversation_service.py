@@ -754,10 +754,18 @@ async def _agent_context(
         "busy_calendar": [
             {
                 "name": item["name"],
-                "local_start_date": item["local_start_date"],
-                "local_start_time": item["local_start_time"],
-                "local_end_date": item["local_end_date"],
-                "local_end_time": item["local_end_time"],
+                "local_start_date": item["local_start_date"].isoformat(),
+                "local_start_time": (
+                    item["local_start_time"].isoformat()
+                    if item["local_start_time"] is not None
+                    else None
+                ),
+                "local_end_date": item["local_end_date"].isoformat(),
+                "local_end_time": (
+                    item["local_end_time"].isoformat()
+                    if item["local_end_time"] is not None
+                    else None
+                ),
             }
             for item in occurrences
             if item.get("busy") and item.get("status") == "scheduled"

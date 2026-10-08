@@ -154,7 +154,7 @@ async function createTaskAndVerifySync(
     await expect(second).toHaveURL('/tasks')
     await expect(second).toHaveTitle('任务 · iTime')
 
-    await page.getByRole('link', { name: '任务', exact: true }).click()
+    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
     await expect(page).toHaveURL('/tasks')
     await page.getByRole('button', { name: '新建任务', exact: true }).click()
     await page.getByLabel('任务名称', { exact: true }).fill(title)

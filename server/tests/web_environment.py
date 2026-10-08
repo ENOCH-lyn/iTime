@@ -577,7 +577,11 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                     snapshot = json.loads(body["messages"][-1]["content"])[
                         "review_snapshot"
                     ]
-                    if "离页恢复" in snapshot["generation_instruction"]:
+                    if (
+                        "离页恢复" in snapshot["generation_instruction"]
+                        or "离页恢复"
+                        in snapshot["user_context"]["supplemental_facts"]
+                    ):
                         time.sleep(1.5)
                     arguments = review_tool_arguments(body)
                 else:
@@ -803,7 +807,19 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        scenario = parse_qs(parsed.query).get("scenario", ["basic"])[0]
+        query = parse_qs(parsed.query)
+        scenario = query.get("scenario", ["basic"])[0]
+        try:
+            event_date = date.fromisoformat(
+                query.get("date", ["2026-10-06"])[0]
+            )
+        except ValueError:
+            self.send_response(400)
+            self.end_headers()
+            return
+        next_date = event_date + timedelta(days=1)
+        compact_date = event_date.strftime("%Y%m%d")
+        compact_next_date = next_date.strftime("%Y%m%d")
         with self.lock:
             count = self.counts.get(self.path, 0) + 1
             self.counts[self.path] = count
@@ -831,18 +847,18 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
             else "订阅课程"
         )
         starts_at = (
-            "20261006T093000"
+            f"{compact_date}T093000"
             if scenario == "plan-conflict" and count > 1
-            else "20261006T110000"
+            else f"{compact_date}T110000"
             if scenario == "plan-conflict"
-            else "20261006T090000"
+            else f"{compact_date}T090000"
         )
         ends_at = (
-            "20261006T103000"
+            f"{compact_date}T103000"
             if scenario == "plan-conflict" and count > 1
-            else "20261006T120000"
+            else f"{compact_date}T120000"
             if scenario == "plan-conflict"
-            else "20261006T100000"
+            else f"{compact_date}T100000"
         )
         events = [
             "BEGIN:VEVENT",
@@ -860,12 +876,12 @@ class FakeCalendarHandler(BaseHTTPRequestHandler):
                     "BEGIN:VEVENT",
                     "UID:all-day@example.com",
                     "SUMMARY:全天纪念日",
-                    "DTSTART;VALUE=DATE:20261006",
-                    "DTEND;VALUE=DATE:20261007",
+                    f"DTSTART;VALUE=DATE:{compact_date}",
+                    f"DTEND;VALUE=DATE:{compact_next_date}",
                     "END:VEVENT",
                     "BEGIN:VEVENT",
                     "UID:sensitive-private-token@example.com",
-                    "RECURRENCE-ID:20261007T010000Z",
+                    f"RECURRENCE-ID:{compact_next_date}T010000Z",
                     "STATUS:CANCELLED",
                     "END:VEVENT",
                 ]
