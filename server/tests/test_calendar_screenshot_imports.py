@@ -614,7 +614,7 @@ def test_retry_then_invalid_output_preserves_media(
     failed = screenshot_client.get(f"/api/v1/ai/jobs/{job['id']}").json()
     assert failed["status"] == "failed"
     assert failed["attempt_count"] == 2
-    assert failed["error"]["code"] == "screenshot_output_invalid"
+    assert failed["error"]["code"] == "calendar_import_output_invalid"
     with psycopg.connect(psycopg_url(screenshot_database_url)) as connection:
         assert connection.execute(
             """

@@ -45,19 +45,19 @@ Run: `git add server/src/itime/migrations server/src/itime/calendar server/tests
 - Modify: `server/src/itime/calendar/screenshot_service.py`
 - Test: `server/tests/test_calendar_ai_import_provider.py`
 
-- [ ] **Step 1: 写统一输出测试**
+- [x] **Step 1: 写统一输出测试**
 
 覆盖图片、网页正文和文字输入生成相同 `ScreenshotRecognitionOutput` 等价结构，包含课程名称、时间、重复、地点、原文、置信度和缺失字段。
 
-- [ ] **Step 2: 提取通用工具 schema**
+- [x] **Step 2: 提取通用工具 schema**
 
 图片 provider 只负责多模态消息，通用 provider 负责结构化工具 schema、输出大小、JSON 解析和错误分类；模型正文不得作为候选。
 
-- [ ] **Step 3: 增加提示注入隔离**
+- [x] **Step 3: 增加提示注入隔离**
 
 网页和用户文本明确标记为不可信资料；模型不能调用未公布工具、扩大日期范围或生成未知学期/节次 ID。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 Run: `cd server && uv run pytest tests/test_calendar_ai_import_provider.py tests/test_calendar_screenshot_imports.py tests/test_ai_usage.py -q`
 
