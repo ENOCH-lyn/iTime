@@ -215,6 +215,47 @@ def chat_handler(state: ChatUpstreamState):
                     request_id,
                 )
                 return
+            if mode == "agent_timetable":
+                self._json_response(
+                    200,
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "type": "function",
+                                            "function": {
+                                                "name": (
+                                                    "propose_itime_timetable_import"
+                                                ),
+                                                "arguments": json.dumps(
+                                                    {
+                                                        "assistant_message": (
+                                                            "我已整理为待确认的课表导入。"
+                                                        ),
+                                                        "source_type": "text",
+                                                        "content": (
+                                                            "每周一、三 08:00 "
+                                                            "高等数学，持续到 "
+                                                            "2027-01-10"
+                                                        ),
+                                                    },
+                                                    ensure_ascii=False,
+                                                ),
+                                            },
+                                        }
+                                    ],
+                                }
+                            }
+                        ],
+                        "usage": CHAT_USAGE,
+                    },
+                    request_id,
+                )
+                return
 
             self._start_response("text/event-stream; charset=utf-8", request_id)
             if mode == "invalid":

@@ -51,6 +51,7 @@ class ConversationMessageCreateInput(Input):
     content: str = Field(min_length=1, max_length=12000)
     response_mode: Literal["auto", "text", "planning"] = "text"
     planning: PlanningRequestFields | None = None
+    import_batch_id: UUID | None = None
 
     @field_validator("content")
     @classmethod

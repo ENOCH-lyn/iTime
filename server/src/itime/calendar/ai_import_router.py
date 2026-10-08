@@ -21,6 +21,7 @@ from itime.ai.routing_service import (
 )
 from itime.auth.security import now
 from itime.auth.session import authorized, check_ai_access
+from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.ai_import_provider import ai_import_log_request_body
 from itime.calendar.import_schemas import (
     AIImportCreateInput,
@@ -224,6 +225,31 @@ async def create_ai_calendar_import(
             conversation_id,
             message_id,
         )
+        if source_type != "image":
+            batch, source, job = await enqueue_text_calendar_import(
+                identity.session,
+                owner_id=identity.user.id,
+                settings=request.app.state.settings,
+                cipher=request.app.state.security.ai_cipher,
+                source_type=source_type,
+                content=contents.decode(),
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+            result = {
+                "operation_id": operation_id,
+                "batch": batch_result(batch, source, []),
+                "job": job_result(job),
+            }
+            save_operation(
+                identity.session,
+                identity.user.id,
+                operation_id,
+                "calendar_ai_import.create",
+                operation,
+                result,
+            )
+            return result
         active_count = await identity.session.scalar(
             select(func.count())
             .select_from(AIJob)

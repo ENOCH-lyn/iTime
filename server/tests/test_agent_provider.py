@@ -4,6 +4,7 @@ import pytest
 
 from itime.ai.conversation_provider import (
     AgentTaskPlan,
+    AgentTimetableImport,
     ConversationProviderError,
     _agent_json_result,
     agent_request_body,
@@ -37,13 +38,14 @@ def test_agent_request_exposes_only_confirmed_task_plan_tool() -> None:
     assert body["stream_options"] == {"include_usage": True}
     assert body["tool_choice"] == "auto"
     assert [item["function"]["name"] for item in body["tools"]] == [
-        "propose_itime_task_plan"
+        "propose_itime_task_plan",
+        "propose_itime_timetable_import",
     ]
     assert "2026-10-08" in body["messages"][1]["content"]
 
 
 def test_agent_response_accepts_text_or_task_plan() -> None:
-    content, task_plan, usage = _agent_json_result(
+    content, task_plan, timetable_import, usage = _agent_json_result(
         json.dumps(
             {
                 "choices": [
@@ -57,6 +59,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     )
     assert content == "可以，先确认目标。"
     assert task_plan is None
+    assert timetable_import is None
     assert usage == {"total_tokens": 12}
 
     arguments = {
@@ -69,7 +72,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         "ends_at": "11:00:00",
         "assumptions": ["上午按 09:00 开始。"],
     }
-    content, task_plan, _ = _agent_json_result(
+    content, task_plan, timetable_import, _ = _agent_json_result(
         json.dumps(
             {
                 "choices": [
@@ -96,6 +99,49 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     )
     assert content == arguments["assistant_message"]
     assert task_plan == AgentTaskPlan.model_validate(arguments)
+    assert timetable_import is None
+
+    import_arguments = {
+        "assistant_message": "我已整理为待确认的课表导入。",
+        "source_type": "text",
+        "content": "每周一、三 08:00 高等数学，持续到 2027-01-10",
+    }
+    content, task_plan, timetable_import, _ = _agent_json_result(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": (
+                                            "propose_itime_timetable_import"
+                                        ),
+                                        "arguments": json.dumps(
+                                            import_arguments,
+                                            ensure_ascii=False,
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ).encode(),
+        "request-3",
+        200,
+    )
+    assert content == import_arguments["assistant_message"]
+    assert task_plan is None
+    assert timetable_import == AgentTimetableImport.model_validate(
+        import_arguments
+    )
 
 
 def test_agent_response_rejects_unaligned_or_unknown_tool() -> None:
@@ -116,5 +162,5 @@ def test_agent_response_rejects_unaligned_or_unknown_tool() -> None:
         ]
     }
     with pytest.raises(ConversationProviderError) as captured:
-        _agent_json_result(json.dumps(invalid).encode(), "request-3", 200)
+        _agent_json_result(json.dumps(invalid).encode(), "request-4", 200)
     assert captured.value.code == "conversation_tool_invalid"

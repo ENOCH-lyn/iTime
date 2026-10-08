@@ -373,6 +373,8 @@ async def _process_conversation(
         claim,
         work.generation,
         provider_result,
+        settings=settings,
+        cipher=cipher,
         quality_sample_retention_days=settings.ai_quality_sample_retention_days,
     )
 

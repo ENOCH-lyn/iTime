@@ -17,6 +17,7 @@ from itime.ai.conversation_service import (
     conversation_result,
     conversation_version_conflict,
     enqueue_message,
+    imports_for_messages,
     jobs_for_messages,
     locked_conversation,
     message_result,
@@ -278,10 +279,19 @@ async def list_messages(
             identity.user.id,
             [message.id for message in page],
         )
+        imports = await imports_for_messages(
+            identity.session,
+            identity.user.id,
+            [message.id for message in page],
+        )
         return {
             "conversation": conversation_result(conversation),
             "items": [
-                message_result(message, job=jobs.get(message.id))
+                message_result(
+                    message,
+                    job=jobs.get(message.id),
+                    calendar_imports=imports.get(message.id),
+                )
                 for message in reversed(page)
             ],
             "next_before_sequence": (
@@ -319,4 +329,5 @@ async def create_message(
             timeout_seconds=request.app.state.settings.ai_job_timeout_seconds,
             response_mode=data.response_mode,
             planning=data.planning,
+            import_batch_id=data.import_batch_id,
         )

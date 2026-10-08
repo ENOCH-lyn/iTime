@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,11 @@ from itime.ai.routing_service import (
     replace_job_config_route,
 )
 from itime.auth.security import now
+from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
+from itime.calendar.import_service import import_detail
+from itime.calendar.models import CalendarImportBatch
 from itime.calendar.series_service import query_occurrences
+from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
 from itime.planning.job_service import (
@@ -105,8 +110,9 @@ def message_result(
     message: ConversationMessage,
     *,
     job: AIJob | None = None,
+    calendar_imports: list[dict] | None = None,
 ) -> dict:
-    return {
+    result = {
         "id": message.id,
         "conversation_id": message.conversation_id,
         "sequence": message.sequence,
@@ -123,6 +129,9 @@ def message_result(
         "updated_at": message.updated_at,
         "completed_at": message.completed_at,
     }
+    if calendar_imports:
+        result["calendar_imports"] = calendar_imports
+    return result
 
 
 async def locked_conversation(
@@ -268,6 +277,33 @@ async def jobs_for_messages(
     return {message_id: job for message_id, job in rows}
 
 
+async def imports_for_messages(
+    session: AsyncSession,
+    owner_id: UUID,
+    message_ids: list[UUID],
+) -> dict[UUID, list[dict]]:
+    if not message_ids:
+        return {}
+    batches = list(
+        await session.scalars(
+            select(CalendarImportBatch)
+            .where(
+                CalendarImportBatch.owner_id == owner_id,
+                CalendarImportBatch.message_id.in_(message_ids),
+            )
+            .order_by(CalendarImportBatch.created_at, CalendarImportBatch.id)
+        )
+    )
+    result: dict[UUID, list[dict]] = {}
+    for batch in batches:
+        if batch.message_id is None:
+            continue
+        result.setdefault(batch.message_id, []).append(
+            (await import_detail(session, batch))["batch"]
+        )
+    return result
+
+
 def append_job_event(
     session: AsyncSession,
     job: AIJob,
@@ -308,6 +344,7 @@ async def enqueue_message(
     timeout_seconds: int,
     response_mode: str = "text",
     planning: PlanningRequestFields | None = None,
+    import_batch_id: UUID | None = None,
 ) -> dict:
     conversation = await locked_conversation(session, owner_id, conversation_id)
     if conversation.version != expected_version:
@@ -349,11 +386,46 @@ async def enqueue_message(
                 "生成规划时必须提供规划范围。",
                 status=422,
             )
-        planning_snapshot = await build_planning_snapshot(session, owner_id, planning)
+        planning_snapshot = await build_planning_snapshot(
+            session,
+            owner_id,
+            planning,
+        )
         if not planning_snapshot.task_candidates:
             raise AppError(
                 "planning_candidates_empty",
                 "当前范围没有可规划任务，请先添加或选择未完成任务。",
+                status=409,
+            )
+    attached_batch = None
+    if import_batch_id is not None:
+        attached_batch = await session.scalar(
+            select(CalendarImportBatch)
+            .where(
+                CalendarImportBatch.id == import_batch_id,
+                CalendarImportBatch.owner_id == owner_id,
+            )
+            .with_for_update()
+        )
+        if attached_batch is None:
+            raise AppError(
+                "calendar_import_not_found",
+                "未找到此课表导入批次。",
+                status=404,
+            )
+        if attached_batch.state in {"cancelled", "failed", "expired"}:
+            raise AppError(
+                "calendar_import_not_attachable",
+                "此课表导入批次已结束，请重新提交。",
+                status=409,
+            )
+        if (
+            attached_batch.conversation_id is not None
+            and attached_batch.conversation_id != conversation.id
+        ):
+            raise AppError(
+                "calendar_import_already_attached",
+                "此课表导入已关联其他会话。",
                 status=409,
             )
 
@@ -427,6 +499,12 @@ async def enqueue_message(
             "related_context_count": len(context_message_ids),
         }
     elif agent_context is not None:
+        if attached_batch is not None:
+            agent_context = {
+                **agent_context,
+                "attached_import_batch_id": str(attached_batch.id),
+                "attached_import_source": attached_batch.source_type,
+            }
         provider = provider_config(config)
         request_body = agent_request_body(provider, messages, agent_context)
         input_summary = {
@@ -452,6 +530,8 @@ async def enqueue_message(
         }
         for source in public_sources
     ]
+    if attached_batch is not None:
+        input_summary["import_batch_id"] = str(attached_batch.id)
     route_estimates = []
     for route_config in route.configs:
         if planning_snapshot is not None:
@@ -505,6 +585,15 @@ async def enqueue_message(
     )
     session.add_all([request_message, response_message])
     await session.flush()
+    attached_import_result = None
+    if attached_batch is not None:
+        attached_batch.conversation_id = conversation.id
+        attached_batch.message_id = request_message.id
+        attached_batch.version += 1
+        attached_batch.updated_at = current
+        attached_import_result = (
+            await import_detail(session, attached_batch)
+        )["batch"]
 
     job = AIJob(
         id=uuid4(),
@@ -583,7 +672,14 @@ async def enqueue_message(
         "operation_id": operation_id,
         "conversation": conversation_result(conversation, active_job=job),
         "messages": [
-            message_result(request_message),
+            message_result(
+                request_message,
+                calendar_imports=(
+                    [attached_import_result]
+                    if attached_import_result is not None
+                    else None
+                ),
+            ),
             message_result(response_message, job=job),
         ],
         "job": job_result(job),
@@ -1006,6 +1102,8 @@ async def complete_conversation_job(
     generation_number: int,
     result: ConversationProviderResult,
     *,
+    settings: Settings,
+    cipher: Fernet,
     quality_sample_retention_days: int = 30,
 ) -> bool:
     current = now()
@@ -1090,7 +1188,34 @@ async def complete_conversation_job(
                 result.task_plan.model_dump(mode="json"),
                 current,
             )
-        message.content = result.content
+        import_batch = None
+        import_job = None
+        import_error = None
+        if result.timetable_import is not None:
+            try:
+                async with session.begin_nested():
+                    import_batch, _, import_job = (
+                        await enqueue_text_calendar_import(
+                            session,
+                            owner_id=job.owner_id,
+                            settings=settings,
+                            cipher=cipher,
+                            source_type=result.timetable_import.source_type,
+                            content=result.timetable_import.content,
+                            conversation_id=conversation.id,
+                            message_id=message.id,
+                        )
+                    )
+            except AppError as exc:
+                import_error = {
+                    "code": exc.code,
+                    "message": exc.message,
+                }
+        message.content = (
+            result.content
+            if import_error is None
+            else f"{result.content}\n\n课表导入未创建：{import_error['message']}"
+        )
         message.status = "complete"
         message.error_code = None
         message.error_message = None
@@ -1105,6 +1230,15 @@ async def complete_conversation_job(
                 if proposal is not None
                 else {}
             ),
+            **(
+                {
+                    "import_batch_id": str(import_batch.id),
+                    "import_job_id": str(import_job.id),
+                }
+                if import_batch is not None and import_job is not None
+                else {}
+            ),
+            **({"import_error": import_error} if import_error is not None else {}),
         }
         job.error_code = None
         job.error_message = None

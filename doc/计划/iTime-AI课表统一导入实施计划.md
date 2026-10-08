@@ -132,20 +132,24 @@ Run: `git add server/src/itime/calendar server/src/itime/ai/worker.py server/src
 ### Task 5: 接入 Agent 提案
 
 **Files:**
-- Modify: `server/src/itime/ai/agent_tools.py`
-- Modify: `server/src/itime/ai/agent_proposals.py`
+- Create: `server/src/itime/calendar/ai_import_enqueue.py`
+- Modify: `server/src/itime/ai/conversation_provider.py`
 - Modify: `server/src/itime/ai/conversation_service.py`
+- Modify: `server/src/itime/ai/conversation_schemas.py`
+- Modify: `server/src/itime/ai/conversation_router.py`
+- Modify: `server/src/itime/ai/worker.py`
+- Modify: `server/src/itime/calendar/ai_import_router.py`
 - Test: `server/tests/test_agent_timetable_import.py`
 
-- [ ] **Step 1: 写会话导入闭环测试**
+- [x] **Step 1: 写会话导入闭环测试**
 
 覆盖图片附件、公开 URL 和文字描述触发 `propose_timetable_import`，消息关联唯一批次，确认前日历为空。
 
-- [ ] **Step 2: 实现会话关联**
+- [x] **Step 2: 实现会话关联**
 
 附件先创建媒体或文件来源，发送消息时绑定来源；Agent 工具创建或关联导入批次，并把 `import_batch_id` 写入 assistant 消息附件。
 
-- [ ] **Step 3: 验证并提交**
+- [x] **Step 3: 验证并提交**
 
 Run: `cd server && uv run pytest tests/test_agent_timetable_import.py tests/test_agent_conversation_worker.py -q`
 
