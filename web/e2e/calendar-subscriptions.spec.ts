@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -69,7 +70,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
+  await navigateToProduct(page, '日历')
   await expect(page).toHaveURL('/calendar')
 }
 

@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
@@ -72,7 +73,7 @@ test('DeepSeek 完成对话、规划、课表图片与文字导入和复盘闭�
   await expect(assistant).not.toHaveText('')
   await screenshot(page, info, 'conversation')
 
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  await navigateToProduct(page, '任务')
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   await page.getByLabel('任务名称', { exact: true }).fill('完成 DeepSeek 接入验收报告')
   await page.getByLabel('正文', { exact: false }).fill(
@@ -81,7 +82,7 @@ test('DeepSeek 完成对话、规划、课表图片与文字导入和复盘闭�
   await page.getByRole('button', { name: '创建任务', exact: true }).first().click()
   await expect(page.getByText('任务已创建并保存到服务端。')).toBeVisible()
 
-  await page.getByRole('menuitem', { name: '规划', exact: true }).click()
+  await navigateToProduct(page, '规划')
   await expect(page.getByRole('heading', {
     name: '待规划任务',
     exact: true,
@@ -128,7 +129,7 @@ test('DeepSeek 完成对话、规划、课表图片与文字导入和复盘闭�
   await imagePage.screenshot({ path: imagePath })
   await imagePage.close()
 
-  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
+  await navigateToProduct(page, '日历')
   await page.getByRole('button', { name: '导入日历', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '导入日历' })
   await dialog.locator('.import-mode-switch').getByText('图片', { exact: true }).click()
@@ -171,7 +172,7 @@ test('DeepSeek 完成对话、规划、课表图片与文字导入和复盘闭�
   await expect(dialog.getByText(/本次处理/)).toBeVisible()
   await dialog.getByRole('button', { name: '完成', exact: true }).click()
 
-  await page.getByRole('menuitem', { name: '复盘', exact: true }).click()
+  await navigateToProduct(page, '复盘')
   await expect(page.getByRole('heading', { name: '事实概览' })).toBeVisible()
   await page.getByLabel('补充事实').fill(
     `今天完成了 DeepSeek 对话、规划和课表截图识别验收（${firstImageDate}）。`,

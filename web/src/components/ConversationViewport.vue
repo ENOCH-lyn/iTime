@@ -135,6 +135,8 @@ defineExpose({ scrollToLatest })
       v-else
       ref="viewport"
       class="conversation-message-viewport"
+      tabindex="0"
+      aria-label="消息历史"
       @scroll.passive="measureBottom"
     >
       <ElButton

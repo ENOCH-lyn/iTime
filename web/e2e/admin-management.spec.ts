@@ -117,7 +117,14 @@ async function registerAndLogin(page: Page, request: APIRequestContext, email: s
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, email))
   if ((page.viewportSize()?.width ?? 0) <= 700) {
-    await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', {
+      name: '打开导航',
+      exact: true,
+    })).toBeVisible()
+    await expect(page.getByRole('heading', {
+      name: '新对话',
+      exact: true,
+    })).toBeVisible()
   } else {
     await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
   }
@@ -180,8 +187,8 @@ test('关闭邮箱验证后新账号注册直接登录', async ({
       exact: true,
     }).click()
     if ((userPage.viewportSize()?.width ?? 0) <= 700) {
-      await expect(userPage.getByRole('button', {
-        name: '新建会话',
+      await expect(userPage.getByRole('heading', {
+        name: '新对话',
         exact: true,
       })).toBeVisible()
     } else {
@@ -597,6 +604,12 @@ test('分别创建、测试和发布截图、转写与对话配置', async ({
     const userPage = await userContext.newPage()
     watchRuntime(userPage)
     await registerAndLogin(userPage, request, userEmail)
+    if ((userPage.viewportSize()?.width ?? 0) < 1024) {
+      await userPage.getByRole('button', {
+        name: '打开导航',
+        exact: true,
+      }).click()
+    }
     await userPage.getByRole('button', { name: '新建会话', exact: true }).click()
     await userPage.getByLabel('消息', { exact: true }).fill('备用切换测试')
     await userPage.getByRole('button', { name: '发送消息', exact: true }).click()

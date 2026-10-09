@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import { mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import AxeBuilder from '@axe-core/playwright'
@@ -47,6 +48,12 @@ async function openMemories(page: Page) {
 
 async function expectConversationMemory(page: Page, expected: string) {
   await page.goto('/ai')
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole('button', {
+      name: '打开导航',
+      exact: true,
+    }).click()
+  }
   await page.getByRole('button', { name: '新建会话', exact: true }).click()
   await page.getByLabel('消息', { exact: true }).fill('检查记忆上下文')
   await page.getByRole('button', { name: '发送消息', exact: true }).click()
@@ -77,7 +84,7 @@ test('daily review resumes jobs and manages report memories', async ({
     ) consoleErrors.push(message.text())
   })
   await account(page, request)
-  await page.getByRole('menuitem', { name: '复盘', exact: true }).click()
+  await navigateToProduct(page, '复盘')
   await expect(page).toHaveURL(/\/reviews/)
   await expect(page).toHaveTitle('复盘 · iTime')
   await expect(page.getByRole('heading', { name: '事实概览' })).toBeVisible()
@@ -110,9 +117,9 @@ test('daily review resumes jobs and manages report memories', async ({
 
   await page.getByLabel('重新生成要求').fill('离页恢复')
   await page.getByRole('button', { name: '生成新版本' }).click()
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  await navigateToProduct(page, '任务')
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('menuitem', { name: '复盘', exact: true }).click()
+  await navigateToProduct(page, '复盘')
   await expect(page.getByText('第 2 版报告已生成。')).toBeVisible({
     timeout: 15_000,
   })

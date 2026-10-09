@@ -38,11 +38,52 @@ async function account(page: Page, request: APIRequestContext) {
   return address
 }
 
-async function screenshot(page: Page, info: TestInfo, name: string) {
+async function login(page: Page, address: string) {
+  await page.goto('/login')
+  await page.getByLabel('邮箱', { exact: true }).fill(address)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL('/ai')
+}
+
+async function createTask(page: Page, title: string) {
+  const session = await (await page.request.get('/api/v1/auth/me')).json()
+  const response = await page.request.post('/api/v1/tasks', {
+    headers: { 'X-CSRF-Token': session.csrf_token },
+    data: {
+      operation_id: randomUUID(),
+      title,
+      description: '设置同步冲突视觉验收。',
+      project_id: null,
+      estimated_minutes: 30,
+      priority: 1,
+      labels: [],
+      links: [],
+      steps: [{ title: '离线步骤' }],
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+  return {
+    session,
+    task: (await response.json()).task as {
+      id: string
+      version: number
+      steps: { id: string }[]
+    },
+  }
+}
+
+async function screenshot(
+  page: Page,
+  info: TestInfo,
+  name: string,
+  fullPage = true,
+) {
   await mkdir(evidence, { recursive: true })
   await page.screenshot({
     path: `${evidence}/${info.project.name}-settings-${name}.png`,
-    fullPage: true,
+    fullPage,
+    animations: 'disabled',
   })
 }
 
@@ -57,7 +98,7 @@ test('设置单页分组并兼容旧深链接', async ({ page, request }, info) 
   await expect(page.getByText(address, { exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '个人设置' })).toHaveCount(0)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await screenshot(page, info, 'overview')
+  await screenshot(page, info, 'normal')
 
   await page.goto('/account/password')
   await expect(page).toHaveURL('/settings#password')
@@ -95,4 +136,64 @@ test('设置页在 320px 最大字号下无裁切', async ({ page, request }, in
   )).toBe(true)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, '320-large-dark')
+  if (info.project.name === 'mobile') {
+    await page.getByRole('heading', { name: '注销账号', exact: true })
+      .scrollIntoViewIfNeeded()
+    await screenshot(page, info, 'danger', false)
+  }
+})
+
+test('设置页展开真实同步冲突和恢复操作', async ({
+  page,
+  request,
+  browser,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', '桌面固定证据只生成一次')
+  const address = await account(page, request)
+  const marker = `设置冲突 ${randomUUID()}`
+  const { session, task } = await createTask(page, marker)
+  const secondContext = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    viewport: { width: 1440, height: 1000 },
+  })
+  try {
+    const second = await secondContext.newPage()
+    await login(second, address)
+    await second.goto('/tasks')
+    await second.getByText(marker, { exact: true }).click()
+    await secondContext.setOffline(true)
+    await second.getByLabel('完成步骤 离线步骤').click()
+    await expect(second.getByLabel(/1 项待同步/)).toBeVisible()
+
+    const removed = await page.request.delete(
+      `/api/v1/tasks/${task.id}/steps/${task.steps[0]!.id}`,
+      {
+        headers: { 'X-CSRF-Token': session.csrf_token },
+        data: {
+          operation_id: randomUUID(),
+          expected_task_version: task.version,
+        },
+      },
+    )
+    expect(removed.ok()).toBeTruthy()
+
+    await secondContext.setOffline(false)
+    await expect(second.getByLabel(/1 项冲突/)).toBeVisible({
+      timeout: 8_000,
+    })
+    await second.getByLabel(/1 项冲突/).click()
+    await expect(second).toHaveURL('/settings#sync')
+    const drawer = second.getByRole('dialog', { name: '同步与离线' })
+    await expect(drawer.getByRole('heading', { name: '同步冲突' })).toBeVisible()
+    expect(await second.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    )).toBe(true)
+    expect((await new AxeBuilder({ page: second }).analyze()).violations)
+      .toEqual([])
+    await screenshot(second, info, 'sync-conflict', false)
+    await drawer.getByRole('button', { name: '丢弃此操作' }).click()
+    await expect(second.getByText('已同步', { exact: true })).toBeVisible()
+  } finally {
+    await secondContext.close()
+  }
 })

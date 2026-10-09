@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import { test, expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { randomUUID } from 'node:crypto'
@@ -53,7 +54,7 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL('/ai')
   if ((page.viewportSize()?.width ?? 0) <= 700) {
     await page.getByRole('button', { name: '打开导航', exact: true }).click()
-    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+    await navigateToProduct(page, '任务')
   } else {
     await page.getByRole('link', { name: '任务', exact: true }).click()
   }

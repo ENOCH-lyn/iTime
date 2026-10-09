@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -308,9 +309,9 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
 
   await page.getByLabel('补充要求').fill('离页恢复测试')
   await page.getByRole('button', { name: '生成计划提案', exact: true }).click()
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  await navigateToProduct(page, '任务')
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('menuitem', { name: '规划', exact: true }).click()
+  await navigateToProduct(page, '规划')
   await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible({
     timeout: 15_000,
   })
@@ -382,7 +383,7 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
     await screenshot(page, info, '320-large-dark')
   }
 
-  await page.getByRole('menuitem', { name: '日历', exact: true }).click()
+  await navigateToProduct(page, '日历')
   await expect(page).toHaveURL('/calendar')
   await page.getByLabel('跳转日期').fill(targetDate)
   await expect(page.getByText('正在读取日历…')).toHaveCount(0)

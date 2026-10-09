@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -354,12 +355,12 @@ test('离开页面后作业继续并从服务端恢复完整回复', async ({
 
   await returnToConversationList(page)
   if ((page.viewportSize()?.width ?? 0) < 1024) {
-    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+    await navigateToProduct(page, '任务')
   } else {
     await page.getByRole('link', { name: '任务', exact: true }).click()
   }
   await expect(page).toHaveURL('/tasks')
-  await page.getByRole('menuitem', { name: 'AI', exact: true }).click()
+  await navigateToProduct(page, 'AI')
   if ((page.viewportSize()?.width ?? 0) < 1024) {
     await page.getByRole('button', { name: '打开导航', exact: true }).click()
   }

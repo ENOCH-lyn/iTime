@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import {
   expect,
@@ -205,7 +206,7 @@ async function secondDevice(
   const page = await context.newPage()
   watchRuntime(page)
   await login(page, credential)
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  await navigateToProduct(page, '任务')
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true }))
     .toBeVisible()
@@ -221,7 +222,7 @@ async function createTaskAndVerifySync(
   const other = await secondDevice(browser, baseURL, credential)
   const title = `负载下跨设备任务 ${randomUUID()}`
   try {
-    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+    await navigateToProduct(page, '任务')
     await expect(page).toHaveURL('/tasks')
     await page.getByRole('button', { name: '新建任务', exact: true }).click()
     await page.getByLabel('任务名称', { exact: true }).fill(title)

@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import {
   expect,
@@ -154,7 +155,7 @@ async function createTaskAndVerifySync(
     await expect(second).toHaveURL('/tasks')
     await expect(second).toHaveTitle('任务 · iTime')
 
-    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+    await navigateToProduct(page, '任务')
     await expect(page).toHaveURL('/tasks')
     await page.getByRole('button', { name: '新建任务', exact: true }).click()
     await page.getByLabel('任务名称', { exact: true }).fill(title)

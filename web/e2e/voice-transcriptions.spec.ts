@@ -1,3 +1,4 @@
+import { navigateToProduct } from './helpers/product-navigation'
 import AxeBuilder from '@axe-core/playwright'
 import {
   expect,
@@ -382,7 +383,7 @@ test('组件卸载会停止全部麦克风轨道', async ({ page, request }, inf
   const control = taskVoiceControl(page)
   await control.getByRole('button', { name: '开始语音输入' }).click()
   await expect(control.getByRole('status')).toContainText('正在录音')
-  await page.getByRole('menuitem', { name: 'AI', exact: true }).click()
+  await navigateToProduct(page, 'AI')
   await expect(page).toHaveURL('/ai')
   await expect.poll(() => page.evaluate(
     () => (window as typeof window & { __itimeTrackStops: number })
