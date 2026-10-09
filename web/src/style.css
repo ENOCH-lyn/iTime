@@ -124,6 +124,10 @@ form { display: flex; flex-direction: column; gap: 20px; }
 .settings-sidebar nav { display: flex; flex-wrap: wrap; gap: 4px; }
 .product-navigation { display: grid; gap: 4px; }
 .product-menu.el-menu { display: contents; border: 0; }
+.product-navigation > .el-dropdown { width: 100%; }
+.product-more-trigger.el-button { width: 100%; height: auto; justify-content: flex-start; margin: 0; }
+.el-dropdown-menu__item.selected { color: var(--accent); background: var(--selected); font-weight: 600; }
+.el-dropdown-menu__item svg { margin-right: 8px; }
 .nav-link { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; font-size: .875rem; text-decoration: none; color: var(--muted); border-radius: 8px; background: transparent; }
 .nav-link.selected, .nav-link.is-active { color: var(--text); background: var(--selected); font-weight: 600; }
 .nav-link:hover { background: var(--selected); }
@@ -133,6 +137,8 @@ form { display: flex; flex-direction: column; gap: 20px; }
 .sync-status-indicator[data-state="conflict"],
 .sync-status-indicator[data-state="error"] { color: var(--error); }
 .product-navigation > .el-badge { width: 44px; }
+.account-menu-trigger.el-button { width: 44px; height: 44px; margin: 0; color: var(--muted); }
+.account-menu-trigger.el-button:hover { background: var(--selected); color: var(--text); }
 .spinning > svg, svg.spinning { animation: sync-spin .9s linear infinite; }
 @keyframes sync-spin { to { transform: rotate(360deg); } }
 .sidebar-bottom { display: flex; margin-top: 16px; gap: 8px; }

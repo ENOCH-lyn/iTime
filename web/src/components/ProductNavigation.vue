@@ -1,33 +1,23 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { Ellipsis } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import {
-  CalendarDays,
-  ChartNoAxesCombined,
-  CheckSquare2,
-  ListChecks,
-  MessageCircleMore,
-  NotebookPen,
-  Settings,
-  TimerReset,
-} from 'lucide-vue-next'
+  primaryNavigation,
+  secondaryNavigation,
+  type ProductArea,
+} from '../lib/product-navigation'
 import SyncStatusIndicator from './SyncStatusIndicator.vue'
 
 const props = defineProps<{
-  current: 'ai' | 'tasks' | 'plans' | 'calendar' | 'focus' | 'reviews' | 'stats' | 'settings'
+  current: ProductArea
 }>()
 
 const navigation = ref<HTMLElement | null>(null)
-
-const links = [
-  { key: 'ai', to: '/ai', label: 'AI', icon: MessageCircleMore },
-  { key: 'tasks', to: '/tasks', label: '任务', icon: CheckSquare2 },
-  { key: 'plans', to: '/plans', label: '规划', icon: ListChecks },
-  { key: 'calendar', to: '/calendar', label: '日历', icon: CalendarDays },
-  { key: 'focus', to: '/focus', label: '专注', icon: TimerReset },
-  { key: 'reviews', to: '/reviews', label: '复盘', icon: NotebookPen },
-  { key: 'stats', to: '/stats', label: '统计', icon: ChartNoAxesCombined },
-  { key: 'settings', to: '/account', label: '设置', icon: Settings },
-] as const
+const router = useRouter()
+const secondaryActive = computed(() => (
+  secondaryNavigation.some(item => item.key === props.current)
+))
 
 async function revealCurrent() {
   await nextTick()
@@ -50,24 +40,71 @@ async function revealCurrent() {
 
 onMounted(revealCurrent)
 watch(() => props.current, revealCurrent)
+
+async function openSecondary(command: string | number | object) {
+  if (typeof command === 'string') await router.push(command)
+}
 </script>
 
 <template>
   <nav ref="navigation" class="product-navigation" aria-label="产品">
-    <ElMenu class="product-menu" :default-active="links.find(link => link.key === current)?.to" router>
+    <ElMenu
+      class="product-menu"
+      :default-active="primaryNavigation.find(item => item.key === current)?.to"
+      router
+    >
       <ElMenuItem
-        v-for="link in links"
-        :key="link.key"
-        :index="link.to"
+        v-for="item in primaryNavigation"
+        :key="item.key"
+        :index="item.to"
         class="nav-link"
-        :class="{ selected: current === link.key }"
-        :aria-current="current === link.key ? 'page' : undefined"
-        :aria-label="link.label"
+        :class="{ selected: current === item.key }"
+        :aria-current="current === item.key ? 'page' : undefined"
+        :aria-label="item.label"
       >
-        <component :is="link.icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-        <span class="product-label">{{ link.label }}</span>
+        <component
+          :is="item.icon"
+          :size="18"
+          :stroke-width="1.8"
+          aria-hidden="true"
+        />
+        <span class="product-label">{{ item.label }}</span>
       </ElMenuItem>
     </ElMenu>
+    <ElDropdown
+      trigger="click"
+      placement="bottom-start"
+      @command="openSecondary"
+    >
+      <ElButton
+        text
+        class="nav-link product-more-trigger"
+        :class="{ selected: secondaryActive }"
+        aria-label="更多功能"
+        :aria-pressed="secondaryActive"
+      >
+        <Ellipsis :size="18" :stroke-width="1.8" aria-hidden="true" />
+        <span class="product-label">更多</span>
+      </ElButton>
+      <template #dropdown>
+        <ElDropdownMenu>
+          <ElDropdownItem
+            v-for="item in secondaryNavigation"
+            :key="item.key"
+            :command="item.to"
+            :class="{ selected: current === item.key }"
+          >
+            <component
+              :is="item.icon"
+              :size="16"
+              :stroke-width="1.8"
+              aria-hidden="true"
+            />
+            {{ item.label }}
+          </ElDropdownItem>
+        </ElDropdownMenu>
+      </template>
+    </ElDropdown>
     <SyncStatusIndicator />
   </nav>
 </template>

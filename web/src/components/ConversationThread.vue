@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import {
-  ArrowLeft,
   Bot,
   CircleAlert,
   Clock3,
   LoaderCircle,
-  RefreshCw,
   UserRound,
-  XCircle,
 } from 'lucide-vue-next'
 import type { Conversation, ConversationMessage } from '../lib/conversations'
 import AgentProposalMessageCard from './AgentProposalMessageCard.vue'
@@ -21,15 +18,11 @@ defineProps<{
   loading: boolean
   hasOlder: boolean
   loadingOlder: boolean
-  cancelling: boolean
 }>()
 
 const emit = defineEmits<{
-  back: []
   loadOlder: []
-  cancel: []
   retryMessage: [message: ConversationMessage]
-  refresh: []
 }>()
 
 function readableTime(value: string) {
@@ -57,28 +50,10 @@ function timetableImportIds(message: ConversationMessage) {
 </script>
 
 <template>
-  <section class="conversation-thread" aria-labelledby="conversation-title">
-    <header v-if="conversation" class="conversation-thread-header">
-      <ElButton text circle class="small-icon-button conversation-mobile-back"
-        aria-label="返回会话列表" title="返回会话列表" @click="emit('back')">
-        <ArrowLeft :size="19" aria-hidden="true" />
-      </ElButton>
-      <div>
-        <span>{{ conversation.archived ? '已归档会话' : 'AI 对话' }}</span>
-        <h1 id="conversation-title" tabindex="-1">{{ conversation.title }}</h1>
-      </div>
-      <ElButton v-if="conversation.active_job" plain
-        class="compact-button conversation-cancel"
-        :disabled="cancelling" @click="emit('cancel')">
-        <XCircle :size="16" aria-hidden="true" />
-        {{ cancelling ? '正在取消…' : '取消生成' }}
-      </ElButton>
-    </header>
-
+  <section class="conversation-thread" aria-label="会话内容">
     <div v-if="!conversation" class="conversation-welcome">
       <Bot :size="30" aria-hidden="true" />
-      <h1 id="conversation-title" tabindex="-1">今天想先理清哪件事？</h1>
-      <p>选择一个会话，或新建会话开始。</p>
+      <h2>今天想先理清哪件事？</h2>
     </div>
 
     <div v-else ref="messageViewport" class="conversation-message-viewport">
@@ -153,10 +128,5 @@ function timetableImportIds(message: ConversationMessage) {
         </li>
       </ol>
     </div>
-    <ElButton v-if="conversation && !loading && !conversation.active_job"
-      text circle class="conversation-refresh small-icon-button"
-      aria-label="重新读取会话" title="重新读取会话" @click="emit('refresh')">
-      <RefreshCw :size="17" aria-hidden="true" />
-    </ElButton>
   </section>
 </template>

@@ -90,12 +90,26 @@ function watchRuntime(page: Page) {
 }
 
 async function newConversation(page: Page) {
-  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  const create = page.getByRole('button', { name: '新建会话', exact: true })
+  if (!await create.isVisible()) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  }
+  await create.click()
   await expect(page.getByRole('heading', { name: '新对话', exact: true })).toBeVisible()
 }
 
 function conversationButton(page: Page, title: string) {
-  return page.locator('.conversation-select').filter({ hasText: title })
+  return page.locator('.conversation-select:visible').filter({ hasText: title })
+}
+
+async function conversationAction(
+  page: Page,
+  title: string,
+  action: '重命名' | '归档' | '重新打开',
+) {
+  const row = page.locator('.conversation-list li:visible').filter({ hasText: title })
+  await row.getByRole('button', { name: `会话操作 ${title}` }).click()
+  await page.getByRole('menuitem', { name: action, exact: true }).click()
 }
 
 function conversationScope(page: Page, label: '进行中' | '已归档') {
@@ -104,7 +118,7 @@ function conversationScope(page: Page, label: '进行中' | '已归档') {
 }
 
 async function returnToConversationList(page: Page) {
-  const back = page.getByRole('button', { name: '返回会话列表', exact: true })
+  const back = page.getByRole('button', { name: '打开导航', exact: true })
   if (await back.isVisible()) await back.click()
 }
 
@@ -126,11 +140,7 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   request,
 }, info) => {
   await account(page, request)
-  if ((page.viewportSize()?.width ?? 0) <= 700) {
-    await expect(page.getByRole('button', { name: '新建会话', exact: true })).toBeVisible()
-  } else {
-    await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
-  }
+  await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
   await newConversation(page)
   const firstPrompt = '帮我整理今天的学习安排'
   await page.getByLabel('消息', { exact: true }).fill(firstPrompt)
@@ -140,22 +150,32 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
   await expect(messageList.getByText('然后为第一项留出一段完整时间。')).toBeVisible()
   await expect(page.getByText('正在生成')).toHaveCount(0)
+  const header = page.locator('.conversation-header')
+  await expect(header.getByRole('heading', { name: firstPrompt })).toBeVisible()
+  await expect(header.getByText('AI 对话', { exact: true })).toHaveCount(0)
+  if ((page.viewportSize()?.width ?? 0) > 700) {
+    await expect(page.getByRole('navigation', { name: '主要功能' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '更多功能' })).toBeVisible()
+  }
+  await expect(page.getByRole('link', { name: '设置', exact: true })).toHaveCount(0)
 
   await returnToConversationList(page)
   await page.getByRole('button', { name: '新建会话', exact: true }).click()
   await expect(page.getByRole('heading', { name: '新对话', exact: true })).toBeVisible()
   await returnToConversationList(page)
-  await page.getByRole('button', { name: '重命名 新对话' }).click()
+  await conversationAction(page, '新对话', '重命名')
   const rename = page.getByRole('dialog', { name: '重命名会话' })
   await rename.getByLabel('会话名称', { exact: true }).fill('论文讨论')
   await rename.getByRole('button', { name: '保存名称', exact: true }).click()
+  await returnToConversationList(page)
   await conversationButton(page, '论文讨论').click()
   await expect(page.getByRole('heading', { name: '论文讨论', exact: true })).toBeVisible()
 
   await returnToConversationList(page)
   page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('button', { name: '归档 论文讨论' }).click()
-  if ((page.viewportSize()?.width ?? 0) <= 700) {
+  await conversationAction(page, '论文讨论', '归档')
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
     await expect(conversationScope(page, '已归档')).toBeVisible()
   } else {
     await expect(page.getByRole('heading', { name: '今天想先理清哪件事？' })).toBeVisible()
@@ -163,16 +183,33 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   await conversationScope(page, '已归档').click()
   await expect(conversationButton(page, '论文讨论')).toBeVisible()
   page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('button', { name: '重新打开 论文讨论' }).click()
-  const visibleStatus = (page.viewportSize()?.width ?? 0) <= 700
-    ? page.locator('.conversation-navigation-status')
-    : page.locator('.ai-workspace-status')
+  await conversationAction(page, '论文讨论', '重新打开')
+  const visibleStatus = page.locator('.ai-workspace-status')
   await expect(visibleStatus.getByText('会话已重新打开。')).toBeVisible()
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  }
   await conversationScope(page, '进行中').click()
   await conversationButton(page, '帮我整理今天的学习安排').click()
   await expect(messageList.getByText(firstPrompt, { exact: true })).toBeVisible()
   await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
 
+  if ((page.viewportSize()?.width ?? 0) >= 1024) {
+    const titleGeometry = await page.locator('.conversation-title-text').evaluateAll(
+      nodes => nodes.map(node => {
+        const box = node.getBoundingClientRect()
+        return {
+          text: node.textContent?.trim() ?? '',
+          width: box.width,
+          height: box.height,
+        }
+      }),
+    )
+    expect(titleGeometry.length).toBeGreaterThan(0)
+    expect(titleGeometry.every(item => (
+      !!item.text && item.width > 48 && item.height > 0
+    ))).toBe(true)
+  }
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true)
@@ -185,6 +222,7 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
     ))
     await page.setViewportSize({ width: 320, height: 700 })
     await page.goto('/ai')
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
     await conversationButton(page, '帮我整理今天的学习安排').click()
     await expect(
       page.getByRole('list', { name: '会话消息' }).getByText(firstPrompt, { exact: true }),
