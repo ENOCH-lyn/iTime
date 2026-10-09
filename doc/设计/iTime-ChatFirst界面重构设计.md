@@ -1,6 +1,13 @@
 # iTime Chat-first 界面重构设计
 
-版本：0.1；更新：2026-10-08。状态：方向已确认，待实现。
+版本：0.1；更新：2026-10-09。状态：已实现并完成 Chromium/真实 Edge 视觉与交互验证。
+
+实际实现以 `web/src/pages/AIPage.vue`、`web/src/pages/SettingsPage.vue`、
+`web/src/components/AppRail.vue`、`web/src/components/ConversationSidebar.vue`、
+`web/src/components/ConversationHeader.vue`、`web/src/components/ConversationViewport.vue`、
+`web/src/components/ConversationComposer.vue`、`web/src/components/MarkdownMessage.vue` 和
+`web/src/ai-workspace.css` 为准。旧 `/account/*` 地址继续重定向到 `/settings` 对应区段；业务
+合同、提案确认和课表候选链未因本次界面重构改变。
 
 本文定义 iTime Web 用户端的新信息架构和 AI 对话主体验。重构不是交付目标；交付目标是消除遮挡、裁切、空标题、层级混乱、重复解释和移动端不可用等问题，让用户无需阅读说明即可完成主要操作。
 
@@ -250,14 +257,14 @@
 
 新增或重构的主要组件：
 
-- `AppRail`：全局一级导航。
-- `AccountMenu`：设置、帮助和退出。
-- `ConversationSidebar`：新建、搜索、历史和折叠。
-- `ConversationHeader`：标题、停止和菜单。
-- `MarkdownMessage`：安全 Markdown。
-- `ConversationViewport`：滚动跟随和回到最新。
-- `ConversationComposer`：输入、附件和发送。
-- `SettingsPage`：统一设置编排。
+- `web/src/components/AppRail.vue`：全局一级导航。
+- `web/src/components/AccountMenu.vue`：设置、帮助和退出。
+- `web/src/components/ConversationSidebar.vue`：新建、搜索、历史和折叠。
+- `web/src/components/ConversationHeader.vue`：标题、停止和菜单。
+- `web/src/components/MarkdownMessage.vue`：安全 Markdown。
+- `web/src/components/ConversationViewport.vue`：滚动跟随和回到最新。
+- `web/src/components/ConversationComposer.vue`：输入、附件和发送。
+- `web/src/pages/SettingsPage.vue`：统一设置编排。
 
 现有提案卡、课表导入卡和服务 API 保持独立，不塞入 `MarkdownMessage`。
 

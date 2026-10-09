@@ -1946,3 +1946,71 @@ Browser 插件在本次环境未提供，因此按前端测试规范使用仓库
 
 本模块当前没有未解决的功能阻断；系统化正式模型质量评测、实体设备、M8-B 恢复及 M8-C
 生产候选验证仍是独立交付项，不能由本次真实 DeepSeek 单场景或本地浏览器结果替代。
+
+## M7-F：Chat-first 界面重构与视觉门禁
+
+对应提交 `a65327c`、`3566022`、`096cb8d`、`0257cf6`、`95657ef`，设计与实施计划见
+[Chat-first 界面重构设计](../设计/iTime-ChatFirst界面重构设计.md)和
+[Chat-first 界面重构实施计划](../计划/iTime-ChatFirst界面重构实施计划.md)。
+
+实际完成范围：
+
+- 登录后 `/ai` 直接进入 Chat-first 工作区。桌面为 64px 产品窄栏、会话侧栏和消息主区；
+  768px 平板及手机把会话历史、产品入口和账号操作收进抽屉。
+- 一级产品入口收敛为 AI、任务、日历、专注，规划、复盘、统计位于“更多功能”；设置、帮助和
+  退出位于账号区域。跨页面 E2E 使用统一语义导航助手，不再依赖旧 `menuitem` 结构。
+- assistant 正文经 `markdown-it` 和 DOMPurify 清理后渲染标题、列表、表格、引用、链接和
+  代码块；user 正文保持纯文本，不从 Markdown 推断或执行业务操作。
+- 消息视口和 composer 使用独立 grid 行；滚动跟随、读取更早消息、回到最新、八行输入、附件、
+  窄高度、取消、失败重试、任务提案和课表导入卡均保持可达且互不覆盖。
+- `/settings` 合并账号安全、偏好、AI 与隐私、数据与同步和账号操作。密码使用 Dialog，设备、
+  额度、同步和数据使用 Drawer；旧 `/account/*` 地址继续重定向到对应设置区段。
+
+2026-10-09 在 macOS、生产构建预览、隔离 PostgreSQL/API/Mailpit/worker、Playwright
+Chromium 和真实 Microsoft Edge 中执行：
+
+| 命令/环境 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | 通过 | Vue TypeScript 与 Vite 生产构建 |
+| Chromium Chat-first 与设置专项 | **19 passed, 2 skipped in 2.8m** | desktop、mobile、tablet；同步冲突仅在 desktop 生成一次 |
+| 修复后移动/平板受影响专项 | **14 passed in 1.6m** | 后台用户流、抽屉导航、离页恢复、复盘和统计 |
+| `cd web && pnpm test:e2e` | **317 passed, 22 skipped in 20.7m** | 339 项收集；三个 Chromium 视口普通全量 |
+| Microsoft Edge 154.0.4258.62 关键路径 | **28 passed, 2 skipped in 3.4m** | Chat-first、统一设置和 AI 课表导入 × 三视口 |
+
+22 个普通全量 skip 均为用例内既有的 desktop-only 到期清理、慢上游、麦克风故障、320px 深度
+场景或桌面固定证据在 mobile/tablet 不重复执行；三个视口的主业务流程均实际运行。Edge 的两个
+skip 仅为同步冲突证据在手机和平板不重复生成，不能解释为 Edge 手机或平板未运行。
+
+视觉专项创建 20 个包含中文、英文、超长文本和无空格长串的会话，并向目标会话写入 30 条消息。
+几何断言直接检查会话标题可见宽度、标题与操作按钮边界、消息视口与 composer 边界、最后消息
+与 composer 的 16px 间距、八行和附件后的完整高度、根级横向溢出及意外 `overflow:hidden`
+裁切。运行同时监听控制台 warning/error、页面异常、API 5xx、Vite overlay，并执行 Axe。
+
+最终人工查看的主要证据位于：
+
+- `/tmp/itime-ui-evidence/desktop-chat-first-{normal,markdown,proposals,timetable,failure}.png`
+- `/tmp/itime-ui-evidence/desktop-chat-first-320-large-attachment.png`
+- `/tmp/itime-ui-evidence/mobile-chat-first-{normal,proposals,timetable}.png`
+- `/tmp/itime-ui-evidence/tablet-chat-first-drawer.png`
+- `/tmp/itime-ui-evidence/{desktop,mobile,tablet}-settings-normal.png`
+- `/tmp/itime-ui-evidence/desktop-settings-sync-conflict.png`
+- `/tmp/itime-ui-evidence/mobile-settings-danger.png`
+
+逐张检查标题、导航层级、消息排版、Markdown 表格/代码、不可信 HTML 文本、提案和课表卡、
+composer、附件、按钮换行、抽屉、同步冲突及注销危险区。最终 Chromium 与 Edge 截图均未发现
+仍可修复的遮挡、裁切、重叠、根级横向滚动或异常位移。
+
+验证过程中发现并修复的真实问题没有通过放宽断言解决：
+
+- 长会话标题原为固定单行，窄屏会与菜单争用空间；改为任意断行，标题栏高度随内容增长。
+- 消息滚动区缺少键盘焦点和名称；增加 `tabindex` 与“消息历史”无障碍名称。
+- 320px 最大字号下八行输入最初未完整展开；修正 composer 几何后逐行检查 1—8 行可见。
+- 会话范围选中态在 Element Plus 过渡中被 Axe 读到 `4.16:1`；固定品牌前景/背景并取消颜色
+  过渡后达到 WCAG AA。
+- 旧测试把新产品链接当作 `menuitem`，且平板抽屉打开时可能命中被遮罩的桌面轨道；统一导航
+  助手优先限定到可见抽屉，再选择主入口或“更多功能”，完整回归通过。
+
+Browser 插件未在当前执行环境暴露，因此按前端测试规范使用仓库 Playwright 和 `view_image`
+逐张审查。实体手机/平板软键盘、Safari、Firefox、系统读屏器和触控实体设备仍未执行；本次短
+视口聚焦与滚动恢复只证明浏览器模拟合同，不能替代实体设备。M8-B、M8-C、系统化正式模型质量
+和生产发布状态没有因本模块改变。
