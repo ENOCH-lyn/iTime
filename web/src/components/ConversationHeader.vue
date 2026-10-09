@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { Archive, ArchiveRestore, Ellipsis, Menu, Pencil, Square } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, Ellipsis, Menu, Pencil } from 'lucide-vue-next'
 import type { Conversation } from '../lib/conversations'
 
 defineProps<{
   conversation: Conversation | null
-  cancelling: boolean
 }>()
 
 const emit = defineEmits<{
   openNavigation: []
-  cancel: []
   rename: [conversation: Conversation]
   archive: [conversation: Conversation]
 }>()
@@ -33,19 +31,6 @@ const emit = defineEmits<{
     </h1>
 
     <div class="conversation-header-actions">
-      <ElButton
-        v-if="conversation?.active_job"
-        plain
-        class="conversation-stop"
-        :loading="cancelling"
-        :disabled="cancelling"
-        aria-label="取消生成"
-        @click="emit('cancel')"
-      >
-        <Square :size="15" aria-hidden="true" />
-        <span>{{ cancelling ? '正在停止…' : '停止' }}</span>
-      </ElButton>
-
       <ElDropdown v-if="conversation" trigger="click" placement="bottom-end">
         <ElButton
           text

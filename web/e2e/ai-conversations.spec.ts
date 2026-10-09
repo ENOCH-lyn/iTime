@@ -144,7 +144,7 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   await newConversation(page)
   const firstPrompt = '帮我整理今天的学习安排'
   await page.getByLabel('消息', { exact: true }).fill(firstPrompt)
-  await page.getByLabel('消息', { exact: true }).press('Control+Enter')
+  await page.getByLabel('消息', { exact: true }).press('Enter')
   const messageList = page.getByRole('list', { name: '会话消息' })
   await expect(messageList.getByText(firstPrompt, { exact: true })).toBeVisible()
   await expect(messageList.getByText('先把今天最重要的事情列出来。')).toBeVisible()
@@ -353,9 +353,16 @@ test('离开页面后作业继续并从服务端恢复完整回复', async ({
   expect(conversationId).toBeTruthy()
 
   await returnToConversationList(page)
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  } else {
+    await page.getByRole('link', { name: '任务', exact: true }).click()
+  }
   await expect(page).toHaveURL('/tasks')
   await page.getByRole('menuitem', { name: 'AI', exact: true }).click()
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  }
   await conversationButton(page, prompt).click()
   const restoredMessages = page.getByRole('list', { name: '会话消息' })
   await expect(

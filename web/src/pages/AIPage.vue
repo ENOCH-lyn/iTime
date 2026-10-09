@@ -11,7 +11,7 @@ import AppRail from '../components/AppRail.vue'
 import ConversationComposer from '../components/ConversationComposer.vue'
 import ConversationHeader from '../components/ConversationHeader.vue'
 import ConversationSidebar from '../components/ConversationSidebar.vue'
-import ConversationThread from '../components/ConversationThread.vue'
+import ConversationViewport from '../components/ConversationViewport.vue'
 import ProductNavigation from '../components/ProductNavigation.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import { api, failure, localFailure, type Failure } from '../lib/api'
@@ -71,6 +71,10 @@ const renameTitle = ref('')
 const renamePending = ref(false)
 const renameError = ref('')
 const navigationOpen = ref(false)
+const visualHeight = ref(window.visualViewport?.height ?? window.innerHeight)
+const viewport = ref<{
+  scrollToLatest: (force?: boolean) => Promise<void>
+} | null>(null)
 let listRevision = 0
 let threadRevision = 0
 let eventSource: EventSource | null = null
@@ -79,16 +83,15 @@ let lastEventSequence = 0
 let recoveryTimer = 0
 let recoveryDelay = 1000
 let createOperation = ''
+let createPromise: Promise<Conversation | null> | null = null
 let sendOperation: { id: string; fingerprint: string } | null = null
 let attachmentOperation: { id: string; fingerprint: string } | null = null
 let updateOperation: { id: string; fingerprint: string } | null = null
 
 const activeJob = computed(() => selected.value?.active_job ?? null)
 const composerDisabled = computed(() => (
-  !selected.value
-  || selected.value.archived
+  !!selected.value?.archived
   || identity.value?.user.ai_access === 'frozen'
-  || !!activeJob.value
 ))
 
 watch(authError, value => {
@@ -96,6 +99,8 @@ watch(authError, value => {
 })
 
 onMounted(async () => {
+  window.visualViewport?.addEventListener('resize', updateVisualHeight)
+  document.addEventListener('keydown', handleComposerKeydown, true)
   document.title = 'AI 对话 · iTime'
   await refreshSession()
   if (!identity.value) {
@@ -117,9 +122,28 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopEvents()
+  window.visualViewport?.removeEventListener('resize', updateVisualHeight)
+  document.removeEventListener('keydown', handleComposerKeydown, true)
   window.removeEventListener('focus', recoverOnFocus)
   document.removeEventListener('visibilitychange', recoverOnFocus)
 })
+
+function updateVisualHeight() {
+  visualHeight.value = window.visualViewport?.height ?? window.innerHeight
+}
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  const target = event.target
+  if (
+    !(target instanceof HTMLTextAreaElement)
+    || target.id !== 'conversation-message'
+    || event.key !== 'Enter'
+    || event.shiftKey
+    || event.isComposing
+  ) return
+  event.preventDefault()
+  void send()
+}
 
 useSyncRefresh(
   ['conversation', 'memory', 'memory_settings'],
@@ -219,7 +243,7 @@ function handleEvent(raw: MessageEvent<string>) {
         content: message.content + (event.payload.text ?? ''),
         status: 'running',
       })
-      void scrollToLatest()
+      void scrollToLatest(false)
     }
     return
   }
@@ -276,7 +300,7 @@ async function syncCurrent(silent = false) {
     recoveryDelay = 1000
     if (conversation.active_job) connectEvents()
     else stopEvents()
-    if (!silent) await scrollToLatest()
+    if (!silent) await scrollToLatest(true)
   } catch (reason) {
     if (revision === threadRevision) {
       error.value = failure(reason)
@@ -303,11 +327,16 @@ async function selectConversation(conversation: Conversation) {
   await syncCurrent()
 }
 
-async function createNewConversation() {
-  if (creating.value) return
+function createNewConversation(): Promise<Conversation | null> {
+  if (createPromise) return createPromise
+  createPromise = performCreateConversation()
+  return createPromise
+}
+
+async function performCreateConversation(): Promise<Conversation | null> {
   if (authLoading.value || !identity.value) {
     await refreshSession()
-    if (!identity.value) return
+    if (!identity.value) return null
   }
   creating.value = true
   error.value = null
@@ -321,10 +350,13 @@ async function createNewConversation() {
     await selectConversation(result.conversation)
     await nextTick()
     document.getElementById('conversation-message')?.focus()
+    return result.conversation
   } catch (reason) {
     error.value = failure(reason)
+    return null
   } finally {
     creating.value = false
+    createPromise = null
   }
 }
 
@@ -479,8 +511,13 @@ async function loadOlder() {
   }
 }
 
+async function ensureConversation() {
+  if (selected.value) return selected.value
+  return createNewConversation()
+}
+
 async function send() {
-  if (!selected.value || sending.value || composerDisabled.value) return
+  if (sending.value || composerDisabled.value) return
   const attachment = composerAttachment.value
   const content = composer.value.trim() || (
     attachment?.type.startsWith('image/')
@@ -492,10 +529,12 @@ async function send() {
   error.value = null
   success.value = ''
   try {
+    const conversation = await ensureConversation()
+    if (!conversation) return
     let importBatchId: string | undefined
     if (attachment) {
       const attachmentFingerprint = [
-        selected.value.id,
+        conversation.id,
         attachment.name,
         attachment.size,
         attachment.lastModified,
@@ -508,7 +547,7 @@ async function send() {
             {
               sourceType: 'image',
               file: attachment,
-              conversationId: selected.value.id,
+              conversationId: conversation.id,
             },
             attachmentOperation.id,
           )
@@ -516,8 +555,8 @@ async function send() {
       importBatchId = imported.batch.id
     }
     const fingerprint = JSON.stringify({
-      conversation: selected.value.id,
-      version: selected.value.version,
+      conversation: conversation.id,
+      version: conversation.version,
       content,
       response_mode: 'auto',
       import_batch_id: importBatchId,
@@ -526,7 +565,7 @@ async function send() {
       ? sendOperation
       : { id: crypto.randomUUID(), fingerprint }
     const result = await sendConversationMessage(
-      selected.value,
+      conversation,
       sendOperation.id,
       content,
       'auto',
@@ -547,7 +586,7 @@ async function send() {
     lastEventSequence = result.job.last_event_sequence
     eventGeneration = 0
     connectEvents()
-    await scrollToLatest()
+    await scrollToLatest(true)
   } catch (reason) {
     error.value = failure(reason)
     if (
@@ -598,10 +637,8 @@ async function retryMessage(message: ConversationMessage) {
   document.getElementById('conversation-message')?.focus()
 }
 
-async function scrollToLatest() {
-  await nextTick()
-  const viewport = document.querySelector<HTMLElement>('.conversation-message-viewport')
-  if (viewport) viewport.scrollTop = viewport.scrollHeight
+async function scrollToLatest(force = true) {
+  await viewport.value?.scrollToLatest(force)
 }
 
 async function selectFromNavigation(conversation: Conversation) {
@@ -655,7 +692,10 @@ async function logout() {
 </script>
 
 <template>
-  <div class="ai-workspace">
+  <div
+    class="ai-workspace"
+    :style="{ '--visual-viewport-height': `${visualHeight}px` }"
+  >
     <AppRail
       current="ai"
       :email="identity?.user.email ?? ''"
@@ -683,9 +723,7 @@ async function logout() {
     <main id="main-content" class="ai-main">
       <ConversationHeader
         :conversation="selected"
-        :cancelling="cancelling"
         @open-navigation="navigationOpen = true"
-        @cancel="cancelGeneration"
         @rename="openRename"
         @archive="toggleArchive"
       />
@@ -700,7 +738,8 @@ async function logout() {
           :retry-label="error?.retryable ? '重新同步' : undefined"
           @retry="selected ? syncCurrent() : loadConversationList()" />
       </div>
-      <ConversationThread
+      <ConversationViewport
+        ref="viewport"
         :conversation="selected"
         :messages="messages"
         :loading="loadingThread"
@@ -710,15 +749,15 @@ async function logout() {
         @retry-message="retryMessage"
       />
       <ConversationComposer
-        v-if="selected"
         v-model="composer"
         v-model:attachment="composerAttachment"
         :pending="sending"
         :disabled="composerDisabled"
-        :archived="selected.archived"
+        :archived="selected?.archived ?? false"
         :ai-frozen="identity?.user.ai_access === 'frozen'"
         :active="!!activeJob"
         @submit="send"
+        @cancel="cancelGeneration"
         @invalid-attachment="invalidAttachment"
       />
     </main>
