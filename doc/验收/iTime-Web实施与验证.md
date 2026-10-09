@@ -2014,3 +2014,82 @@ Browser 插件未在当前执行环境暴露，因此按前端测试规范使用
 逐张审查。实体手机/平板软键盘、Safari、Firefox、系统读屏器和触控实体设备仍未执行；本次短
 视口聚焦与滚动恢复只证明浏览器模拟合同，不能替代实体设备。M8-B、M8-C、系统化正式模型质量
 和生产发布状态没有因本模块改变。
+
+## M7-I：全站统一 AppShell
+
+对应提交为本节交付的 `feat`/`test`/`docs` 三次切片，与 M7-F 共用
+[Chat-first 界面重构设计](../设计/iTime-ChatFirst界面重构设计.md)的「全站统一 AppShell」节。
+
+本次范围：将 AI、任务、日历、规划、专注、复盘、统计和设置八页统一到同一个 `AppShell`
+壳。桌面保持 64px 产品窄栏；需要次级侧栏（会话、项目、学年、规划、专注视图、复盘视图、
+统计视图）时，壳固定渲染 260px 的 `secondary` 槽；无次级侧栏的页面（设置）直接留给 main
+使用。小于 960px 时所有页统一塌陷为顶部栏加 Element Plus Drawer，抽屉内渲染主导航、次级
+槽（如会话/任务项目/专注视图）和账号区域，不再出现 AI 窄栏、其它页宽栏的割裂。设置页顶部
+保留“返回 AI 对话”返回链接，确保用户随时回到首页。
+
+实际完成范围：
+
+- 新建 `web/src/shell/AppShell.vue`、`web/src/shell/useAppShell.ts`、
+  `web/src/shell/app-shell.css`，集中维护 grid 几何、Drawer 行为、`AppRail` 与账号退出。
+- `AIPage`、`TasksPage`、`CalendarPage`、`PlansPage`、`FocusPage`、`ReviewsPage`、
+  `StatisticsPage`、`SettingsPage` 全部改为通过 `AppShell` 外层渲染，页内保留业务主区并
+  通过 `secondary`/`drawer-secondary` 具名插槽注入次级侧栏；专注页新增
+  `FocusSecondaryNav.vue` 作为统一次级入口。
+- 旧 `TaskWorkspaceNavigation`、`CalendarNavigation`、`PlanNavigation`、`ReviewNavigation`、
+  `StatisticsNavigation`、`ConversationHeader` 瘦身为 `secondary-nav` 模式，共用一套
+  侧栏行高、Hover、Selected、aria 规则，不再各自造轮。
+- `AppRail` 使用 Element Plus `ElDropdown` 承载“更多功能”，`AccountMenu` 使用
+  `ElPopover`；一级入口保持 AI/任务/日历/专注。
+
+2026-10-09 在 macOS、生产构建预览、隔离 PostgreSQL/API/Mailpit/worker、仓库 Playwright
+Chromium 中执行：
+
+| 命令/环境 | 实际结果 | 范围 |
+| --- | --- | --- |
+| `cd web && pnpm build` | **通过 (3.17s)** | Vue TypeScript 与 Vite 生产构建 |
+| UX-07 全站 AppShell × 三视口 | **3 passed in 71s** | desktop/mobile/tablet 覆盖 8 页 |
+| Chat-first 视觉 + 统一设置 + UX-07 全视口 | **22 passed, 2 skipped in 3.0m** | 8 条用例 × 3 视口 |
+| 核心页回归 full-user-journey + 任务 + 规划 + 日历 + 专注 + 复盘 + 统计 | **26 passed in 1.6m** | 桌面 Chromium |
+
+UX-07 用例对 `/ai`、`/tasks`、`/calendar`、`/plans`、`/focus`、`/reviews`、`/stats`、
+`/settings` 八页执行相同的壳断言：桌面断言 `aside.app-rail` 可见；mobile/tablet 断言顶部
+“打开导航”按钮可见、点击后打开 `aria-label="导航"` 抽屉再按 ESC 回收。每页同步执行 Axe
+零违规、`pageerror`、Console error/warning、API 5xx 零错误监听，并把 `/tmp/itime-ui-evidence/
+{viewport}-ux-07-{path}.png` 的截图留作证据。因外壳在三视口下形状不同，Axe 规则沿用
+Chat-first 的 `color-contrast` 豁免（Element Plus Dropdown 悬浮态过渡色，之前已通过真机核
+实对比度，不属于本次改动），其余规则一视同仁。
+
+视觉证据：
+
+- `/tmp/itime-ui-evidence/desktop-ux-07--ai.png` …
+  `/tmp/itime-ui-evidence/desktop-ux-07--settings.png`
+- `/tmp/itime-ui-evidence/mobile-ux-07--ai.png` …
+  `/tmp/itime-ui-evidence/mobile-ux-07--settings.png`
+- `/tmp/itime-ui-evidence/tablet-ux-07--ai.png` …
+  `/tmp/itime-ui-evidence/tablet-ux-07--settings.png`
+
+逐张比对侧栏宽度、顶部栏存在性、抽屉打开/关闭及设置页的返回链接位置，三视口和八页展现同一
+个 AppShell 外观。
+
+验证过程中处理的真实问题：
+
+- AI 页之前自带独立的三栏布局，与其它页壳几何不一致；统一改为 `AppShell` + `secondary`
+  插槽后，桌面 64px/260px/主区在 8 页上完全一致，不再出现用户反馈的「AI 侧边栏小、其它
+  页宽」现象。
+- 设置页之前没有返回 AI 的入口，新增 `.settings-return-nav` 粘性返回条，桌面和手机均
+  通过 Axe 验证并保留在截图中。
+- `TaskWorkspaceNavigation` 等旧侧栏自带整栏背景、边框和内边距，与 AppShell 的
+  `secondary` 槽会双重包裹；全部改为 `secondary-nav` 内容段落，几何由 AppShell 统一
+  负责。
+
+未覆盖范围与剩余风险：
+
+- Microsoft Edge 真实浏览器在当前执行环境未暴露（`msedge` 不在 PATH，`Microsoft Edge.app`
+  未找到）。已改以 Chromium `--channel=msedge` 之外的方式，但本次未重新采集 Edge 真机
+  截图；Chat-first 节的 Edge 关键路径仍是最近一次有效证据。
+- Safari、Firefox 跨浏览器与实体设备（手机/平板 + 真实软键盘 + 系统读屏）仍未执行。
+- CSS 旧壳规则（`.task-workspace`、`.calendar-workspace`、`.plan-workspace`、
+  `.review-workspace`、`.statistics-workspace`、`.focus-workspace` 等整栏规则）在
+  `web/src/*.css` 中仍存在但没有 DOM 使用，属于技术债，暂保留以减少本次 Diff。
+- M8-B 备份恢复、M8-C 生产发布、系统化正式模型质量仍未执行，不因本模块变动。
+

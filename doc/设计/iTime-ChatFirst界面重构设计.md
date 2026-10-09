@@ -86,6 +86,22 @@
 
 设置不再出现在全局主导航。同步正常时不展示独立入口；只有待同步、离线或冲突时，才在全局栏或账号区域显示状态。
 
+### 3.1.1 全站统一 AppShell
+
+Chat-first 的壳必须覆盖所有登录后业务页面。实现层面：
+
+- 在 `web/src/shell/AppShell.vue` 中统一渲染 64px 产品窄栏（`AppRail`）、260px 的次级
+  侧栏槽（`<slot name="secondary" />`）与 main 区域；页面只负责 main 内容和次级槽内容，
+  不再各自实现壳。
+- 窄栏之外的所有次级导航组件（`ConversationSidebar`、`TaskWorkspaceNavigation`、
+  `CalendarNavigation`、`PlanNavigation`、`FocusSecondaryNav`、`ReviewNavigation`、
+  `StatisticsNavigation`）必须使用 `secondary-nav` 结构，不自带整栏背景、边框或固定宽度。
+- 小于 960px 时壳塌陷为顶部栏加 `ElDrawer`；抽屉内按主导航、次级槽
+  （`<slot name="drawer-secondary" :close="closeDrawer" />`）、设置/帮助/退出三段排列。
+- 设置页没有次级侧栏，但顶部必须保留“返回 AI 对话”返回条，以免桌面场景“设置是终点”。
+- 本节是硬约束：新增产品页必须接入 `AppShell`；禁止直接在页面内重新实现 64px 产品窄栏、
+  260px 次级侧栏或独立顶部栏。
+
 ### 3.2 平板与手机
 
 - 平板保留 56-64px 全局窄栏，会话历史可折叠为抽屉。
