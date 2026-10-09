@@ -60,6 +60,7 @@ declare module 'vue' {
     FocusTaskProgress: typeof import('./components/FocusTaskProgress.vue')['default']
     FocusTimer: typeof import('./components/FocusTimer.vue')['default']
     FormField: typeof import('./components/FormField.vue')['default']
+    MarkdownMessage: typeof import('./components/MarkdownMessage.vue')['default']
     MemoryManager: typeof import('./components/MemoryManager.vue')['default']
     PasswordSettings: typeof import('./components/PasswordSettings.vue')['default']
     PlanBlockEditor: typeof import('./components/PlanBlockEditor.vue')['default']

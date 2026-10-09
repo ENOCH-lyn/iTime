@@ -389,6 +389,99 @@
   white-space: pre-wrap;
 }
 
+.markdown-message {
+  max-width: 72ch;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+
+.markdown-message > * + * {
+  margin-top: 14px;
+}
+
+.markdown-message h2 {
+  font-size: 1.25rem;
+}
+
+.markdown-message h3 {
+  font-size: 1.0625rem;
+}
+
+.markdown-message h4 {
+  font-size: .9375rem;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+  padding-left: 1.5rem;
+}
+
+.markdown-message blockquote {
+  padding-left: 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.markdown-message table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+
+.markdown-message th,
+.markdown-message td {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown-message :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .875em;
+}
+
+.markdown-code-block {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--canvas);
+}
+
+.markdown-code-block pre {
+  overflow-x: auto;
+  padding: 42px 16px 16px;
+  margin: 0;
+}
+
+.markdown-code-block pre code {
+  padding: 0;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .8125rem;
+}
+
+.markdown-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 44px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.markdown-copy:hover {
+  background: var(--selected);
+  color: var(--text);
+}
+
 .message-progress,
 .message-state {
   min-height: 28px;

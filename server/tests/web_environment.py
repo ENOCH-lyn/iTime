@@ -697,6 +697,26 @@ class FakeAIHandler(BaseHTTPRequestHandler):
                 ]
             elif "取消测试" in user_prompt:
                 parts = ["已收到这条消息。", "取消后不应出现。"]
+            elif "Markdown 视觉验收" in user_prompt:
+                parts = [
+                    (
+                        "# 学习安排\n\n"
+                        "先确认 **核心目标**，再处理 *次要事项*。\n\n"
+                        "## 今天\n\n"
+                        "1. 完成线性代数\n"
+                        "2. 整理论文资料\n\n"
+                        "> 计划需要保留缓冲。\n\n"
+                        "| 时间 | 内容 |\n"
+                        "| --- | --- |\n"
+                        "| 09:00 | 复习 `矩阵` |\n\n"
+                        "[查看资料](https://example.com/reference)\n\n"
+                        "```ts\n"
+                        "const minutes = 45\n"
+                        "console.log(minutes)\n"
+                        "```\n\n"
+                        '<img src=x onerror="window.__markdownXss = true">'
+                    )
+                ]
             else:
                 parts = [
                     "先把今天最重要的事情列出来。",

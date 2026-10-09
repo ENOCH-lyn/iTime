@@ -11,6 +11,7 @@ import {
 } from 'lucide-vue-next'
 import type { Conversation, ConversationMessage } from '../lib/conversations'
 import AgentProposalMessageCard from './AgentProposalMessageCard.vue'
+import MarkdownMessage from './MarkdownMessage.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
 import TimetableImportMessageCard from './TimetableImportMessageCard.vue'
 
@@ -104,7 +105,13 @@ function timetableImportIds(message: ConversationMessage) {
               <strong>{{ message.role === 'user' ? '你' : 'iTime' }}</strong>
               <time :datetime="message.created_at">{{ readableTime(message.created_at) }}</time>
             </div>
-            <p v-if="message.content" class="message-content">{{ message.content }}</p>
+            <MarkdownMessage
+              v-if="message.role === 'assistant' && message.content"
+              :content="message.content"
+            />
+            <p v-else-if="message.content" class="message-content">
+              {{ message.content }}
+            </p>
             <div v-else-if="['queued', 'running'].includes(message.status)"
               class="message-progress" role="status" aria-live="polite">
               <LoaderCircle :size="16" class="spin" aria-hidden="true" />

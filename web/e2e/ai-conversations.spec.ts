@@ -196,6 +196,43 @@ test('多会话生成、改名、归档和恢复保持持久状态', async ({
   }
 })
 
+test('AI Markdown 有语义且不执行原始 HTML', async ({
+  page,
+  request,
+}, info) => {
+  await account(page, request)
+  await newConversation(page)
+  await send(page, 'Markdown 视觉验收 **用户纯文本**')
+
+  const messages = page.getByRole('list', { name: '会话消息' })
+  const user = messages.locator('.message-user').last()
+  const assistant = messages.locator('.message-assistant').last()
+  await expect(user.getByText('Markdown 视觉验收 **用户纯文本**', { exact: true }))
+    .toBeVisible()
+  await expect(user.locator('.message-content strong')).toHaveCount(0)
+  await expect(assistant.getByRole('heading', { name: '学习安排' })).toBeVisible()
+  await expect(assistant.getByRole('list')).toContainText('完成线性代数')
+  await expect(assistant.getByRole('table')).toContainText('09:00')
+  await expect(assistant.getByRole('link', { name: '查看资料' })).toHaveAttribute(
+    'rel',
+    'noopener noreferrer',
+  )
+  await expect(assistant.getByRole('link', { name: '查看资料' })).toHaveAttribute(
+    'target',
+    '_blank',
+  )
+  await expect(assistant.getByRole('button', { name: '复制代码' })).toBeVisible()
+  await expect(assistant.locator('img')).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __markdownXss?: boolean }
+  ).__markdownXss)).not.toBe(true)
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true)
+  await screenshot(page, info, 'markdown')
+})
+
 test('自然语言生成任务计划提案并确认写入', async ({
   page,
   request,
