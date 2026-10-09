@@ -21,8 +21,15 @@ const router = createRouter({
     { path: '/focus', component: () => import('./pages/FocusPage.vue') },
     { path: '/reviews', component: () => import('./pages/ReviewsPage.vue') },
     { path: '/stats', component: () => import('./pages/StatisticsPage.vue') },
-    { path: '/account', component: () => import('./pages/AccountPage.vue') },
-    { path: '/account/:section(password|devices|privacy|quota|sync|data|appearance)', component: () => import('./pages/AccountPage.vue') },
+    { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
+    { path: '/account', redirect: '/settings' },
+    {
+      path: '/account/:section(password|devices|privacy|quota|sync|data|appearance)',
+      redirect: route => ({
+        path: '/settings',
+        hash: `#${String(route.params.section)}`,
+      }),
+    },
     { path: '/admin', redirect: '/admin/security' },
     ...['login', 'setup'].map(mode => ({
       path: `/admin/${mode}`, component: () => import('./pages/AdminAuthPage.vue'),

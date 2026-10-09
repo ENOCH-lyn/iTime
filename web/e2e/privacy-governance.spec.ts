@@ -83,6 +83,17 @@ async function account(page: Page, request: APIRequestContext) {
   return address
 }
 
+async function newConversation(page: Page) {
+  const heading = page.getByRole('heading', { name: '新对话', exact: true })
+  if (await heading.isVisible()) return
+  const create = page.getByRole('button', { name: '新建会话', exact: true })
+  if (!(await create.isVisible())) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  }
+  await create.click()
+  await expect(heading).toBeVisible()
+}
+
 async function loginAdmin(page: Page, admin: ActiveAdmin, adminPassword: string) {
   await page.goto('/admin/login')
   await page.getByLabel('管理员邮箱', { exact: true }).fill(admin.email)
@@ -152,8 +163,8 @@ test('用户可关闭、恢复并在网络失败后对账质量改进设置', as
   request,
 }, info) => {
   await account(page, request)
-  await page.goto('/account/privacy')
-  await expect(page).toHaveTitle('隐私与质量 · iTime')
+  await page.goto('/settings#privacy')
+  await expect(page).toHaveTitle('设置 · iTime')
   const qualitySwitch = page.getByRole('switch', { name: '参与质量改进' })
   await expect(qualitySwitch).toBeChecked()
   await qualitySwitch.uncheck()
@@ -191,7 +202,7 @@ test('管理员显式读取 AI 正文、提交质检并回查审计', async ({
   request,
 }, info) => {
   const address = await account(page, request)
-  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  await newConversation(page)
   const prompt = `治理审计 ${randomUUID()}`
   await page.getByLabel('消息', { exact: true }).fill(prompt)
   await page.getByRole('button', { name: '发送消息', exact: true }).click()

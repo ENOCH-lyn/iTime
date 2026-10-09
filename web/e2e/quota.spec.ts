@@ -117,9 +117,15 @@ async function account(page: Page, request: APIRequestContext) {
 }
 
 async function newConversation(page: Page) {
-  await page.getByRole('button', { name: '新建会话', exact: true }).click()
+  const heading = page.getByRole('heading', { name: '新对话', exact: true })
+  if (await heading.isVisible()) return
+  const create = page.getByRole('button', { name: '新建会话', exact: true })
+  if (!(await create.isVisible())) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  }
+  await create.click()
   await expect(
-    page.getByRole('heading', { name: '新对话', exact: true }),
+    heading,
   ).toBeVisible()
 }
 
@@ -222,8 +228,8 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
       }),
     })
   })
-  await page.goto('/account/quota')
-  await expect(page).toHaveTitle('AI 额度 · iTime')
+  await page.goto('/settings#quota')
+  await expect(page).toHaveTitle('设置 · iTime')
   await expect(page.getByRole('heading', { name: 'AI 额度' })).toBeVisible()
   await expect.poll(() => savedBrowserTimeZone).toBe(true)
   await page.unroute('**/api/v1/quota')
@@ -258,7 +264,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
     chargedAmount = current.charged
     return current.reserved === '0' && parseNanos(current.charged) > 0n
   }, { timeout: 20_000 }).toBe(true)
-  await page.goto('/account/quota')
+  await page.goto('/settings#quota')
   await expect(page.getByTestId('quota-charged')).toHaveText(
     new RegExp(`CNY\\s*${chargedAmount.replace('.', '\\.')}$`),
   )
@@ -277,7 +283,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await newConversation(page)
   await send(page, '取消测试')
   const conversationUrl = page.url()
-  await page.goto('/account/quota')
+  await page.goto('/settings#quota')
   await expect.poll(async () =>
     page.getByTestId('quota-reserved').textContent(),
   ).not.toMatch(/CNY\s*0$/)
@@ -293,7 +299,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await page.getByRole('button', { name: '取消生成', exact: true }).click()
   await expect(page.getByText('已取消，以上内容可能不完整')).toBeVisible()
 
-  await page.goto('/account/quota')
+  await page.goto('/settings#quota')
   await expect(page.getByTestId('quota-reserved')).toHaveText(/CNY\s*0$/)
   await expect(page.getByTestId('quota-charged')).toHaveText(
     new RegExp(`CNY\\s*${chargedAmount.replace('.', '\\.')}$`),
@@ -304,7 +310,7 @@ test('用户额度显示成功扣额并在取消后释放预留', async ({
   await page.goto('/ai')
   await newConversation(page)
   await send(page, '触发失败')
-  await page.goto('/account/quota')
+  await page.goto('/settings#quota')
   await expect.poll(async () =>
     page.getByTestId('quota-reserved').textContent(),
   ).not.toMatch(/CNY\s*0$/)
@@ -457,7 +463,7 @@ test('后台发布额度策略、调整用户并完成未知结果对账', async
     try {
       const newUserPage = await newUserContext.newPage()
       await account(newUserPage, request)
-      await newUserPage.goto('/account/quota')
+      await newUserPage.goto('/settings#quota')
       await expect(newUserPage.getByTestId('quota-base')).toHaveText(
         new RegExp(`CNY\\s*${nextPolicyAmount}$`),
       )
@@ -485,7 +491,7 @@ test('后台发布额度策略、调整用户并完成未知结果对账', async
       /CNY\s*0$/,
     )
 
-    await userPage.goto('/account/quota')
+    await userPage.goto('/settings#quota')
     await expect(userPage.getByTestId('quota-base')).toHaveText(baseBefore)
     await expect(userPage.getByTestId('quota-available')).toHaveText(/CNY\s*0$/)
     await userPage.goto('/ai')

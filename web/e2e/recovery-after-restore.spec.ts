@@ -277,10 +277,10 @@ test('恢复后复盘统计与同步页面可用', async ({ page }) => {
   await expect(page).toHaveTitle('AI 对话 · iTime')
   await navigate(page, '复盘', /\/reviews(?:\?.*)?$/, '复盘 · iTime')
   await navigate(page, '统计', /\/stats(?:\?.*)?$/, '统计 · iTime')
-  await page.goto('/account/sync')
-  await expect(page).toHaveTitle('同步与离线 · iTime')
+  await page.goto('/settings#sync')
+  await expect(page).toHaveTitle('设置 · iTime')
   await expect(
-    page.getByRole('heading', { name: '同步与离线', exact: true }),
+    page.getByRole('dialog', { name: '同步与离线', exact: true }),
   ).toBeVisible()
   await assertPageHealth(page)
 })

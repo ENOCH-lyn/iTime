@@ -54,7 +54,9 @@ const emit = defineEmits<{
     </div>
 
     <div class="task-account">
-      <p class="task-account-email">{{ email }}</p>
+      <RouterLink to="/settings" class="task-account-email">
+        {{ email }}
+      </RouterLink>
       <button type="button" class="nav-link logout-button" :disabled="pendingLogout" @click="emit('logout')">
         <LogOut :size="18" aria-hidden="true" />{{ pendingLogout ? '正在退出…' : '退出登录' }}
       </button>

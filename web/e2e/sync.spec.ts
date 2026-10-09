@@ -257,8 +257,8 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   context,
 }, info) => {
   const session = await account(page, request)
-  await page.goto('/account/sync')
-  await expect(page.getByRole('heading', { name: '同步与离线' })).toBeVisible()
+  await page.goto('/settings#sync')
+  await expect(page.getByRole('dialog', { name: '同步与离线' })).toBeVisible()
   await expect(page.getByText('已同步', { exact: true })).toBeVisible()
 
   const marker = `协调器任务 ${randomUUID()}`
@@ -274,7 +274,7 @@ test('sync coordinator reports events offline state and cursor recovery', async 
   await expect(page.getByLabel(/同步：离线/)).toBeVisible()
   await context.setOffline(false)
   await page.getByLabel(/同步：/).click()
-  await expect(page).toHaveURL('/account/sync')
+  await expect(page).toHaveURL('/settings#sync')
   await expect(page.getByText('已同步', { exact: true })).toBeVisible()
 
   await page.evaluate(userId => {
@@ -295,7 +295,7 @@ test('sync coordinator reports events offline state and cursor recovery', async 
       JSON.stringify({ theme: 'dark', fontSize: 'larger' }),
     ))
     await page.reload()
-    await expect(page.getByRole('heading', { name: '同步与离线' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: '同步与离线' })).toBeVisible()
     expect(await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     )).toBe(true)

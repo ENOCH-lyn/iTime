@@ -94,8 +94,8 @@ function watchRuntime(page: Page) {
 }
 
 async function pageHealth(page: Page) {
-  await expect(page).toHaveTitle('数据管理 · iTime')
-  await expect(page.getByRole('heading', { name: '数据管理' })).toBeVisible()
+  await expect(page).toHaveTitle('设置 · iTime')
+  await expect(page.getByRole('heading', { name: '数据与同步' })).toBeVisible()
   expect(await page.locator('vite-error-overlay').count()).toBe(0)
   expect(await page.evaluate(
     () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -115,7 +115,7 @@ test('data export survives unknown create response and downloads verified zip', 
   const csrf = await account(page, request)
   const marker = `导出验证任务 ${randomUUID()}`
   await createTask(page, csrf, marker)
-  await page.goto('/account/data')
+  await page.goto('/settings#data')
   await expect(page.getByText('还没有生成过数据包。')).toBeVisible()
 
   let interceptCreate = true
@@ -200,9 +200,9 @@ test('data export empty state and settings navigation remain accessible', async 
   request,
 }) => {
   await account(page, request)
-  await page.goto('/account/data')
-  await expect(page.getByRole('link', { name: '数据管理', exact: true }))
-    .toHaveAttribute('aria-current', 'page')
+  await page.goto('/settings#data')
+  await expect(page).toHaveURL('/settings#data')
+  await expect(page.getByRole('heading', { name: '数据与同步' })).toBeVisible()
   await expect(page.getByText('还没有生成过数据包。')).toBeVisible()
   await expect(page.getByRole('button', { name: '生成完整数据包' })).toBeEnabled()
   await pageHealth(page)

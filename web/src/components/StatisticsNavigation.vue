@@ -91,7 +91,7 @@ const emit = defineEmits<{
     </section>
 
     <div class="statistics-account">
-      <RouterLink to="/account" class="nav-link" :title="email">{{ email }}</RouterLink>
+      <RouterLink to="/settings" class="nav-link" :title="email">{{ email }}</RouterLink>
       <button
         type="button"
         class="icon-button"

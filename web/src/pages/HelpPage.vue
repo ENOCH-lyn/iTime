@@ -60,7 +60,7 @@ onMounted(() => { document.title = '帮助中心 · iTime' })
           <h3>密码忘记了，或发现不认识的设备</h3>
           <p>通过邮箱重设密码会退出所有设备。已经登录时，也可在设置中查看设备并远程退出。</p>
           <div class="help-actions">
-            <RouterLink to="/account/devices">查看登录设备</RouterLink>
+            <RouterLink to="/settings#devices">查看登录设备</RouterLink>
           </div>
           <h3>账号已停用</h3>
           <p>请联系为你提供 iTime 服务的管理员，并提供账号邮箱和错误请求编号。重复注册不会恢复已停用的账号。</p>

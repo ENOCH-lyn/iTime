@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { Save, ShieldCheck } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, type Failure } from '../lib/api'
@@ -11,6 +11,7 @@ import {
 } from '../lib/privacy-settings'
 import { useSyncRefresh } from '../lib/use-sync-refresh'
 
+defineProps<{ compact?: boolean }>()
 const settings = ref<PrivacySettings | null>(null)
 const qualityEnabled = ref(true)
 const loading = ref(false)
@@ -19,6 +20,10 @@ const error = ref<Failure | null>(null)
 const success = ref('')
 const pendingOperationId = ref('')
 const pendingFingerprint = ref('')
+const hasUnsavedChoice = computed(() => (
+  settings.value !== null
+  && qualityEnabled.value !== settings.value.quality_improvement_enabled
+))
 
 async function focusError() {
   await nextTick()
@@ -105,14 +110,17 @@ onMounted(() => void load())
 useSyncRefresh(
   ['privacy_settings'],
   async () => {
-    await load({ preserveChoice: saving.value })
+    await load({ preserveChoice: saving.value || hasUnsavedChoice.value })
   },
 )
 </script>
 
 <template>
-  <div class="privacy-settings narrow-content">
-    <div class="section-intro">
+  <div
+    class="privacy-settings"
+    :class="{ 'narrow-content': !compact, 'privacy-settings-compact': compact }"
+  >
+    <div v-if="!compact" class="section-intro">
       <div>
         <p class="page-description">
           管理 AI 内容是否可以进入短期质量样本。技术排障日志与此设置分开。

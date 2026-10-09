@@ -117,7 +117,9 @@ function readableDate(value: string) {
     </section>
 
     <div class="task-account">
-      <p class="task-account-email">{{ email }}</p>
+      <RouterLink to="/settings" class="task-account-email">
+        {{ email }}
+      </RouterLink>
       <button
         type="button"
         class="nav-link logout-button"

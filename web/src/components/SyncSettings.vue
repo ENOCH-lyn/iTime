@@ -14,6 +14,8 @@ import {
 } from '../lib/sync'
 import StatusMessage from './StatusMessage.vue'
 
+defineProps<{ compact?: boolean }>()
+const emit = defineEmits<{ openDetails: [] }>()
 const statusLabel = computed(() => {
   if (syncStatus.phase === 'offline') return '离线'
   if (syncStatus.phase === 'connecting') return '正在同步'
@@ -47,8 +49,39 @@ onMounted(refreshSyncServerStatus)
 </script>
 
 <template>
-  <section class="sync-settings" aria-labelledby="sync-summary-title">
-    <div class="section-intro sync-intro">
+  <section
+    class="sync-settings"
+    :class="{ 'sync-settings-compact': compact }"
+    aria-labelledby="sync-summary-title"
+  >
+    <template v-if="compact">
+      <StatusMessage
+        :error="syncStatus.error"
+        :success="syncStatus.reset_message"
+        :retry-label="syncStatus.error?.retryable ? '重试同步' : undefined"
+        @retry="refresh"
+      />
+      <div class="sync-compact-summary">
+        <component
+          :is="statusIcon"
+          :size="22"
+          :class="{ spinning: syncStatus.phase === 'connecting' }"
+          aria-hidden="true"
+        />
+        <div>
+          <strong id="sync-summary-title">{{ statusLabel }}</strong>
+          <p>最后同步 {{ localTime(syncStatus.last_success_at) }}</p>
+          <p v-if="syncStatus.phase !== 'synced'">
+            {{ syncStatus.pending_count }} 项待同步
+            · {{ syncStatus.conflict_count }} 项冲突
+          </p>
+        </div>
+        <ElButton @click="emit('openDetails')">查看同步详情</ElButton>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="section-intro sync-intro">
       <div>
         <p class="page-description">核对当前设备与服务端的数据状态。</p>
       </div>
@@ -104,7 +137,7 @@ onMounted(refreshSyncServerStatus)
       </div>
     </dl>
 
-    <section class="sync-section" aria-labelledby="sync-local-title">
+      <section class="sync-section" aria-labelledby="sync-local-title">
       <h2 id="sync-local-title">本设备</h2>
       <dl class="sync-local-details">
         <div>
@@ -116,27 +149,28 @@ onMounted(refreshSyncServerStatus)
           <dd>{{ localTime(syncStatus.cache_fallback_at) }}</dd>
         </div>
       </dl>
-    </section>
+      </section>
 
-    <section
-      v-if="syncStatus.task_conflict"
-      class="sync-section sync-conflict"
-      aria-labelledby="sync-conflict-title"
-    >
-      <h2 id="sync-conflict-title">同步冲突</h2>
-      <p>{{ syncStatus.task_conflict.error?.message ?? '任务步骤已变化，请核对后处理。' }}</p>
-      <p
-        v-if="syncStatus.task_conflict.error?.request_id"
-        class="request-id wrap-anywhere"
+      <section
+        v-if="syncStatus.task_conflict"
+        class="sync-section sync-conflict"
+        aria-labelledby="sync-conflict-title"
       >
-        请求编号 {{ syncStatus.task_conflict.error.request_id }}
-      </p>
-      <div class="sync-conflict-actions">
-        <RouterLink to="/tasks" class="button secondary">查看任务</RouterLink>
-        <button type="button" class="button danger" @click="discardTaskConflict">
-          丢弃此操作
-        </button>
-      </div>
-    </section>
+        <h2 id="sync-conflict-title">同步冲突</h2>
+        <p>{{ syncStatus.task_conflict.error?.message ?? '任务步骤已变化，请核对后处理。' }}</p>
+        <p
+          v-if="syncStatus.task_conflict.error?.request_id"
+          class="request-id wrap-anywhere"
+        >
+          请求编号 {{ syncStatus.task_conflict.error.request_id }}
+        </p>
+        <div class="sync-conflict-actions">
+          <RouterLink to="/tasks" class="button secondary">查看任务</RouterLink>
+          <button type="button" class="button danger" @click="discardTaskConflict">
+            丢弃此操作
+          </button>
+        </div>
+      </section>
+    </template>
   </section>
 </template>

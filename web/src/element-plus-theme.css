@@ -106,3 +106,23 @@
     margin: 12px auto;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --el-transition-duration: 0s;
+    --el-transition-duration-fast: 0s;
+  }
+
+  .dialog-fade-enter-active,
+  .dialog-fade-enter-active .el-overlay-dialog,
+  .dialog-fade-leave-active,
+  .dialog-fade-leave-active .el-overlay-dialog {
+    animation: none;
+  }
+
+  .el-drawer,
+  .el-drawer-fade-enter-active,
+  .el-drawer-fade-leave-active {
+    transition: none;
+  }
+}

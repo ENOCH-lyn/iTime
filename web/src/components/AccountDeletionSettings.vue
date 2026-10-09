@@ -100,8 +100,6 @@ async function submit() {
     values.password = ''
     operationId.value = ''
     dialog.value?.close()
-    clearSession({ discardLocal: true })
-    notifyAccountDiscard(userId)
     await router.replace({
       path: '/login',
       state: {
@@ -109,6 +107,8 @@ async function submit() {
         purgeAfter: result.deletion.purge_after,
       },
     })
+    clearSession({ discardLocal: true })
+    notifyAccountDiscard(userId)
   } catch (reason) {
     const current = failure(reason)
     error.value = current.saved === 'unknown'

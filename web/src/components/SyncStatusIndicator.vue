@@ -48,7 +48,7 @@ const count = computed(() =>
   <ElTooltip :content="label" placement="right">
     <ElBadge :value="count > 99 ? '99+' : count" :hidden="!count" :max="99">
       <RouterLink
-        to="/account/sync"
+        to="/settings#sync"
         class="sync-status-indicator"
         :class="{ spinning: syncStatus.phase === 'connecting' }"
         :aria-label="label"

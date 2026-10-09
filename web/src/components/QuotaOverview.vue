@@ -20,6 +20,8 @@ import {
   type QuotaSummary,
 } from '../lib/quota'
 
+const props = defineProps<{ compact?: boolean }>()
+const emit = defineEmits<{ openDetails: [] }>()
 const root = ref<HTMLElement | null>(null)
 const summary = ref<QuotaSummary | null>(null)
 const ledger = ref<QuotaLedgerEntry[]>([])
@@ -34,7 +36,9 @@ const ledgerError = ref<Failure | null>(null)
 let timeZoneOperationId = ''
 
 const current = computed(() => summary.value?.current ?? null)
-const refreshing = computed(() => summaryLoading.value || ledgerLoading.value)
+const refreshing = computed(() => (
+  summaryLoading.value || (!props.compact && ledgerLoading.value)
+))
 const capabilityLabels = {
   conversation: '全局对话',
   calendar_screenshot: '截图识别',
@@ -163,15 +167,20 @@ function refreshOnFocus() {
 }
 
 onMounted(() => {
-  void refresh()
+  if (props.compact) void loadSummary()
+  else void refresh()
   window.addEventListener('focus', refreshOnFocus)
 })
 onUnmounted(() => window.removeEventListener('focus', refreshOnFocus))
 </script>
 
 <template>
-  <div ref="root" class="quota-overview">
-    <div class="section-intro">
+  <div
+    ref="root"
+    class="quota-overview"
+    :class="{ 'quota-overview-compact': compact }"
+  >
+    <div v-if="!compact" class="section-intro">
       <p class="page-description">
         查看本活动日的可用额度、处理中预留和已结算记录。
       </p>
@@ -204,7 +213,32 @@ onUnmounted(() => window.removeEventListener('focus', refreshOnFocus))
     </div>
 
     <template v-else-if="current">
-      <dl class="quota-metrics" aria-label="本活动日额度摘要">
+      <div v-if="compact" class="quota-compact-summary">
+        <dl aria-label="本活动日额度摘要">
+          <div>
+            <dt>今日可用</dt>
+            <dd>
+              <span>{{ current.currency }}</span>{{ current.available }}
+            </dd>
+          </div>
+          <div>
+            <dt>处理中</dt>
+            <dd>
+              <span>{{ current.currency }}</span>{{ current.reserved }}
+            </dd>
+          </div>
+          <div>
+            <dt>下次刷新</dt>
+            <dd class="quota-compact-time">
+              {{ timeInZone(current.window_end_at, current.time_zone) }}
+            </dd>
+          </div>
+        </dl>
+        <ElButton @click="emit('openDetails')">查看额度详情</ElButton>
+      </div>
+
+      <template v-else>
+        <dl class="quota-metrics" aria-label="本活动日额度摘要">
         <div>
           <dt>今日可用</dt>
           <dd data-testid="quota-available">
@@ -229,9 +263,9 @@ onUnmounted(() => window.removeEventListener('focus', refreshOnFocus))
             <span>{{ current.currency }}</span>{{ current.base }}
           </dd>
         </div>
-      </dl>
+        </dl>
 
-      <dl class="quota-context">
+        <dl class="quota-context">
         <div>
           <dt>活动日</dt>
           <dd>{{ activityDate(current.activity_date) }}</dd>
@@ -248,9 +282,9 @@ onUnmounted(() => window.removeEventListener('focus', refreshOnFocus))
           <dt>下次刷新</dt>
           <dd>{{ timeInZone(current.window_end_at, current.time_zone) }}</dd>
         </div>
-      </dl>
+        </dl>
 
-      <section class="quota-section" aria-labelledby="quota-reservations-title">
+        <section class="quota-section" aria-labelledby="quota-reservations-title">
         <div class="quota-section-heading">
           <div>
             <h2 id="quota-reservations-title">处理中预留</h2>
@@ -289,10 +323,15 @@ onUnmounted(() => window.removeEventListener('focus', refreshOnFocus))
           </li>
         </ul>
         <p v-else class="empty-state">当前没有处理中的额度预留。</p>
-      </section>
+        </section>
+      </template>
     </template>
 
-    <section class="quota-section" aria-labelledby="quota-ledger-title">
+    <section
+      v-if="!compact"
+      class="quota-section"
+      aria-labelledby="quota-ledger-title"
+    >
       <div class="quota-section-heading">
         <div>
           <h2 id="quota-ledger-title">额度账本</h2>

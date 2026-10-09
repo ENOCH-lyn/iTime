@@ -51,7 +51,12 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page.getByRole('heading', { name: '去邮箱看看吧' })).toBeVisible()
   await page.goto(await mailLink(request, address))
   await expect(page).toHaveURL('/ai')
-  await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  if ((page.viewportSize()?.width ?? 0) <= 700) {
+    await page.getByRole('button', { name: '打开导航', exact: true }).click()
+    await page.getByRole('menuitem', { name: '任务', exact: true }).click()
+  } else {
+    await page.getByRole('link', { name: '任务', exact: true }).click()
+  }
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
   return address
@@ -354,7 +359,7 @@ test('列表失败可恢复，离线创建保留输入并在恢复后只创建�
   await expect(page.locator('.task-list li')).toHaveCount(1)
 
   await page.setViewportSize({ width: 320, height: 700 })
-  await page.goto('/account/appearance')
+  await page.goto('/settings#appearance')
   await selectSetting(page, '字号', '更大')
   await page.goto('/tasks')
   await expect(page.locator('.task-list li').filter({ hasText: '离线后重试的任务' })).toBeVisible()

@@ -819,7 +819,7 @@ async function logout() {
         @revise="openRevision"
       />
       <div class="focus-account">
-        <RouterLink to="/account" class="nav-link">{{ identity?.user.email }}</RouterLink>
+        <RouterLink to="/settings" class="nav-link">{{ identity?.user.email }}</RouterLink>
         <button
           type="button"
           class="icon-button"

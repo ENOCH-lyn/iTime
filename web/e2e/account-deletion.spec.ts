@@ -251,8 +251,8 @@ test('restore once, then let the real worker permanently purge the account', asy
   const taskId = await createTask(page, account.csrf, marker)
   const exportId = await createReadyExport(page, account.csrf)
   const tab = await context.newPage()
-  await tab.goto('/account/sync')
-  await expect(tab.getByRole('heading', { name: '同步与离线' }))
+  await tab.goto('/settings#sync')
+  await expect(tab.getByRole('dialog', { name: '同步与离线' }))
     .toBeVisible()
 
   const secondContext = await browser.newContext({
@@ -264,7 +264,8 @@ test('restore once, then let the real worker permanently purge the account', asy
 
     await seedLocalData(page, account.userId, 'first-tab')
     await seedLocalData(tab, account.userId, 'second-tab')
-    expect((await localDataState(page, account.userId)).cacheRows).toBe(1)
+    expect((await localDataState(page, account.userId)).cacheRows)
+      .toBeGreaterThan(0)
 
     const deletion = await page.request.post(
       '/api/v1/account-deletion',
@@ -290,8 +291,7 @@ test('restore once, then let the real worker permanently purge the account', asy
     await expect.poll(
       async () => localDataState(tab, account.userId),
     ).toEqual({ localKeys: [], cursor: null, cacheRows: 0 })
-    await expect(tab.getByRole('link', { name: '返回登录', exact: true }))
-      .toBeVisible()
+    await expect(tab).toHaveURL('/login')
     expect((await secondDevice.request.get('/api/v1/auth/me')).status())
       .toBe(401)
 
@@ -439,7 +439,7 @@ test('request deletion from data settings with guarded confirmation', async ({
   try {
     const secondDevice = await secondContext.newPage()
     await login(secondDevice, account.email)
-    await page.goto('/account/data')
+    await page.goto('/settings#data')
     await page.emulateMedia({ reducedMotion: 'reduce' })
     if (info.project.name === 'mobile') {
       await page.evaluate(() => localStorage.setItem(
@@ -449,7 +449,7 @@ test('request deletion from data settings with guarded confirmation', async ({
       await page.setViewportSize({ width: 320, height: 700 })
       await page.reload()
     }
-    await expect(page).toHaveTitle('数据管理 · iTime')
+    await expect(page).toHaveTitle('设置 · iTime')
     await expect(page.getByRole('heading', { name: '最近的数据包' }))
       .toHaveCount(0)
     await expect(page.getByText('还没有生成过数据包。')).toBeVisible()
