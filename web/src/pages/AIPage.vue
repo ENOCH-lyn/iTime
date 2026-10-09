@@ -1,27 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  CircleHelp,
-  CirclePause,
-  LogOut,
-  Settings,
-} from 'lucide-vue-next'
-import AppRail from '../components/AppRail.vue'
+import { CirclePause } from 'lucide-vue-next'
 import ConversationComposer from '../components/ConversationComposer.vue'
 import ConversationHeader from '../components/ConversationHeader.vue'
 import ConversationSidebar from '../components/ConversationSidebar.vue'
 import ConversationViewport from '../components/ConversationViewport.vue'
-import ProductNavigation from '../components/ProductNavigation.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, localFailure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
   authLoading,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import { cancelAIJob } from '../lib/ai-jobs'
@@ -62,7 +54,7 @@ const loadingOlder = ref(false)
 const creating = ref(false)
 const sending = ref(false)
 const cancelling = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const error = ref<Failure | null>(null)
 const success = ref('')
 const renameOpen = ref(false)
@@ -70,7 +62,6 @@ const renameTarget = ref<Conversation | null>(null)
 const renameTitle = ref('')
 const renamePending = ref(false)
 const renameError = ref('')
-const navigationOpen = ref(false)
 const visualHeight = ref(window.visualViewport?.height ?? window.innerHeight)
 const viewport = ref<{
   scrollToLatest: (force?: boolean) => Promise<void>
@@ -641,26 +632,6 @@ async function scrollToLatest(force = true) {
   await viewport.value?.scrollToLatest(force)
 }
 
-async function selectFromNavigation(conversation: Conversation) {
-  navigationOpen.value = false
-  await selectConversation(conversation)
-}
-
-async function createFromNavigation() {
-  navigationOpen.value = false
-  await createNewConversation()
-}
-
-function openRenameFromNavigation(conversation: Conversation) {
-  navigationOpen.value = false
-  openRename(conversation)
-}
-
-async function toggleArchiveFromNavigation(conversation: Conversation) {
-  navigationOpen.value = false
-  await toggleArchive(conversation)
-}
-
 function recoverOnFocus() {
   if (document.hidden) {
     stopEvents()
@@ -673,62 +644,66 @@ function recoverOnFocus() {
 function invalidAttachment(message: string) {
   error.value = localFailure(message)
 }
-
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  error.value = null
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    error.value = failure(reason)
-  } finally {
-    pendingLogout.value = false
-  }
-}
 </script>
 
 <template>
-  <div
-    class="ai-workspace"
-    :style="{ '--visual-viewport-height': `${visualHeight}px` }"
+  <AppShell
+    current="ai"
+    has-secondary
+    secondary-label="会话"
+    title="AI 对话"
+    :pending-logout="pendingLogout"
+    @logout="logout"
   >
-    <AppRail
-      current="ai"
-      :email="identity?.user.email ?? ''"
-      :pending-logout="pendingLogout"
-      @logout="logout"
-    />
-
-    <ConversationSidebar
-      class="conversation-sidebar-desktop"
-      :conversations="conversations"
-      :selected-id="selected?.id ?? null"
-      :archived="archivedView"
-      :loading="loadingList"
-      :has-more="!!conversationCursor"
-      :create-disabled="authLoading || creating"
-      :ai-frozen="identity?.user.ai_access === 'frozen'"
-      @select="selectConversation"
-      @create="createNewConversation"
-      @archived-view="switchArchived"
-      @load-more="loadConversationList(true)"
-      @rename="openRename"
-      @archive="toggleArchive"
-    />
-
-    <main id="main-content" class="ai-main">
-      <ConversationHeader
-        :conversation="selected"
-        @open-navigation="navigationOpen = true"
+    <template #secondary>
+      <ConversationSidebar
+        :conversations="conversations"
+        :selected-id="selected?.id ?? null"
+        :archived="archivedView"
+        :loading="loadingList"
+        :has-more="!!conversationCursor"
+        :create-disabled="authLoading || creating"
+        :ai-frozen="identity?.user.ai_access === 'frozen'"
+        @select="selectConversation"
+        @create="createNewConversation"
+        @archived-view="switchArchived"
+        @load-more="loadConversationList(true)"
         @rename="openRename"
         @archive="toggleArchive"
       />
-      <div v-if="error || success || identity?.user.ai_access === 'frozen'"
-        class="ai-workspace-status">
+    </template>
+    <template #drawer-secondary="{ close }">
+      <ConversationSidebar
+        :conversations="conversations"
+        :selected-id="selected?.id ?? null"
+        :archived="archivedView"
+        :loading="loadingList"
+        :has-more="!!conversationCursor"
+        :create-disabled="authLoading || creating"
+        :ai-frozen="identity?.user.ai_access === 'frozen'"
+        @select="(v) => { selectConversation(v); close() }"
+        @create="() => { createNewConversation(); close() }"
+        @archived-view="switchArchived"
+        @load-more="loadConversationList(true)"
+        @rename="(v) => { openRename(v); close() }"
+        @archive="(v) => { toggleArchive(v); close() }"
+      />
+    </template>
+
+    <div
+      class="ai-main"
+      :style="{ '--visual-viewport-height': `${visualHeight}px` }"
+    >
+      <ConversationHeader
+        :conversation="selected"
+        @rename="openRename"
+        @archive="toggleArchive"
+      />
+      <div
+        v-if="error || success || logoutError || identity?.user.ai_access === 'frozen'"
+        class="ai-workspace-status"
+      >
+        <StatusMessage :error="logoutError" />
         <div v-if="identity?.user.ai_access === 'frozen'"
           class="status restriction-status" role="status">
           <CirclePause :size="20" aria-hidden="true" />
@@ -760,56 +735,7 @@ async function logout() {
         @cancel="cancelGeneration"
         @invalid-attachment="invalidAttachment"
       />
-    </main>
-
-    <ElDrawer
-      v-model="navigationOpen"
-      class="conversation-drawer"
-      direction="ltr"
-      size="min(320px, 92vw)"
-      :with-header="false"
-      aria-label="导航"
-    >
-      <ConversationSidebar
-        :conversations="conversations"
-        :selected-id="selected?.id ?? null"
-        :archived="archivedView"
-        :loading="loadingList"
-        :has-more="!!conversationCursor"
-        :create-disabled="authLoading || creating"
-        :ai-frozen="identity?.user.ai_access === 'frozen'"
-        @select="selectFromNavigation"
-        @create="createFromNavigation"
-        @archived-view="switchArchived"
-        @load-more="loadConversationList(true)"
-        @rename="openRenameFromNavigation"
-        @archive="toggleArchiveFromNavigation"
-      >
-        <template #footer>
-          <ProductNavigation current="ai" />
-          <div class="conversation-drawer-account">
-            <RouterLink to="/settings" class="nav-link">
-              <Settings :size="18" aria-hidden="true" />
-              设置
-            </RouterLink>
-            <RouterLink to="/help" class="nav-link">
-              <CircleHelp :size="18" aria-hidden="true" />
-              帮助
-            </RouterLink>
-            <ElButton
-              text
-              class="nav-link"
-              :loading="pendingLogout"
-              :disabled="pendingLogout"
-              @click="logout"
-            >
-              <LogOut :size="18" aria-hidden="true" />
-              {{ pendingLogout ? '正在退出…' : '退出登录' }}
-            </ElButton>
-          </div>
-        </template>
-      </ConversationSidebar>
-    </ElDrawer>
+    </div>
 
     <ElDialog
       v-model="renameOpen"
@@ -833,5 +759,5 @@ async function logout() {
         </div>
       </form>
     </ElDialog>
-  </div>
+  </AppShell>
 </template>

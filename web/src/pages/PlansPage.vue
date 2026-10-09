@@ -19,15 +19,14 @@ import {
 import PlanNavigation from '../components/PlanNavigation.vue'
 import PlanPreview from '../components/PlanPreview.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, localFailure, type Failure } from '../lib/api'
+import { failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
 import { cancelAIJob, getAIJob, type AIJob } from '../lib/ai-jobs'
 import {
   applyPlanProposal,
@@ -92,7 +91,7 @@ const applying = ref(false)
 const rejecting = ref(false)
 const saving = ref(false)
 const keepingSourceConflicts = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 let contextRevision = 0
@@ -964,22 +963,6 @@ function selectHistory(value: string) {
   void replaceQuery()
 }
 
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  pageError.value = null
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    pageError.value = failure(reason)
-  } finally {
-    pendingLogout.value = false
-  }
-}
-
 function recoverOnFocus() {
   if (document.hidden) {
     window.clearTimeout(pollTimer)
@@ -997,20 +980,36 @@ watch(pageError, async value => {
 </script>
 
 <template>
-  <div class="plan-workspace">
-    <PlanNavigation
-      :scope="form.scope"
-      :proposals="proposals"
-      :selected-proposal-id="selectedProposal?.id ?? null"
-      :loading="loadingProposals"
-      :email="identity?.user.email ?? ''"
-      :pending-logout="pendingLogout"
-      @scope="changeScope"
-      @proposal="openProposal"
-      @logout="logout"
-    />
+  <AppShell
+    current="plans"
+    has-secondary
+    secondary-label="规划"
+    title="规划"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <PlanNavigation
+        :scope="form.scope"
+        :proposals="proposals"
+        :selected-proposal-id="selectedProposal?.id ?? null"
+        :loading="loadingProposals"
+        @scope="changeScope"
+        @proposal="openProposal"
+      />
+    </template>
+    <template #drawer-secondary="{ close }">
+      <PlanNavigation
+        :scope="form.scope"
+        :proposals="proposals"
+        :selected-proposal-id="selectedProposal?.id ?? null"
+        :loading="loadingProposals"
+        @scope="(v) => { changeScope(v); close() }"
+        @proposal="(v) => { openProposal(v); close() }"
+      />
+    </template>
 
-    <main id="main-content" class="plan-main">
+    <div class="plan-main">
       <header class="plan-toolbar">
         <div class="plan-toolbar-title">
           <span>{{ context?.time_zone ?? browserTimeZone }}</span>
@@ -1038,7 +1037,11 @@ watch(pageError, async value => {
         </div>
       </header>
 
-      <div v-if="pageError || pageSuccess || identity?.user.ai_access === 'frozen'" class="plan-status">
+      <div
+        v-if="pageError || pageSuccess || logoutError || identity?.user.ai_access === 'frozen'"
+        class="plan-status"
+      >
+        <StatusMessage :error="logoutError" />
         <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
           <CirclePause :size="20" aria-hidden="true" />
           <p>此账号的 AI 功能已暂停，已有计划仍可查看和手工调整。</p>
@@ -1408,6 +1411,6 @@ watch(pageError, async value => {
           </div>
         </section>
       </div>
-    </main>
-  </div>
+    </div>
+  </AppShell>
 </template>

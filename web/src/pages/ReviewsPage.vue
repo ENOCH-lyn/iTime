@@ -8,12 +8,11 @@ import ReviewNavigation from '../components/ReviewNavigation.vue'
 import ReviewReport from '../components/ReviewReport.vue'
 import ReviewThread from '../components/ReviewThread.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, type Failure } from '../lib/api'
 import {
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import { cancelAIJob, getAIJob, type AIJob } from '../lib/ai-jobs'
@@ -52,7 +51,7 @@ const selectedDate = ref('')
 const maximumDate = ref('')
 const loading = ref(true)
 const pending = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const activeJob = ref<AIJob | null>(null)
@@ -472,43 +471,49 @@ async function setView(next: 'review' | 'memories') {
   pageSuccess.value = ''
   await replaceQuery()
 }
-
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    setError(reason)
-  } finally {
-    pendingLogout.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="review-workspace">
-    <ReviewNavigation
-      :email="identity?.user.email ?? ''"
-      :view="view"
-      :selected-date="selectedDate"
-      :maximum-date="maximumDate"
-      :selected-review-id="selectedReviewId"
-      :reviews="reviews"
-      :loading="loading"
-      :pending-logout="pendingLogout"
-      @view="setView"
-      @update:selected-date="selectedDate = $event"
-      @open="openDate"
-      @select="openReview"
-      @logout="logout"
-    />
+  <AppShell
+    current="reviews"
+    has-secondary
+    secondary-label="复盘"
+    title="复盘"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <ReviewNavigation
+        :view="view"
+        :selected-date="selectedDate"
+        :maximum-date="maximumDate"
+        :selected-review-id="selectedReviewId"
+        :reviews="reviews"
+        :loading="loading"
+        @view="setView"
+        @update:selected-date="selectedDate = $event"
+        @open="openDate"
+        @select="openReview"
+      />
+    </template>
+    <template #drawer-secondary="{ close }">
+      <ReviewNavigation
+        :view="view"
+        :selected-date="selectedDate"
+        :maximum-date="maximumDate"
+        :selected-review-id="selectedReviewId"
+        :reviews="reviews"
+        :loading="loading"
+        @view="(v) => { setView(v); close() }"
+        @update:selected-date="selectedDate = $event"
+        @open="() => { openDate(); close() }"
+        @select="(v) => { openReview(v); close() }"
+      />
+    </template>
 
-    <main id="main-content" class="review-main">
+    <div class="review-main">
       <div class="review-status">
+        <StatusMessage :error="logoutError" />
         <StatusMessage
           :error="pageError"
           :success="pageSuccess"
@@ -568,6 +573,6 @@ async function logout() {
           />
         </div>
       </template>
-    </main>
-  </div>
+    </div>
+  </AppShell>
 </template>

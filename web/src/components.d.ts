@@ -63,6 +63,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     FocusHistory: typeof import('./components/FocusHistory.vue')['default']
+    FocusSecondaryNav: typeof import('./components/FocusSecondaryNav.vue')['default']
     FocusSetup: typeof import('./components/FocusSetup.vue')['default']
     FocusTaskProgress: typeof import('./components/FocusTaskProgress.vue')['default']
     FocusTimer: typeof import('./components/FocusTimer.vue')['default']

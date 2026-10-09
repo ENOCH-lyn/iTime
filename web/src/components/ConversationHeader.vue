@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Archive, ArchiveRestore, Ellipsis, Menu, Pencil } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, Ellipsis, Pencil } from 'lucide-vue-next'
 import type { Conversation } from '../lib/conversations'
 
 defineProps<{
@@ -7,7 +7,6 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  openNavigation: []
   rename: [conversation: Conversation]
   archive: [conversation: Conversation]
 }>()
@@ -15,17 +14,6 @@ const emit = defineEmits<{
 
 <template>
   <header class="conversation-header" aria-label="会话标题">
-    <ElButton
-      text
-      circle
-      class="conversation-navigation-trigger"
-      aria-label="打开导航"
-      title="打开导航"
-      @click="emit('openNavigation')"
-    >
-      <Menu :size="20" aria-hidden="true" />
-    </ElButton>
-
     <h1 id="conversation-title" tabindex="-1">
       {{ conversation?.title ?? '新对话' }}
     </h1>

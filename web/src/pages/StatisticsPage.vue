@@ -6,14 +6,10 @@ import StatisticsNavigation from '../components/StatisticsNavigation.vue'
 import StatisticsOverview from '../components/StatisticsOverview.vue'
 import StatisticsTrend from '../components/StatisticsTrend.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, type Failure } from '../lib/api'
-import {
-  clearSession,
-  confirmDiscardPendingOperations,
-  identity,
-  notifySessionChange,
-  refreshSession,
-} from '../lib/auth'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, type Failure } from '../lib/api'
+import { identity, refreshSession } from '../lib/auth'
 import { getTimeSettings, saveTimeSettings } from '../lib/calendar'
 import {
   getStatistics,
@@ -30,7 +26,7 @@ const anchorDate = ref('')
 const initialActivityDate = ref('')
 const result = ref<StatisticsResult | null>(null)
 const loading = ref(true)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const pageError = ref<Failure | null>(null)
 let ready = false
 let requestSequence = 0
@@ -247,19 +243,6 @@ async function moveCurrent() {
   })
 }
 
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  try {
-    await api('/auth/logout', {})
-  } finally {
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    pendingLogout.value = false
-    await router.replace('/login')
-  }
-}
-
 watch(
   () => [route.query.scope, route.query.date],
   () => {
@@ -298,22 +281,40 @@ useSyncRefresh(
 </script>
 
 <template>
-  <div class="statistics-workspace">
-    <StatisticsNavigation
-      :email="identity?.user.email ?? ''"
-      :scope="scope"
-      :range-label="rangeLabel"
-      :can-move-next="canMoveNext"
-      :loading="loading"
-      :pending-logout="pendingLogout"
-      @scope="selectScope"
-      @previous="movePrevious"
-      @current="moveCurrent"
-      @next="moveNext"
-      @logout="logout"
-    />
+  <AppShell
+    current="stats"
+    has-secondary
+    secondary-label="统计"
+    title="统计"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <StatisticsNavigation
+        :scope="scope"
+        :range-label="rangeLabel"
+        :can-move-next="canMoveNext"
+        :loading="loading"
+        @scope="selectScope"
+        @previous="movePrevious"
+        @current="moveCurrent"
+        @next="moveNext"
+      />
+    </template>
+    <template #drawer-secondary>
+      <StatisticsNavigation
+        :scope="scope"
+        :range-label="rangeLabel"
+        :can-move-next="canMoveNext"
+        :loading="loading"
+        @scope="selectScope"
+        @previous="movePrevious"
+        @current="moveCurrent"
+        @next="moveNext"
+      />
+    </template>
 
-    <main id="main-content" class="statistics-main">
+    <div class="statistics-main">
       <header class="statistics-page-heading">
         <div>
           <span class="statistics-eyebrow">个人统计</span>
@@ -333,6 +334,7 @@ useSyncRefresh(
       </header>
 
       <div class="statistics-status">
+        <StatusMessage :error="logoutError" />
         <StatusMessage
           :error="pageError"
           retry-label="重新读取"
@@ -391,6 +393,6 @@ useSyncRefresh(
           计算于 {{ calculatedLabel(result.calculated_at) }}
         </footer>
       </div>
-    </main>
-  </div>
+    </div>
+  </AppShell>
 </template>

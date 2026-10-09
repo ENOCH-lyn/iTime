@@ -3,18 +3,14 @@ import {
   ChevronLeft,
   ChevronRight,
   LocateFixed,
-  LogOut,
 } from 'lucide-vue-next'
 import type { StatisticsScope } from '../lib/statistics'
-import ProductNavigation from './ProductNavigation.vue'
 
 defineProps<{
-  email: string
   scope: StatisticsScope
   rangeLabel: string
   canMoveNext: boolean
   loading: boolean
-  pendingLogout: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,19 +18,11 @@ const emit = defineEmits<{
   previous: []
   current: []
   next: []
-  logout: []
 }>()
 </script>
 
 <template>
-  <aside class="statistics-sidebar" aria-label="iTime 导航">
-    <div class="statistics-sidebar-top">
-      <RouterLink to="/stats" class="wordmark" aria-label="iTime 统计">
-        iTime<span aria-hidden="true">.</span>
-      </RouterLink>
-      <ProductNavigation current="stats" />
-    </div>
-
+  <nav class="secondary-nav statistics-sidebar" aria-label="统计">
     <section class="statistics-range-controls" aria-labelledby="statistics-range-title">
       <h2 id="statistics-range-title">统计范围</h2>
       <div class="statistics-scope-switch" role="tablist" aria-label="统计周期">
@@ -89,19 +77,5 @@ const emit = defineEmits<{
         </button>
       </div>
     </section>
-
-    <div class="statistics-account">
-      <RouterLink to="/settings" class="nav-link" :title="email">{{ email }}</RouterLink>
-      <button
-        type="button"
-        class="icon-button"
-        title="退出登录"
-        aria-label="退出登录"
-        :disabled="pendingLogout"
-        @click="emit('logout')"
-      >
-        <LogOut :size="18" aria-hidden="true" />
-      </button>
-    </div>
-  </aside>
+  </nav>
 </template>

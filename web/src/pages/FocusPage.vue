@@ -5,25 +5,22 @@ import {
   AlertTriangle,
   Cloud,
   CloudOff,
-  LogOut,
   Plus,
   RefreshCcw,
   X,
 } from 'lucide-vue-next'
 import DifficultyPanel from '../components/DifficultyPanel.vue'
-import FocusHistory from '../components/FocusHistory.vue'
 import FocusSetup from '../components/FocusSetup.vue'
 import FocusTaskProgress from '../components/FocusTaskProgress.vue'
 import FocusTimer from '../components/FocusTimer.vue'
-import ProductNavigation from '../components/ProductNavigation.vue'
+import FocusSecondaryNav from '../components/FocusSecondaryNav.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, localFailure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, localFailure, type Failure } from '../lib/api'
 import {
   authError,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import { getTimeSettings, saveTimeSettings, type TimeSettings } from '../lib/calendar'
@@ -73,7 +70,7 @@ const scheduledBlockId = ref<string | null>(null)
 const pending = ref(false)
 const loading = ref(true)
 const historyLoading = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const manualOpen = ref(false)
@@ -789,51 +786,37 @@ async function saveManual() {
     pending.value = false
   }
 }
-
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } finally {
-    pendingLogout.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="focus-workspace">
-    <aside class="focus-sidebar">
-      <div class="focus-sidebar-top">
-        <RouterLink to="/ai" class="wordmark">iTime</RouterLink>
-        <ProductNavigation current="focus" />
-      </div>
-      <FocusHistory
+  <AppShell
+    current="focus"
+    has-secondary
+    secondary-label="专注"
+    title="专注"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <FocusSecondaryNav
         :items="history"
         :selected-id="selected?.id ?? null"
         :loading="historyLoading"
         @select="selectHistory"
         @revise="openRevision"
       />
-      <div class="focus-account">
-        <RouterLink to="/settings" class="nav-link">{{ identity?.user.email }}</RouterLink>
-        <button
-          type="button"
-          class="icon-button"
-          title="退出登录"
-          aria-label="退出登录"
-          :disabled="pendingLogout"
-          @click="logout"
-        >
-          <LogOut :size="18" aria-hidden="true" />
-        </button>
-      </div>
-    </aside>
+    </template>
+    <template #drawer-secondary="{ close }">
+      <FocusSecondaryNav
+        :items="history"
+        :selected-id="selected?.id ?? null"
+        :loading="historyLoading"
+        @select="(v) => { selectHistory(v); close() }"
+        @revise="(v) => { openRevision(v); close() }"
+      />
+    </template>
 
-    <main id="main-content" class="focus-main">
+    <div class="focus-main">
       <header class="focus-toolbar">
         <div>
           <span class="muted">执行</span>
@@ -914,6 +897,7 @@ async function logout() {
             </div>
           </div>
         </section>
+        <StatusMessage :error="logoutError" />
         <StatusMessage :error="pageError" :success="pageSuccess" />
       </div>
 
@@ -982,7 +966,7 @@ async function logout() {
         </section>
         <DifficultyPanel v-else :focus="null" :tasks="tasks" />
       </div>
-    </main>
+    </div>
 
     <dialog :open="manualOpen" class="focus-dialog" aria-labelledby="manual-focus-heading">
       <form method="dialog" @submit.prevent="saveManual">
@@ -1031,5 +1015,5 @@ async function logout() {
         </footer>
       </form>
     </dialog>
-  </div>
+  </AppShell>
 </template>

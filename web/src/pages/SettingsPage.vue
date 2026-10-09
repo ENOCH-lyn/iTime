@@ -3,8 +3,6 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, CirclePause, ExternalLink, X } from 'lucide-vue-next'
 import AccountDeletionSettings from '../components/AccountDeletionSettings.vue'
-import AccountMenu from '../components/AccountMenu.vue'
-import AppRail from '../components/AppRail.vue'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import DataExportSettings from '../components/DataExportSettings.vue'
 import DeviceSettings from '../components/DeviceSettings.vue'
@@ -13,14 +11,12 @@ import PrivacySettings from '../components/PrivacySettings.vue'
 import QuotaOverview from '../components/QuotaOverview.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import SyncSettings from '../components/SyncSettings.vue'
-import { api, failure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
 import {
   authError,
   authLoading,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import '../ai-workspace.css'
@@ -28,8 +24,7 @@ import '../ai-workspace.css'
 const route = useRoute()
 const router = useRouter()
 const booted = ref(false)
-const pendingLogout = ref(false)
-const logoutError = ref<Failure | null>(null)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const passwordOpen = ref(false)
 const devicesOpen = ref(false)
 const quotaOpen = ref(false)
@@ -99,55 +94,28 @@ function refresh() {
 async function closeOverlay(hash: string) {
   if (route.hash === `#${hash}`) await router.replace('/settings')
 }
-
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  logoutError.value = null
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    logoutError.value = failure(reason)
-  } finally {
-    pendingLogout.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="settings-shell">
-    <AppRail
-      v-if="identity"
-      :current="null"
-      :email="identity.user.email"
-      :pending-logout="pendingLogout"
-      @logout="logout"
-    />
-
-    <div class="settings-content">
-      <nav class="settings-mobile-header" aria-label="设置导航">
-        <ElTooltip content="返回 AI 对话" placement="bottom">
-          <RouterLink
-            to="/ai"
-            class="icon-button"
-            aria-label="返回 AI 对话"
-          >
-            <ArrowLeft :size="20" aria-hidden="true" />
-          </RouterLink>
-        </ElTooltip>
-        <strong>设置</strong>
-        <AccountMenu
-          v-if="identity"
-          :email="identity.user.email"
-          :pending="pendingLogout"
-          @logout="logout"
-        />
+  <AppShell
+    :current="null"
+    title="设置"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <div class="settings-page-wrapper">
+      <nav class="settings-return-nav" aria-label="设置导航">
+        <RouterLink
+          to="/ai"
+          class="icon-button settings-return-link"
+          aria-label="返回 AI 对话"
+        >
+          <ArrowLeft :size="20" aria-hidden="true" />
+          <span>返回 AI 对话</span>
+        </RouterLink>
       </nav>
 
-      <main id="main-content" class="settings-page">
+      <div id="main-content" class="settings-page">
         <header class="settings-page-header">
           <h1 tabindex="-1">设置</h1>
         </header>
@@ -283,7 +251,7 @@ async function logout() {
             <AccountDeletionSettings />
           </section>
         </template>
-      </main>
+      </div>
     </div>
 
     <ElDialog
@@ -340,5 +308,5 @@ async function logout() {
     >
       <SyncSettings v-if="syncOpen" />
     </ElDrawer>
-  </div>
+  </AppShell>
 </template>

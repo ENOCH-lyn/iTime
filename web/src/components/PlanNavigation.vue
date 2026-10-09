@@ -5,7 +5,6 @@ import {
   CircleAlert,
   CircleCheck,
   Clock3,
-  LogOut,
   Sparkles,
   XCircle,
 } from 'lucide-vue-next'
@@ -14,21 +13,17 @@ import type {
   PlanScope,
   ProposalEffectiveStatus,
 } from '../lib/plans'
-import ProductNavigation from './ProductNavigation.vue'
 
 defineProps<{
   scope: PlanScope
   proposals: PlanProposalSummary[]
   selectedProposalId: string | null
   loading: boolean
-  email: string
-  pendingLogout: boolean
 }>()
 
 const emit = defineEmits<{
   scope: [scope: PlanScope]
   proposal: [proposal: PlanProposalSummary]
-  logout: []
 }>()
 
 const statusLabels: Record<ProposalEffectiveStatus, string> = {
@@ -55,15 +50,8 @@ function readableDate(value: string) {
 </script>
 
 <template>
-  <aside class="plan-navigation" aria-label="iTime 导航">
-    <div class="plan-navigation-top">
-      <RouterLink to="/plans" class="wordmark" aria-label="iTime 规划">
-        iTime<span aria-hidden="true">.</span>
-      </RouterLink>
-      <ProductNavigation current="plans" />
-    </div>
-
-    <section class="plan-navigation-modes" aria-labelledby="plan-view-heading">
+  <nav class="secondary-nav plan-navigation" aria-label="规划">
+    <section aria-labelledby="plan-view-heading">
       <p id="plan-view-heading" class="nav-heading">规划范围</p>
       <button
         type="button"
@@ -85,8 +73,8 @@ function readableDate(value: string) {
       </button>
     </section>
 
-    <section class="plan-proposal-navigation" aria-labelledby="proposal-list-heading">
-      <div class="plan-navigation-heading">
+    <section aria-labelledby="proposal-list-heading">
+      <div class="section-heading">
         <p id="proposal-list-heading" class="nav-heading">最近提案</p>
         <Sparkles :size="16" aria-hidden="true" />
       </div>
@@ -115,20 +103,5 @@ function readableDate(value: string) {
         </li>
       </ol>
     </section>
-
-    <div class="task-account">
-      <RouterLink to="/settings" class="task-account-email">
-        {{ email }}
-      </RouterLink>
-      <button
-        type="button"
-        class="nav-link logout-button"
-        :disabled="pendingLogout"
-        @click="emit('logout')"
-      >
-        <LogOut :size="18" aria-hidden="true" />
-        {{ pendingLogout ? '正在退出…' : '退出登录' }}
-      </button>
-    </div>
-  </aside>
+  </nav>
 </template>

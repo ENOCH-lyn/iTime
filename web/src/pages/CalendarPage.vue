@@ -18,7 +18,9 @@ import CalendarSeriesDialog from '../components/CalendarSeriesDialog.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
 import CalendarTrashDialog from '../components/CalendarTrashDialog.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { api, failure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, type Failure } from '../lib/api'
 import {
   getSeries,
   getTimeSettings,
@@ -34,10 +36,7 @@ import {
 } from '../lib/calendar'
 import {
   authError,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import { listTaskOccurrences } from '../lib/task-schedules'
@@ -70,7 +69,7 @@ const planSourceConflicts = ref<PlanSourceConflictSummary>({
 const selected = ref<CalendarDisplayItem | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout } = useAppShell()
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 const importOpen = ref(false)
@@ -571,22 +570,6 @@ async function onTrashChanged(message: string) {
   await onCalendarChanged(message, 0)
 }
 
-async function logout() {
-  if (pendingLogout.value || !confirmDiscardPendingOperations()) return
-  pendingLogout.value = true
-  pageError.value = null
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    pageError.value = failure(reason)
-  } finally {
-    pendingLogout.value = false
-  }
-}
-
 async function focusError() {
   await nextTick()
   document.querySelector<HTMLElement>('.calendar-content .error-status')?.focus()
@@ -598,20 +581,36 @@ watch(pageError, value => {
 </script>
 
 <template>
-  <div class="calendar-workspace" :class="{ 'detail-open': detailOpen }">
-    <CalendarNavigation
-      :email="identity?.user.email ?? ''"
-      :pending-logout="pendingLogout"
-      :series-count="series.length"
-      :term-count="terms.length"
-      @create-series="openCreate"
-      @open-import="openImport"
-      @open-trash="openTrash"
-      @open-settings="settingsOpen = true"
-      @logout="logout"
-    />
+  <AppShell
+    current="calendar"
+    has-secondary
+    secondary-label="日历管理"
+    title="日历"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <CalendarNavigation
+        :series-count="series.length"
+        :term-count="terms.length"
+        @create-series="openCreate"
+        @open-import="openImport"
+        @open-trash="openTrash"
+        @open-settings="settingsOpen = true"
+      />
+    </template>
+    <template #drawer-secondary="{ close }">
+      <CalendarNavigation
+        :series-count="series.length"
+        :term-count="terms.length"
+        @create-series="() => { openCreate(); close() }"
+        @open-import="() => { openImport(); close() }"
+        @open-trash="() => { openTrash(); close() }"
+        @open-settings="() => { settingsOpen = true; close() }"
+      />
+    </template>
 
-    <main id="main-content" class="calendar-main">
+    <div class="calendar-main" :class="{ 'detail-open': detailOpen }">
       <section class="calendar-content">
         <header class="calendar-toolbar">
           <div class="calendar-title">
@@ -662,9 +661,10 @@ watch(pageError, value => {
         </div>
 
         <div
-          v-if="pageError || pageSuccess || identity?.user.ai_access === 'frozen' || planSourceConflicts.open_count"
+          v-if="pageError || pageSuccess || logoutError || identity?.user.ai_access === 'frozen' || planSourceConflicts.open_count"
           class="calendar-status"
         >
+          <StatusMessage :error="logoutError" />
           <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
             <CirclePause :size="20" aria-hidden="true" />
             <p>此账号的 AI 功能已暂停，日历和手动编辑仍可使用。</p>
@@ -724,7 +724,7 @@ watch(pageError, value => {
         @split-series="openSeriesEditor($event, true)"
         @open-subscription="openSubscription"
       />
-    </main>
+    </div>
 
     <CalendarSettingsDialog
       :open="settingsOpen"
@@ -760,5 +760,5 @@ watch(pageError, value => {
       @close="closeTrash"
       @changed="onTrashChanged"
     />
-  </div>
+  </AppShell>
 </template>

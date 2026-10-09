@@ -7,13 +7,12 @@ import ProjectDialog from '../components/ProjectDialog.vue'
 import TaskEditor from '../components/TaskEditor.vue'
 import TaskListPanel from '../components/TaskListPanel.vue'
 import TaskWorkspaceNavigation from '../components/TaskWorkspaceNavigation.vue'
-import { api, failure, type Failure } from '../lib/api'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
+import { failure, type Failure } from '../lib/api'
 import {
   authError,
-  clearSession,
-  confirmDiscardPendingOperations,
   identity,
-  notifySessionChange,
   refreshSession,
 } from '../lib/auth'
 import {
@@ -55,7 +54,7 @@ const editorDirty = ref(false)
 const loadingTasks = ref(false)
 const loadedTasks = ref(false)
 const loadingDetail = ref(false)
-const pendingLogout = ref(false)
+const { pendingLogout, logoutError, logout: baseLogout } = useAppShell()
 const bulkPending = ref(false)
 const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
@@ -351,43 +350,48 @@ async function recoverList() {
 }
 
 async function logout() {
-  if (
-    pendingLogout.value
-    || !canLeaveEditor()
-    || !confirmDiscardPendingOperations()
-  ) return
-  pendingLogout.value = true
-  pageError.value = null
-  try {
-    await api('/auth/logout', {})
-    clearSession({ discardLocal: true })
-    notifySessionChange()
-    await router.replace('/login')
-  } catch (reason) {
-    pageError.value = failure(reason)
-  } finally {
-    pendingLogout.value = false
-  }
+  if (!canLeaveEditor()) return
+  await baseLogout()
 }
 </script>
 
 <template>
-  <div class="task-workspace" :class="{ 'detail-open': detailOpen }">
-    <TaskWorkspaceNavigation
-      :projects="projects"
-      :selected-project-id="filters.project_id"
-      :inbox="filters.inbox"
-      :email="identity?.user.email ?? ''"
-      :pending-logout="pendingLogout"
-      @location="setLocation"
-      @create-project="beginProject"
-      @edit-project="editProject"
-      @logout="logout"
-    />
+  <AppShell
+    current="tasks"
+    has-secondary
+    secondary-label="任务视图"
+    title="任务"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
+    <template #secondary>
+      <TaskWorkspaceNavigation
+        :projects="projects"
+        :selected-project-id="filters.project_id"
+        :inbox="filters.inbox"
+        @location="setLocation"
+        @create-project="beginProject"
+        @edit-project="editProject"
+      />
+    </template>
+    <template #drawer-secondary="{ close }">
+      <TaskWorkspaceNavigation
+        :projects="projects"
+        :selected-project-id="filters.project_id"
+        :inbox="filters.inbox"
+        @location="(id, inbox) => { setLocation(id, inbox); close() }"
+        @create-project="(kind) => { beginProject(kind); close() }"
+        @edit-project="(project) => { editProject(project); close() }"
+      />
+    </template>
 
-    <main id="main-content" class="task-main">
+    <div class="task-main" :class="{ 'detail-open': detailOpen }">
       <div class="task-list-column">
-        <div v-if="pageError || pageSuccess || identity?.user.ai_access === 'frozen'" class="workspace-status">
+        <div
+          v-if="pageError || pageSuccess || logoutError || identity?.user.ai_access === 'frozen'"
+          class="workspace-status"
+        >
+          <StatusMessage :error="logoutError" />
           <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
             <CirclePause :size="20" aria-hidden="true" />
             <p>此账号的 AI 功能已暂停，手动查看和编辑仍可使用。</p>
@@ -435,7 +439,7 @@ async function logout() {
         @lifecycle="taskLifecycleChanged"
         @dirty="editorDirty = $event"
       />
-    </main>
+    </div>
 
     <ProjectDialog
       :open="projectDialogOpen"
@@ -444,5 +448,5 @@ async function logout() {
       @close="projectDialogOpen = false"
       @saved="projectSaved"
     />
-  </div>
+  </AppShell>
 </template>

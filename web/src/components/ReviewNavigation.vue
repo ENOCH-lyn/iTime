@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { BrainCircuit, CalendarPlus, FileClock, LogOut } from 'lucide-vue-next'
-import ProductNavigation from './ProductNavigation.vue'
+import { BrainCircuit, CalendarPlus, FileClock } from 'lucide-vue-next'
 import type { ReviewSummary } from '../lib/reviews'
 
 defineProps<{
-  email: string
   view: 'review' | 'memories'
   selectedDate: string
   maximumDate: string
   selectedReviewId: string | null
   reviews: ReviewSummary[]
   loading: boolean
-  pendingLogout: boolean
 }>()
 
 const emit = defineEmits<{
@@ -19,19 +16,11 @@ const emit = defineEmits<{
   'update:selectedDate': [value: string]
   open: []
   select: [review: ReviewSummary]
-  logout: []
 }>()
 </script>
 
 <template>
-  <aside class="review-sidebar" aria-label="iTime 导航">
-    <div class="review-sidebar-top">
-      <RouterLink to="/reviews" class="wordmark" aria-label="iTime 复盘">
-        iTime<span aria-hidden="true">.</span>
-      </RouterLink>
-      <ProductNavigation current="reviews" />
-    </div>
-
+  <nav class="secondary-nav review-sidebar" aria-label="复盘">
     <div class="review-view-switch" role="tablist" aria-label="复盘视图">
       <button
         type="button"
@@ -99,19 +88,5 @@ const emit = defineEmits<{
         </li>
       </ol>
     </section>
-
-    <div class="review-account">
-      <RouterLink to="/settings" class="nav-link" :title="email">{{ email }}</RouterLink>
-      <button
-        type="button"
-        class="icon-button"
-        title="退出登录"
-        aria-label="退出登录"
-        :disabled="pendingLogout"
-        @click="emit('logout')"
-      >
-        <LogOut :size="18" aria-hidden="true" />
-      </button>
-    </div>
-  </aside>
+  </nav>
 </template>
