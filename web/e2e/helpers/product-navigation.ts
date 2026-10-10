@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
-type ProductDestination = 'AI' | '任务' | '规划' | '日历' | '专注' | '复盘' | '统计'
+type ProductDestination = 'AI' | '任务' | '规划' | '日历' | '复盘' | '我的'
 type LocatorRoot = Page | Locator
 
 const paths: Record<ProductDestination, string> = {
@@ -8,16 +8,9 @@ const paths: Record<ProductDestination, string> = {
   任务: '/tasks',
   规划: '/plans',
   日历: '/calendar',
-  专注: '/focus',
   复盘: '/reviews',
-  统计: '/stats',
+  我的: '/me',
 }
-const primaryDestinations = new Set<ProductDestination>([
-  'AI',
-  '任务',
-  '日历',
-  '专注',
-])
 
 async function firstVisible(locator: Locator) {
   for (const candidate of await locator.all()) {
@@ -68,22 +61,11 @@ export async function navigateToProduct(
     if (openNavigation) {
       await openNavigation.click()
       root = await waitForNavigationDialog(page)
-      if (primaryDestinations.has(label)) {
-        destination = await waitForDestination(root, label)
-      }
+      destination = await waitForDestination(root, label)
     }
   }
 
-  if (!destination) {
-    const more = await firstVisible(
-      root.getByRole('button', { name: '更多功能', exact: true }),
-    )
-    expect(more, `找不到“${label}”入口或“更多功能”按钮`).not.toBeNull()
-    await more!.click()
-    destination = await waitForDestination(page, label)
-  }
-
-  expect(destination, `找不到可见的“${label}”产品入口`).not.toBeNull()
+  expect(destination, `找不到可见的"${label}"产品入口`).not.toBeNull()
   await destination!.click()
-  await expect(page).toHaveURL(new RegExp(`${paths[label]}(?:[?#]|$)`))
+  await expect(page).toHaveURL(new RegExp(`${paths[label]}(?:[?#/]|$)`))
 }

@@ -18,10 +18,8 @@ const pages = [
   { path: '/tasks', label: '任务' },
   { path: '/calendar', label: '日历' },
   { path: '/plans', label: '规划' },
-  { path: '/focus', label: '专注' },
   { path: '/reviews', label: '复盘' },
-  { path: '/stats', label: '统计' },
-  { path: '/settings', label: '设置' },
+  { path: '/me', label: '我的' },
 ] as const
 
 async function mailLink(request: APIRequestContext, address: string) {
@@ -91,7 +89,7 @@ async function expectAppShellPresence(page: Page) {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
   } else {
-    await expect(page.locator('aside.app-rail')).toBeVisible()
+    await expect(page.locator('aside.app-shell-primary')).toBeVisible()
   }
 }
 
@@ -106,7 +104,7 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('全站 8 个页面展示统一的 AppShell', async ({ page, request }, info) => {
+test('全站 6 个页面展示统一的 AppShell', async ({ page, request }, info) => {
   test.setTimeout(180_000)
   await account(page, request)
 
@@ -115,10 +113,6 @@ test('全站 8 个页面展示统一的 AppShell', async ({ page, request }, inf
     if (entry.path === '/ai') {
       await expect(
         page.getByRole('heading', { name: '新对话', exact: true }),
-      ).toBeVisible({ timeout: 15_000 })
-    } else if (entry.path === '/settings') {
-      await expect(
-        page.getByRole('heading', { name: '设置', exact: true }),
       ).toBeVisible({ timeout: 15_000 })
     } else {
       await page.waitForLoadState('networkidle')
@@ -131,4 +125,38 @@ test('全站 8 个页面展示统一的 AppShell', async ({ page, request }, inf
     expect(violations, `${entry.path} 存在 Axe 违规`).toEqual([])
     await screenshot(page, info, entry.path.replace(/[/]/g, '-'))
   }
+})
+
+test('规划页引导跳转 AI 对话，复盘页进入只读态并引导 AI', async ({ page, request }) => {
+  test.setTimeout(120_000)
+  await account(page, request)
+
+  await page.goto('/plans')
+  await page.waitForLoadState('networkidle')
+  const planHero = page.getByRole('link', {
+    name: /规划交给 AI 对话|交给 AI 对话|帮我生成本周规划/,
+  }).first()
+  await expect(planHero).toBeVisible({ timeout: 15_000 })
+  await planHero.click()
+  await expect(page).toHaveURL(/\/ai(?:\?|$)/)
+
+  await page.goto('/reviews')
+  await page.waitForLoadState('networkidle')
+  const reviewHero = page.getByRole('link', {
+    name: /去 AI 说复盘|复盘今天|让 AI 带你复盘/,
+  }).first()
+  await expect(reviewHero).toBeVisible({ timeout: 15_000 })
+  await reviewHero.click()
+  await expect(page).toHaveURL(/\/ai(?:\?|$)/)
+})
+
+test('旧路由 /focus 与 /stats 分别回退到 /ai 与 /me/stats', async ({ page, request }) => {
+  test.setTimeout(60_000)
+  await account(page, request)
+
+  await page.goto('/focus')
+  await expect(page).toHaveURL(/\/ai(?:\?|$)/)
+
+  await page.goto('/stats')
+  await expect(page).toHaveURL(/\/me\/stats(?:[?#/]|$)/)
 })

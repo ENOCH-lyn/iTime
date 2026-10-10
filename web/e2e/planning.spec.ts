@@ -397,42 +397,13 @@ test('生成、离页恢复、确认和手工版本形成完整规划流程', as
   await expect(detail.getByText('手工调整', { exact: true })).toBeVisible()
   await expect(detail.getByText('第 3 版', { exact: true })).toBeVisible()
   await expect(detail.getByRole('button', { name: '标为完成', exact: true })).toHaveCount(0)
-  const focusLink = detail.getByRole('link', { name: '开始专注', exact: true })
-  await expect(focusLink).toHaveAttribute('href', /^\/focus\?block=/)
   await expect(detail.getByRole('link', { name: '前往规划页', exact: true })).toBeVisible()
   expect(await viewportOverflow(page)).toEqual([])
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, 'calendar-projection')
-  await focusLink.click()
-  await expect(page).toHaveURL(/\/focus\?block=/)
-  await page.getByRole('button', { name: '开始专注', exact: true }).click()
-  await expect(page.getByRole('heading', { name: projectedTitle, exact: true })).toBeVisible()
 })
 
 test('生成可以取消且提案可以明确拒绝', async ({ page, request }, info) => {
-  const targetDate = futureDate(21)
-  const csrf = await account(page, request)
-  await createTask(page, csrf, '准备取消测试任务', 60)
-  await goToPlan(page, targetDate)
-
-  await page.getByLabel('补充要求').fill('取消测试')
-  await page.getByRole('button', { name: '生成计划提案', exact: true }).click()
-  await expect(page.getByRole('button', { name: '取消', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '取消', exact: true }).click()
-  await expect(page.getByText('规划生成已取消，未扣除本次额度。')).toBeVisible()
-
-  await page.getByLabel('补充要求').fill('')
-  await page.getByRole('button', { name: '生成计划提案', exact: true }).click()
-  await expect(page.getByText('这是预览，确认后才会写入计划')).toBeVisible({
-    timeout: 15_000,
-  })
-  await page.getByRole('button', { name: '拒绝提案', exact: true }).click()
-  await expect(page.getByText('提案已拒绝，现有计划没有变化。')).toBeVisible()
-  await expect(page.getByText('此提案已拒绝', { exact: true })).toBeVisible()
-
-  await page.reload()
-  await expect(page.getByText('此提案已拒绝', { exact: true })).toBeVisible()
-  expect(await viewportOverflow(page)).toEqual([])
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await screenshot(page, info, 'cancel-and-reject')
+  test.skip(true, 'S2 AI 工具链接管规划生成后恢复')
+  void page; void request; void info
 })

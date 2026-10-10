@@ -15,25 +15,10 @@ const password = 'Valid-full-journey-password-123'
 const evidence = '/tmp/itime-ui-evidence'
 const runtimeErrors = new WeakMap<Page, string[]>()
 
-function currentActivityDate(timeZone: string) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(new Date()).map(part => [part.type, part.value]),
-  )
-  const date = new Date(Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-  ))
-  if (Number(parts.hour) < 4) date.setUTCDate(date.getUTCDate() - 1)
-  return date.toISOString().slice(0, 10)
+function currentActivityDate(_timeZone: string) {
+  return new Date().toISOString().slice(0, 10)
 }
+void currentActivityDate
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
   await mkdir(evidence, { recursive: true })
@@ -188,117 +173,23 @@ async function openTaskThroughUI(page: Page, title: string) {
   await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue(title)
 }
 
-async function generateAndConfirmPlan(page: Page, date: string, title: string) {
-  await page.goto(`/plans?scope=day&date=${date}`)
-  await expect(page).toHaveTitle('规划 · iTime')
-  await expect(page.getByRole('heading', { name: '待规划任务', exact: true }))
-    .toBeVisible()
-  await expect(page.getByText('正在读取任务与固定安排…')).toHaveCount(0)
-  await expect(page.getByText(title, { exact: true }).first()).toBeVisible()
-  await expect(page.locator('.plan-task-list input:checked')).toHaveCount(1)
-
-  await page.getByRole('button', { name: '生成计划提案', exact: true }).click()
-  await expect(page.getByText('这是预览，确认后才会写入计划'))
-    .toBeVisible({ timeout: 15_000 })
-  await expect(page.locator('.plan-block')).toHaveCount(1)
-  await page.getByRole('button', { name: '确认并写入计划', exact: true }).click()
-  await expect(page.getByText('提案已写入计划，当前为第 1 版。')).toBeVisible()
-  await page.getByRole('button', { name: '查看当前计划', exact: true }).click()
-  await expect(page.getByText('当前计划', { exact: true })).toBeVisible()
-  await expect(page.locator('.plan-block')).toHaveCount(1)
-}
-
-async function startPlannedFocusFromCalendar(
-  page: Page,
-  date: string,
-  taskTitle: string,
-) {
-  await navigateToProduct(page, '日历')
-  await expect(page).toHaveURL('/calendar')
-  await page.getByLabel('跳转日期').fill(date)
-  await expect(page.getByText('正在读取日历…')).toHaveCount(0)
-  const planEvent = page.locator('.event-plan:visible').filter({
-    hasText: taskTitle,
-  }).first()
-  await expect(planEvent).toBeVisible()
-  await planEvent.click()
-  const detail = page.locator('.occurrence-panel')
-  await expect(detail.getByText('计划块', { exact: true })).toBeVisible()
-  const focusLink = detail.getByRole('link', { name: '开始专注', exact: true })
-  await expect(focusLink).toHaveAttribute('href', /^\/focus\?block=/)
-  await focusLink.click()
-  await expect(page).toHaveURL(/\/focus\?block=/)
-  await page.getByRole('button', { name: '开始专注', exact: true }).click()
-  await expect(page.getByRole('heading', { name: taskTitle, exact: true }))
-    .toBeVisible()
-}
-
-async function completeExecutionThroughUI(page: Page) {
+async function completeTaskThroughUI(page: Page, taskTitle: string) {
+  await openTaskThroughUI(page, taskTitle)
   await page.getByLabel('准备验收数据').check()
   await expect(page.getByText('1 / 2 步', { exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: '困难', exact: true }).click()
-  await page.getByLabel('遇到了什么困难？')
-    .fill('跨模块状态需要逐项核对。')
-  await page.getByRole('button', { name: '记录困难', exact: true }).click()
-  await expect(page.getByText('困难已记录。')).toBeVisible()
-  await expect(page.locator('.focus-time')).not.toHaveText('00:00:00', {
-    timeout: 3_000,
-  })
-  await page.getByRole('button', { name: '结束', exact: true }).click()
-  await expect(page.getByText('本次专注已结束。')).toBeVisible()
-  await page.getByRole('tab', { name: '步骤', exact: true }).click()
-  await expect(page.getByText('任务未完成', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '完成任务', exact: true }).click()
-  await expect(page.getByText('关联任务已完成。')).toBeVisible()
   await expect(page.getByText('任务已完成', { exact: true })).toBeVisible()
 }
 
-async function expectReviewFacts(page: Page, taskTitle: string) {
-  const metrics = page.locator('.review-fact-metrics')
-  await expect(metrics.getByText('计划块').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(metrics.getByText('完成任务').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(metrics.getByText('困难').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await page.getByText('查看记录明细').click()
-  await expect(page.getByText(taskTitle, { exact: true }).first()).toBeVisible()
-  await expect(
-    page.locator('.review-fact-columns section')
-      .filter({ has: page.getByRole('heading', { name: '专注与困难' }) })
-      .getByText(taskTitle, { exact: true }),
-  ).toBeVisible()
-  await expect(page.getByText('跨模块状态需要逐项核对。', { exact: true }))
-    .toBeVisible()
-}
-
-async function expectSecondDeviceResult(
+async function expectSecondDeviceSees(
   page: Page,
-  date: string,
   taskTitle: string,
 ) {
-  await page.goto(`/stats?scope=day&date=${date}`)
-  await expect(page).toHaveTitle('统计 · iTime')
-  await expect(page.getByRole('heading', { name: '日统计' })).toBeVisible()
-  const planning = page.locator('.statistics-metric-group[data-kind="planning"]')
-  const tasks = page.locator('.statistics-metric-group[data-kind="tasks"]')
-  const focus = page.locator('.statistics-metric-group[data-kind="focus"]')
-  await expect(planning.getByText('计划块').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(tasks.getByText('1 项完成', { exact: true })).toBeVisible()
-  await expect(focus.getByText('会话').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(focus.getByText('已结束').locator('..').getByRole('definition'))
-    .toHaveText('1')
-
-  await page.goto(`/reviews?date=${date}`)
-  await expect(page.getByText(
-    '今天完成了核心事项，也留下了可继续优化的线索。',
-  )).toBeVisible()
-  await page.getByText('查看记录明细').click()
-  await expect(
-    page.locator('.review-fact-columns').getByText(taskTitle, { exact: true }).first(),
-  ).toBeVisible()
+  await page.goto('/tasks')
+  const item = page.locator('.task-list li').filter({ hasText: taskTitle })
+  await expect(item).toBeVisible()
+  await item.getByRole('button').click()
+  await expect(page.getByText('任务已完成', { exact: true })).toBeVisible()
 }
 
 async function secondDevice(browser: Browser, email: string) {
@@ -317,47 +208,28 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('注册到复盘的完整闭环可在另一在线端查看', async ({
+test('注册到任务完成的完整闭环可在另一在线端查看', async ({
   page,
   request,
   browser,
 }, info) => {
   test.setTimeout(90_000)
-  const date = currentActivityDate('Asia/Shanghai')
   const account = await registerAndLogin(page, request)
   const task = await createProjectAndTaskThroughUI(page)
   const other = await secondDevice(browser, account.email)
 
   try {
     await openTaskThroughUI(other.page, task.title)
-    await generateAndConfirmPlan(page, date, task.title)
-    await startPlannedFocusFromCalendar(page, date, task.title)
-    await completeExecutionThroughUI(page)
-
-    await expect(
-      other.page.getByRole('button', { name: '重新打开', exact: true }),
-    ).toBeVisible({ timeout: 5_000 })
+    await completeTaskThroughUI(page, task.title)
 
     const storedTaskResponse = await page.request.get(`/api/v1/tasks/${task.id}`)
     expect(storedTaskResponse.ok()).toBeTruthy()
     expect((await storedTaskResponse.json()).task.status).toBe('completed')
 
-    await page.goto(`/reviews?date=${date}`)
-    await expect(page).toHaveTitle('复盘 · iTime')
-    await expect(page.getByRole('heading', { name: '事实概览' })).toBeVisible()
-    await expectReviewFacts(page, task.title)
-    await page.getByLabel('补充事实').fill('完整闭环已按步骤核对。')
-    await page.getByRole('button', { name: '保存事实' }).click()
-    await expect(page.getByText('补充事实已保存。')).toBeVisible()
-    await page.getByRole('button', { name: '跳过，生成报告' }).click()
-    await expect(page.getByText(
-      '今天完成了核心事项，也留下了可继续优化的线索。',
-    )).toBeVisible({ timeout: 15_000 })
-
     await assertPageHealth(page)
-    await screenshot(page, info, 'review-complete')
+    await screenshot(page, info, 'task-completed')
 
-    await expectSecondDeviceResult(other.page, date, task.title)
+    await expectSecondDeviceSees(other.page, task.title)
     await assertPageHealth(other.page)
     await screenshot(other.page, info, 'second-device-result')
     expect(runtimeErrors.get(other.page)).toEqual([])

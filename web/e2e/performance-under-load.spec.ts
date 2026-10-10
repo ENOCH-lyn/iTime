@@ -175,22 +175,13 @@ async function visitCorePages(page: Page, taskTitle: string) {
     await expect(page.getByRole('heading', { name: '待规划任务', exact: true }))
       .toBeVisible()
   })
-  await timedNavigation(page, '专注', /\/focus(?:\?.*)?$/, async () => {
-    await expect(page).toHaveTitle('专注 · iTime')
-    await expect(page.getByText('正在读取专注状态...')).toHaveCount(0)
-    await expect(page.locator('.focus-toolbar h1'))
-      .toBeVisible()
-  })
   await timedNavigation(page, '复盘', /\/reviews(?:\?.*)?$/, async () => {
     await expect(page).toHaveTitle('复盘 · iTime')
     await expect(page.getByText('正在读取复盘...')).toHaveCount(0)
     await expect(page.locator('.review-page-heading h1')).toBeVisible()
   })
-  await timedNavigation(page, '统计', /\/stats(?:\?.*)?$/, async () => {
-    await expect(page).toHaveTitle('统计 · iTime')
-    await expect(page.getByText('正在汇总当前事实...')).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '周统计', exact: true }))
-      .toBeVisible()
+  await timedNavigation(page, '我的', /\/me(?:\/stats)?(?:\?.*)?$/, async () => {
+    await expect(page).toHaveTitle('我的 · iTime')
   })
 }
 

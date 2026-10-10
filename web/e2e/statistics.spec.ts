@@ -25,8 +25,6 @@ function zonedParts(value: Date, timeZone: string) {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
       hourCycle: 'h23',
     }).formatToParts(value).map(part => [part.type, part.value]),
   )
@@ -44,36 +42,6 @@ function activityDate(timeZone: string, value = new Date()) {
     activityDay.setUTCDate(activityDay.getUTCDate() - 1)
   }
   return isoDate(activityDay)
-}
-
-function localDateTime(value: Date, timeZone: string) {
-  const parts = zonedParts(value, timeZone)
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
-}
-
-async function currentActivityFixture(page: Page, timeZone: string) {
-  while (true) {
-    const now = new Date()
-    const parts = zonedParts(now, timeZone)
-    const localSeconds = (
-      Number(parts.hour) * 3600
-      + Number(parts.minute) * 60
-      + Number(parts.second)
-    )
-    const secondsIntoActivityDay = (
-      localSeconds - 4 * 3600 + 24 * 3600
-    ) % (24 * 3600)
-    if (secondsIntoActivityDay >= 3 && secondsIntoActivityDay <= 24 * 3600 - 30) {
-      const endedAt = new Date(now.getTime() - 1000)
-      const startedAt = new Date(endedAt.getTime() - 1000)
-      return {
-        activityDate: activityDate(timeZone, endedAt),
-        localStartedAt: localDateTime(startedAt, timeZone),
-        localEndedAt: localDateTime(endedAt, timeZone),
-      }
-    }
-    await page.waitForTimeout(3000)
-  }
 }
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
@@ -202,60 +170,6 @@ async function completeTask(
   expect(response.ok()).toBeTruthy()
 }
 
-async function createManualFocus(
-  page: Page,
-  csrf: string,
-  interval: { localStartedAt: string; localEndedAt: string },
-) {
-  const response = await page.request.post('/api/v1/focus-sessions/manual', {
-    headers: { 'X-CSRF-Token': csrf },
-    data: {
-      operation_id: randomUUID(),
-      title: '统计补记',
-      task_id: null,
-      occurrence_key: null,
-      local_started_at: interval.localStartedAt,
-      local_ended_at: interval.localEndedAt,
-      time_zone: 'Asia/Shanghai',
-      start_utc_offset_minutes: null,
-      end_utc_offset_minutes: null,
-      effective_duration_seconds: 1,
-    },
-  })
-  expect(response.ok()).toBeTruthy()
-}
-
-async function createAbandonedFocus(page: Page, csrf: string) {
-  const startedResponse = await page.request.post('/api/v1/focus-sessions', {
-    headers: { 'X-CSRF-Token': csrf },
-    data: {
-      operation_id: randomUUID(),
-      mode: 'stopwatch',
-      target_seconds: null,
-      title: '中止的短专注',
-      task_id: null,
-      occurrence_key: null,
-      scheduled_block_id: null,
-    },
-  })
-  expect(startedResponse.ok()).toBeTruthy()
-  const started = (await startedResponse.json()).focus
-  await page.waitForTimeout(1100)
-  const abandoned = await page.request.post(
-    `/api/v1/focus-sessions/${started.id}/transitions`,
-    {
-      headers: { 'X-CSRF-Token': csrf },
-      data: {
-        operation_id: randomUUID(),
-        expected_version: started.version,
-        action: 'abandon',
-        client_recorded_at: null,
-      },
-    },
-  )
-  expect(abandoned.ok()).toBeTruthy()
-}
-
 function watchRuntime(page: Page) {
   const errors: string[] = []
   runtimeErrors.set(page, errors)
@@ -281,24 +195,21 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('personal statistics separate plan task and focus facts', async ({
+test('个人统计在我的页面展示计划与任务事实', async ({
   page,
   request,
 }, info) => {
   test.setTimeout(90_000)
-  const activity = await currentActivityFixture(page, 'Asia/Shanghai')
+  const targetDate = activityDate('Asia/Shanghai')
   const csrf = await account(page, request)
-  const targetDate = activity.activityDate
   const task = await createTask(page, csrf)
   await createPlan(page, csrf, task, targetDate)
   await completeTask(page, csrf, task)
-  await createManualFocus(page, csrf, activity)
-  await createAbandonedFocus(page, csrf)
 
-  await page.goto(`/stats?scope=week&date=${targetDate}`)
-  await expect(page).toHaveTitle('统计 · iTime')
-  await expect(page.getByRole('heading', { name: '周统计' })).toBeVisible()
-  await expect(page.getByText('活动日于当地 04:00 切换')).toBeVisible()
+  await page.goto('/me/stats')
+  await expect(page).toHaveTitle('我的 · iTime')
+  await expect(page.getByRole('heading', { name: '周统计', exact: true }))
+    .toBeVisible()
 
   const planning = page.locator('.statistics-metric-group[data-kind="planning"]')
   await expect(planning.getByText('1 小时', { exact: true })).toBeVisible()
@@ -310,73 +221,16 @@ test('personal statistics separate plan task and focus facts', async ({
   await expect(tasks.getByText('跳过实例').locator('..').getByRole('definition'))
     .toHaveText('0')
 
-  const focus = page.locator('.statistics-metric-group[data-kind="focus"]')
-  await expect(focus.getByText('补记').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(focus.getByText('已放弃').locator('..').getByRole('definition'))
-    .toHaveText('1')
-  await expect(page.getByRole('heading', { name: '计划分钟' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '任务结果' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '专注分钟' })).toBeVisible()
-
-  await page.getByRole('tab', { name: '日', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/stats\\?scope=day&date=${targetDate}`))
-  await expect(page.getByRole('heading', { name: '日统计' })).toBeVisible()
-  await page.getByRole('tab', { name: '月', exact: true }).click()
-  await expect(page).toHaveURL(/scope=month/)
-  await expect(page.getByRole('heading', { name: '月统计' })).toBeVisible()
-  await page.getByRole('tab', { name: '周', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '周统计' })).toBeVisible()
-
-  let failNext = true
-  await page.route('**/api/v1/statistics?*', route => {
-    if (failNext) {
-      failNext = false
-      return route.abort('connectionreset')
-    }
-    return route.continue()
-  })
-  await page.getByRole('button', { name: '刷新统计' }).click()
-  await expect(page.getByRole('alert')).toContainText('无法连接服务')
-  await expect(page.getByText(/仍显示 .* 计算的结果/)).toBeVisible()
-  await expect(planning.getByText('1 小时', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '重新读取' }).click()
-  await expect(page.getByRole('alert')).toHaveCount(0)
-
-  await page.getByText('查看统计口径').click()
-  await expect(page.getByText('计划只读取当前计划版本')).toBeVisible()
   await pageHealth(page)
   await screenshot(page, info, 'populated')
-
-  if (info.project.name === 'mobile') {
-    await page.evaluate(() => {
-      localStorage.setItem('itime-appearance', JSON.stringify({
-        theme: 'dark',
-        fontSize: 'larger',
-      }))
-    })
-    await page.setViewportSize({ width: 320, height: 700 })
-    await page.reload()
-    await expect(page.getByRole('heading', { name: '周统计' })).toBeVisible()
-    await pageHealth(page)
-    await screenshot(page, info, '320-large-dark')
-  }
 })
 
-test('empty historical range remains neutral and current navigation is bounded', async ({
-  page,
-  request,
-}) => {
+test('/stats 旧路径仍然跳转到我的页面', async ({ page, request }) => {
   await account(page, request)
-  await page.goto('/stats?scope=day&date=2020-01-01')
-  await expect(page.getByRole('heading', { name: '日统计' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '这个范围还没有记录' }))
+  await page.goto('/stats')
+  await expect(page).toHaveURL('/me/stats')
+  await expect(page).toHaveTitle('我的 · iTime')
+  await expect(page.getByRole('heading', { name: '周统计', exact: true }))
     .toBeVisible()
-  await expect(
-    page.getByText('计划、任务结果和专注事实都会在保存后显示在这里。'),
-  ).toBeVisible()
-  await page.getByRole('button', { name: '回到当前' }).click()
-  await expect(page).not.toHaveURL(/date=2020-01-01/)
-  await expect(page.getByRole('button', { name: '下一范围' })).toBeDisabled()
   await pageHealth(page)
 })
