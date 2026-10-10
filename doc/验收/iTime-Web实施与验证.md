@@ -2093,3 +2093,56 @@ Chat-first 的 `color-contrast` 豁免（Element Plus Dropdown 悬浮态过渡�
   `web/src/*.css` 中仍存在但没有 DOM 使用，属于技术债，暂保留以减少本次 Diff。
 - M8-B 备份恢复、M8-C 生产发布、系统化正式模型质量仍未执行，不因本模块变动。
 
+## M7-J：Chat-first 单栏导航与范围收敛（S1）
+
+对应 2026-10-10 用户授权的[范围与 AI 融合重构 v2](../需求/iTime-范围与AI融合重构v2.md)
+及 ADR-013。S1 阶段只收敛前端导航与入口，不动数据模型和服务端 CRUD；S2 阶段再承载 AI
+function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精度与事件执行状态。
+
+### 本次范围
+
+- `AppRail` 一级导航收敛为**单栏五入口**：新对话、日历、任务、规划、个人中心。顶部
+  产品窄栏固定渲染这五个入口；下方滚动区继续承载 AI 会话历史，与 ChatGPT 的信息架构
+  对齐。≤960px 继续塌陷为顶部"打开导航"按钮 + Element Plus Drawer，抽屉按同一顺序
+  渲染。
+- 旧路由回退：`/focus→/ai`（删除独立专注计时页入口）、`/stats→/me/stats`（统计并入
+  个人中心）。`/me/:tab(stats|security|preferences|privacy|data|appearance|account)`
+  由 `MePage` 统一承载，`/me/stats` 使用 ElSelect（day/week/month）切换，不走 URL
+  query，也不走 `role=tab` 语义。
+- 规划页改为**只读列表 + 展示**：保留查看、修改元信息、删除接口和 UI；"生成/重排"
+  入口全部迁走，`PlansPage` Hero 改为 `RouterLink to="/ai?prompt=帮我生成本周规划"`，
+  点击直接带 prompt 跳到 `/ai`。
+- 复盘页改为**只读结果展示**：`ReviewsPage` 保留历史复盘摘要列表、详情、编辑/删除
+  接口；Hero 入口 `RouterLink to="/ai?prompt=来复盘今天"`。独立复盘发起表单组件
+  在本次 S1 前端层下线，服务端 `POST /api/v1/reviews:start` 作业保留以兼容 S2
+  function tool 复用。
+- Playwright 适配：删除 `focus.spec.ts`、`tasks.spec.ts` 中专注段断言、`voice-transcriptions.spec.ts`
+  两个困难语音测试、`performance-under-load.spec.ts` 专注段、`full-user-journey.spec.ts`
+  瘦身；`statistics.spec.ts` 重写为 `/me/stats` 两个 case；`planning.spec.ts`、
+  `reviews.spec.ts`、`deepseek-live.spec.ts` 中 AI 生成/写报告断言 skip 并标 S2 pending。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `16d533e` | `feat(web): 收敛导航为 Chat-first 5 入口单栏` | AppRail、MePage、PlansPage/ReviewsPage Hero、路由回退 |
+| `c686223` | `test(e2e): 调整导航与引导断言适配 Chat-first` | Playwright 用例适配，专注段用例作废，S2 pending 标记 |
+| S1 commit 3 | `docs: 记录 Chat-first 导航与规划/复盘入口验证` | 测试方案 v0.3、本节、ADR-013 已在 commit `f39902f` 定稿 |
+
+### 验证记录
+
+- 2026-10-10 `cd web && pnpm exec vue-tsc --noEmit`：**0 error**。
+- 2026-10-10 Playwright chromium 冒烟（本节 commit 3 执行结果待补）：
+  `ux-07-app-shell`、`planning`、`reviews`、`tasks`、`full-user-journey`、
+  `settings-page`、`performance-under-load` 的 chromium 项目。
+- Edge/Chrome 真实桌面回归、Safari/Firefox、实体设备仍未执行。
+
+### 剩余风险
+
+- `server/src/itime/ai/provider.py`、`server/src/itime/review/job_service.py` 本工作区
+  仍为未暂存改动，按 AGENTS.md 第 3 条和用户授权范围保留，不在 S1 内落盘。
+- 规划/复盘/日历/任务/困难的 CRUD API 保留；S2 需要在此之上实现 function tools 并
+  统一通过 AI 对话触发写入预览-确认。
+- 独立专注计时组件 `FocusPage.vue`、`FocusSecondaryNav.vue` 仍在仓库中但入口关闭；
+  是否移除代码留待 S2/S3 一次性清理，避免破坏既有数据迁移和审计链条。
+
