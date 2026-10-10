@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BrainCircuit, CalendarPlus, FileClock } from 'lucide-vue-next'
+import { BrainCircuit, FileClock } from 'lucide-vue-next'
 import type { ReviewSummary } from '../lib/reviews'
 
 defineProps<{
@@ -14,7 +14,6 @@ defineProps<{
 const emit = defineEmits<{
   view: [value: 'review' | 'memories']
   'update:selectedDate': [value: string]
-  open: []
   select: [review: ReviewSummary]
 }>()
 </script>
@@ -45,7 +44,7 @@ const emit = defineEmits<{
     </div>
 
     <section v-if="view === 'review'" class="review-date-navigation" aria-labelledby="review-date-title">
-      <h2 id="review-date-title">选择活动日</h2>
+      <h2 id="review-date-title">筛选活动日</h2>
       <div class="review-date-picker">
         <input
           :value="selectedDate"
@@ -54,23 +53,15 @@ const emit = defineEmits<{
           aria-label="复盘活动日"
           @input="emit('update:selectedDate', ($event.target as HTMLInputElement).value)"
         />
-        <button
-          type="button"
-          class="icon-button"
-          title="打开这一天"
-          aria-label="打开这一天"
-          :disabled="loading || !selectedDate"
-          @click="emit('open')"
-        >
-          <CalendarPlus :size="18" aria-hidden="true" />
-        </button>
       </div>
 
       <h2>最近复盘</h2>
       <p v-if="loading && !reviews.length" class="review-sidebar-empty" role="status">
         正在读取...
       </p>
-      <p v-else-if="!reviews.length" class="review-sidebar-empty">还没有复盘记录。</p>
+      <p v-else-if="!reviews.length" class="review-sidebar-empty">
+        还没有复盘记录。打开 AI 对话说"复盘今天"开始第一份。
+      </p>
       <ol v-else class="review-date-list">
         <li v-for="item in reviews" :key="item.id">
           <button
@@ -90,3 +81,4 @@ const emit = defineEmits<{
     </section>
   </nav>
 </template>
+

@@ -282,7 +282,7 @@ useSyncRefresh(
 
 <template>
   <AppShell
-    current="stats"
+    :current="null"
     has-secondary
     secondary-label="统计"
     title="统计"
@@ -369,7 +369,7 @@ useSyncRefresh(
           <div>
             <RouterLink to="/tasks" class="button secondary">查看任务</RouterLink>
             <RouterLink to="/plans" class="button secondary">打开规划</RouterLink>
-            <RouterLink to="/focus" class="button secondary">开始专注</RouterLink>
+            <RouterLink to="/ai" class="button secondary">和 AI 对话</RouterLink>
           </div>
         </section>
 

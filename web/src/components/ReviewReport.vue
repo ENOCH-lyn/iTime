@@ -17,12 +17,13 @@ import type {
   ReviewReportSummary,
 } from '../lib/reviews'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   detail: ReviewReportDetail | null
   reports: ReviewReportSummary[]
   freshness: ReportFreshness
   pending: boolean
-}>()
+  readonly?: boolean
+}>(), { readonly: false })
 
 const emit = defineEmits<{
   version: [version: number]
@@ -261,7 +262,7 @@ function startEdit(annotation: ReviewAnnotation) {
         </form>
       </section>
 
-      <form class="review-regenerate" @submit.prevent="emit('regenerate', instruction.trim())">
+      <form v-if="!readonly" class="review-regenerate" @submit.prevent="emit('regenerate', instruction.trim())">
         <label for="review-regenerate-instruction">重新生成要求 <span>可选</span></label>
         <textarea
           id="review-regenerate-instruction"

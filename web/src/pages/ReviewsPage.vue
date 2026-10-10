@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { RefreshCcw } from 'lucide-vue-next'
+import { MessageCircleMore, RefreshCcw } from 'lucide-vue-next'
 import MemoryManager from '../components/MemoryManager.vue'
 import ReviewFacts from '../components/ReviewFacts.vue'
 import ReviewNavigation from '../components/ReviewNavigation.vue'
@@ -26,8 +26,6 @@ import {
   getReviewReport,
   listReviews,
   rejectMemoryProposal,
-  requestReviewQuestion,
-  requestReviewReport,
   saveReviewFacts,
   updateReviewAnnotation,
   type MemoryProposal,
@@ -307,59 +305,6 @@ async function saveFacts(content: string) {
   }
 }
 
-async function askQuestion(answer: string | null) {
-  if (!detail.value || pending.value) return
-  pending.value = true
-  pageError.value = null
-  const fingerprint = JSON.stringify({
-    action: 'question',
-    id: detail.value.review.id,
-    version: detail.value.review.version,
-    answer,
-  })
-  try {
-    const result = await requestReviewQuestion(
-      detail.value.review,
-      answer,
-      operationId(fingerprint),
-    )
-    finishOperation()
-    detail.value.review = result.review
-    activeJob.value = result.job
-    schedulePoll()
-  } catch (reason) {
-    setError(reason)
-  } finally {
-    pending.value = false
-  }
-}
-
-async function generateReport(instruction = '') {
-  if (!detail.value || pending.value) return
-  pending.value = true
-  pageError.value = null
-  const fingerprint = JSON.stringify({
-    action: 'report',
-    id: detail.value.review.id,
-    version: detail.value.review.version,
-    instruction,
-  })
-  try {
-    const result = await requestReviewReport(
-      detail.value.review,
-      instruction,
-      operationId(fingerprint),
-    )
-    finishOperation()
-    activeJob.value = result.job
-    schedulePoll()
-  } catch (reason) {
-    setError(reason)
-  } finally {
-    pending.value = false
-  }
-}
-
 async function cancelGeneration() {
   if (!activeJob.value || pending.value) return
   pending.value = true
@@ -475,7 +420,7 @@ async function setView(next: 'review' | 'memories') {
 
 <template>
   <AppShell
-    current="reviews"
+    :current="null"
     has-secondary
     secondary-label="复盘"
     title="复盘"
@@ -492,7 +437,6 @@ async function setView(next: 'review' | 'memories') {
         :loading="loading"
         @view="setView"
         @update:selected-date="selectedDate = $event"
-        @open="openDate"
         @select="openReview"
       />
     </template>
@@ -506,7 +450,6 @@ async function setView(next: 'review' | 'memories') {
         :loading="loading"
         @view="(v) => { setView(v); close() }"
         @update:selected-date="selectedDate = $event"
-        @open="() => { openDate(); close() }"
         @select="(v) => { openReview(v); close() }"
       />
     </template>
@@ -521,6 +464,20 @@ async function setView(next: 'review' | 'memories') {
           @retry="initialize"
         />
       </div>
+
+      <section v-if="view === 'review'" class="review-ai-cta">
+        <div>
+          <h2>复盘走 AI 对话</h2>
+          <p>要复盘今天、追问卡点或生成周报，直接到 AI 对话。本页只展示历史复盘、报告与长期记忆。</p>
+        </div>
+        <RouterLink
+          :to="{ path: '/ai', query: { prompt: '复盘今天' } }"
+          class="button"
+        >
+          <MessageCircleMore :size="18" aria-hidden="true" />
+          去 AI 说复盘今天
+        </RouterLink>
+      </section>
 
       <h1 v-if="view === 'review' && !detail" class="sr-only">每日复盘</h1>
 
@@ -554,8 +511,7 @@ async function setView(next: 'review' | 'memories') {
             :messages="detail.messages"
             :active-job="activeJob"
             :pending="pending"
-            @question="askQuestion"
-            @report="generateReport"
+            readonly
             @cancel="cancelGeneration"
           />
           <ReviewReport
@@ -563,8 +519,8 @@ async function setView(next: 'review' | 'memories') {
             :reports="detail.reports"
             :freshness="detail.report_freshness"
             :pending="pending || !!activeJob"
+            readonly
             @version="selectVersion"
-            @regenerate="generateReport"
             @add-annotation="addAnnotation"
             @update-annotation="updateAnnotation"
             @delete-annotation="deleteAnnotation"

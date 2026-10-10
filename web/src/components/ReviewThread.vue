@@ -4,12 +4,13 @@ import { FileText, MessageCircleQuestion, Square } from 'lucide-vue-next'
 import type { AIJob } from '../lib/ai-jobs'
 import type { ReviewMessage, ReviewSession } from '../lib/reviews'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   review: ReviewSession
   messages: ReviewMessage[]
   activeJob: AIJob | null
   pending: boolean
-}>()
+  readonly?: boolean
+}>(), { readonly: false })
 
 const emit = defineEmits<{
   question: [answer: string | null]
@@ -51,11 +52,11 @@ function ask() {
     </ol>
     <p v-else class="review-empty">可以先回答一两个问题，也可以直接生成报告。</p>
 
-    <label v-if="awaitingAnswer && review.question_count < 3" for="review-answer">
+    <label v-if="!readonly && awaitingAnswer && review.question_count < 3" for="review-answer">
       回答当前问题
     </label>
     <textarea
-      v-if="awaitingAnswer && review.question_count < 3"
+      v-if="!readonly && awaitingAnswer && review.question_count < 3"
       id="review-answer"
       v-model="answer"
       rows="3"
@@ -69,13 +70,18 @@ function ask() {
           ? '正在准备下一个问题…'
           : '正在生成复盘报告…' }}
       </span>
-      <button type="button" class="button secondary" @click="emit('cancel')">
+      <button
+        v-if="!readonly"
+        type="button"
+        class="button secondary"
+        @click="emit('cancel')"
+      >
         <Square :size="15" aria-hidden="true" />
         取消
       </button>
     </div>
 
-    <div v-else class="review-thread-actions">
+    <div v-else-if="!readonly" class="review-thread-actions">
       <button
         v-if="review.question_count < 3"
         type="button"

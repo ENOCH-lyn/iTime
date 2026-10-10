@@ -19,7 +19,7 @@ import {
 import PlanNavigation from '../components/PlanNavigation.vue'
 import PlanPreview from '../components/PlanPreview.vue'
 import StatusMessage from '../components/StatusMessage.vue'
-import { failure, localFailure, type Failure } from '../lib/api'
+import { failure, type Failure } from '../lib/api'
 import {
   authError,
   identity,
@@ -32,7 +32,6 @@ import {
   applyPlanProposal,
   contextBlock,
   contextUnscheduledItem,
-  createPlanningGeneration,
   getPlanHistory,
   getPlanProposal,
   getPlanningContext,
@@ -85,7 +84,6 @@ const loaded = ref(false)
 const loadingContext = ref(false)
 const loadingProposals = ref(false)
 const loadingProposal = ref(false)
-const generating = ref(false)
 const cancelling = ref(false)
 const applying = ref(false)
 const rejecting = ref(false)
@@ -96,7 +94,6 @@ const pageError = ref<Failure | null>(null)
 const pageSuccess = ref('')
 let contextRevision = 0
 let pollTimer = 0
-let generationOperation: { id: string; fingerprint: string } | null = null
 let proposalOperation: { id: string; fingerprint: string } | null = null
 let saveOperation: { id: string; fingerprint: string } | null = null
 let keepConflictsOperation: { id: string; fingerprint: string } | null = null
@@ -155,21 +152,6 @@ const jobActive = computed(() => (
 ))
 const actionPending = computed(() => (
   applying.value || rejecting.value || saving.value || keepingSourceConflicts.value
-))
-const selectableTasks = computed(() => {
-  const unique = new Map<string, PlanningContext['task_candidates'][number]>()
-  for (const candidate of context.value?.task_candidates ?? []) {
-    if (!unique.has(candidate.task_id)) unique.set(candidate.task_id, candidate)
-  }
-  return [...unique.values()]
-})
-const canGenerate = computed(() => (
-  !!context.value
-  && selectableTasks.value.length > 0
-  && form.task_ids.length > 0
-  && !jobActive.value
-  && !generating.value
-  && identity.value?.user.ai_access !== 'frozen'
 ))
 const planTitle = computed(() => (
   form.scope === 'day'
@@ -388,18 +370,6 @@ function proposalUnscheduled(proposal: PlanProposal): PlanUnscheduledItem[] {
   })
 }
 
-function selectAllTasks(selected: boolean) {
-  form.task_ids = selected
-    ? selectableTasks.value.map(candidate => candidate.task_id)
-    : []
-}
-
-function toggleTask(taskId: string, selected: boolean) {
-  form.task_ids = selected
-    ? [...new Set([...form.task_ids, taskId])]
-    : form.task_ids.filter(id => id !== taskId)
-}
-
 async function replaceQuery(proposalId?: string | null) {
   if (disposed || route.path !== '/plans') return
   await router.replace({
@@ -579,44 +549,6 @@ async function pollJob() {
   }
 }
 
-async function generatePlan() {
-  if (!canGenerate.value || !context.value) return
-  if (!form.task_ids.length) {
-    pageError.value = localFailure('请至少选择一个任务。')
-    return
-  }
-  if (minutes(form.availability_start) >= minutes(form.availability_end)) {
-    pageError.value = localFailure('可规划结束时间必须晚于开始时间。')
-    return
-  }
-  const body = {
-    ...form,
-    availability_start: `${form.availability_start}:00`,
-    availability_end: `${form.availability_end}:00`,
-  }
-  const fingerprint = JSON.stringify(body)
-  generationOperation = generationOperation?.fingerprint === fingerprint
-    ? generationOperation
-    : { id: crypto.randomUUID(), fingerprint }
-  generating.value = true
-  pageError.value = null
-  pageSuccess.value = ''
-  selectedProposal.value = null
-  viewedVersion.value = null
-  try {
-    const result = await createPlanningGeneration(body, generationOperation.id)
-    generationOperation = null
-    activeJob.value = result.job
-    sessionStorage.setItem(activeJobStorageKey, result.job.id)
-    await replaceQuery()
-    schedulePoll()
-  } catch (reason) {
-    pageError.value = failure(reason)
-  } finally {
-    generating.value = false
-  }
-}
-
 async function keepCurrentPlanAfterSourceChanges() {
   if (!currentPlan.value || !sourceConflicts.value.length || keepingSourceConflicts.value) {
     return
@@ -652,19 +584,6 @@ async function keepCurrentPlanAfterSourceChanges() {
   } finally {
     keepingSourceConflicts.value = false
   }
-}
-
-async function replanAfterSourceChanges() {
-  if (!currentPlan.value || generating.value || jobActive.value) return
-  selectedProposal.value = null
-  viewedVersion.value = null
-  editing.value = false
-  dirty.value = false
-  form.scope = 'week'
-  form.target_date = currentPlan.value.week_start_date
-  await replaceQuery()
-  await loadContext(true)
-  await generatePlan()
 }
 
 async function cancelGeneration() {
@@ -784,16 +703,6 @@ async function rejectProposal() {
   } finally {
     rejecting.value = false
   }
-}
-
-async function regenerateProposal() {
-  if (!selectedProposal.value) return
-  selectedProposal.value = null
-  form.scope = 'week'
-  await replaceQuery()
-  await loadContext()
-  await nextTick()
-  document.querySelector<HTMLElement>('.plan-task-list input:not(:disabled)')?.focus()
 }
 
 async function showCurrentPlan() {
@@ -1055,110 +964,38 @@ watch(pageError, async value => {
       </div>
 
       <div class="plan-content">
-        <aside class="plan-controls" aria-label="规划条件">
-          <fieldset class="segmented-field plan-scope-field">
-            <legend>规划范围</legend>
-            <label :class="{ selected: form.scope === 'day' }">
-              <input :checked="form.scope === 'day'" type="radio" name="plan-scope" value="day" @change="changeScope('day')" />单日
-            </label>
-            <label :class="{ selected: form.scope === 'week' }">
-              <input :checked="form.scope === 'week'" type="radio" name="plan-scope" value="week" @change="changeScope('week')" />整周
-            </label>
-          </fieldset>
-
-          <div v-if="proposals.length" class="field plan-compact-proposals">
-            <label for="plan-recent-proposal">最近提案</label>
+        <aside class="plan-controls plan-controls-ai" aria-label="规划说明">
+          <section class="plan-controls-hero">
+            <Sparkles :size="24" aria-hidden="true" />
+            <h2>规划现在交给 AI 对话</h2>
+            <p>生成条件、任务挑选和重新规划，都在 AI 对话里完成。本页只展示当前计划、历史版本，并支持手工调整。</p>
+            <RouterLink
+              :to="{ path: '/ai', query: { prompt: '帮我生成本学期的本周规划' } }"
+              class="button plan-generate"
+            >
+              <Sparkles :size="18" aria-hidden="true" />去 AI 对话让它生成
+            </RouterLink>
+            <RouterLink
+              v-if="!context?.task_candidates?.length && loaded"
+              to="/tasks"
+              class="button secondary plan-task-link"
+            >
+              前往任务
+            </RouterLink>
+          </section>
+          <section v-if="proposals.length" class="field plan-compact-proposals">
+            <label for="plan-recent-proposal">最近 AI 提案</label>
             <select
               id="plan-recent-proposal"
               :value="selectedProposal?.id ?? ''"
               @change="selectProposalFromControl(($event.target as HTMLSelectElement).value)"
             >
-              <option value="">当前计划与生成条件</option>
+              <option value="">当前计划</option>
               <option v-for="proposal in proposals" :key="proposal.id" :value="proposal.id">
                 {{ proposal.title }} · {{ proposal.effective_status === 'pending' ? '待确认' : proposal.effective_status === 'applied' ? '已应用' : proposal.effective_status === 'conflicted' ? '需重生成' : proposal.effective_status === 'expired' ? '已过期' : '已拒绝' }}
               </option>
             </select>
-          </div>
-
-          <div class="plan-condition-grid">
-            <div class="field">
-              <label for="plan-density">安排密度</label>
-              <select id="plan-density" v-model="form.density">
-                <option value="loose">宽松 · 每日最多 4 小时</option>
-                <option value="balanced">均衡 · 每日最多 6 小时</option>
-                <option value="tight">紧凑 · 每日最多 8 小时</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="plan-buffer">任务间缓冲</label>
-              <select id="plan-buffer" v-model.number="form.buffer_minutes">
-                <option v-for="value in 13" :key="value - 1" :value="(value - 1) * 5">
-                  {{ (value - 1) * 5 }} 分钟
-                </option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="plan-availability-start">可规划开始</label>
-              <input id="plan-availability-start" v-model="form.availability_start" type="time" step="900" />
-            </div>
-            <div class="field">
-              <label for="plan-availability-end">可规划结束</label>
-              <input id="plan-availability-end" v-model="form.availability_end" type="time" step="900" />
-            </div>
-          </div>
-
-          <div class="field plan-instruction">
-            <label for="plan-instruction">补充要求 <span class="muted">可选</span></label>
-            <textarea
-              id="plan-instruction"
-              v-model="form.instruction"
-              rows="3"
-              maxlength="4000"
-              placeholder="例如：上午先做需要专注的内容"
-            />
-          </div>
-
-          <section class="plan-task-picker" aria-labelledby="plan-task-heading">
-            <div class="plan-task-heading">
-              <div>
-                <h2 id="plan-task-heading">待规划任务</h2>
-                <p>{{ form.task_ids.length }}/{{ selectableTasks.length }} 项已选择</p>
-              </div>
-              <button
-                type="button"
-                class="text-button"
-                :disabled="!selectableTasks.length"
-                @click="selectAllTasks(form.task_ids.length !== selectableTasks.length)"
-              >
-                {{ form.task_ids.length === selectableTasks.length ? '清除' : '全选' }}
-              </button>
-            </div>
-            <p v-if="loadingContext && !loaded" class="plan-control-loading" role="status">
-              正在读取任务与固定安排…
-            </p>
-            <p v-else-if="!selectableTasks.length" class="plan-task-empty">
-              当前范围没有未完成任务。可以先前往任务页添加任务或设置截止日期。
-            </p>
-            <ul v-else class="plan-task-list">
-              <li v-for="task in selectableTasks" :key="task.task_id">
-                <label>
-                  <input
-                    type="checkbox"
-                    :checked="form.task_ids.includes(task.task_id)"
-                    @change="toggleTask(task.task_id, ($event.target as HTMLInputElement).checked)"
-                  />
-                  <span>
-                    <strong>{{ task.title }}</strong>
-                    <small>
-                      {{ task.estimated_minutes ? `预计 ${task.estimated_minutes} 分钟` : '需要 AI 估时' }}
-                      <template v-if="task.due_date"> · 截止 {{ readableShort(task.due_date) }}</template>
-                    </small>
-                  </span>
-                </label>
-              </li>
-            </ul>
           </section>
-
           <div v-if="jobActive" class="plan-job-state" role="status" aria-live="polite">
             <LoaderCircle :size="18" class="spin" aria-hidden="true" />
             <div>
@@ -1169,19 +1006,6 @@ watch(pageError, async value => {
               {{ cancelling ? '正在取消…' : '取消' }}
             </button>
           </div>
-
-          <button
-            type="button"
-            class="button plan-generate"
-            :disabled="!canGenerate"
-            @click="generatePlan"
-          >
-            <Sparkles :size="18" aria-hidden="true" />
-            {{ generating ? '正在接收…' : jobActive ? '正在生成' : '生成计划提案' }}
-          </button>
-          <RouterLink v-if="!selectableTasks.length && loaded" to="/tasks" class="button secondary plan-task-link">
-            前往任务
-          </RouterLink>
         </aside>
 
         <section
@@ -1296,14 +1120,12 @@ watch(pageError, async value => {
                 </article>
               </div>
               <div class="plan-source-conflict-actions">
-                <button
-                  type="button"
+                <RouterLink
+                  :to="{ path: '/ai', query: { prompt: '订阅来源有新变化，帮我重新生成本周规划' } }"
                   class="button secondary"
-                  :disabled="actionPending || identity?.user.ai_access === 'frozen'"
-                  @click="replanAfterSourceChanges"
                 >
-                  <RefreshCw :size="17" aria-hidden="true" />按最新来源重新生成
-                </button>
+                  <Sparkles :size="17" aria-hidden="true" />去 AI 让它重新生成
+                </RouterLink>
                 <button
                   type="button"
                   class="button"
@@ -1384,14 +1206,13 @@ watch(pageError, async value => {
               <CircleCheck :size="17" aria-hidden="true" />
               {{ applying ? '正在确认…' : '确认并写入计划' }}
             </button>
-            <button
+            <RouterLink
               v-else-if="['expired', 'conflicted'].includes(selectedProposal.effective_status)"
-              type="button"
+              :to="{ path: '/ai', query: { prompt: '原来的规划提案已过期，帮我按最新数据重新生成' } }"
               class="button"
-              @click="regenerateProposal"
             >
-              <Sparkles :size="17" aria-hidden="true" />按当前数据重新生成
-            </button>
+              <Sparkles :size="17" aria-hidden="true" />去 AI 让它重新生成
+            </RouterLink>
             <button
               v-else-if="selectedProposal.effective_status === 'applied'"
               type="button"

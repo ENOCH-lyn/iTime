@@ -18,9 +18,14 @@ const router = createRouter({
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
     { path: '/plans', component: () => import('./pages/PlansPage.vue') },
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },
-    { path: '/focus', component: () => import('./pages/FocusPage.vue') },
+    { path: '/focus', redirect: '/ai' },
     { path: '/reviews', component: () => import('./pages/ReviewsPage.vue') },
-    { path: '/stats', component: () => import('./pages/StatisticsPage.vue') },
+    { path: '/me', component: () => import('./pages/MePage.vue') },
+    {
+      path: '/me/:tab(stats|security|preferences|privacy|data|appearance|account)',
+      component: () => import('./pages/MePage.vue'),
+    },
+    { path: '/stats', redirect: '/me/stats' },
     { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
     { path: '/account', redirect: '/settings' },
     {
