@@ -54,10 +54,8 @@ async function account(page: Page, request: APIRequestContext) {
   await expect(page).toHaveURL('/ai')
   if ((page.viewportSize()?.width ?? 0) <= 700) {
     await page.getByRole('button', { name: '打开导航', exact: true }).click()
-    await navigateToProduct(page, '任务')
-  } else {
-    await page.getByRole('link', { name: '任务', exact: true }).click()
   }
+  await navigateToProduct(page, '任务')
   await expect(page).toHaveURL('/tasks')
   await expect(page.getByRole('heading', { name: '任务', exact: true })).toBeVisible()
   return address

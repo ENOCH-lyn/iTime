@@ -95,7 +95,7 @@ test('设置单页分组并兼容旧深链接', async ({ page, request }, info) 
   for (const name of ['账号与安全', '偏好', 'AI 与隐私', '数据与同步', '账号操作']) {
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
   }
-  await expect(page.getByText(address, { exact: true })).toBeVisible()
+  await expect(page.locator('#account').getByText(address, { exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '个人设置' })).toHaveCount(0)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await screenshot(page, info, 'normal')

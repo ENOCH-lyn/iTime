@@ -463,6 +463,13 @@
   color: var(--text);
 }
 
+.task-list > li.active .task-meta,
+.task-list > li.active .task-meta > span,
+.task-list > li.active .task-labels,
+.task-list > li.active .task-labels > span {
+  color: var(--text);
+}
+
 .task-meta,
 .task-labels {
   display: flex;

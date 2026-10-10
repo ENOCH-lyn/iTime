@@ -175,10 +175,10 @@ async function openTaskThroughUI(page: Page, title: string) {
 
 async function completeTaskThroughUI(page: Page, taskTitle: string) {
   await openTaskThroughUI(page, taskTitle)
-  await page.getByLabel('准备验收数据').check()
-  await expect(page.getByText('1 / 2 步', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '完成任务', exact: true }).click()
-  await expect(page.getByText('任务已完成', { exact: true })).toBeVisible()
+  await page.getByRole('checkbox', { name: '完成步骤 准备验收数据', exact: true }).check()
+  await expect(page.getByText('1/2 已完成', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '标为完成', exact: true }).click()
+  await expect(page.getByText('任务已明确标为完成。')).toBeVisible()
 }
 
 async function expectSecondDeviceSees(
@@ -186,10 +186,15 @@ async function expectSecondDeviceSees(
   taskTitle: string,
 ) {
   await page.goto('/tasks')
+  const status = page.getByLabel('状态')
+  if (!(await status.isVisible())) {
+    await page.getByRole('button', { name: '筛选任务', exact: true }).click()
+  }
+  await page.getByLabel('状态').selectOption('all')
   const item = page.locator('.task-list li').filter({ hasText: taskTitle })
   await expect(item).toBeVisible()
   await item.getByRole('button').click()
-  await expect(page.getByText('任务已完成', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新打开', exact: true })).toBeVisible()
 }
 
 async function secondDevice(browser: Browser, email: string) {
