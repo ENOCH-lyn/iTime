@@ -2135,6 +2135,14 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 2026-10-10 Playwright chromium 冒烟（本节 commit 3 执行结果待补）：
   `ux-07-app-shell`、`planning`、`reviews`、`tasks`、`full-user-journey`、
   `settings-page`、`performance-under-load` 的 chromium 项目。
+- 2026-10-10 `cd web && pnpm build && pnpm exec playwright test tasks full-user-journey settings-page --project=desktop --reporter=line`：
+  **9 passed**。修复 S1 单栏导航遗留三处：`tasks.spec.ts:55-60` 改走
+  `navigateToProduct` 兜底匹配 menuitem；`settings-page.spec.ts:98` 把
+  `getByText(address)` 范围限定在 `#account` 内绕开 AppShell 底部二次 email
+  渲染；`full-user-journey.spec.ts:178+192` 把 `/完成任务/任务已完成/` 的旧文案
+  改成 `标为完成/任务已明确标为完成/重新打开`，第二设备补「所有」状态过滤。
+  同步修 `.task-list > li.active` 下 `.task-meta/.task-labels` 子元素颜色对比度
+  不足（#64716a→var(--text)），Axe 恢复 0 violation。
 - Edge/Chrome 真实桌面回归、Safari/Firefox、实体设备仍未执行。
 
 ### 剩余风险
