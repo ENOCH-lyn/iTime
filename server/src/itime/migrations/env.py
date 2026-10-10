@@ -5,6 +5,7 @@ from sqlalchemy.engine import Connection
 
 from itime.account_deletion import models as account_deletion_models  # noqa: F401
 from itime.admin import models as admin_models  # noqa: F401
+from itime.ai import action_proposals as ai_action_proposals  # noqa: F401
 from itime.ai import conversation_models as ai_conversation_models  # noqa: F401
 from itime.ai import governance_models as ai_governance_models  # noqa: F401
 from itime.ai import models as ai_models  # noqa: F401
