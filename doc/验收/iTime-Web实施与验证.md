@@ -2154,3 +2154,40 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 独立专注计时组件 `FocusPage.vue`、`FocusSecondaryNav.vue` 仍在仓库中但入口关闭；
   是否移除代码留待 S2/S3 一次性清理，避免破坏既有数据迁移和审计链条。
 
+## M7-K：S2-D1 长期记忆搜索与 ai_tool 来源扩展
+
+对应 [AI 工具链与长期记忆](../需求/iTime-AI工具链与长期记忆.md) 第 4 节与 [ADR-014](../架构/iTime-ADR架构决策文档.md#adr-014ai-function-tools-与长期记忆)。S2 阶段先把长期记忆基础设施铺平，不动对话编排和工具注册；function tools 与写预览通道在 S2-D2/S2-D3 落。
+
+### 本次范围
+
+- 迁移 `0042_memory_ai_tool`：`memories` 加三列 `tags TEXT[]`（server default `ARRAY[]::text[]`，CHECK 卡在 10 个以内；每个 tag 长度在 Pydantic 层约束）、`last_used_at TIMESTAMPTZ`、`source_conversation_id UUID`；替换 `ck_memories_source_type` 允许 `ai_tool`；替换 `ck_memories_source` 允许 `(source_type='ai_tool' AND source_proposal_id IS NULL AND source_conversation_id IS NOT NULL)`；加 GIN 索引 `ix_memories_tags` 与条件索引 `ix_memories_owner_last_used`（`WHERE deleted_at IS NULL AND purged_at IS NULL`）。
+- `Memory` 模型追加三列并同步 __table_args__；`memory_result` 输出 `tags`、`last_used_at`、`source_conversation_id`；`create_memory`/`update_memory`/`confirm_memory_proposal` 全部补齐新字段。
+- `memory_service.search_memory_by_query`：按 `memory_settings.enabled` 短路；关键词走 `ILIKE title/content` 与 `tags.any(query)`；排序 `last_used_at DESC NULLS LAST → updated_at DESC → id DESC`；命中后批量 `UPDATE memories SET last_used_at=now()`；空 query 回落最近记忆；`limit` 1–10。
+- `memory_service.save_ai_tool_memory`：供 S2-D2 的 `save_memory` function tool 直接复用，`source_type='ai_tool'` + `source_conversation_id` 强绑定。
+- `MemorySearchInput`：`query` ≤ 200、`limit` 1–10；`MemoryFields` 新增 `tags: list[str<=24]`（最多 10、去重、不允许空字符串）。
+- 新路由 `POST /api/v1/memory:search`（authorized 读）。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| 本节 commit | `feat(server): 长期记忆 search_memory 与 ai_tool 来源扩展` | 迁移、模型、schemas、service、router、测试 |
+
+### 验证记录
+
+- 2026-10-10 `cd server && uv run alembic upgrade head`：通过（临时库 `itime_migcheck_*` 上验证 `0042_memory_ai_tool` 升级）；再 `alembic downgrade -1 && alembic upgrade head`：通过，确认 up/down 可逆。
+- 2026-10-10 `uv run pytest tests/test_memories.py -x -q`：**7 passed**，含既有 3 项（设置回放/CRUD 生命周期跨租户/校验+游标）与新增 4 项：
+  - `test_memory_search_ilike_tags_order_and_touches_last_used`：中文内容关键词命中、英文 tag 命中、空 query 回落、`last_used_at` 批量更新、trashed 不召回；
+  - `test_memory_search_disabled_returns_empty`：`memory_settings.enabled=false` 时 search 返回空；
+  - `test_memory_search_rejects_oversized_input`：`query>200` 与 `limit>10` 返回 422；
+  - `test_memory_tags_round_trip_and_validation`：tags 创建/清空/重复/超量全链路。
+- 2026-10-10 `uv run pytest tests/test_memory_context.py tests/test_review_sessions.py tests/test_review_annotations.py tests/test_review_models.py tests/test_review_cleanup.py tests/test_review_provider.py -x -q`：**19 passed**，确认既有 review proposal 与 memory_context 读通路不受回归。
+- `uv run ruff check .` 待在 S2-D3 完整收尾时跑一次；本次只扩展 memory 模块，Diff 较窄。
+
+### 未覆盖范围与剩余风险
+
+- 对话编排仍走 `conversation_service.select_relevant_context` 的旧上下文注入，`search_memory` 仅通过 `POST /memory:search` 对外提供；function tools 调用链路、SSE `tool_called` 事件、`AIJob.tool_calls` 审计字段均在 S2-D2/S2-D3 补齐。
+- `source_type='ai_tool'` 的记忆目前只能通过 `save_ai_tool_memory` 服务函数产生，没有对应 HTTP 入口；等 D2 的 `save_memory` function tool 落地后由对话流通过"写预览-确认"创建，不单开管理员 API。
+- 前端 `/me/长期记忆` 仍为 S1 遗留 UI，没有 tags 显示与搜索框；在 S2-E 阶段统一更新。
+- `server/src/itime/ai/provider.py`、`server/src/itime/review/job_service.py` 继续保持未暂存，按 AGENTS.md 第 3 条和用户授权。
+

@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
@@ -437,7 +437,7 @@ class Memory(Base):
             name="kind",
         ),
         CheckConstraint(
-            "source_type IN ('review_proposal', 'manual')",
+            "source_type IN ('review_proposal', 'manual', 'ai_tool')",
             name="source_type",
         ),
         CheckConstraint(
@@ -448,12 +448,22 @@ class Memory(Base):
         ),
         CheckConstraint(
             "(purged_at IS NOT NULL AND title IS NULL AND content IS NULL "
-            "AND source_proposal_id IS NULL) "
+            "AND source_proposal_id IS NULL AND source_conversation_id IS NULL) "
             "OR (purged_at IS NULL AND "
-            "((source_type = 'manual' AND source_proposal_id IS NULL) "
+            "((source_type = 'manual' "
+            "AND source_proposal_id IS NULL "
+            "AND source_conversation_id IS NULL) "
             "OR (source_type = 'review_proposal' "
-            "AND source_proposal_id IS NOT NULL)))",
+            "AND source_proposal_id IS NOT NULL "
+            "AND source_conversation_id IS NULL) "
+            "OR (source_type = 'ai_tool' "
+            "AND source_proposal_id IS NULL "
+            "AND source_conversation_id IS NOT NULL)))",
             name="source",
+        ),
+        CheckConstraint(
+            "cardinality(tags) <= 10",
+            name="tags",
         ),
         CheckConstraint(
             "(deleted_at IS NULL AND purge_after IS NULL AND purged_at IS NULL) "
@@ -487,6 +497,18 @@ class Memory(Base):
             "id",
             postgresql_where=text("deleted_at IS NOT NULL AND purged_at IS NULL"),
         ),
+        Index(
+            "ix_memories_tags",
+            "tags",
+            postgresql_using="gin",
+        ),
+        Index(
+            "ix_memories_owner_last_used",
+            "owner_id",
+            text("last_used_at DESC NULLS LAST"),
+            "id",
+            postgresql_where=text("deleted_at IS NULL AND purged_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -496,6 +518,13 @@ class Memory(Base):
     content: Mapped[str | None] = mapped_column(Text)
     source_type: Mapped[str] = mapped_column(String(20))
     source_proposal_id: Mapped[UUID | None]
+    source_conversation_id: Mapped[UUID | None]
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text()),
+        default=list,
+        server_default=text("ARRAY[]::text[]"),
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

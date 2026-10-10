@@ -68,15 +68,44 @@ class MemoryProposalActionInput(OperationInput):
     expected_version: int = Field(ge=1)
 
 
+MemoryTagStr = Annotated[str, Field(min_length=1, max_length=24)]
+
+
 class MemoryFields(Input):
     kind: MemoryKind
     title: str = Field(min_length=1, max_length=120)
     content: str = Field(min_length=1, max_length=2000)
+    tags: list[MemoryTagStr] = Field(default_factory=list, max_length=10)
 
     @field_validator("title", "content")
     @classmethod
     def clean_text(cls, value: str) -> str:
         return clean_required(value)
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values:
+            trimmed = value.strip()
+            if not trimmed:
+                raise ValueError("标签不能为空")
+            if len(trimmed) > 24:
+                raise ValueError("标签不能超过 24 个字符")
+            cleaned.append(trimmed)
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("标签不能重复")
+        return cleaned
+
+
+class MemorySearchInput(Input):
+    query: str = Field(default="", max_length=200)
+    limit: int = Field(default=5, ge=1, le=10)
+
+    @field_validator("query")
+    @classmethod
+    def clean_query(cls, value: str) -> str:
+        return value.strip()
 
 
 class MemoryCreateInput(MemoryFields):

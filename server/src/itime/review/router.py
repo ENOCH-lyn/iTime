@@ -19,6 +19,7 @@ from itime.review.memory_service import (
     memory_settings_result,
     reject_memory_proposal,
     restore_memory,
+    search_memory_by_query,
     trash_memory,
     update_memory,
     update_memory_settings,
@@ -27,6 +28,7 @@ from itime.review.schemas import (
     MemoryCreateInput,
     MemoryLifecycleInput,
     MemoryProposalActionInput,
+    MemorySearchInput,
     MemorySettingsUpdateInput,
     MemoryUpdateInput,
     ReviewAnnotationCreateInput,
@@ -365,5 +367,21 @@ async def recover_memory(
             identity.user.id,
             memory_id,
             data,
+            current_time=current_time,
+        )
+
+
+@router.post("/memory:search")
+async def search_memory_endpoint(
+    data: MemorySearchInput,
+    request: Request,
+) -> dict:
+    current_time = now()
+    async with authorized(request) as identity:
+        return await search_memory_by_query(
+            identity.session,
+            identity.user.id,
+            query=data.query,
+            limit=data.limit,
             current_time=current_time,
         )

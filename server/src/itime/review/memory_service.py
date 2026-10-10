@@ -43,12 +43,15 @@ def memory_result(memory: Memory) -> dict:
         "kind": memory.kind,
         "title": memory.title,
         "content": memory.content,
+        "tags": list(memory.tags or []),
         "source_type": memory.source_type,
         "source_proposal_id": memory.source_proposal_id,
+        "source_conversation_id": memory.source_conversation_id,
         "lifecycle": memory_lifecycle(memory),
         "deleted_at": memory.deleted_at,
         "purge_after": memory.purge_after,
         "purged_at": memory.purged_at,
+        "last_used_at": memory.last_used_at,
         "version": memory.version,
         "created_at": memory.created_at,
         "updated_at": memory.updated_at,
@@ -225,6 +228,8 @@ async def create_memory(
         content=data.content,
         source_type="manual",
         source_proposal_id=None,
+        source_conversation_id=None,
+        tags=list(data.tags),
         deleted_at=None,
         purge_after=None,
         purged_at=None,
@@ -284,15 +289,18 @@ async def update_memory(
     )
     if memory.version != data.expected_version:
         raise _version_conflict(memory)
+    new_tags = list(data.tags)
     changed = (
         memory.kind != data.kind
         or memory.title != data.title
         or memory.content != data.content
+        or list(memory.tags or []) != new_tags
     )
     if changed:
         memory.kind = data.kind
         memory.title = data.title
         memory.content = data.content
+        memory.tags = new_tags
         memory.version += 1
         memory.updated_at = current_time
         emit_change(
@@ -486,6 +494,95 @@ async def list_memories(
     }
 
 
+async def search_memory_by_query(
+    session: AsyncSession,
+    owner_id: UUID,
+    *,
+    query: str,
+    limit: int,
+    current_time: datetime,
+) -> dict:
+    settings = await memory_settings(session, owner_id)
+    if not settings.enabled:
+        return {"items": []}
+    base = select(Memory).where(
+        Memory.owner_id == owner_id,
+        Memory.deleted_at.is_(None),
+        Memory.purged_at.is_(None),
+    )
+    normalized = (query or "").strip()
+    if normalized:
+        pattern = f"%{normalized}%"
+        base = base.where(
+            or_(
+                Memory.title.ilike(pattern),
+                Memory.content.ilike(pattern),
+                Memory.tags.any(normalized),
+            )
+        )
+    rows = list(
+        await session.scalars(
+            base.order_by(
+                Memory.last_used_at.desc().nulls_last(),
+                Memory.updated_at.desc(),
+                Memory.id.desc(),
+            ).limit(limit)
+        )
+    )
+    if rows:
+        await session.execute(
+            update(Memory)
+            .where(
+                Memory.owner_id == owner_id,
+                Memory.id.in_([row.id for row in rows]),
+            )
+            .values(last_used_at=current_time)
+        )
+        for row in rows:
+            row.last_used_at = current_time
+    return {"items": [memory_result(row) for row in rows]}
+
+
+async def save_ai_tool_memory(
+    session: AsyncSession,
+    owner_id: UUID,
+    *,
+    conversation_id: UUID,
+    kind: str,
+    title: str,
+    content: str,
+    tags: list[str] | None,
+    current_time: datetime,
+) -> dict:
+    memory = Memory(
+        owner_id=owner_id,
+        kind=kind,
+        title=title,
+        content=content,
+        source_type="ai_tool",
+        source_proposal_id=None,
+        source_conversation_id=conversation_id,
+        tags=list(tags or []),
+        deleted_at=None,
+        purge_after=None,
+        purged_at=None,
+        version=1,
+        created_at=current_time,
+        updated_at=current_time,
+    )
+    session.add(memory)
+    await session.flush()
+    emit_change(
+        session,
+        owner_id,
+        "memory",
+        memory.id,
+        "created",
+        memory.version,
+    )
+    return memory_result(memory)
+
+
 async def _owned_memory_proposal(
     session: AsyncSession,
     owner_id: UUID,
@@ -557,6 +654,8 @@ async def confirm_memory_proposal(
         content=proposal.content,
         source_type="review_proposal",
         source_proposal_id=proposal.id,
+        source_conversation_id=None,
+        tags=[],
         deleted_at=None,
         purge_after=None,
         purged_at=None,
