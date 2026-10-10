@@ -286,10 +286,12 @@ test.afterEach(async ({ page }) => {
   expect(runtimeErrors.get(page)).toEqual([])
 })
 
-test('生成、离页恢复、确认和手工版本形成完整规划流程', async ({
+test.skip('生成、离页恢复、确认和手工版本形成完整规划流程', async ({
   page,
   request,
 }, info) => {
+  // 已跟随 v2 范围收敛（AGENTS 2026-10-10）：规划页不再承担生成流程，
+  // 生成/重排全部迁至 AI 对话 function tools。S2 完成后改为对话场景用例。
   const targetDate = futureDate(14)
   const csrf = await account(page, request)
   await createPlanningMemory(page, csrf)

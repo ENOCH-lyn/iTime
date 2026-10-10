@@ -218,11 +218,18 @@ useSyncRefresh(
                 <p>{{ rangeLabel }}</p>
               </div>
               <div class="me-stats-tools">
-                <ElSelect v-model="scope" size="small" @change="loadStatistics">
-                  <ElOption label="日" value="day" />
-                  <ElOption label="周" value="week" />
-                  <ElOption label="月" value="month" />
-                </ElSelect>
+                <label class="me-stats-scope-label">
+                  <span class="sr-only">统计范围</span>
+                  <select
+                    v-model="scope"
+                    class="me-stats-scope"
+                    @change="loadStatistics"
+                  >
+                    <option value="day">日</option>
+                    <option value="week">周</option>
+                    <option value="month">月</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   class="icon-button"
@@ -381,6 +388,26 @@ useSyncRefresh(
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.me-stats-scope-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.me-stats-scope {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.me-stats-scope:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .me-stats-loading {

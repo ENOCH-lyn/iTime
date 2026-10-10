@@ -134,7 +134,7 @@ test('规划页引导跳转 AI 对话，复盘页进入只读态并引导 AI', a
   await page.goto('/plans')
   await page.waitForLoadState('networkidle')
   const planHero = page.getByRole('link', {
-    name: /规划交给 AI 对话|交给 AI 对话|帮我生成本周规划/,
+    name: /去 AI 对话让它生成|规划交给 AI 对话|帮我生成本周规划/,
   }).first()
   await expect(planHero).toBeVisible({ timeout: 15_000 })
   await planHero.click()
