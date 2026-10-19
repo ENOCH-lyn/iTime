@@ -229,5 +229,5 @@ def test_plan_source_conflict_migration_downgrade_and_upgrade(admin_url):
         with psycopg.connect(psycopg_url(database_url)) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone()[0] == "0041_ai_import_source_check"
+            ).fetchone()[0] == "0043_ai_action_proposals"
         migrate(database_url, "check")

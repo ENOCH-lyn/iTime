@@ -47,7 +47,7 @@ def test_data_export_migration_round_trip_and_orm_consistency(admin_url):
                 connection.execute(
                     "SELECT version_num FROM alembic_version"
                 ).fetchone()[0]
-                    == "0041_ai_import_source_check"
+                    == "0043_ai_action_proposals"
             )
             assert connection.execute(
                 "SELECT to_regclass('data_export_jobs')"

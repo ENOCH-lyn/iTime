@@ -104,7 +104,7 @@ def test_ai_import_migration_backfills_old_batches_and_supports_queued_text(
         with psycopg.connect(psycopg_url(database_url)) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone() == ("0041_ai_import_source_check",)
+            ).fetchone() == ("0043_ai_action_proposals",)
             assert connection.execute(
                 """
                 SELECT source_type, state, input_summary

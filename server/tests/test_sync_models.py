@@ -38,7 +38,7 @@ def test_sync_migration_backfill_trigger_constraints_and_downgrade(admin_url):
         with psycopg.connect(psycopg_url(database_url)) as connection:
             assert connection.execute(
                 "SELECT version_num FROM alembic_version"
-            ).fetchone() == ("0041_ai_import_source_check",)
+            ).fetchone() == ("0043_ai_action_proposals",)
             assert connection.execute(
                 "SELECT discarded_through_sequence FROM sync_states WHERE owner_id=%s",
                 (existing_owner,),
