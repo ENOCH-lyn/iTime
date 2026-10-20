@@ -43,7 +43,7 @@ from itime.ai.routing_service import (
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.import_service import import_detail
-from itime.calendar.models import CalendarImportBatch, CalendarSeries
+from itime.calendar.models import AcademicTerm, CalendarImportBatch, CalendarSeries
 from itime.calendar.series_service import query_occurrences
 from itime.config import Settings
 from itime.database import Database
@@ -767,9 +767,20 @@ async def _agent_context(
     weeks_by_series = {
         series.id: list(series.course_week_numbers) for series in series_rows
     }
+    active_term = await session.scalar(
+        select(AcademicTerm)
+        .where(
+            AcademicTerm.owner_id == owner_id,
+            AcademicTerm.start_date <= local_today,
+            AcademicTerm.end_date >= local_today,
+        )
+        .order_by(AcademicTerm.updated_at.desc())
+        .limit(1)
+    )
     return {
         "current_date": local_today.isoformat(),
         "time_zone": time_zone,
+        "term_id": str(active_term.id) if active_term is not None else None,
         "tasks": [
             {
                 "id": str(task.id),
@@ -1530,6 +1541,31 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.course_create is not None:
+            action = result.course_create
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="create_calendar_series",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-course-create:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message"},
+                        ),
+                        "series_title": action.name,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.course_delete is not None:
             action = result.course_delete
             series = await session.scalar(
@@ -1587,6 +1623,7 @@ async def complete_conversation_job(
                             "delete_calendar_series",
                             "update_calendar_series",
                             "create_calendar_exception",
+                            "create_calendar_series",
                         }
                         else "task_action"
                     ),

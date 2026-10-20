@@ -28,7 +28,7 @@ from itime.calendar.exception_service import (
     validate_exception_fields,
 )
 from itime.calendar.lifecycle_service import trash_calendar_series
-from itime.calendar.models import CalendarException, CalendarSeries
+from itime.calendar.models import AcademicTerm, CalendarException, CalendarSeries
 from itime.calendar.schemas import (
     ExceptionCreate,
     SeriesFields,
@@ -78,6 +78,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "delete_calendar_series",
     "update_calendar_series",
     "create_calendar_exception",
+    "create_calendar_series",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -337,6 +338,57 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "create_calendar_series":
+        term = await session.scalar(
+            select(AcademicTerm).where(
+                AcademicTerm.id == UUID(str(payload["term_id"])),
+                AcademicTerm.owner_id == owner_id,
+            )
+        )
+        if term is None:
+            raise AppError("term_not_found", "未找到此学期。", status=404)
+        fields = SeriesFields(
+            kind="course",
+            term_id=term.id,
+            name=str(payload["name"]),
+            description="",
+            location=str(payload.get("location") or ""),
+            busy=True,
+            time_zone=term.time_zone,
+            start_date=None,
+            starts_at=time.fromisoformat(str(payload["starts_at"])),
+            ends_at=time.fromisoformat(str(payload["ends_at"])),
+            end_day_offset=0,
+            recurrence=SeriesRecurrenceInput(
+                frequency="weekly",
+                interval=1,
+                weekdays=[int(payload["weekday"])],
+                week_numbers=[int(value) for value in payload["week_numbers"]],
+            ),
+        )
+        resolved = await resolve_series_draft(session, owner_id, fields)
+        series = CalendarSeries(
+            owner_id=owner_id,
+            source_type="manual",
+            source_id=None,
+            **series_values(fields, resolved),
+        )
+        session.add(series)
+        await session.flush()
+        emit_change(
+            session,
+            owner_id,
+            "calendar_series",
+            series.id,
+            "created",
+            series.version,
+        )
+        _mark_applied(proposal, current_time, series.id, series.version)
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": series_result(series),
+        }
     if proposal.tool_name == "delete_plan_block":
         plan = await read_plan(
             session,

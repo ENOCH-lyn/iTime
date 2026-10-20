@@ -11,6 +11,7 @@ export interface ToolProposal {
     | 'delete_calendar_series'
     | 'update_calendar_series'
     | 'create_calendar_exception'
+    | 'create_calendar_series'
     | 'update_plan_block'
     | 'create_plan_block'
     | 'delete_plan_block'
