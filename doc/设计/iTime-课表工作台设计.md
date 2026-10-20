@@ -62,7 +62,7 @@
 - **单次例外**：AI 调用 `propose_itime_occurrence_exception`，可取消或调整某一次课程；应用时写入 `calendar_exceptions`，只影响该 occurrence，整组重复保持不变。
 - **图片课表**：AI 面板提供“图片课表”入口，上传截图/相册图片后由本地 OCR 提取文字，再交给文本 AI 还原课程；图片未显示周次时默认按当前学期全周、固定安排默认到学期结束，审核弹窗中可调整。
 - **任务删除**：AI 调用 `propose_itime_task_delete`，卡片显示“删除任务”，确认后按任务回收站语义写入 `deleted_at` 与 30 天清理时间，并停止公开链接抓取；确认前不改变数据。
-- **课程创建**：AI 调用 `propose_itime_course_create`，按学期、课程名、星期、时间、地点和周次创建整门重复课程；应用时走 `resolve_series_draft` 校验，确认后写入 `calendar_series`。
+- **课程创建**：AI 调用 `propose_itime_course_create`，按学期、课程名、教师、备注、星期、时间、地点和周次创建整门重复课程；应用时走 `resolve_series_draft` 校验，确认后写入 `calendar_series`。
 - **课程修改**：AI 调用 `propose_itime_course_update`，可改课程名、地点、每日开始/结束时间、上课周次和星期；应用时重新走 `resolve_series_draft` 校验时间、学期、周次与星期。
 - **课程删除**：AI 调用 `propose_itime_course_delete`，`series_id` 来自服务端 busy_calendar 上下文；卡片显示课程名与“删除整门课程”，确认后复用日历系列的回收站语义（整组重复安排一起移除），确认前不改变课表。
 - 纯文本回复直接显示在面板内；保留“在完整对话中继续”链接，进入 `/ai` 查看完整会话。
