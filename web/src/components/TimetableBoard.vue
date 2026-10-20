@@ -399,7 +399,7 @@ function minuteTop(minute: number) {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 7px 6px;
+  padding: 7px 5px;
   overflow: hidden;
   border: 0;
   border-left: 3px solid var(--event-color);
