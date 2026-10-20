@@ -747,6 +747,26 @@ async def _agent_context(
         local_today,
         local_today + timedelta(days=7),
     )
+    series_ids = {
+        item["series_id"]
+        for item in occurrences
+        if item.get("series_id") is not None
+    }
+    series_rows = (
+        list(
+            await session.scalars(
+                select(CalendarSeries).where(
+                    CalendarSeries.owner_id == owner_id,
+                    CalendarSeries.id.in_(series_ids),
+                )
+            )
+        )
+        if series_ids
+        else []
+    )
+    weeks_by_series = {
+        series.id: list(series.course_week_numbers) for series in series_rows
+    }
     return {
         "current_date": local_today.isoformat(),
         "time_zone": time_zone,
@@ -787,6 +807,7 @@ async def _agent_context(
                     else None
                 ),
                 "series_id": str(item["series_id"]),
+                "week_numbers": weeks_by_series.get(item["series_id"], []),
                 "location": item.get("location"),
             }
             for item in occurrences

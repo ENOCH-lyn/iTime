@@ -685,6 +685,7 @@ async def apply_proposal(
             payload.get("starts_at") is not None
             or payload.get("ends_at") is not None
         )
+        week_numbers = payload.get("week_numbers")
         fields = SeriesFields(
             kind=series.kind,
             term_id=series.term_id,
@@ -697,7 +698,9 @@ async def apply_proposal(
             ),
             busy=series.busy,
             time_zone=series.time_zone,
-            start_date=series.start_date,
+            start_date=(
+                None if week_numbers is not None else series.start_date
+            ),
             starts_at=starts_at,
             ends_at=ends_at,
             end_day_offset=series.end_day_offset,
@@ -724,7 +727,11 @@ async def apply_proposal(
                     if series.kind == "course"
                     else series.recurrence_count
                 ),
-                week_numbers=list(series.course_week_numbers),
+                week_numbers=(
+                    list(week_numbers)
+                    if week_numbers is not None
+                    else list(series.course_week_numbers)
+                ),
             ),
         )
         resolved = await resolve_series_draft(session, owner_id, fields)

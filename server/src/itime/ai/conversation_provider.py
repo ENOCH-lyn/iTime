@@ -55,8 +55,10 @@ AGENT_SYSTEM_PROMPT = (
     "propose_itime_course_delete with the series_id from busy_calendar; never "
     "invent series IDs. When the user asks to rename a course, change its room, "
     "or change its daily start/end time, call propose_itime_course_update with "
-    "the matching series_id; do not change weekdays or week ranges. When the "
-    "user asks to cancel or move only one occurrence (for example this Friday), "
+    "the matching series_id; weekday changes are not supported. When the "
+    "user asks to change a course's active weeks, call "
+    "propose_itime_course_update with week_numbers (1-based term weeks). When "
+    "the user asks to cancel or move only one occurrence (for example this Friday), "
     "call propose_itime_occurrence_exception with series_id, occurrence_date, "
     "and action cancelled or moved; do not change the whole series. When the "
     "user asks to move or resize a study plan block, call "
@@ -201,6 +203,7 @@ class AgentCourseUpdate(Input):
     location: str | None = Field(default=None, max_length=300)
     starts_at: time | None = None
     ends_at: time | None = None
+    week_numbers: list[int] | None = Field(default=None, min_length=1, max_length=60)
 
     @model_validator(mode="after")
     def has_change(self) -> "AgentCourseUpdate":
@@ -209,6 +212,7 @@ class AgentCourseUpdate(Input):
             and self.location is None
             and self.starts_at is None
             and self.ends_at is None
+            and self.week_numbers is None
         ):
             raise ValueError("课程更新至少需要一个字段")
         return self
@@ -428,10 +432,10 @@ def agent_request_body(
                 "function": {
                     "name": "propose_itime_course_update",
                     "description": (
-                        "Preview renaming a course, changing its location, or "
-                        "changing its daily start/end time. Use a series_id "
-                        "from busy_calendar. Weekday and week-range changes are "
-                        "not supported. Nothing changes until the user confirms."
+                        "Preview renaming a course, changing its location, its "
+                        "daily start/end time, or its week numbers. Use a "
+                        "series_id from busy_calendar. Weekday changes are not "
+                        "supported. Nothing changes until the user confirms."
                     ),
                     "parameters": AgentCourseUpdate.model_json_schema(),
                 },

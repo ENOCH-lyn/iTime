@@ -49,6 +49,9 @@ const changes = computed(() => {
   const time = (value: unknown) => String(value).slice(0, 5)
   if (details.value.starts_at != null) rows.push(`开始时间改为 ${time(details.value.starts_at)}`)
   if (details.value.ends_at != null) rows.push(`结束时间改为 ${time(details.value.ends_at)}`)
+  if (Array.isArray(details.value.week_numbers) && details.value.week_numbers.length) {
+    rows.push(`上课周次改为 ${details.value.week_numbers.join('、')} 周`)
+  }
   return rows
 })
 const statusLabel = computed(() => {
