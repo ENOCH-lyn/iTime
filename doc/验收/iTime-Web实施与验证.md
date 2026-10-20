@@ -2449,3 +2449,34 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 删除后恢复仍走日历页/高级管理，AI 未提供恢复工具。
 - 课程删除提案依赖 busy_calendar 中的 series_id；若模型未引用该字段会返回校验错误。
 
+## M7-T：AI 修改课程时间与地点
+
+课表“课程增删改”的最后一块：AI 可以改课程名、地点和每日上课时间，星期与周次范围保持不变，仍然预览确认。
+
+### 本次范围
+
+- Agent 新增 `propose_itime_course_update`：`series_id` 来自 busy_calendar，字段为 `name`、`location`、`starts_at`、`ends_at`，不支持星期/周次。
+- 迁移 `0046_ai_course_update`：白名单加入 `update_calendar_series`；降级清理该工具历史提案。
+- 应用逻辑从现有 series 构造 `SeriesFields`/`SeriesRecurrenceInput`，重新调用 `resolve_series_draft` 与 `series_values`，校验时间、学期与周次后写回并发出 `calendar_series.updated`。
+- 课程卡片同时支持修改/删除：修改显示“课程名/地点/开始/结束”变更，确认按钮为“确认修改”。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `f1cd653` | `feat(ai): 支持 AI 修改课程时间与地点` | provider、迁移 0046、apply、课程卡片、测试 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「心理学导论」改到 15:00-16:00，地点改为文科楼 305”，提案确认后课程块移到 15:00，地点更新；再改地点到 307 也成功。
+- 修复点：课程系列历史数据带 `recurrence_until`，而课程 recurrence 不允许通用结束条件；更新时对 `kind=course` 清空 until/count 再校验。
+- 数据库确认：`starts_at=15:00:00`、`ends_at=16:00:00`、`location=文科楼 307`、version 增加。
+- 迁移 `0046` 的 `downgrade -1` 与 `upgrade head` 均成功。
+- 后端 `pytest ...`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 不支持 AI 修改课程星期、周次范围、单次例外或调课。
+- 课程历史 `recurrence_until` 不会在本次更新中清掉（`series_values` 未覆盖），但后续更新会继续按 course 规则清空 until/count 再校验。
+- 课程时间变更不会主动检查与其它课程的冲突，仍按现有 series 校验语义处理。
+
