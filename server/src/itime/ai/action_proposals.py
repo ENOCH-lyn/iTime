@@ -21,6 +21,9 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from itime.calendar.lifecycle_service import trash_calendar_series
+from itime.calendar.models import CalendarSeries
+from itime.calendar.schemas import SeriesLifecycleInput
 from itime.database import Base
 from itime.errors import AppError
 from itime.public_links.service import stop_public_link_fetches_for_task
@@ -48,6 +51,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "update_task",
     "complete_task",
     "delete_task",
+    "delete_calendar_series",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -256,6 +260,20 @@ async def get_proposal(
     return proposal
 
 
+def _mark_applied(
+    proposal: ActionProposal,
+    current_time: datetime,
+    resource_id: UUID,
+    resource_version: int,
+) -> None:
+    proposal.status = "applied"
+    proposal.applied_at = current_time
+    proposal.updated_at = current_time
+    proposal.applied_resource_id = resource_id
+    proposal.applied_resource_version = resource_version
+    proposal.version += 1
+
+
 async def apply_proposal(
     session: AsyncSession,
     owner_id: UUID,
@@ -291,6 +309,38 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "delete_calendar_series":
+        series_id = UUID(str(payload.get("series_id")))
+        series = await session.scalar(
+            select(CalendarSeries).where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == owner_id,
+            )
+        )
+        if series is None:
+            raise AppError("calendar_series_not_found", "未找到此课程。", status=404)
+        deleted = await trash_calendar_series(
+            session,
+            owner_id,
+            series.id,
+            SeriesLifecycleInput(
+                operation_id=UUID(str(proposal.operation_id)),
+                expected_version=series.version,
+            ),
+            current_time=current_time,
+        )
+        series_payload = deleted["series"]
+        _mark_applied(
+            proposal,
+            current_time,
+            series.id,
+            int(series_payload["version"]),
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": series_payload,
+        }
     task_id = UUID(str(payload.get("task_id")))
     task = await session.scalar(
         select(Task).where(Task.id == task_id, Task.owner_id == owner_id)
@@ -389,12 +439,7 @@ async def apply_proposal(
             status=422,
             details={"tool_name": proposal.tool_name},
         )
-    proposal.status = "applied"
-    proposal.applied_at = current_time
-    proposal.updated_at = current_time
-    proposal.applied_resource_id = task.id
-    proposal.applied_resource_version = task.version
-    proposal.version += 1
+    _mark_applied(proposal, current_time, task.id, task.version)
     await session.flush()
     return {
         "proposal": proposal_result(proposal),

@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from itime.ai.conversation_provider import (
+    AgentCourseDelete,
     AgentTaskComplete,
     AgentTaskPlan,
     AgentTaskUpdate,
@@ -46,6 +47,7 @@ def test_agent_request_exposes_only_confirmed_task_plan_tool() -> None:
         "propose_itime_task_update",
         "propose_itime_task_complete",
         "propose_itime_task_delete",
+        "propose_itime_course_delete",
     ]
     assert "2026-10-08" in body["messages"][1]["content"]
 
@@ -58,6 +60,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_delete,
         usage,
     ) = _agent_json_result(
         json.dumps(
@@ -77,6 +80,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
+    assert course_delete is None
     assert usage == {"total_tokens": 12}
 
     arguments = {
@@ -96,6 +100,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_delete,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -128,6 +133,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
+    assert course_delete is None
 
     import_arguments = {
         "assistant_message": "我已整理为待确认的课表导入。",
@@ -141,6 +147,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_delete,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -181,6 +188,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
+    assert course_delete is None
 
     task_id = uuid4()
     update_arguments = {
@@ -195,6 +203,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_delete,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -227,6 +236,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert timetable_import is None
     assert task_complete is None
     assert task_delete is None
+    assert course_delete is None
 
     complete_arguments = {
         "assistant_message": "完成后告诉我。",
@@ -239,6 +249,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_delete,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -272,6 +283,52 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_plan is None
     assert timetable_import is None
     assert task_update is None
+
+    course_arguments = {
+        "assistant_message": "确认后删除这门课程。",
+        "series_id": str(uuid4()),
+    }
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        task_delete,
+        course_delete,
+        _,
+    ) = _agent_json_result(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": "propose_itime_course_delete",
+                                        "arguments": json.dumps(course_arguments),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ).encode(),
+        "request-6",
+        200,
+    )
+    assert content == course_arguments["assistant_message"]
+    assert course_delete == AgentCourseDelete.model_validate(course_arguments)
+    assert task_plan is None
+    assert timetable_import is None
+    assert task_update is None
+    assert task_complete is None
+    assert task_delete is None
 
 
 def test_agent_response_rejects_unaligned_or_unknown_tool() -> None:

@@ -15,6 +15,7 @@ import {
 } from 'vue'
 import type { Conversation, ConversationMessage } from '../lib/conversations'
 import AgentProposalMessageCard from './AgentProposalMessageCard.vue'
+import CourseActionProposalCard from './CourseActionProposalCard.vue'
 import MarkdownMessage from './MarkdownMessage.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
 import TaskActionProposalCard from './TaskActionProposalCard.vue'
@@ -195,6 +196,12 @@ defineExpose({ scrollToLatest })
                 ? message.status === 'queued' ? '计划正在排队' : '正在生成并校验计划'
                 : message.status === 'queued' ? '正在排队' : '正在生成' }}
             </div>
+            <CourseActionProposalCard
+              v-if="message.role === 'assistant'
+                && message.job?.output?.proposal_id
+                && message.job.output.proposal_kind === 'course_action'"
+              :proposal-id="message.job.output.proposal_id"
+            />
             <TaskActionProposalCard
               v-if="message.role === 'assistant'
                 && message.job?.output?.proposal_id

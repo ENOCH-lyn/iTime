@@ -22,6 +22,7 @@ import TimetableEventDialog, {
 } from '../components/TimetableEventDialog.vue'
 import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
 import TaskActionProposalCard from '../components/TaskActionProposalCard.vue'
+import CourseActionProposalCard from '../components/CourseActionProposalCard.vue'
 import QuickTaskDialog, {
   type TaskFormValues,
   type TaskRepeat,
@@ -366,6 +367,7 @@ const aiError = ref('')
 const aiReply = ref('')
 const aiProposalId = ref<string | null>(null)
 const aiTaskProposalId = ref<string | null>(null)
+const aiCourseProposalId = ref<string | null>(null)
 const aiImportBatchId = ref<string | null>(null)
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
@@ -925,6 +927,7 @@ async function askAI(prompt = aiPrompt.value) {
   aiReply.value = ''
   aiProposalId.value = null
   aiTaskProposalId.value = null
+  aiCourseProposalId.value = null
   aiImportBatchId.value = null
   try {
     const created = await createConversation(crypto.randomUUID())
@@ -942,6 +945,8 @@ async function askAI(prompt = aiPrompt.value) {
     const output = job.output
     if (output?.proposal_kind === 'task_action' && output.proposal_id) {
       aiTaskProposalId.value = output.proposal_id
+    } else if (output?.proposal_kind === 'course_action' && output.proposal_id) {
+      aiCourseProposalId.value = output.proposal_id
     } else if (output?.proposal_id) {
       aiProposalId.value = output.proposal_id
     }
@@ -1227,7 +1232,7 @@ const avatarLetter = computed(() => (
           <span class="tt-ai-running-dot" /> 正在读取课表并生成安排
         </div>
         <p v-if="aiError" class="tt-ai-error" role="alert">{{ aiError }}</p>
-        <p v-if="aiReply && !aiProposalId && !aiTaskProposalId && !aiImportBatchId" class="tt-ai-reply">
+        <p v-if="aiReply && !aiProposalId && !aiTaskProposalId && !aiCourseProposalId && !aiImportBatchId" class="tt-ai-reply">
           {{ aiReply }}
         </p>
         <AgentProposalMessageCard
@@ -1239,6 +1244,12 @@ const avatarLetter = computed(() => (
         <TaskActionProposalCard
           v-if="aiTaskProposalId"
           :proposal-id="aiTaskProposalId"
+          class="tt-ai-proposal"
+          @applied="aiProposalApplied"
+        />
+        <CourseActionProposalCard
+          v-if="aiCourseProposalId"
+          :proposal-id="aiCourseProposalId"
           class="tt-ai-proposal"
           @applied="aiProposalApplied"
         />

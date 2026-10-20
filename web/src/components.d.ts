@@ -38,6 +38,7 @@ declare module 'vue' {
     ConversationHeader: typeof import('./components/ConversationHeader.vue')['default']
     ConversationSidebar: typeof import('./components/ConversationSidebar.vue')['default']
     ConversationViewport: typeof import('./components/ConversationViewport.vue')['default']
+    CourseActionProposalCard: typeof import('./components/CourseActionProposalCard.vue')['default']
     DataExportSettings: typeof import('./components/DataExportSettings.vue')['default']
     DeviceSettings: typeof import('./components/DeviceSettings.vue')['default']
     DifficultyPanel: typeof import('./components/DifficultyPanel.vue')['default']

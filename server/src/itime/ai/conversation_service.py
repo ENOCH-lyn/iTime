@@ -43,7 +43,7 @@ from itime.ai.routing_service import (
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.import_service import import_detail
-from itime.calendar.models import CalendarImportBatch
+from itime.calendar.models import CalendarImportBatch, CalendarSeries
 from itime.calendar.series_service import query_occurrences
 from itime.config import Settings
 from itime.database import Database
@@ -767,6 +767,8 @@ async def _agent_context(
                     if item["local_end_time"] is not None
                     else None
                 ),
+                "series_id": str(item["series_id"]),
+                "location": item.get("location"),
             }
             for item in occurrences
             if item.get("busy") and item.get("status") == "scheduled"
@@ -1315,6 +1317,34 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.course_delete is not None:
+            action = result.course_delete
+            series = await session.scalar(
+                select(CalendarSeries).where(
+                    CalendarSeries.id == action.series_id,
+                    CalendarSeries.owner_id == job.owner_id,
+                )
+            )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="delete_calendar_series",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-course-action:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        "series_id": str(action.series_id),
+                        "series_title": series.name if series is not None else None,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         message.content = (
             result.content
             if import_error is None
@@ -1337,7 +1367,11 @@ async def complete_conversation_job(
             **(
                 {
                     "proposal_id": str(action_proposal.id),
-                    "proposal_kind": "task_action",
+                    "proposal_kind": (
+                        "course_action"
+                        if action_proposal.tool_name == "delete_calendar_series"
+                        else "task_action"
+                    ),
                 }
                 if action_proposal is not None
                 else {}
