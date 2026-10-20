@@ -2302,3 +2302,35 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 任务完成状态与计划块未联动；重复任务完成仍按整条任务处理，不区分单个 occurrence。
 - 课表仍未支持拖拽移动、拉伸时长、单次例外与假期周。
 
+## M7-O：AI 修改与完成任务
+
+对应“AI 要能操作大部分功能”的下一步：在既有的任务计划/课表导入之外，让 AI 能修改或完成已有任务，并继续走预览确认。
+
+### 本次范围
+
+- Agent 新增 `propose_itime_task_update`（标题/描述/估时/优先级）与 `propose_itime_task_complete` 两个工具；`task_id` 只能来自服务端上下文，模型不能编造。
+- 工具结果写入 `ai_action_proposals`（复用 `update_task`/`complete_task` 白名单），AIJob 输出 `proposal_id` + `proposal_kind=task_action`。
+- 新增 `/api/v1/ai/tool-proposals/{id}`、`/apply`、`/reject`：应用前校验所有权、pending、过期、版本、任务可编辑性；更新任务并发出同步变更，完成调用既有 `complete_task` 服务。
+- 前端新增 `TaskActionProposalCard`：显示任务名与变更（估时、优先级、标题），确认/拒绝；首页 AI 面板和 `/ai` 对话都能渲染。
+- 应用成功后首页刷新课表与任务；卡片保留“已应用”状态。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `590b69a` | `feat(ai): 支持 AI 修改与完成任务并预览确认` | provider 工具、action proposal apply/reject、router、卡片、测试 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「写高数第 8 周作业」的预计用时改成 90 分钟”，AI 返回修改提案；确认后任务详情显示预计 90 分钟，数据库同步更新。
+- 2026-10-20 真实 DeepSeek：输入“帮我完成「背 50 个英语单词」这个任务”，AI 返回完成提案；确认后数据库 `tasks.status=completed`，任务从首页列表移除。
+- 2026-10-20 回归：任务计划提案仍可生成并拒绝（`task plan regression OK`）；首页未出现页面错误。
+- `uv run pytest tests/test_agent_provider.py tests/ai/test_action_proposals.py -q -W ignore::pytest.PytestUnraisableExceptionWarning`：**7 passed**（Windows 下 psycopg 析构告警需忽略，逻辑通过）。
+- `uv run ruff check .`：通过；`pnpm build`：通过。
+
+### 未覆盖范围与剩余风险
+
+- 暂不支持 AI 修改任务的日期/重复规则、删除任务、修改/删除课程或计划块；这些需要各自的确认与应用逻辑。
+- 重复任务的“完成某一次”仍需要 occurrence 上下文，当前工具只支持非重复任务，重复任务会返回服务端错误。
+- 卡片中的任务名来自创建提案时的快照；若任务在确认前改名，应用仍按 ID 生效，预览可能与最新标题不一致。
+
