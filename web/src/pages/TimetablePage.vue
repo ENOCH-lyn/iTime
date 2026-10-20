@@ -40,6 +40,7 @@ import {
 } from '../lib/calendar'
 import {
   createTask,
+  deleteTask,
   listTasks,
   setTaskCompletion,
   type TaskSummary,
@@ -272,6 +273,9 @@ const taskDialogBusy = ref(false)
 const taskDialogError = ref('')
 const taskInitial = ref({ title: '', date: today.value })
 const settingsOpen = ref(false)
+const selectedTask = ref<TaskSummary | null>(null)
+const taskDetailOpen = ref(false)
+const taskActionBusy = ref(false)
 
 function showNotice(message: string) {
   notice.value = message
@@ -515,9 +519,82 @@ async function completeTask(task: TaskSummary) {
   try {
     await setTaskCompletion(task, crypto.randomUUID(), true)
     tasks.value = tasks.value.filter(item => item.id !== task.id)
+    if (selectedTask.value?.id === task.id) {
+      taskDetailOpen.value = false
+      selectedTask.value = null
+    }
     showNotice('任务已完成')
   } catch (reason) {
     error.value = failure(reason)
+  }
+}
+
+function openTask(task: TaskSummary) {
+  selectedTask.value = task
+  taskDetailOpen.value = true
+}
+
+function taskDueText(task: TaskSummary) {
+  const due = task.schedule.due_date
+  if (!due) return '没有截止日期'
+  if (due === today.value) return '今天'
+  if (due === addDays(today.value, 1)) return '明天'
+  const date = parseLocalDate(due)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+function taskRepeatText(task: TaskSummary) {
+  const recurrence = task.schedule.recurrence
+  if (recurrence.frequency === 'none') return '不重复'
+  if (recurrence.frequency === 'daily') return '每天重复'
+  if (recurrence.frequency === 'weekdays') return '每个工作日'
+  if (recurrence.frequency === 'weekly') {
+    const labels = ['一', '二', '三', '四', '五', '六', '日']
+    const days = recurrence.weekdays.map(day => labels[day - 1]).join('、')
+    return days ? `每周 ${days}` : '每周重复'
+  }
+  return '重复任务'
+}
+
+async function postponeTask(task: TaskSummary) {
+  if (taskActionBusy.value) return
+  taskActionBusy.value = true
+  try {
+    const schedule = task.schedule
+    await updateTaskSchedule(task, crypto.randomUUID(), {
+      due_kind: schedule.due_kind === 'none' ? 'date' : schedule.due_kind,
+      due_date: addDays(today.value, 1),
+      due_time: schedule.due_time,
+      time_zone: schedule.time_zone ?? timeZone.value,
+      ambiguous_utc_offset_minutes: schedule.ambiguous_utc_offset_minutes,
+      splittable: schedule.splittable,
+      minimum_block_minutes: schedule.minimum_block_minutes,
+      recurrence: schedule.recurrence,
+    })
+    taskDetailOpen.value = false
+    selectedTask.value = null
+    await loadTasks()
+    showNotice('已推迟到明天')
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    taskActionBusy.value = false
+  }
+}
+
+async function removeTask(task: TaskSummary) {
+  if (!window.confirm(`将「${task.title}」移入回收站？`)) return
+  taskActionBusy.value = true
+  try {
+    await deleteTask(task, crypto.randomUUID())
+    tasks.value = tasks.value.filter(item => item.id !== task.id)
+    taskDetailOpen.value = false
+    selectedTask.value = null
+    showNotice('任务已移入回收站')
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    taskActionBusy.value = false
   }
 }
 
@@ -737,19 +814,24 @@ const avatarLetter = computed(() => (
 
         <div v-for="group in taskGroups" :key="group.key" class="tt-task-group">
           <h3>{{ group.title }}</h3>
-          <button
+          <div
             v-for="task in group.items"
             :key="task.id"
-            type="button"
             class="tt-task"
-            @click="completeTask(task)"
           >
-            <span class="tt-check" aria-hidden="true"><Check :size="12" /></span>
-            <span class="tt-task-copy">
+            <button
+              type="button"
+              class="tt-check"
+              :aria-label="`完成任务：${task.title}`"
+              @click="completeTask(task)"
+            >
+              <Check :size="12" />
+            </button>
+            <button type="button" class="tt-task-copy" @click="openTask(task)">
               <strong>{{ task.title }}</strong>
               <small v-if="taskMeta(task)">{{ taskMeta(task) }}</small>
-            </span>
-          </button>
+            </button>
+          </div>
         </div>
 
         <p v-if="!tasksLoading && !openTasks.length" class="tt-empty">
@@ -893,6 +975,72 @@ const avatarLetter = computed(() => (
           >
             打开任务
           </RouterLink>
+        </div>
+      </div>
+    </ElDrawer>
+
+    <ElDrawer
+      v-model="taskDetailOpen"
+      direction="rtl"
+      size="min(380px, 94vw)"
+      :with-header="false"
+      class="tt-detail-drawer"
+    >
+      <div v-if="selectedTask" class="tt-detail">
+        <button type="button" class="tt-detail-close" aria-label="关闭" @click="taskDetailOpen = false">
+          <X :size="18" />
+        </button>
+        <span class="tt-detail-kind">任务</span>
+        <h2>{{ selectedTask.title }}</h2>
+        <p v-if="selectedTask.description" class="tt-detail-desc">
+          {{ selectedTask.description }}
+        </p>
+        <dl>
+          <div>
+            <dt>截止</dt>
+            <dd>
+              {{ taskDueText(selectedTask) }}
+              <template v-if="selectedTask.schedule.due_time">
+                {{ selectedTask.schedule.due_time.slice(0, 5) }}
+              </template>
+            </dd>
+          </div>
+          <div>
+            <dt>重复</dt>
+            <dd>{{ taskRepeatText(selectedTask) }}</dd>
+          </div>
+          <div v-if="selectedTask.estimated_minutes">
+            <dt>预计用时</dt>
+            <dd>{{ selectedTask.estimated_minutes }} 分钟</dd>
+          </div>
+        </dl>
+        <div class="tt-detail-actions">
+          <button
+            type="button"
+            class="tt-button primary"
+            :disabled="taskActionBusy"
+            @click="completeTask(selectedTask)"
+          >
+            完成
+          </button>
+          <button
+            v-if="selectedTask.schedule.recurrence.frequency === 'none'"
+            type="button"
+            class="tt-button secondary"
+            :disabled="taskActionBusy"
+            @click="postponeTask(selectedTask)"
+          >
+            推迟到明天
+          </button>
+          <RouterLink to="/tasks" class="tt-button ghost">任务页</RouterLink>
+          <button
+            type="button"
+            class="tt-button danger"
+            :disabled="taskActionBusy"
+            @click="removeTask(selectedTask)"
+          >
+            <Trash2 :size="15" /> 删除
+          </button>
         </div>
       </div>
     </ElDrawer>
@@ -1185,17 +1333,31 @@ const avatarLetter = computed(() => (
   height: 17px;
   margin-top: 2px;
   flex-shrink: 0;
+  padding: 0;
   border: 1.5px solid color-mix(in srgb, var(--muted) 55%, transparent);
   border-radius: 50%;
+  background: transparent;
   color: transparent;
   transition: all .14s ease;
 }
-.tt-task:hover .tt-check {
+.tt-task:hover .tt-check,
+.tt-check:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.tt-task-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tt-task-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
 .tt-task-copy strong {
   font-size: 13px;
   font-weight: 550;
@@ -1456,6 +1618,13 @@ const avatarLetter = computed(() => (
   color: var(--muted);
 }
 .tt-detail dd { margin: 0; font-size: 14px; }
+.tt-detail-desc {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
 .tt-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tt-button {
   display: inline-flex;
@@ -1471,7 +1640,16 @@ const avatarLetter = computed(() => (
 }
 .tt-button.primary { background: var(--accent); color: var(--on-accent); }
 .tt-button.primary:hover { background: var(--accent-hover); }
+.tt-button.secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.tt-button.secondary:hover { background: var(--selected); }
+.tt-button.ghost { background: transparent; color: var(--muted); }
+.tt-button.ghost:hover { background: var(--selected); color: var(--text); }
 .tt-button.danger { background: var(--error-bg); color: var(--error); border: 1px solid var(--error-border); }
+.tt-button:disabled { opacity: .5; }
 @media (max-width: 1380px) {
   .tt-main { grid-template-columns: 270px minmax(0, 1fr); }
   .tt-ai {
