@@ -332,6 +332,9 @@ function hourTop(mark: number) {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+:global(:root[data-theme="dark"]) .board-event-time {
+  color: color-mix(in srgb, var(--event-color) 40%, #f1f7f2);
+}
 .board-event strong {
   font-size: 12px;
   font-weight: 600;
