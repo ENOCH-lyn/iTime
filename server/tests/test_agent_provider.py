@@ -48,6 +48,7 @@ def test_agent_request_exposes_only_confirmed_task_plan_tool() -> None:
         "propose_itime_task_complete",
         "propose_itime_task_delete",
         "propose_itime_course_delete",
+        "propose_itime_course_update",
     ]
     assert "2026-10-08" in body["messages"][1]["content"]
 
@@ -60,6 +61,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         usage,
     ) = _agent_json_result(
@@ -80,7 +82,8 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
-    assert course_delete is None
+    assert course_delete is None
+    assert course_update is None
     assert usage == {"total_tokens": 12}
 
     arguments = {
@@ -100,6 +103,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         _,
     ) = _agent_json_result(
@@ -133,7 +137,8 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
-    assert course_delete is None
+    assert course_delete is None
+    assert course_update is None
 
     import_arguments = {
         "assistant_message": "我已整理为待确认的课表导入。",
@@ -147,6 +152,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         _,
     ) = _agent_json_result(
@@ -188,7 +194,8 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert task_update is None
     assert task_complete is None
     assert task_delete is None
-    assert course_delete is None
+    assert course_delete is None
+    assert course_update is None
 
     task_id = uuid4()
     update_arguments = {
@@ -203,6 +210,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         _,
     ) = _agent_json_result(
@@ -236,7 +244,8 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert timetable_import is None
     assert task_complete is None
     assert task_delete is None
-    assert course_delete is None
+    assert course_delete is None
+    assert course_update is None
 
     complete_arguments = {
         "assistant_message": "完成后告诉我。",
@@ -249,6 +258,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         _,
     ) = _agent_json_result(
@@ -295,6 +305,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_update,
         task_complete,
         task_delete,
+        course_update,
         course_delete,
         _,
     ) = _agent_json_result(

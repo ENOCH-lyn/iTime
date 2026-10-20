@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { LoaderCircle, Trash2, X } from 'lucide-vue-next'
+import { LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
 import { failure } from '../lib/api'
 import {
   applyToolProposal,
@@ -19,6 +19,19 @@ const error = ref('')
 const details = computed(() => proposal.value?.preview.details ?? {})
 const courseTitle = computed(() => String(details.value.series_title ?? '此课程'))
 const summary = computed(() => proposal.value?.preview.summary ?? '')
+const isUpdate = computed(() => proposal.value?.tool_name === 'update_calendar_series')
+const changes = computed(() => {
+  if (!isUpdate.value) return []
+  const rows: string[] = []
+  if (details.value.name != null) rows.push(`课程名改为「${String(details.value.name)}」`)
+  if (details.value.location != null) {
+    rows.push(details.value.location ? `地点改为 ${String(details.value.location)}` : '清空地点')
+  }
+  const time = (value: unknown) => String(value).slice(0, 5)
+  if (details.value.starts_at != null) rows.push(`开始时间改为 ${time(details.value.starts_at)}`)
+  if (details.value.ends_at != null) rows.push(`结束时间改为 ${time(details.value.ends_at)}`)
+  return rows
+})
 const statusLabel = computed(() => {
   if (!proposal.value) return ''
   if (proposal.value.status === 'pending') return '待确认'
@@ -78,17 +91,21 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <Trash2 :size="17" aria-hidden="true" />
+        <component :is="isUpdate ? Pencil : Trash2" :size="17" aria-hidden="true" />
         <div>
-          <strong>删除课程「{{ courseTitle }}」</strong>
+          <strong>{{ isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」` }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
       <p v-if="summary" class="course-proposal-summary">{{ summary }}</p>
-      <p class="course-proposal-hint">确认后整门课程（含重复安排）移入回收站。</p>
+      <ul v-if="changes.length" class="course-proposal-changes">
+        <li v-for="change in changes" :key="change">{{ change }}</li>
+      </ul>
+      <p v-if="!isUpdate" class="course-proposal-hint">确认后整门课程（含重复安排）移入回收站。</p>
       <div v-if="proposal.status === 'pending'" class="course-proposal-actions">
-        <ElButton type="danger" :loading="pending" @click="apply">
-          <Trash2 :size="15" aria-hidden="true" /> 确认删除
+        <ElButton :type="isUpdate ? 'primary' : 'danger'" :loading="pending" @click="apply">
+          <component :is="isUpdate ? Pencil : Trash2" :size="15" aria-hidden="true" />
+          {{ isUpdate ? '确认修改' : '确认删除' }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝
@@ -108,7 +125,7 @@ watch(() => props.proposalId, load)
   color: var(--text);
 }
 .course-proposal header { display: flex; align-items: center; gap: 8px; }
-.course-proposal header > svg { color: var(--error); flex-shrink: 0; }
+.course-proposal header > svg { color: var(--accent); flex-shrink: 0; }
 .course-proposal header > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .course-proposal header strong { font-size: 13px; font-weight: 650; line-height: 1.35; }
 .course-proposal header span { font-size: 11px; color: var(--muted); }
@@ -117,6 +134,12 @@ watch(() => props.proposalId, load)
   font-size: 12px;
   line-height: 1.55;
   color: var(--muted);
+}
+.course-proposal-changes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .course-proposal-hint {
   margin: 8px 0 0;

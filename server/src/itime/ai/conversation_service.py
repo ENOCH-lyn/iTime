@@ -1317,6 +1317,38 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.course_update is not None:
+            action = result.course_update
+            series = await session.scalar(
+                select(CalendarSeries).where(
+                    CalendarSeries.id == action.series_id,
+                    CalendarSeries.owner_id == job.owner_id,
+                )
+            )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="update_calendar_series",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-course-update:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message", "series_id"},
+                        ),
+                        "series_id": str(action.series_id),
+                        "series_title": series.name if series is not None else None,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.course_delete is not None:
             action = result.course_delete
             series = await session.scalar(
@@ -1369,7 +1401,8 @@ async def complete_conversation_job(
                     "proposal_id": str(action_proposal.id),
                     "proposal_kind": (
                         "course_action"
-                        if action_proposal.tool_name == "delete_calendar_series"
+                        if action_proposal.tool_name
+                        in {"delete_calendar_series", "update_calendar_series"}
                         else "task_action"
                     ),
                 }

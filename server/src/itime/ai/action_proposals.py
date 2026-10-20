@@ -1,5 +1,5 @@
 """AI tool-driven write-preview proposals."""
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -23,7 +23,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.calendar.lifecycle_service import trash_calendar_series
 from itime.calendar.models import CalendarSeries
-from itime.calendar.schemas import SeriesLifecycleInput
+from itime.calendar.schemas import (
+    RecurrenceInput as SeriesRecurrenceInput,
+)
+from itime.calendar.schemas import (
+    SeriesFields,
+    SeriesLifecycleInput,
+)
+from itime.calendar.series_service import (
+    resolve_series_draft,
+    series_result,
+    series_values,
+)
 from itime.database import Base
 from itime.errors import AppError
 from itime.public_links.service import stop_public_link_fetches_for_task
@@ -52,6 +63,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "complete_task",
     "delete_task",
     "delete_calendar_series",
+    "update_calendar_series",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -309,6 +321,95 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "update_calendar_series":
+        series_id = UUID(str(payload.get("series_id")))
+        series = await session.scalar(
+            select(CalendarSeries)
+            .where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == owner_id,
+            )
+            .with_for_update()
+        )
+        if series is None:
+            raise AppError("calendar_series_not_found", "未找到此课程。", status=404)
+        starts_at = series.starts_at
+        ends_at = series.ends_at
+        if payload.get("starts_at") is not None:
+            starts_at = time.fromisoformat(str(payload["starts_at"]))
+        if payload.get("ends_at") is not None:
+            ends_at = time.fromisoformat(str(payload["ends_at"]))
+        times_changed = (
+            payload.get("starts_at") is not None
+            or payload.get("ends_at") is not None
+        )
+        fields = SeriesFields(
+            kind=series.kind,
+            term_id=series.term_id,
+            name=str(payload.get("name") or series.name),
+            description=series.description,
+            location=(
+                str(payload["location"])
+                if payload.get("location") is not None
+                else series.location
+            ),
+            busy=series.busy,
+            time_zone=series.time_zone,
+            start_date=series.start_date,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            end_day_offset=series.end_day_offset,
+            start_period_number=(
+                None if times_changed else series.start_period_number
+            ),
+            end_period_number=(
+                None if times_changed else series.end_period_number
+            ),
+            ambiguous_utc_offset_minutes=series.ambiguous_offset_minutes,
+            recurrence=SeriesRecurrenceInput(
+                frequency=series.recurrence_frequency,
+                interval=series.recurrence_interval,
+                weekdays=list(series.recurrence_weekdays),
+                month=series.recurrence_month,
+                day_of_month=series.recurrence_day_of_month,
+                until=(
+                    None
+                    if series.kind == "course"
+                    else series.recurrence_until
+                ),
+                count=(
+                    None
+                    if series.kind == "course"
+                    else series.recurrence_count
+                ),
+                week_numbers=list(series.course_week_numbers),
+            ),
+        )
+        resolved = await resolve_series_draft(session, owner_id, fields)
+        values = series_values(fields, resolved)
+        changed = any(
+            getattr(series, field) != value for field, value in values.items()
+        )
+        if changed:
+            for field, value in values.items():
+                setattr(series, field, value)
+            series.version += 1
+            series.updated_at = current_time
+            emit_change(
+                session,
+                owner_id,
+                "calendar_series",
+                series.id,
+                "updated",
+                series.version,
+            )
+        await session.flush()
+        _mark_applied(proposal, current_time, series.id, series.version)
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": series_result(series),
+        }
     if proposal.tool_name == "delete_calendar_series":
         series_id = UUID(str(payload.get("series_id")))
         series = await session.scalar(

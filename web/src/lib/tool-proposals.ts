@@ -4,7 +4,13 @@ export interface ToolProposal {
   id: string
   conversation_id: string
   source_message_id: string | null
-  tool_name: 'update_task' | 'complete_task' | 'delete_task' | 'delete_calendar_series' | string
+  tool_name:
+    | 'update_task'
+    | 'complete_task'
+    | 'delete_task'
+    | 'delete_calendar_series'
+    | 'update_calendar_series'
+    | string
   operation_id: string
   status: 'pending' | 'applied' | 'rejected' | 'expired'
   preview: {
