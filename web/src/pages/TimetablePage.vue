@@ -25,6 +25,8 @@ import TimetableEventDialog, {
 import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
 import TaskActionProposalCard from '../components/TaskActionProposalCard.vue'
 import CourseActionProposalCard from '../components/CourseActionProposalCard.vue'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
 import QuickTaskDialog, {
   type TaskFormValues,
   type TaskRepeat,
@@ -1190,24 +1192,18 @@ function eventKindLabel(event: BoardEvent) {
   return '任务'
 }
 
-const avatarLetter = computed(() => (
-  identity.value?.user.email?.slice(0, 1).toUpperCase() ?? 'i'
-))
+const { pendingLogout, logout } = useAppShell()
 </script>
 
 <template>
+  <AppShell
+    current="timetable"
+    title="课表"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
   <div class="tt-page">
     <header class="tt-header">
-      <RouterLink to="/timetable" class="tt-brand">iTime<span>.</span></RouterLink>
-      <nav class="tt-nav" aria-label="主导航">
-        <RouterLink to="/timetable" class="active">课表</RouterLink>
-        <RouterLink to="/tasks">任务</RouterLink>
-        <RouterLink to="/ai">AI</RouterLink>
-        <RouterLink to="/calendar">日历</RouterLink>
-        <RouterLink to="/plans">规划</RouterLink>
-        <RouterLink to="/reviews">复盘</RouterLink>
-      </nav>
-
       <div class="tt-weeknav">
         <button type="button" class="tt-icon-btn" aria-label="上一周" @click="moveWeek(-1)">
           <ChevronLeft :size="18" />
@@ -1232,18 +1228,6 @@ const avatarLetter = computed(() => (
           <ChevronRight :size="18" />
         </button>
         <button type="button" class="tt-today" @click="goToday">今天</button>
-      </div>
-
-      <div class="tt-header-actions">
-        <button type="button" class="tt-icon-btn add" aria-label="添加课程" @click="openCreateFromHeader">
-          <Plus :size="18" />
-        </button>
-        <RouterLink to="/ai" class="tt-ai-link">
-          <Sparkles :size="16" /> AI
-        </RouterLink>
-        <RouterLink to="/me" class="tt-avatar" :aria-label="`账号 ${identity?.user.email ?? ''}`">
-          {{ avatarLetter }}
-        </RouterLink>
       </div>
     </header>
 
@@ -1648,6 +1632,7 @@ const avatarLetter = computed(() => (
       />
     </ElDialog>
   </div>
+  </AppShell>
 </template>
 
 <style scoped>
@@ -2374,6 +2359,8 @@ const avatarLetter = computed(() => (
   .tt-header { flex-wrap: wrap; gap: 10px; }
   .tt-nav { order: 3; width: 100%; justify-content: space-between; }
   .tt-weeknav { margin-left: 0; flex: 1; justify-content: center; }
+  .tt-today { white-space: nowrap; }
+  .tt-header-actions { flex: 0 0 auto; }
   .tt-main { grid-template-columns: 1fr; }
   .tt-tasks { position: static; order: 2; }
   .tt-ai { order: 3; }

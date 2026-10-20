@@ -394,6 +394,11 @@
 }
 
 /* Unified top navigation shell (2026-10-20) */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
 .app-shell,
 .app-shell.has-secondary {
   display: flex;

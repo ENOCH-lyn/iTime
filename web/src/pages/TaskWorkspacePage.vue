@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Plus,
   Repeat2,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -16,6 +15,8 @@ import QuickTaskDialog, {
   type TaskFormValues,
   type TaskRepeat,
 } from '../components/QuickTaskDialog.vue'
+import AppShell from '../shell/AppShell.vue'
+import { useAppShell } from '../shell/useAppShell'
 import { failure, type Failure } from '../lib/api'
 import { identity, refreshSession } from '../lib/auth'
 import {
@@ -486,34 +487,17 @@ async function removeTask(task: TaskSummary) {
   }
 }
 
-const avatarLetter = computed(() => (
-  identity.value?.user.email?.slice(0, 1).toUpperCase() ?? 'i'
-))
+const { pendingLogout, logout } = useAppShell()
 </script>
 
 <template>
+  <AppShell
+    current="tasks"
+    title="任务"
+    :pending-logout="pendingLogout"
+    @logout="logout"
+  >
   <div class="tw-page">
-    <header class="tw-header">
-      <RouterLink to="/timetable" class="tw-brand">iTime<span>.</span></RouterLink>
-      <nav class="tw-nav" aria-label="主导航">
-        <RouterLink to="/timetable">课表</RouterLink>
-        <RouterLink to="/tasks" class="active">任务</RouterLink>
-        <RouterLink to="/ai">AI</RouterLink>
-        <RouterLink to="/calendar">日历</RouterLink>
-        <RouterLink to="/plans">规划</RouterLink>
-        <RouterLink to="/reviews">复盘</RouterLink>
-      </nav>
-      <div class="tw-header-actions">
-        <button type="button" class="tw-add" @click="openCreate()">
-          <Plus :size="16" /> 添加任务
-        </button>
-        <RouterLink to="/ai" class="tw-ai-link"><Sparkles :size="16" /> AI</RouterLink>
-        <RouterLink to="/me" class="tw-avatar" :aria-label="`账号 ${identity?.user.email ?? ''}`">
-          {{ avatarLetter }}
-        </RouterLink>
-      </div>
-    </header>
-
     <div v-if="error" class="tw-banner error" role="alert">
       {{ error.message }}
       <button type="button" @click="error = null"><X :size="15" /></button>
@@ -526,9 +510,14 @@ const avatarLetter = computed(() => (
           <h1>任务</h1>
           <p>{{ openCount }} 个待办 · 用周期和优先级把时间管起来</p>
         </div>
-        <RouterLink to="/tasks/full" class="tw-advanced">
-          高级管理（步骤 / 标签 / 回收站）<ChevronRight :size="15" />
-        </RouterLink>
+        <div class="tw-title-actions">
+          <button type="button" class="tw-add" @click="openCreate()">
+            <Plus :size="16" /> 添加任务
+          </button>
+          <RouterLink to="/tasks/full" class="tw-advanced">
+            高级管理（步骤 / 标签 / 回收站）<ChevronRight :size="15" />
+          </RouterLink>
+        </div>
       </section>
 
       <section class="tw-panel">
@@ -674,6 +663,7 @@ const avatarLetter = computed(() => (
       @submit="submitTask"
     />
   </div>
+  </AppShell>
 </template>
 
 <style scoped>
@@ -801,6 +791,13 @@ const avatarLetter = computed(() => (
   line-height: 1.1;
 }
 .tw-title-row p { margin-top: 6px; font-size: 13px; color: var(--muted); }
+.tw-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .tw-advanced {
   display: inline-flex;
   align-items: center;
