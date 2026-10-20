@@ -1222,12 +1222,17 @@ async def complete_conversation_job(
                     "message": exc.message,
                 }
         action_task_title = None
-        if result.task_update is not None or result.task_complete is not None:
-            action_task_id = (
-                result.task_update.task_id
-                if result.task_update is not None
-                else result.task_complete.task_id
-            )
+        if (
+            result.task_update is not None
+            or result.task_complete is not None
+            or result.task_delete is not None
+        ):
+            if result.task_update is not None:
+                action_task_id = result.task_update.task_id
+            elif result.task_complete is not None:
+                action_task_id = result.task_complete.task_id
+            else:
+                action_task_id = result.task_delete.task_id
             action_task = await session.scalar(
                 select(Task).where(
                     Task.id == action_task_id,
@@ -1268,6 +1273,31 @@ async def complete_conversation_job(
                 conversation_id=conversation.id,
                 source_message_id=message.id,
                 tool_name="complete_task",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-task-action:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message"},
+                        ),
+                        "task_title": action_task_title,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
+        elif result.task_delete is not None:
+            action = result.task_delete
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="delete_task",
                 operation_id=str(
                     uuid5(NAMESPACE_URL, f"itime:agent-task-action:{job.id}")
                 ),

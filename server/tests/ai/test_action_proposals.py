@@ -128,6 +128,7 @@ def test_apply_updates_task_completes_and_reject_blocks(client, database_url):
     _, owner_id_value = create_account(client, database_url)
     owner_id = UUID(owner_id_value)
     task = create_task(client, title="AI 待更新任务", estimated_minutes=30)
+    second = create_task(client, title="AI 待删除任务", estimated_minutes=15)
     conversation_id = _seed_conversation(database_url, owner_id)
     database = Database(Settings(database_url=database_url, environment="test"))
     now = datetime(2026, 10, 10, 9, 0, tzinfo=UTC)
@@ -204,6 +205,28 @@ def test_apply_updates_task_completes_and_reject_blocks(client, database_url):
                 current_time=now,
             )
             assert completed["task"]["status"] == "completed"
+
+            delete = await create_proposal(
+                session,
+                owner_id,
+                conversation_id=conversation_id,
+                source_message_id=None,
+                tool_name="delete_task",
+                operation_id="apply-delete",
+                preview={"summary": "删除任务"},
+                payload={"task_id": second["id"]},
+                expected_version=None,
+                current_time=now,
+            )
+            deleted = await apply_proposal(
+                session,
+                owner_id,
+                delete.id,
+                expected_version=delete.version,
+                current_time=now,
+            )
+            assert deleted["task"]["lifecycle"] == "trashed"
+            assert deleted["task"]["deleted_at"] is not None
 
     import asyncio
 

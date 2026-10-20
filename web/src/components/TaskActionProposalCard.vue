@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Check, LoaderCircle, Pencil, X } from 'lucide-vue-next'
+import { Check, LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
 import { failure } from '../lib/api'
 import {
   applyToolProposal,
@@ -22,6 +22,12 @@ const title = computed(() => {
 })
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isComplete = computed(() => proposal.value?.tool_name === 'complete_task')
+const isDelete = computed(() => proposal.value?.tool_name === 'delete_task')
+const actionLabel = computed(() => {
+  if (isDelete.value) return '删除'
+  if (isComplete.value) return '完成'
+  return '修改'
+})
 const statusLabel = computed(() => {
   if (!proposal.value) return ''
   if (proposal.value.status === 'pending') return '待确认'
@@ -30,6 +36,7 @@ const statusLabel = computed(() => {
   return '已过期'
 })
 const changes = computed(() => {
+  if (isDelete.value) return ['移入回收站，30 天后清理']
   const details = proposal.value?.preview.details ?? {}
   const rows: string[] = []
   if (details.title != null) rows.push(`名称改为「${String(details.title)}」`)
@@ -95,9 +102,9 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <component :is="isComplete ? Check : Pencil" :size="17" aria-hidden="true" />
+        <component :is="isDelete ? Trash2 : (isComplete ? Check : Pencil)" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ isComplete ? `完成任务「${title}」` : `修改任务「${title}」` }}</strong>
+          <strong>{{ actionLabel }}任务「{{ title }}」</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -108,7 +115,7 @@ watch(() => props.proposalId, load)
       <div v-if="proposal.status === 'pending'" class="task-proposal-actions">
         <ElButton type="primary" :loading="pending" @click="apply">
           <Check :size="15" aria-hidden="true" />
-          {{ isComplete ? '确认完成' : '确认修改' }}
+          {{ isDelete ? '确认删除' : (isComplete ? '确认完成' : '确认修改') }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝

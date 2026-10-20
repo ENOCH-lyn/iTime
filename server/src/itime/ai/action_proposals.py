@@ -23,9 +23,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
 from itime.errors import AppError
+from itime.public_links.service import stop_public_link_fetches_for_task
+from itime.tasks.lifecycle_service import expire_task_operation_responses
 from itime.tasks.models import Task
 from itime.tasks.progress_service import complete_task
-from itime.tasks.service import emit_change, ensure_task_editable, task_detail
+from itime.tasks.service import (
+    emit_change,
+    ensure_task_editable,
+    ensure_task_readable,
+    task_detail,
+)
+
+TASK_TRASH_RETENTION = timedelta(days=30)
 
 PROPOSAL_EXPIRY = timedelta(days=7)
 
@@ -33,6 +42,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "create_task",
     "update_task",
     "complete_task",
+    "delete_task",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -311,6 +321,22 @@ async def apply_proposal(
             None,
             changed_at=current_time,
         )
+    elif proposal.tool_name == "delete_task":
+        ensure_task_readable(task)
+        if task.deleted_at is None:
+            await expire_task_operation_responses(session, owner_id, task.id)
+            await stop_public_link_fetches_for_task(
+                session,
+                task,
+                at=current_time,
+            )
+            task.deleted_at = current_time
+            task.purge_after = current_time + TASK_TRASH_RETENTION
+            task.version += 1
+            task.updated_at = current_time
+            emit_change(session, owner_id, "task", task.id, "deleted", task.version)
+        await session.flush()
+        task_result = await task_detail(session, task)
     else:
         raise AppError(
             "ai_action_proposal_unsupported",
