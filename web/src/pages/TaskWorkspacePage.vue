@@ -499,6 +499,8 @@ const avatarLetter = computed(() => (
         <RouterLink to="/timetable">课表</RouterLink>
         <RouterLink to="/tasks" class="active">任务</RouterLink>
         <RouterLink to="/ai">AI</RouterLink>
+        <RouterLink to="/calendar">日历</RouterLink>
+        <RouterLink to="/plans">规划</RouterLink>
         <RouterLink to="/reviews">复盘</RouterLink>
       </nav>
       <div class="tw-header-actions">
@@ -706,11 +708,15 @@ const avatarLetter = computed(() => (
   display: flex;
   align-items: center;
   gap: 2px;
+  max-width: 100%;
   padding: 3px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.tw-nav a { flex: 0 0 auto; }
 .tw-nav a {
   padding: 7px 13px;
   border-radius: 9px;
