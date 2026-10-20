@@ -2480,3 +2480,34 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 课程历史 `recurrence_until` 不会在本次更新中清掉（`series_values` 未覆盖），但后续更新会继续按 course 规则清空 until/count 再校验。
 - 课程时间变更不会主动检查与其它课程的冲突，仍按现有 series 校验语义处理。
 
+## M7-U：AI 修改任务重复规则与重复实例完成
+
+补齐“周期任务”的 AI 编辑和日常完成：AI 可以把任务改成周期任务，首页勾选重复任务时完成的是本周 occurrence。
+
+### 本次范围
+
+- `AgentTaskUpdate` 增加 `repeat`、`repeat_weekdays`、`repeat_until`、`repeat_count`；至少一个变更字段，until/count 互斥，非每周不能带星期。
+- 应用重复规则时锁定 `task_schedules`，拒绝已有 occurrence 状态的任务；按现有 due date/time 构造 `TaskScheduleFields`，用 `resolve_task_schedule`/`task_schedule_values` 写回 frequency/interval/weekdays/until/count。
+- `TaskActionProposalCard` 显示重复规则、重复星期、重复至/次数。
+- 首页 `completeTask` 对重复任务调用 `listTaskOccurrences` + `updateTaskOccurrenceStatus` 完成本周实例；完成后 `loadWeek`/`loadTasks`，本周列表用 open occurrence 过滤，不再把该任务当作本周待办。
+- 任务工作台同样按 occurrence 完成重复任务。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `26159cf` | `feat(ai): 支持 AI 修改任务重复规则` | provider、apply、卡片 |
+| `a703d47` | `fix(web): 重复任务按实例完成并刷新本周列表` | 首页/任务工作台 occurrence 完成与过滤 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「整理心理学导论笔记」改成每周五重复，重复到 12 月 31 日”，提案显示每周五/重复至 12/31；确认后数据库 `recurrence_frequency=weekly`、`recurrence_weekdays=[5]`、`recurrence_until=2026-12-31`。
+- 真实浏览器勾选该重复任务，页面提示“本次重复任务已完成”，任务从本周列表消失；数据库 occurrence `2026-10-23` 状态为 completed。
+- 后端 `pytest ...`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 已有 occurrence 状态的任务不能由 AI 改重复规则，需先在高级任务页处理。
+- 任务工作台完成重复实例后任务行仍会保留（仅首页按本周 occurrence 过滤）；后续应统一。
+- 重复任务完成窗口目前取“今天起 14 天”，更远的实例需翻周后再完成。
+
