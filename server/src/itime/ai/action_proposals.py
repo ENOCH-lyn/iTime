@@ -352,7 +352,8 @@ async def apply_proposal(
             kind="course",
             term_id=term.id,
             name=str(payload["name"]),
-            description="",
+            teacher=str(payload.get("teacher") or ""),
+            description=str(payload.get("description") or ""),
             location=str(payload.get("location") or ""),
             busy=True,
             time_zone=term.time_zone,
@@ -372,6 +373,7 @@ async def apply_proposal(
             owner_id=owner_id,
             source_type="manual",
             source_id=None,
+            course_group_id=uuid4(),
             **series_values(fields, resolved),
         )
         session.add(series)
@@ -868,7 +870,16 @@ async def apply_proposal(
             kind=series.kind,
             term_id=series.term_id,
             name=str(payload.get("name") or series.name),
-            description=series.description,
+            teacher=(
+                str(payload["teacher"])
+                if payload.get("teacher") is not None
+                else series.teacher
+            ),
+            description=(
+                str(payload["description"])
+                if payload.get("description") is not None
+                else series.description
+            ),
             location=(
                 str(payload["location"])
                 if payload.get("location") is not None

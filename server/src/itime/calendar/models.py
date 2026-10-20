@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    Uuid,
     func,
     text,
 )
@@ -774,8 +775,14 @@ class CalendarSeries(Base):
     source_id: Mapped[UUID | None]
     kind: Mapped[str] = mapped_column(String(10))
     name: Mapped[str] = mapped_column(String(200))
+    teacher: Mapped[str] = mapped_column(
+        String(200),
+        default="",
+        server_default="",
+    )
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     location: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    course_group_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     busy: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     source_type: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
     time_zone: Mapped[str] = mapped_column(String(64))

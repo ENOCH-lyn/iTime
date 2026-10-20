@@ -79,6 +79,7 @@ class SeriesFields(Input):
     kind: Literal["course", "fixed"]
     term_id: UUID | None = None
     name: str = Field(min_length=1, max_length=200)
+    teacher: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=20_000)
     location: str = Field(default="", max_length=300)
     busy: bool = True
@@ -97,7 +98,7 @@ class SeriesFields(Input):
     def clean_name(cls, value: str) -> str:
         return clean_required(value)
 
-    @field_validator("description", "location")
+    @field_validator("description", "location", "teacher")
     @classmethod
     def clean_optional_text(cls, value: str) -> str:
         return value.strip()
@@ -110,6 +111,7 @@ class SeriesFields(Input):
 
 class SeriesCreate(SeriesFields):
     operation_id: UUID
+    course_group_id: UUID | None = None
 
 
 class SeriesUpdate(SeriesCreate):

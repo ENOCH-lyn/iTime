@@ -484,6 +484,11 @@ async def create_calendar_series(data: SeriesCreate, request: Request) -> dict:
             predecessor_id=None,
             source_id=None,
             source_type="manual",
+            course_group_id=(
+                data.course_group_id or uuid4()
+                if data.kind == "course"
+                else None
+            ),
             **series_values(data, resolved),
         )
         identity.session.add(series)

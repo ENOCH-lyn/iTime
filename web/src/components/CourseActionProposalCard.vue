@@ -41,6 +41,8 @@ const changes = computed(() => {
       rows.push(`第 ${details.value.week_numbers.join('、')} 周`)
     }
     if (details.value.location) rows.push(`地点 ${String(details.value.location)}`)
+    if (details.value.teacher) rows.push(`教师 ${String(details.value.teacher)}`)
+    if (details.value.description) rows.push('包含课程备注')
     return rows
   }
   if (isException.value) {
@@ -67,6 +69,8 @@ const changes = computed(() => {
   if (Array.isArray(details.value.week_numbers) && details.value.week_numbers.length) {
     rows.push(`上课周次改为 ${details.value.week_numbers.join('、')} 周`)
   }
+  if (details.value.teacher != null) rows.push(`教师改为 ${String(details.value.teacher) || '未设置'}`)
+  if (details.value.description != null) rows.push('更新课程备注')
   if (details.value.weekday != null) {
     const labels = ['', '一', '二', '三', '四', '五', '六', '日']
     rows.push(`上课星期改为 周${labels[Number(details.value.weekday)] ?? details.value.weekday}`)

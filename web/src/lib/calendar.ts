@@ -50,8 +50,10 @@ export interface CalendarSeries extends CalendarLifecycleFields {
   predecessor_id: string | null
   source_id: string | null
   name: string
+  teacher: string
   description: string
   location: string
+  course_group_id: string | null
   busy: boolean
   source_type: 'manual' | 'import' | 'screenshot'
   time_zone: string
@@ -92,8 +94,10 @@ export interface CalendarOccurrence {
   source_id: string | null
   source_type: 'manual' | 'import' | 'screenshot' | 'subscription'
   name: string
+  teacher: string
   description: string
   location: string
+  course_group_id: string | null
   busy: boolean
   status: 'scheduled' | 'cancelled' | 'source_cancelled'
   source_status?: 'scheduled' | 'source_cancelled'
@@ -213,8 +217,10 @@ export interface SeriesDraft {
   kind: CalendarSeries['kind']
   term_id: string | null
   name: string
+  teacher: string
   description: string
   location: string
+  course_group_id?: string | null
   busy: boolean
   time_zone: string | null
   start_date: string | null

@@ -207,6 +207,8 @@ class AgentCourseUpdate(Input):
     assistant_message: str = Field(min_length=1, max_length=4000)
     series_id: UUID
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    teacher: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=20_000)
     location: str | None = Field(default=None, max_length=300)
     starts_at: time | None = None
     ends_at: time | None = None
@@ -217,6 +219,8 @@ class AgentCourseUpdate(Input):
     def has_change(self) -> "AgentCourseUpdate":
         if (
             self.name is None
+            and self.teacher is None
+            and self.description is None
             and self.location is None
             and self.starts_at is None
             and self.ends_at is None
@@ -335,6 +339,8 @@ class AgentCourseCreate(Input):
     assistant_message: str = Field(min_length=1, max_length=4000)
     term_id: UUID
     name: str = Field(min_length=1, max_length=200)
+    teacher: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=20_000)
     location: str = Field(default="", max_length=300)
     weekday: int = Field(ge=1, le=7)
     starts_at: time
@@ -495,9 +501,9 @@ def agent_request_body(
                     "name": "propose_itime_course_update",
                     "description": (
                         "Preview renaming a course, changing its location, its "
-                        "daily start/end time, week numbers, or weekday. Use a "
-                        "series_id from busy_calendar. Nothing changes until the "
-                        "user confirms."
+                        "daily start/end time, week numbers, weekday, teacher, "
+                        "or notes. Use a series_id from busy_calendar. Nothing "
+                        "changes until the user confirms."
                     ),
                     "parameters": AgentCourseUpdate.model_json_schema(),
                 },

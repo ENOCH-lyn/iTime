@@ -251,6 +251,7 @@ function draft(): SeriesDraft | null {
     kind: values.kind,
     term_id: values.termId || null,
     name: values.name.trim(),
+    teacher: '',
     description: values.description,
     location: values.location,
     busy: values.busy,

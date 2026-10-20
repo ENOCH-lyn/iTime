@@ -11,15 +11,19 @@ import {
   ImagePlus,
   MapPin,
   Mic,
+  NotebookText,
   Plus,
   Sparkles,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-vue-next'
 import TimetableBoard from '../components/TimetableBoard.vue'
 import AgentProposalMessageCard from '../components/AgentProposalMessageCard.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
 import TimetableEventDialog, {
+  type CourseSlotForm,
+  type CourseWeekMode,
   type EventFormValues,
 } from '../components/TimetableEventDialog.vue'
 import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
@@ -41,6 +45,7 @@ import {
   getTerm,
   getTimeSettings,
   listCalendarOccurrences,
+  listSeries,
   listTerms,
   saveSeries,
   saveTimeSettings,
@@ -361,9 +366,12 @@ const eventDialogMode = ref<'create' | 'edit'>('create')
 const eventDialogBusy = ref(false)
 const eventDialogError = ref('')
 const editingSeries = ref<CalendarSeries | null>(null)
+const editingSeriesList = ref<CalendarSeries[]>([])
 const eventInitial = ref<EventFormValues>({
   name: '',
   kind: 'course',
+  teacher: '',
+  description: '',
   location: '',
   date: today.value,
   startTime: '09:00',
@@ -372,6 +380,7 @@ const eventInitial = ref<EventFormValues>({
   weekdays: [isoWeekday(today.value)],
   startWeek: 1,
   endWeek: 1,
+  slots: [],
 })
 
 const taskDialogOpen = ref(false)
@@ -523,6 +532,44 @@ function goWeek(event: Event) {
   void loadWeek()
 }
 
+function inferWeekMode(
+  weekNumbers: number[],
+  startWeek: number,
+  endWeek: number,
+): CourseWeekMode {
+  const range = Array.from(
+    { length: Math.max(0, endWeek - startWeek + 1) },
+    (_, index) => startWeek + index,
+  )
+  if (weekNumbers.length === range.length) return 'all'
+  if (weekNumbers.every(week => week % 2 === 1)) return 'odd'
+  if (weekNumbers.every(week => week % 2 === 0)) return 'even'
+  return 'custom'
+}
+
+function slotFromSeries(series: CalendarSeries): CourseSlotForm {
+  const weekNumbers = series.recurrence.week_numbers ?? []
+  const fallbackWeeks = Math.max(1, termWeeks.value.length)
+  const startWeek = weekNumbers.length ? Math.min(...weekNumbers) : 1
+  const endWeek = weekNumbers.length
+    ? Math.min(Math.max(...weekNumbers), fallbackWeeks)
+    : fallbackWeeks
+  return {
+    id: series.id,
+    version: series.version,
+    weekdays: series.recurrence.weekdays.length
+      ? [...series.recurrence.weekdays]
+      : [isoWeekday(series.start_date)],
+    startTime: (series.starts_at || '09:00').slice(0, 5),
+    endTime: (series.ends_at || '10:00').slice(0, 5),
+    location: series.location,
+    startWeek,
+    endWeek,
+    weekMode: inferWeekMode(weekNumbers, startWeek, endWeek),
+    weekNumbers: [...weekNumbers],
+  }
+}
+
 function openCreate(dayIndex: number, startMinutes: number) {
   if (!activeTerm.value) {
     settingsOpen.value = true
@@ -532,10 +579,13 @@ function openCreate(dayIndex: number, startMinutes: number) {
   const date = weekDays.value[dayIndex]?.date ?? today.value
   eventDialogMode.value = 'create'
   editingSeries.value = null
+  editingSeriesList.value = []
   eventDialogError.value = ''
   eventInitial.value = {
     name: '',
     kind: 'course',
+    teacher: '',
+    description: '',
     location: '',
     date,
     startTime: minutesToLabel(startMinutes),
@@ -544,6 +594,18 @@ function openCreate(dayIndex: number, startMinutes: number) {
     weekdays: [isoWeekday(date)],
     startWeek: 1,
     endWeek: Math.max(1, termWeeks.value.length),
+    slots: [{
+      id: null,
+      version: null,
+      weekdays: [isoWeekday(date)],
+      startTime: minutesToLabel(startMinutes),
+      endTime: minutesToLabel(Math.min(startMinutes + 60, 24 * 60 - 30)),
+      location: '',
+      startWeek: 1,
+      endWeek: Math.max(1, termWeeks.value.length),
+      weekMode: 'all',
+      weekNumbers: [],
+    }],
   }
   eventDialogOpen.value = true
 }
@@ -563,6 +625,13 @@ async function editSelected() {
   try {
     const series = await getSeries(occurrence.series_id)
     editingSeries.value = series
+    const group = series.course_group_id
+      ? (await listSeries()).filter(
+        item => item.course_group_id === series.course_group_id,
+      )
+      : [series]
+    editingSeriesList.value = group.length ? group : [series]
+    editingSeries.value = editingSeriesList.value[0] ?? series
     const weekNumbers = series.recurrence.week_numbers ?? []
     const fallbackWeeks = Math.max(1, termWeeks.value.length)
     eventDialogMode.value = 'edit'
@@ -570,6 +639,8 @@ async function editSelected() {
     eventInitial.value = {
       name: series.name,
       kind: series.kind,
+      teacher: series.teacher,
+      description: series.description,
       location: series.location,
       date: series.start_date,
       startTime: (series.starts_at || '09:00').slice(0, 5),
@@ -582,6 +653,9 @@ async function editSelected() {
       endWeek: weekNumbers.length
         ? Math.min(Math.max(...weekNumbers), fallbackWeeks)
         : fallbackWeeks,
+      slots: series.kind === 'course'
+        ? editingSeriesList.value.map(slotFromSeries)
+        : [],
     }
     eventDialogOpen.value = true
   } catch (reason) {
@@ -593,35 +667,72 @@ async function submitEvent(values: EventFormValues) {
   eventDialogBusy.value = true
   eventDialogError.value = ''
   try {
-    let recurrence = emptyRecurrence()
-    let startDate = values.date
+    const term = activeTerm.value
     if (values.kind === 'course') {
-      const term = activeTerm.value
       if (!term) {
         throw new Error('请先在设置里创建学期，再添加课程。')
       }
-      const totalWeeks = Math.max(1, termWeeks.value.length)
-      const startWeek = Math.min(Math.max(values.startWeek, 1), totalWeeks)
-      const endWeek = Math.min(Math.max(values.endWeek, startWeek), totalWeeks)
-      const weekdays = values.weekdays.length
-        ? [...values.weekdays].sort((left, right) => left - right)
-        : [isoWeekday(values.date)]
-      const firstWeekday = Math.min(...weekdays)
-      startDate = addDays(
-        term.first_week_monday,
-        (startWeek - 1) * 7 + firstWeekday - 1,
-      )
-      recurrence = {
-        ...emptyRecurrence(),
-        frequency: 'weekly',
-        weekdays,
-        week_numbers: Array.from(
-          { length: endWeek - startWeek + 1 },
-          (_, index) => startWeek + index,
-        ),
+      if (!values.slots.length) {
+        throw new Error('课程至少需要一个时间段。')
       }
-    } else if (values.repeat) {
-      const term = activeTerm.value
+      const wasEditing = editingSeriesList.value.length > 0
+      const groupId = editingSeriesList.value[0]?.course_group_id
+        ?? crypto.randomUUID()
+      const existingById = new Map(
+        editingSeriesList.value.map(item => [item.id, item]),
+      )
+      const keptIds = new Set<string>()
+      for (const slot of values.slots) {
+        const weekdays = [...slot.weekdays].sort((left, right) => left - right)
+        const weekNumbers = [...slot.weekNumbers].sort((left, right) => left - right)
+        if (!weekdays.length || !weekNumbers.length) {
+          throw new Error('每个时间段都要有上课日和有效周次。')
+        }
+        const recurrence = {
+          ...emptyRecurrence(),
+          frequency: 'weekly' as const,
+          weekdays,
+          week_numbers: weekNumbers,
+        }
+        const draft: SeriesDraft = {
+          kind: 'course',
+          term_id: term.id,
+          name: values.name,
+          teacher: values.teacher,
+          description: values.description,
+          location: slot.location || values.location,
+          course_group_id: groupId,
+          busy: true,
+          time_zone: timeZone.value,
+          start_date: null,
+          starts_at: `${slot.startTime}:00`,
+          ends_at: `${slot.endTime}:00`,
+          end_day_offset: 0,
+          start_period_number: null,
+          end_period_number: null,
+          ambiguous_utc_offset_minutes: null,
+          recurrence,
+        }
+        const existing = slot.id ? existingById.get(slot.id) : null
+        const saved = await saveSeries(existing ?? null, draft)
+        keptIds.add(saved.series.id)
+        if (existing) keptIds.add(existing.id)
+      }
+      for (const item of editingSeriesList.value) {
+        if (!keptIds.has(item.id)) {
+          await trashCalendarSeries(item)
+        }
+      }
+      editingSeries.value = null
+      eventDialogOpen.value = false
+      detailOpen.value = false
+      showNotice(wasEditing ? '课程已保存' : '课程已加入课表')
+      await loadWeek()
+      return
+    }
+
+    let recurrence = emptyRecurrence()
+    if (values.repeat) {
       if (!term) {
         throw new Error('重复安排需要先设置学期。')
       }
@@ -633,14 +744,15 @@ async function submitEvent(values: EventFormValues) {
       }
     }
     const draft: SeriesDraft = {
-      kind: values.kind,
-      term_id: activeTerm.value?.id ?? null,
+      kind: 'fixed',
+      term_id: term?.id ?? null,
       name: values.name,
-      description: editingSeries.value?.description ?? '',
+      teacher: '',
+      description: values.description,
       location: values.location,
       busy: true,
       time_zone: timeZone.value,
-      start_date: startDate,
+      start_date: values.date,
       starts_at: `${values.startTime}:00`,
       ends_at: `${values.endTime}:00`,
       end_day_offset: 0,
@@ -670,14 +782,21 @@ async function submitEvent(values: EventFormValues) {
 async function deleteSelected() {
   const occurrence = selectedEvent.value?.occurrence
   if (!occurrence?.series_id || occurrence.series_version === null) return
-  if (!window.confirm(`删除「${occurrence.name}」及之后的重复安排？`)) return
   try {
-    await trashCalendarSeries({
-      id: occurrence.series_id,
-      version: occurrence.series_version,
-    })
+    const series = await getSeries(occurrence.series_id)
+    const group = series.course_group_id
+      ? (await listSeries()).filter(
+        item => item.course_group_id === series.course_group_id,
+      )
+      : []
+    const targets = group.length ? group : [series]
+    const suffix = targets.length > 1 ? `的 ${targets.length} 个时间段` : ''
+    if (!window.confirm(`删除「${occurrence.name}」${suffix}及之后的重复安排？`)) return
+    for (const item of targets) {
+      await trashCalendarSeries(item)
+    }
     detailOpen.value = false
-    showNotice('安排已移入回收站')
+    showNotice('课程已移入回收站')
     await loadWeek()
   } catch (reason) {
     error.value = failure(reason)
@@ -1473,7 +1592,15 @@ const { pendingLogout, logout } = useAppShell()
             <dt><MapPin :size="15" /> 地点</dt>
             <dd>{{ selectedEvent.subtitle }}</dd>
           </div>
+          <div v-if="selectedEvent.occurrence?.teacher">
+            <dt><UserRound :size="15" /> 教师</dt>
+            <dd>{{ selectedEvent.occurrence.teacher }}</dd>
+          </div>
         </dl>
+        <p v-if="selectedEvent.occurrence?.description" class="tt-detail-desc">
+          <NotebookText :size="15" aria-hidden="true" />
+          {{ selectedEvent.occurrence.description }}
+        </p>
         <div class="tt-detail-actions">
           <button
             v-if="selectedCanEdit"
@@ -2311,6 +2438,9 @@ const { pendingLogout, logout } = useAppShell()
 }
 .tt-detail dd { margin: 0; font-size: 14px; }
 .tt-detail-desc {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin: 12px 0 0;
   font-size: 13px;
   line-height: 1.65;

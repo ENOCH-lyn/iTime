@@ -33,6 +33,7 @@ interface FormValues {
   kind: 'course' | 'fixed'
   termId: string
   name: string
+  teacher: string
   description: string
   location: string
   busy: boolean
@@ -65,6 +66,7 @@ const values = reactive<FormValues>({
   kind: 'fixed',
   termId: '',
   name: '',
+  teacher: '',
   description: '',
   location: '',
   busy: true,
@@ -266,6 +268,7 @@ watch(() => props.open, async open => {
   values.kind = series?.kind ?? (props.terms.length ? 'course' : 'fixed')
   values.termId = series?.term_id ?? (values.kind === 'course' ? props.terms[0]?.id ?? '' : '')
   values.name = series?.name ?? ''
+  values.teacher = series?.teacher ?? ''
   values.description = series?.description ?? ''
   values.location = series?.location ?? ''
   values.busy = series?.busy ?? true
@@ -426,6 +429,7 @@ function draft(): SeriesDraft | null {
     kind: values.kind,
     term_id: values.termId || null,
     name: values.name.trim(),
+    teacher: values.teacher,
     description: values.description,
     location: values.location,
     busy: values.busy,
@@ -564,6 +568,10 @@ async function save() {
         <div class="field">
           <label for="calendar-series-location">地点 <span class="muted">可选</span></label>
           <input id="calendar-series-location" v-model="values.location" maxlength="300" :disabled="pending" />
+        </div>
+        <div class="field">
+          <label for="calendar-series-teacher">教师 <span class="muted">可选</span></label>
+          <input id="calendar-series-teacher" v-model="values.teacher" maxlength="200" :disabled="pending" />
         </div>
         <div class="field">
           <label for="calendar-series-term">学期 {{ values.kind === 'course' ? '' : '（可选）' }}</label>
