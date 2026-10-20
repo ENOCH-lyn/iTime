@@ -145,7 +145,7 @@ async function verifyEmail() {
     acceptSession(session)
     notifySessionChange()
     token.value = ''
-    await router.replace('/ai')
+    await router.replace('/timetable')
   } catch (reason) {
     error.value = failure(reason)
     await nextTick()
@@ -189,7 +189,7 @@ async function submit() {
       })
       acceptSession(session)
       notifySessionChange()
-      await router.replace('/ai')
+      await router.replace('/timetable')
     } else if (props.mode === 'register') {
       const result = await api<{
         message: string
@@ -205,7 +205,7 @@ async function submit() {
       if (result.session) {
         acceptSession(result.session)
         notifySessionChange()
-        await router.replace('/ai')
+        await router.replace('/timetable')
         return
       }
       registrationAwaitingVerification.value = result.verification_required
@@ -330,7 +330,7 @@ async function resend() {
               已创建新的登录会话。此前终止的 AI、导出和临时文件不会自动恢复。
             </p>
             <StatusMessage :success="success" />
-            <ElButton type="primary" class="full-width" @click="router.replace('/ai')">
+            <ElButton type="primary" class="full-width" @click="router.replace('/timetable')">
               进入 iTime<ArrowRight :size="18" aria-hidden="true" />
             </ElButton>
           </template>

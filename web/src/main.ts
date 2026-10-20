@@ -15,6 +15,7 @@ const router = createRouter({
       component: () => import('./pages/AuthPage.vue'), props: { mode },
     })),
     { path: '/ai', component: () => import('./pages/AIPage.vue') },
+    { path: '/timetable', component: () => import('./pages/TimetablePage.vue') },
     { path: '/tasks', component: () => import('./pages/TasksPage.vue') },
     { path: '/plans', component: () => import('./pages/PlansPage.vue') },
     { path: '/calendar', component: () => import('./pages/CalendarPage.vue') },

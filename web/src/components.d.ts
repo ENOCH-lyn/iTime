@@ -76,6 +76,7 @@ declare module 'vue' {
     ProposalMessageCard: typeof import('./components/ProposalMessageCard.vue')['default']
     PublicSiteFooter: typeof import('./components/PublicSiteFooter.vue')['default']
     PublicSiteHeader: typeof import('./components/PublicSiteHeader.vue')['default']
+    QuickTaskDialog: typeof import('./components/QuickTaskDialog.vue')['default']
     QuotaOverview: typeof import('./components/QuotaOverview.vue')['default']
     RecoveryCodesPanel: typeof import('./components/RecoveryCodesPanel.vue')['default']
     ReviewFacts: typeof import('./components/ReviewFacts.vue')['default']
@@ -94,6 +95,8 @@ declare module 'vue' {
     TaskListPanel: typeof import('./components/TaskListPanel.vue')['default']
     TaskScheduleEditor: typeof import('./components/TaskScheduleEditor.vue')['default']
     TaskWorkspaceNavigation: typeof import('./components/TaskWorkspaceNavigation.vue')['default']
+    TimetableBoard: typeof import('./components/TimetableBoard.vue')['default']
+    TimetableEventDialog: typeof import('./components/TimetableEventDialog.vue')['default']
     TimetableImportMessageCard: typeof import('./components/TimetableImportMessageCard.vue')['default']
     VoiceTranscriptionControl: typeof import('./components/VoiceTranscriptionControl.vue')['default']
   }

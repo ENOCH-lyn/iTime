@@ -107,6 +107,17 @@ onMounted(async () => {
     ? route.query.difficulty
     : null
   if (difficultyId) await prepareDifficultyDraft(difficultyId)
+  const prompt = typeof route.query.prompt === 'string'
+    ? route.query.prompt.trim()
+    : ''
+  if (prompt) {
+    composer.value = prompt
+    await send()
+    await router.replace({
+      path: '/ai',
+      query: selected.value ? { conversation: selected.value.id } : {},
+    })
+  }
   window.addEventListener('focus', recoverOnFocus)
   document.addEventListener('visibilitychange', recoverOnFocus)
 })

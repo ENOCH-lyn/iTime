@@ -43,7 +43,7 @@ function logoutFromDrawer() {
     </header>
 
     <aside class="app-shell-primary" aria-label="主要导航">
-      <RouterLink to="/ai" class="app-shell-brand">
+      <RouterLink to="/timetable" class="app-shell-brand">
         i<span aria-hidden="true">Time</span>
       </RouterLink>
       <ProductNavigation :current="(current ?? 'ai')" />
