@@ -1,5 +1,5 @@
 """AI tool-driven write-preview proposals."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -25,8 +25,13 @@ from itime.database import Base
 from itime.errors import AppError
 from itime.public_links.service import stop_public_link_fetches_for_task
 from itime.tasks.lifecycle_service import expire_task_operation_responses
-from itime.tasks.models import Task
+from itime.tasks.models import Task, TaskSchedule
 from itime.tasks.progress_service import complete_task
+from itime.tasks.schedule_service import (
+    resolve_task_schedule,
+    task_schedule_values,
+)
+from itime.tasks.schemas import RecurrenceInput, TaskScheduleFields
 from itime.tasks.service import (
     emit_change,
     ensure_task_editable,
@@ -307,6 +312,46 @@ async def apply_proposal(
             task.estimate_source = "ai"
         if priority is not None:
             task.priority = int(priority)
+        due_date_value = payload.get("due_date")
+        if due_date_value is not None:
+            schedule = await session.scalar(
+                select(TaskSchedule)
+                .where(
+                    TaskSchedule.task_id == task.id,
+                    TaskSchedule.owner_id == owner_id,
+                )
+                .with_for_update()
+            )
+            if schedule is None or schedule.time_zone is None:
+                raise AppError(
+                    "task_schedule_unavailable",
+                    "此任务缺少时间设置，暂时不能由 AI 修改日期。",
+                    status=409,
+                )
+            if schedule.recurrence_frequency != "none":
+                raise AppError(
+                    "ai_recurring_task_date_unsupported",
+                    "暂不支持由 AI 修改重复任务的日期，请先在任务页调整重复规则。",
+                    status=409,
+                )
+            fields = TaskScheduleFields(
+                due_kind="date",
+                due_date=date.fromisoformat(str(due_date_value)),
+                due_time=None,
+                time_zone=schedule.time_zone,
+                splittable=schedule.splittable,
+                minimum_block_minutes=schedule.minimum_block_minutes,
+                recurrence=RecurrenceInput(),
+            )
+            resolved = await resolve_task_schedule(
+                session,
+                owner_id,
+                task,
+                fields,
+            )
+            for field, value in task_schedule_values(fields, resolved).items():
+                setattr(schedule, field, value)
+            schedule.updated_at = current_time
         task.version += 1
         task.updated_at = current_time
         emit_change(session, owner_id, "task", task.id, "updated", task.version)

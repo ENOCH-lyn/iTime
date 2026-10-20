@@ -48,6 +48,10 @@ const changes = computed(() => {
     const labels = ['未设置', '低', '中', '高']
     rows.push(`优先级 ${labels[Number(details.priority)] ?? details.priority}`)
   }
+  if (details.due_date != null) {
+    const parts = String(details.due_date).split('-')
+    rows.push(`截止日期改为 ${Number(parts[1])}月${Number(parts[2])}日`)
+  }
   return rows
 })
 
