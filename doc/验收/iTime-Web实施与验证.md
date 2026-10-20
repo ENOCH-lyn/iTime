@@ -2334,3 +2334,31 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 重复任务的“完成某一次”仍需要 occurrence 上下文，当前工具只支持非重复任务，重复任务会返回服务端错误。
 - 卡片中的任务名来自创建提案时的快照；若任务在确认前改名，应用仍按 ID 生效，预览可能与最新标题不一致。
 
+## M7-P：AI 删除任务
+
+补齐任务“增删改”中的删除：AI 生成删除预览，用户确认后走与手动删除相同的 30 天回收站语义。
+
+### 本次范围
+
+- 迁移 `0044_ai_action_delete_task`：`ai_action_proposals` 的 `tool_name` 白名单加入 `delete_task`；降级时先清理该工具的历史提案，再恢复旧约束。
+- Agent 新增 `propose_itime_task_delete`；解析、AIJob 输出与卡片沿用 `task_action` 通道。
+- 应用逻辑：校验所有权、可编辑/可读、pending、过期和版本；写入 `deleted_at`、`purge_after=+30 天`，停止公开链接抓取并发出同步变更，复用任务墓碑语义。
+- `TaskActionProposalCard` 支持删除标题、回收站说明与“确认删除”。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `24ae466` | `feat(ai): 支持 AI 删除任务并移入回收站` | 迁移、provider 工具、apply、卡片、测试 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「复习数据结构：链表与栈」这个任务删掉”，AI 返回删除提案；确认后任务从首页移除，数据库记录回收站时间。
+- 迁移 `0044` 执行 `downgrade -1` 与 `upgrade head` 均成功（降级会清理 `delete_task` 历史提案以避免约束冲突）。
+- `uv run pytest tests/test_agent_provider.py tests/ai/test_action_proposals.py -q -W ignore::pytest.PytestUnraisableExceptionWarning`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 删除是软删除，30 天后由既有 cleanup worker 物理清理；AI 不提供“永久删除”。
+- 仍不支持 AI 修改任务日期/重复规则、修改/删除课程与计划块。
+

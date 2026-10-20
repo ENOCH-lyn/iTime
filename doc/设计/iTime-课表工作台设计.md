@@ -55,9 +55,10 @@
 - **任务安排**：AI 调用既有 `propose_itime_task_plan` 工具，面板内渲染 `AgentProposalMessageCard`。用户点“确认添加”后调用 apply，当前事务创建任务与计划块；计划块以“计划”样式出现在课表，任务按排期归入“本周”。
 - **周期性课表**：AI 调用既有 `propose_itime_timetable_import` 工具，创建课表导入批次；面板显示“查看并确认课表导入”，弹窗内复用 `TimetableImportMessageCard` 校对候选并确认，写入日历系列。
 - **任务修改/完成**：AI 调用 `propose_itime_task_update` 或 `propose_itime_task_complete`，面板内渲染 `TaskActionProposalCard`；确认后调用 `/api/v1/ai/tool-proposals/{id}/apply`，由任务服务校验所有权、可编辑性和版本，再更新标题/描述/估时/优先级或标记完成；重复任务必须指定 occurrence，当前会拒绝整条完成。
+- **任务删除**：AI 调用 `propose_itime_task_delete`，卡片显示“删除任务”，确认后按任务回收站语义写入 `deleted_at` 与 30 天清理时间，并停止公开链接抓取；确认前不改变数据。
 - 纯文本回复直接显示在面板内；保留“在完整对话中继续”链接，进入 `/ai` 查看完整会话。
 - 所有写入都必须先预览、后确认；与固定课程冲突时服务端拒绝应用，错误显示在卡片内（例如 15 分钟缓冲不足的 `plan_fixed_conflict`）。
-- 当前接入的是对话 Agent 的四项工具（任务计划、课表导入、任务更新、任务完成）；`ai/tools` 中面向规划/复盘/记忆的通用写预览工具仍属于 S2-D3，尚未接入。
+- 当前接入的是对话 Agent 的五项工具（任务计划、课表导入、任务更新、任务完成、任务删除）；`ai/tools` 中面向规划/复盘/记忆的通用写预览工具仍属于 S2-D3，尚未接入。
 
 ## 6. 视觉
 
