@@ -1632,6 +1632,7 @@ const { pendingLogout, logout } = useAppShell()
 <style scoped>
 .tt-page {
   min-height: 100dvh;
+  overflow-x: clip;
   background:
     radial-gradient(1200px 480px at 12% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
     var(--canvas);
