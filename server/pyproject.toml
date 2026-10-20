@@ -24,6 +24,7 @@ dependencies = [
     "defusedxml>=0.7,<1",
     "python-multipart>=0.0.32",
     "rapidocr-onnxruntime>=1.4,<2",
+    "vosk>=0.3.45",
 ]
 
 [dependency-groups]

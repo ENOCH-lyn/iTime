@@ -34,6 +34,7 @@ import QuickTaskDialog, {
 import { failure, type Failure } from '../lib/api'
 import { getAIJob, type AIJob } from '../lib/ai-jobs'
 import { createAIImport } from '../lib/calendar-imports'
+import { transcribeVoice } from '../lib/voice'
 import { identity, refreshSession } from '../lib/auth'
 import {
   getSeries,
@@ -399,30 +400,10 @@ const aiImportBatchId = ref<string | null>(null)
 const aiImageBusy = ref(false)
 const aiImageInput = ref<HTMLInputElement | null>(null)
 const aiListening = ref(false)
-let aiRecognition: {
-  lang: string
-  interimResults: boolean
-  continuous: boolean
-  onstart: (() => void) | null
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null
-  onerror: ((event: { error?: string }) => void) | null
-  onend: (() => void) | null
-  start: () => void
-  stop: () => void
-} | null = null
-
-interface SpeechRecognitionResultLike {
-  readonly length: number
-  [index: number]: { transcript: string }
-}
-
-interface SpeechRecognitionEventLike {
-  resultIndex: number
-  results: {
-    readonly length: number
-    [index: number]: SpeechRecognitionResultLike
-  }
-}
+const aiTranscribing = ref(false)
+let mediaRecorder: MediaRecorder | null = null
+let mediaStream: MediaStream | null = null
+let audioChunks: Blob[] = []
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
 
@@ -520,7 +501,8 @@ onMounted(async () => {
 onUnmounted(() => {
   window.clearInterval(clockTimer)
   window.clearTimeout(noticeTimer)
-  aiRecognition?.stop()
+  mediaRecorder?.stop()
+  mediaStream?.getTracks().forEach(track => track.stop())
 })
 
 function moveWeek(offset: number) {
@@ -1087,54 +1069,66 @@ async function handleImageSelected(event: Event) {
 }
 
 function toggleVoice() {
-  if (aiListening.value && aiRecognition) {
-    aiRecognition.stop()
+  if (aiTranscribing.value) return
+  if (aiListening.value && mediaRecorder) {
+    mediaRecorder.stop()
     return
   }
-  const speechWindow = window as unknown as {
-    SpeechRecognition?: new () => NonNullable<typeof aiRecognition>
-    webkitSpeechRecognition?: new () => NonNullable<typeof aiRecognition>
-  }
-  const SpeechCtor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
-  if (!SpeechCtor) {
-    showNotice('当前浏览器不支持语音识别，请直接输入课表')
+  void startRecording()
+}
+
+async function startRecording() {
+  if (
+    !navigator.mediaDevices?.getUserMedia
+    || typeof MediaRecorder === 'undefined'
+  ) {
+    showNotice('当前浏览器不支持录音，请直接输入课表')
     return
   }
-  const recognition = new SpeechCtor()
-  recognition.lang = 'zh-CN'
-  recognition.interimResults = true
-  recognition.continuous = false
-  recognition.onstart = () => {
-    aiListening.value = true
-  }
-  recognition.onresult = (event) => {
-    let transcript = ''
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      transcript += event.results[index]?.[0]?.transcript ?? ''
-    }
-    if (transcript.trim()) {
-      aiPrompt.value = `${aiPrompt.value.trim()} ${transcript}`.trim()
-    }
-  }
-  recognition.onerror = (event) => {
-    aiListening.value = false
-    if (event.error !== 'aborted') {
-      showNotice(
-        event.error === 'not-allowed'
-          ? '需要麦克风权限，或直接输入课表'
-          : '语音识别暂不可用，请直接输入课表',
-      )
-    }
-  }
-  recognition.onend = () => {
-    aiListening.value = false
-  }
-  aiRecognition = recognition
   try {
-    recognition.start()
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunks = []
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : ''
+    mediaRecorder = new MediaRecorder(
+      mediaStream,
+      mimeType ? { mimeType } : undefined,
+    )
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunks.push(event.data)
+    }
+    mediaRecorder.onstop = () => {
+      aiListening.value = false
+      const blob = new Blob(audioChunks, {
+        type: mediaRecorder?.mimeType || 'audio/webm',
+      })
+      mediaStream?.getTracks().forEach(track => track.stop())
+      mediaStream = null
+      if (!blob.size) {
+        showNotice('没有录到声音，请重试或直接输入')
+        return
+      }
+      aiTranscribing.value = true
+      void transcribeVoice(blob)
+        .then(({ text }) => {
+          if (!text.trim()) {
+            showNotice('没有听清，请重试或直接输入课表')
+            return
+          }
+          aiPrompt.value = `${aiPrompt.value.trim()} ${text.trim()}`.trim()
+        })
+        .catch((reason) => {
+          showNotice(failure(reason).message)
+        })
+        .finally(() => {
+          aiTranscribing.value = false
+        })
+    }
+    mediaRecorder.start()
+    aiListening.value = true
   } catch {
-    aiListening.value = false
-    showNotice('语音识别启动失败，请直接输入课表')
+    showNotice('需要麦克风权限，或直接输入课表')
   }
 }
 
@@ -1399,7 +1393,7 @@ const { pendingLogout, logout } = useAppShell()
             @click="toggleVoice"
           >
             <Mic :size="15" aria-hidden="true" />
-            {{ aiListening ? '正在听…' : '口述' }}
+            {{ aiListening ? '录音中…' : (aiTranscribing ? '识别中…' : '口述') }}
           </button>
           <span>截图 / 相册 / 语音，自动识别课程</span>
           <input

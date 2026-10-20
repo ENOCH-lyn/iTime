@@ -25,6 +25,7 @@ hosts.yml
 logs/
 
 # Python and Vue development artifacts
+server/models/
 node_modules/
 dist/
 build/

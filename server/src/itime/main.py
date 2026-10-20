@@ -22,6 +22,7 @@ from itime.ai.job_router import router as ai_job_router
 from itime.ai.privacy_router import router as privacy_settings_router
 from itime.ai.tool_proposal_router import router as ai_tool_proposal_router
 from itime.ai.transcription_router import router as transcription_router
+from itime.ai.voice_router import router as ai_voice_router
 from itime.auth.router import router as auth_router
 from itime.auth.security import Security
 from itime.calendar.ai_import_router import router as calendar_ai_import_router
@@ -82,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ai_agent_router)
     app.include_router(ai_conversation_router)
     app.include_router(ai_tool_proposal_router)
+    app.include_router(ai_voice_router)
     app.include_router(ai_job_router)
     app.include_router(transcription_router)
     app.include_router(privacy_settings_router)
