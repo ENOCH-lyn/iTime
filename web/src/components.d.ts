@@ -91,6 +91,7 @@ declare module 'vue' {
     StatusMessage: typeof import('./components/StatusMessage.vue')['default']
     SyncSettings: typeof import('./components/SyncSettings.vue')['default']
     SyncStatusIndicator: typeof import('./components/SyncStatusIndicator.vue')['default']
+    TaskActionProposalCard: typeof import('./components/TaskActionProposalCard.vue')['default']
     TaskEditor: typeof import('./components/TaskEditor.vue')['default']
     TaskListPanel: typeof import('./components/TaskListPanel.vue')['default']
     TaskScheduleEditor: typeof import('./components/TaskScheduleEditor.vue')['default']

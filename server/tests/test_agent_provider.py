@@ -1,9 +1,12 @@
 import json
+from uuid import uuid4
 
 import pytest
 
 from itime.ai.conversation_provider import (
+    AgentTaskComplete,
     AgentTaskPlan,
+    AgentTaskUpdate,
     AgentTimetableImport,
     ConversationProviderError,
     _agent_json_result,
@@ -40,12 +43,21 @@ def test_agent_request_exposes_only_confirmed_task_plan_tool() -> None:
     assert [item["function"]["name"] for item in body["tools"]] == [
         "propose_itime_task_plan",
         "propose_itime_timetable_import",
+        "propose_itime_task_update",
+        "propose_itime_task_complete",
     ]
     assert "2026-10-08" in body["messages"][1]["content"]
 
 
 def test_agent_response_accepts_text_or_task_plan() -> None:
-    content, task_plan, timetable_import, usage = _agent_json_result(
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        usage,
+    ) = _agent_json_result(
         json.dumps(
             {
                 "choices": [
@@ -60,6 +72,8 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert content == "可以，先确认目标。"
     assert task_plan is None
     assert timetable_import is None
+    assert task_update is None
+    assert task_complete is None
     assert usage == {"total_tokens": 12}
 
     arguments = {
@@ -72,7 +86,14 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         "ends_at": "11:00:00",
         "assumptions": ["上午按 09:00 开始。"],
     }
-    content, task_plan, timetable_import, _ = _agent_json_result(
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        _,
+    ) = _agent_json_result(
         json.dumps(
             {
                 "choices": [
@@ -100,13 +121,22 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert content == arguments["assistant_message"]
     assert task_plan == AgentTaskPlan.model_validate(arguments)
     assert timetable_import is None
+    assert task_update is None
+    assert task_complete is None
 
     import_arguments = {
         "assistant_message": "我已整理为待确认的课表导入。",
         "source_type": "text",
         "content": "每周一、三 08:00 高等数学，持续到 2027-01-10",
     }
-    content, task_plan, timetable_import, _ = _agent_json_result(
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        _,
+    ) = _agent_json_result(
         json.dumps(
             {
                 "choices": [
@@ -142,6 +172,96 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
     assert timetable_import == AgentTimetableImport.model_validate(
         import_arguments
     )
+    assert task_update is None
+    assert task_complete is None
+
+    task_id = uuid4()
+    update_arguments = {
+        "assistant_message": "把预计用时改为 90 分钟。",
+        "task_id": str(task_id),
+        "estimated_minutes": 90,
+    }
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        _,
+    ) = _agent_json_result(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": "propose_itime_task_update",
+                                        "arguments": json.dumps(update_arguments),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ).encode(),
+        "request-4",
+        200,
+    )
+    assert content == update_arguments["assistant_message"]
+    assert task_update == AgentTaskUpdate.model_validate(update_arguments)
+    assert task_plan is None
+    assert timetable_import is None
+    assert task_complete is None
+
+    complete_arguments = {
+        "assistant_message": "完成后告诉我。",
+        "task_id": str(task_id),
+    }
+    (
+        content,
+        task_plan,
+        timetable_import,
+        task_update,
+        task_complete,
+        _,
+    ) = _agent_json_result(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "type": "function",
+                                    "function": {
+                                        "name": "propose_itime_task_complete",
+                                        "arguments": json.dumps(complete_arguments),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ).encode(),
+        "request-5",
+        200,
+    )
+    assert content == complete_arguments["assistant_message"]
+    assert task_complete == AgentTaskComplete.model_validate(
+        complete_arguments
+    )
+    assert task_plan is None
+    assert timetable_import is None
+    assert task_update is None
 
 
 def test_agent_response_rejects_unaligned_or_unknown_tool() -> None:

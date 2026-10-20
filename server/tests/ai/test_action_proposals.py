@@ -14,7 +14,7 @@ from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
 from tests.conftest import psycopg_url
-from tests.test_tasks import create_account
+from tests.test_tasks import create_account, create_task
 
 pytestmark = pytest.mark.integration
 
@@ -124,9 +124,10 @@ def test_get_proposal_raises_app_error_when_missing(client, database_url):
     asyncio.run(run())
 
 
-def test_apply_and_reject_raise_not_implemented(client, database_url):
+def test_apply_updates_task_completes_and_reject_blocks(client, database_url):
     _, owner_id_value = create_account(client, database_url)
     owner_id = UUID(owner_id_value)
+    task = create_task(client, title="AI 待更新任务", estimated_minutes=30)
     conversation_id = _seed_conversation(database_url, owner_id)
     database = Database(Settings(database_url=database_url, environment="test"))
     now = datetime(2026, 10, 10, 9, 0, tzinfo=UTC)
@@ -135,24 +136,74 @@ def test_apply_and_reject_raise_not_implemented(client, database_url):
         from itime.ai.action_proposals import apply_proposal, reject_proposal
 
         async with database.transaction() as session:
-            proposal = await create_proposal(
+            update = await create_proposal(
                 session,
                 owner_id,
                 conversation_id=conversation_id,
                 source_message_id=None,
-                tool_name="trash_memory",
-                operation_id="apply-check",
-                preview={"summary": "回收记忆"},
-                payload={"memory_id": "x"},
-                expected_version=1,
+                tool_name="update_task",
+                operation_id="apply-update",
+                preview={"summary": "更新任务"},
+                payload={
+                    "task_id": task["id"],
+                    "title": "AI 已更新任务",
+                    "estimated_minutes": 90,
+                },
+                expected_version=None,
                 current_time=now,
             )
-            with pytest.raises(AppError) as apply_err:
-                await apply_proposal(session, owner_id, proposal.id, current_time=now)
-            assert apply_err.value.status == 501
-            with pytest.raises(AppError) as reject_err:
-                await reject_proposal(session, owner_id, proposal.id, current_time=now)
-            assert reject_err.value.status == 501
+            applied = await apply_proposal(
+                session,
+                owner_id,
+                update.id,
+                expected_version=update.version,
+                current_time=now,
+            )
+            assert applied["task"]["title"] == "AI 已更新任务"
+            assert applied["task"]["estimated_minutes"] == 90
+            assert applied["proposal"]["status"] == "applied"
+
+            rejected = await create_proposal(
+                session,
+                owner_id,
+                conversation_id=conversation_id,
+                source_message_id=None,
+                tool_name="complete_task",
+                operation_id="reject-complete",
+                preview={"summary": "完成任务"},
+                payload={"task_id": task["id"]},
+                expected_version=None,
+                current_time=now,
+            )
+            rejected_result = await reject_proposal(
+                session,
+                owner_id,
+                rejected.id,
+                expected_version=rejected.version,
+                current_time=now,
+            )
+            assert rejected_result["proposal"]["status"] == "rejected"
+
+            complete = await create_proposal(
+                session,
+                owner_id,
+                conversation_id=conversation_id,
+                source_message_id=None,
+                tool_name="complete_task",
+                operation_id="apply-complete",
+                preview={"summary": "完成任务"},
+                payload={"task_id": task["id"]},
+                expected_version=None,
+                current_time=now,
+            )
+            completed = await apply_proposal(
+                session,
+                owner_id,
+                complete.id,
+                expected_version=complete.version,
+                current_time=now,
+            )
+            assert completed["task"]["status"] == "completed"
 
     import asyncio
 

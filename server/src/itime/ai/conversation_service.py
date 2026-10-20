@@ -1,13 +1,14 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itime.ai.action_proposals import create_proposal
 from itime.ai.conversation_models import (
     AIJobEvent,
     ChatGeneration,
@@ -1188,6 +1189,7 @@ async def complete_conversation_job(
             provider_cost=finalized.provider_cost,
         )
         proposal = None
+        action_proposal = None
         if result.task_plan is not None:
             proposal = _create_task_plan_proposal(
                 session,
@@ -1219,6 +1221,70 @@ async def complete_conversation_job(
                     "code": exc.code,
                     "message": exc.message,
                 }
+        action_task_title = None
+        if result.task_update is not None or result.task_complete is not None:
+            action_task_id = (
+                result.task_update.task_id
+                if result.task_update is not None
+                else result.task_complete.task_id
+            )
+            action_task = await session.scalar(
+                select(Task).where(
+                    Task.id == action_task_id,
+                    Task.owner_id == job.owner_id,
+                )
+            )
+            action_task_title = action_task.title if action_task is not None else None
+        if result.task_update is not None:
+            action = result.task_update
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="update_task",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-task-action:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message"},
+                        ),
+                        "task_title": action_task_title,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
+        elif result.task_complete is not None:
+            action = result.task_complete
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="complete_task",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-task-action:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message"},
+                        ),
+                        "task_title": action_task_title,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         message.content = (
             result.content
             if import_error is None
@@ -1236,6 +1302,14 @@ async def complete_conversation_job(
             **(
                 {"proposal_id": str(proposal.id), "proposal_kind": proposal.kind}
                 if proposal is not None
+                else {}
+            ),
+            **(
+                {
+                    "proposal_id": str(action_proposal.id),
+                    "proposal_kind": "task_action",
+                }
+                if action_proposal is not None
                 else {}
             ),
             **(

@@ -23,6 +23,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from itime.database import Base
 from itime.errors import AppError
+from itime.tasks.models import Task
+from itime.tasks.progress_service import complete_task
+from itime.tasks.service import emit_change, ensure_task_editable, task_detail
 
 PROPOSAL_EXPIRY = timedelta(days=7)
 
@@ -243,13 +246,89 @@ async def apply_proposal(
     owner_id: UUID,
     proposal_id: UUID,
     *,
+    expected_version: int,
     current_time: datetime,
 ) -> dict:
-    raise AppError(
-        "ai_tool_apply_not_implemented",
-        "功能将在 D3 阶段开放。",
-        status=501,
+    proposal = await get_proposal(session, owner_id, proposal_id, lock=True)
+    if proposal.status == "applied":
+        return {"proposal": proposal_result(proposal)}
+    if proposal.status != "pending":
+        raise AppError(
+            "ai_action_proposal_not_pending",
+            "此 AI 预览已处理，不能重复确认。",
+            status=409,
+            details={"status": proposal.status},
+        )
+    if proposal.expires_at <= current_time:
+        proposal.status = "expired"
+        proposal.updated_at = current_time
+        proposal.version += 1
+        raise AppError(
+            "ai_action_proposal_expired",
+            "此 AI 预览已过期，请重新生成。",
+            status=409,
+        )
+    if proposal.version != expected_version:
+        raise AppError(
+            "ai_action_proposal_version_conflict",
+            "此 AI 预览已在其他页面更新，请刷新后重试。",
+            status=409,
+            details={"current_version": proposal.version},
+        )
+    payload = proposal.payload
+    task_id = UUID(str(payload.get("task_id")))
+    task = await session.scalar(
+        select(Task).where(Task.id == task_id, Task.owner_id == owner_id)
     )
+    if task is None:
+        raise AppError("task_not_found", "未找到此任务。", status=404)
+    if proposal.tool_name == "update_task":
+        ensure_task_editable(task)
+        title = payload.get("title")
+        description = payload.get("description")
+        estimated_minutes = payload.get("estimated_minutes")
+        priority = payload.get("priority")
+        if title is not None:
+            task.title = str(title)
+        if description is not None:
+            task.description = str(description)
+        if estimated_minutes is not None:
+            task.estimated_minutes = int(estimated_minutes)
+            task.estimate_source = "ai"
+        if priority is not None:
+            task.priority = int(priority)
+        task.version += 1
+        task.updated_at = current_time
+        emit_change(session, owner_id, "task", task.id, "updated", task.version)
+        await session.flush()
+        task_result = await task_detail(session, task)
+    elif proposal.tool_name == "complete_task":
+        task_result, _, _ = await complete_task(
+            session,
+            owner_id,
+            task,
+            None,
+            None,
+            changed_at=current_time,
+        )
+    else:
+        raise AppError(
+            "ai_action_proposal_unsupported",
+            "此 AI 预览类型暂不支持应用。",
+            status=422,
+            details={"tool_name": proposal.tool_name},
+        )
+    proposal.status = "applied"
+    proposal.applied_at = current_time
+    proposal.updated_at = current_time
+    proposal.applied_resource_id = task.id
+    proposal.applied_resource_version = task.version
+    proposal.version += 1
+    await session.flush()
+    return {
+        "proposal": proposal_result(proposal),
+        "task": task_result,
+    }
 
 
 async def reject_proposal(
@@ -257,13 +336,30 @@ async def reject_proposal(
     owner_id: UUID,
     proposal_id: UUID,
     *,
+    expected_version: int,
     current_time: datetime,
 ) -> dict:
-    raise AppError(
-        "ai_tool_apply_not_implemented",
-        "功能将在 D3 阶段开放。",
-        status=501,
-    )
+    proposal = await get_proposal(session, owner_id, proposal_id, lock=True)
+    if proposal.status == "applied":
+        raise AppError(
+            "ai_action_proposal_already_applied",
+            "此 AI 预览已经确认，不能再拒绝。",
+            status=409,
+        )
+    if proposal.status == "pending":
+        if proposal.version != expected_version:
+            raise AppError(
+                "ai_action_proposal_version_conflict",
+                "此 AI 预览已在其他页面更新，请刷新后重试。",
+                status=409,
+                details={"current_version": proposal.version},
+            )
+        proposal.status = "rejected"
+        proposal.rejected_at = current_time
+        proposal.updated_at = current_time
+        proposal.version += 1
+        await session.flush()
+    return {"proposal": proposal_result(proposal)}
 
 
 async def expire_proposals(

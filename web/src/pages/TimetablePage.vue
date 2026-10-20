@@ -21,6 +21,7 @@ import TimetableEventDialog, {
   type EventFormValues,
 } from '../components/TimetableEventDialog.vue'
 import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
+import TaskActionProposalCard from '../components/TaskActionProposalCard.vue'
 import QuickTaskDialog, {
   type TaskFormValues,
   type TaskRepeat,
@@ -364,6 +365,7 @@ const aiBusy = ref(false)
 const aiError = ref('')
 const aiReply = ref('')
 const aiProposalId = ref<string | null>(null)
+const aiTaskProposalId = ref<string | null>(null)
 const aiImportBatchId = ref<string | null>(null)
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
@@ -922,6 +924,7 @@ async function askAI(prompt = aiPrompt.value) {
   aiError.value = ''
   aiReply.value = ''
   aiProposalId.value = null
+  aiTaskProposalId.value = null
   aiImportBatchId.value = null
   try {
     const created = await createConversation(crypto.randomUUID())
@@ -937,7 +940,11 @@ async function askAI(prompt = aiPrompt.value) {
     const job = await waitForAIJob(result.job.id)
     if (job.error) throw new Error(job.error.message)
     const output = job.output
-    if (output?.proposal_id) aiProposalId.value = output.proposal_id
+    if (output?.proposal_kind === 'task_action' && output.proposal_id) {
+      aiTaskProposalId.value = output.proposal_id
+    } else if (output?.proposal_id) {
+      aiProposalId.value = output.proposal_id
+    }
     if (output?.import_batch_id) {
       aiImportBatchId.value = output.import_batch_id
       aiReviewOpen.value = true
@@ -1220,12 +1227,18 @@ const avatarLetter = computed(() => (
           <span class="tt-ai-running-dot" /> 正在读取课表并生成安排
         </div>
         <p v-if="aiError" class="tt-ai-error" role="alert">{{ aiError }}</p>
-        <p v-if="aiReply && !aiProposalId && !aiImportBatchId" class="tt-ai-reply">
+        <p v-if="aiReply && !aiProposalId && !aiTaskProposalId && !aiImportBatchId" class="tt-ai-reply">
           {{ aiReply }}
         </p>
         <AgentProposalMessageCard
           v-if="aiProposalId"
           :proposal-id="aiProposalId"
+          class="tt-ai-proposal"
+          @applied="aiProposalApplied"
+        />
+        <TaskActionProposalCard
+          v-if="aiTaskProposalId"
+          :proposal-id="aiTaskProposalId"
           class="tt-ai-proposal"
           @applied="aiProposalApplied"
         />

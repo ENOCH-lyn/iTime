@@ -1,0 +1,158 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { Check, LoaderCircle, Pencil, X } from 'lucide-vue-next'
+import { failure } from '../lib/api'
+import {
+  applyToolProposal,
+  getToolProposal,
+  rejectToolProposal,
+  type ToolProposal,
+} from '../lib/tool-proposals'
+
+const props = defineProps<{ proposalId: string }>()
+const emit = defineEmits<{ applied: [] }>()
+const proposal = ref<ToolProposal | null>(null)
+const loading = ref(false)
+const pending = ref(false)
+const error = ref('')
+
+const title = computed(() => {
+  const details = proposal.value?.preview.details ?? {}
+  return String(details.task_title ?? '此任务')
+})
+const summary = computed(() => proposal.value?.preview.summary ?? '')
+const isComplete = computed(() => proposal.value?.tool_name === 'complete_task')
+const statusLabel = computed(() => {
+  if (!proposal.value) return ''
+  if (proposal.value.status === 'pending') return '待确认'
+  if (proposal.value.status === 'applied') return '已应用'
+  if (proposal.value.status === 'rejected') return '已拒绝'
+  return '已过期'
+})
+const changes = computed(() => {
+  const details = proposal.value?.preview.details ?? {}
+  const rows: string[] = []
+  if (details.title != null) rows.push(`名称改为「${String(details.title)}」`)
+  if (details.description != null) rows.push('更新描述')
+  if (details.estimated_minutes != null) {
+    rows.push(`预计用时 ${String(details.estimated_minutes)} 分钟`)
+  }
+  if (details.priority != null) {
+    const labels = ['未设置', '低', '中', '高']
+    rows.push(`优先级 ${labels[Number(details.priority)] ?? details.priority}`)
+  }
+  return rows
+})
+
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    proposal.value = await getToolProposal(props.proposalId)
+  } catch (reason) {
+    error.value = failure(reason).message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function apply() {
+  if (!proposal.value || pending.value) return
+  pending.value = true
+  error.value = ''
+  try {
+    proposal.value = (await applyToolProposal(proposal.value)).proposal
+    emit('applied')
+  } catch (reason) {
+    error.value = failure(reason).message
+    await load()
+  } finally {
+    pending.value = false
+  }
+}
+
+async function reject() {
+  if (!proposal.value || pending.value) return
+  pending.value = true
+  error.value = ''
+  try {
+    proposal.value = (await rejectToolProposal(proposal.value)).proposal
+  } catch (reason) {
+    error.value = failure(reason).message
+  } finally {
+    pending.value = false
+  }
+}
+
+onMounted(load)
+watch(() => props.proposalId, load)
+</script>
+
+<template>
+  <section class="task-proposal" aria-label="任务修改提案">
+    <div v-if="loading && !proposal" class="task-proposal-loading" role="status">
+      <LoaderCircle :size="15" class="spin" /> 读取任务提案
+    </div>
+    <template v-else-if="proposal">
+      <header>
+        <component :is="isComplete ? Check : Pencil" :size="17" aria-hidden="true" />
+        <div>
+          <strong>{{ isComplete ? `完成任务「${title}」` : `修改任务「${title}」` }}</strong>
+          <span>{{ statusLabel }}</span>
+        </div>
+      </header>
+      <p v-if="summary" class="task-proposal-summary">{{ summary }}</p>
+      <ul v-if="changes.length" class="task-proposal-changes">
+        <li v-for="change in changes" :key="change">{{ change }}</li>
+      </ul>
+      <div v-if="proposal.status === 'pending'" class="task-proposal-actions">
+        <ElButton type="primary" :loading="pending" @click="apply">
+          <Check :size="15" aria-hidden="true" />
+          {{ isComplete ? '确认完成' : '确认修改' }}
+        </ElButton>
+        <ElButton :disabled="pending" @click="reject">
+          <X :size="15" aria-hidden="true" /> 拒绝
+        </ElButton>
+      </div>
+      <p v-if="error" class="task-proposal-error" role="alert">{{ error }}</p>
+    </template>
+  </section>
+</template>
+
+<style scoped>
+.task-proposal {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.task-proposal header { display: flex; align-items: center; gap: 8px; }
+.task-proposal header > svg { color: var(--accent); flex-shrink: 0; }
+.task-proposal header > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.task-proposal header strong { font-size: 13px; font-weight: 650; line-height: 1.35; }
+.task-proposal header span { font-size: 11px; color: var(--muted); }
+.task-proposal-summary {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.task-proposal-changes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.task-proposal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.task-proposal-error { margin: 10px 0 0; font-size: 12px; color: var(--error); }
+.task-proposal-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
