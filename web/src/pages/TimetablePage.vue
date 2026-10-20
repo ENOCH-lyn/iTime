@@ -61,6 +61,7 @@ import {
 import {
   emptyRecurrence,
   listTaskOccurrences,
+  updateTaskOccurrenceStatus,
   updateTaskSchedule,
   type TaskOccurrence,
 } from '../lib/task-schedules'
@@ -276,8 +277,29 @@ const planByTask = computed(() => {
   return map
 })
 
+const openOccurrenceByTask = computed(() => {
+  const map = new Map<string, TaskOccurrence>()
+  for (const occurrence of taskOccurrences.value) {
+    if (occurrence.status !== 'open') continue
+    const current = map.get(occurrence.task_id)
+    if (!current || occurrence.due_date < current.due_date) {
+      map.set(occurrence.task_id, occurrence)
+    }
+  }
+  return map
+})
+
 function effectiveDueDate(task: TaskSummary) {
+  if (task.schedule.recurrence.frequency !== 'none') {
+    const occurrence = openOccurrenceByTask.value.get(task.id)
+    return occurrence?.due_date ?? task.schedule.due_date ?? null
+  }
   return task.schedule.due_date ?? planByTask.value.get(task.id)?.local_date ?? null
+}
+
+function visibleInCurrentWeek(task: TaskSummary) {
+  if (task.schedule.recurrence.frequency === 'none') return true
+  return openOccurrenceByTask.value.has(task.id)
 }
 
 const taskGroups = computed(() => {
@@ -286,6 +308,7 @@ const taskGroups = computed(() => {
   const thisWeek: TaskSummary[] = []
   const later: TaskSummary[] = []
   for (const task of openTasks.value) {
+    if (!visibleInCurrentWeek(task)) continue
     const due = effectiveDueDate(task)
     if (!due) {
       later.push(task)
@@ -307,10 +330,9 @@ const taskGroups = computed(() => {
   ].filter(group => group.items.length > 0)
 })
 
-const todayTaskCount = computed(() => openTasks.value.filter(task => {
-  const due = effectiveDueDate(task)
-  return due === today.value || (due !== null && due < today.value)
-}).length)
+const todayTaskCount = computed(() => taskGroups.value
+  .filter(group => group.key === 'today' || group.key === 'overdue')
+  .reduce((sum, group) => sum + group.items.length, 0))
 
 const aiSuggestions = [
   '帮我把这周的作业排进日程',
@@ -649,6 +671,29 @@ async function deleteSelected() {
 
 async function completeTask(task: TaskSummary) {
   try {
+    if (task.schedule.recurrence.frequency !== 'none') {
+      const start = today.value
+      const page = await listTaskOccurrences(start, addDays(start, 14))
+      const occurrence = page.items.find(
+        item => item.task_id === task.id && item.status === 'open',
+      )
+      if (!occurrence) {
+        showNotice('近两周没有可完成的重复实例')
+        return
+      }
+      await updateTaskOccurrenceStatus(
+        occurrence,
+        crypto.randomUUID(),
+        'completed',
+      )
+      if (selectedTask.value?.id === task.id) {
+        taskDetailOpen.value = false
+        selectedTask.value = null
+      }
+      await Promise.all([loadWeek(), loadTasks()])
+      showNotice('本次重复任务已完成')
+      return
+    }
     await setTaskCompletion(task, crypto.randomUUID(), true)
     tasks.value = tasks.value.filter(item => item.id !== task.id)
     if (selectedTask.value?.id === task.id) {

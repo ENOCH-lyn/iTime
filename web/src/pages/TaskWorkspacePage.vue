@@ -34,7 +34,12 @@ import {
   updateTask,
   type TaskSummary,
 } from '../lib/tasks'
-import { emptyRecurrence, updateTaskSchedule } from '../lib/task-schedules'
+import {
+  emptyRecurrence,
+  listTaskOccurrences,
+  updateTaskOccurrenceStatus,
+  updateTaskSchedule,
+} from '../lib/task-schedules'
 import {
   addDays,
   dateInZone,
@@ -229,10 +234,41 @@ async function completeTask(task: TaskSummary) {
   taskActionBusy.value = true
   error.value = null
   try {
-    await setTaskCompletion(task, crypto.randomUUID(), task.status !== 'completed')
+    if (task.status === 'completed') {
+      await setTaskCompletion(task, crypto.randomUUID(), false)
+      detailOpen.value = false
+      selectedTask.value = null
+      showNotice('任务已重新打开')
+      await loadTasks()
+      return
+    }
+    if (task.schedule.recurrence.frequency !== 'none') {
+      const page = await listTaskOccurrences(
+        today.value,
+        addDays(today.value, 14),
+      )
+      const occurrence = page.items.find(
+        item => item.task_id === task.id && item.status === 'open',
+      )
+      if (!occurrence) {
+        showNotice('近两周没有可完成的重复实例')
+        return
+      }
+      await updateTaskOccurrenceStatus(
+        occurrence,
+        crypto.randomUUID(),
+        'completed',
+      )
+      detailOpen.value = false
+      selectedTask.value = null
+      showNotice('本次重复任务已完成')
+      await loadTasks()
+      return
+    }
+    await setTaskCompletion(task, crypto.randomUUID(), true)
     detailOpen.value = false
     selectedTask.value = null
-    showNotice(task.status === 'completed' ? '任务已重新打开' : '任务已完成')
+    showNotice('任务已完成')
     await loadTasks()
   } catch (reason) {
     error.value = failure(reason)
