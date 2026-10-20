@@ -44,6 +44,12 @@ from itime.calendar.series_service import (
 )
 from itime.database import Base
 from itime.errors import AppError
+from itime.planning.plan_service import create_manual_plan_version, read_plan
+from itime.planning.schemas import (
+    ManualPlanBlockInput,
+    ManualPlanVersionInput,
+    ManualUnscheduledItemInput,
+)
 from itime.public_links.service import stop_public_link_fetches_for_task
 from itime.tasks.lifecycle_service import expire_task_operation_responses
 from itime.tasks.models import Task, TaskOccurrenceState, TaskSchedule
@@ -329,6 +335,83 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "update_plan_block":
+        plan = await read_plan(
+            session,
+            owner_id,
+            UUID(str(payload["plan_id"])),
+        )
+        current = plan["current_version"]
+        target = next(
+            (
+                item
+                for item in current["blocks"]
+                if item["id"] == str(payload["block_id"])
+            ),
+            None,
+        )
+        if target is None:
+            raise AppError("plan_block_not_found", "未找到此计划块。", status=404)
+        blocks: list[ManualPlanBlockInput] = []
+        for block in current["blocks"]:
+            local_date = block["local_date"]
+            starts_at = block["local_starts_at"]
+            ends_at = block["local_ends_at"]
+            if block["id"] == target["id"]:
+                local_date = str(payload.get("local_date") or local_date)
+                starts_at = str(payload.get("starts_at") or starts_at)
+                ends_at = str(payload.get("ends_at") or ends_at)
+            blocks.append(
+                ManualPlanBlockInput(
+                    task_id=UUID(block["task_id"]),
+                    occurrence_key=block["occurrence_key"],
+                    local_date=date.fromisoformat(local_date),
+                    starts_at=time.fromisoformat(starts_at),
+                    ends_at=time.fromisoformat(ends_at),
+                    step_ids=[UUID(step_id) for step_id in block["step_ids"]],
+                )
+            )
+        unscheduled = [
+            ManualUnscheduledItemInput(
+                task_id=UUID(item["task_id"]),
+                occurrence_key=item["occurrence_key"],
+                remaining_minutes=int(item["remaining_minutes"]),
+                reason=item["reason"],
+                explanation=item["explanation"],
+            )
+            for item in current["unscheduled_items"]
+        ]
+        saved = await create_manual_plan_version(
+            session,
+            owner_id,
+            ManualPlanVersionInput(
+                operation_id=UUID(str(proposal.operation_id)),
+                week_start_date=date.fromisoformat(plan["week_start_date"]),
+                expected_plan_version=int(plan["version"]),
+                density=current["density"],
+                buffer_minutes=int(current["buffer_minutes"]),
+                availability_start=time.fromisoformat(
+                    current["availability_start"]
+                ),
+                availability_end=time.fromisoformat(
+                    current["availability_end"]
+                ),
+                blocks=blocks,
+                unscheduled_items=unscheduled,
+            ),
+        )
+        saved_plan = saved["plan"]
+        _mark_applied(
+            proposal,
+            current_time,
+            UUID(saved_plan["id"]),
+            int(saved_plan["version"]),
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "plan": saved_plan,
+        }
     if proposal.tool_name == "create_calendar_exception":
         series_id = UUID(str(payload.get("series_id")))
         series = await session.scalar(

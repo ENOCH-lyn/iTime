@@ -56,6 +56,7 @@ from itime.planning.job_service import (
     planning_snapshot_payload,
 )
 from itime.planning.models import Proposal, ProposalChange
+from itime.planning.plan_service import read_current_plan_blocks, read_plan
 from itime.planning.provider import planning_request_body
 from itime.planning.schemas import PlanningRequestFields
 from itime.planning.snapshot_service import build_planning_snapshot
@@ -740,6 +741,12 @@ async def _agent_context(
         local_today,
         local_today + timedelta(days=15),
     )
+    plan_blocks, _, _ = await read_current_plan_blocks(
+        session,
+        owner_id,
+        local_today,
+        local_today + timedelta(days=7),
+    )
     return {
         "current_date": local_today.isoformat(),
         "time_zone": time_zone,
@@ -751,6 +758,18 @@ async def _agent_context(
                 "priority": task.priority,
             }
             for task in tasks
+        ],
+        "plan_blocks": [
+            {
+                "plan_id": block["plan_id"],
+                "block_id": block["id"],
+                "task_id": block["task_id"],
+                "title": block["task_title_snapshot"],
+                "local_date": block["local_date"],
+                "starts_at": block["local_starts_at"],
+                "ends_at": block["local_ends_at"],
+            }
+            for block in plan_blocks
         ],
         "busy_calendar": [
             {
@@ -1375,6 +1394,44 @@ async def complete_conversation_job(
                         ),
                         "series_id": str(action.series_id),
                         "series_title": series.name if series is not None else None,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
+        elif result.plan_block_update is not None:
+            action = result.plan_block_update
+            plan = await read_plan(session, job.owner_id, action.plan_id)
+            block = next(
+                (
+                    item
+                    for item in plan["current_version"]["blocks"]
+                    if item["id"] == str(action.block_id)
+                ),
+                None,
+            )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="update_plan_block",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-plan-block:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message", "plan_id", "block_id"},
+                        ),
+                        "plan_id": str(action.plan_id),
+                        "block_id": str(action.block_id),
+                        "block_title": (
+                            block["task_title_snapshot"] if block else None
+                        ),
                     },
                 },
                 payload=action.model_dump(mode="json"),

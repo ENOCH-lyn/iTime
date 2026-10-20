@@ -11,6 +11,7 @@ export interface ToolProposal {
     | 'delete_calendar_series'
     | 'update_calendar_series'
     | 'create_calendar_exception'
+    | 'update_plan_block'
     | string
   operation_id: string
   status: 'pending' | 'applied' | 'rejected' | 'expired'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Check, LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
+import { CalendarClock, Check, LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
 import { failure } from '../lib/api'
 import {
   applyToolProposal,
@@ -18,13 +18,15 @@ const error = ref('')
 
 const title = computed(() => {
   const details = proposal.value?.preview.details ?? {}
-  return String(details.task_title ?? '此任务')
+  return String(details.block_title ?? details.task_title ?? '此任务')
 })
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isComplete = computed(() => proposal.value?.tool_name === 'complete_task')
 const isDelete = computed(() => proposal.value?.tool_name === 'delete_task')
+const isPlan = computed(() => proposal.value?.tool_name === 'update_plan_block')
 const actionLabel = computed(() => {
   if (isDelete.value) return '删除'
+  if (isPlan.value) return '调整'
   if (isComplete.value) return '完成'
   return '修改'
 })
@@ -39,6 +41,13 @@ const changes = computed(() => {
   if (isDelete.value) return ['移入回收站，30 天后清理']
   const details = proposal.value?.preview.details ?? {}
   const rows: string[] = []
+  if (isPlan.value) {
+    if (details.local_date != null) rows.push(`日期改为 ${String(details.local_date)}`)
+    const time = (value: unknown) => String(value).slice(0, 5)
+    if (details.starts_at != null) rows.push(`开始时间改为 ${time(details.starts_at)}`)
+    if (details.ends_at != null) rows.push(`结束时间改为 ${time(details.ends_at)}`)
+    return rows
+  }
   if (details.title != null) rows.push(`名称改为「${String(details.title)}」`)
   if (details.description != null) rows.push('更新描述')
   if (details.estimated_minutes != null) {
@@ -123,9 +132,9 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <component :is="isDelete ? Trash2 : (isComplete ? Check : Pencil)" :size="17" aria-hidden="true" />
+        <component :is="isDelete ? Trash2 : (isPlan ? CalendarClock : (isComplete ? Check : Pencil))" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ actionLabel }}任务「{{ title }}」</strong>
+          <strong>{{ isPlan ? `调整计划块「${title}」` : `${actionLabel}任务「${title}」` }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -136,7 +145,7 @@ watch(() => props.proposalId, load)
       <div v-if="proposal.status === 'pending'" class="task-proposal-actions">
         <ElButton type="primary" :loading="pending" @click="apply">
           <Check :size="15" aria-hidden="true" />
-          {{ isDelete ? '确认删除' : (isComplete ? '确认完成' : '确认修改') }}
+          {{ isPlan ? '确认调整' : (isDelete ? '确认删除' : (isComplete ? '确认完成' : '确认修改')) }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝
