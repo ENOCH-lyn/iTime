@@ -808,6 +808,7 @@ async def _agent_context(
                 ),
                 "series_id": str(item["series_id"]),
                 "week_numbers": weeks_by_series.get(item["series_id"], []),
+                "weekday": item["local_start_date"].isoweekday(),
                 "location": item.get("location"),
             }
             for item in occurrences

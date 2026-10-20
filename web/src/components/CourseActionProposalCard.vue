@@ -52,6 +52,10 @@ const changes = computed(() => {
   if (Array.isArray(details.value.week_numbers) && details.value.week_numbers.length) {
     rows.push(`上课周次改为 ${details.value.week_numbers.join('、')} 周`)
   }
+  if (details.value.weekday != null) {
+    const labels = ['', '一', '二', '三', '四', '五', '六', '日']
+    rows.push(`上课星期改为 周${labels[Number(details.value.weekday)] ?? details.value.weekday}`)
+  }
   return rows
 })
 const statusLabel = computed(() => {

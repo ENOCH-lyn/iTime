@@ -686,6 +686,34 @@ async def apply_proposal(
             or payload.get("ends_at") is not None
         )
         week_numbers = payload.get("week_numbers")
+        weekday = payload.get("weekday")
+        week_list = (
+            list(week_numbers)
+            if week_numbers is not None
+            else list(series.course_week_numbers)
+        )
+        weekdays = list(series.recurrence_weekdays)
+        if weekday is not None:
+            if (
+                series.kind != "course"
+                or series.start_date is None
+                or not week_list
+            ):
+                raise AppError(
+                    "invalid_course_weekday",
+                    "只有带周次的课程可以修改星期。",
+                )
+            first_week = min(week_list)
+            base_monday = series.start_date - timedelta(
+                days=(first_week - 1) * 7
+                + (series.start_date.isoweekday() - 1)
+            )
+            start_date = base_monday + timedelta(
+                days=(first_week - 1) * 7 + int(weekday) - 1
+            )
+            weekdays = [int(weekday)]
+        else:
+            start_date = None if week_numbers is not None else series.start_date
         fields = SeriesFields(
             kind=series.kind,
             term_id=series.term_id,
@@ -698,9 +726,7 @@ async def apply_proposal(
             ),
             busy=series.busy,
             time_zone=series.time_zone,
-            start_date=(
-                None if week_numbers is not None else series.start_date
-            ),
+            start_date=start_date,
             starts_at=starts_at,
             ends_at=ends_at,
             end_day_offset=series.end_day_offset,
@@ -714,7 +740,7 @@ async def apply_proposal(
             recurrence=SeriesRecurrenceInput(
                 frequency=series.recurrence_frequency,
                 interval=series.recurrence_interval,
-                weekdays=list(series.recurrence_weekdays),
+                weekdays=weekdays,
                 month=series.recurrence_month,
                 day_of_month=series.recurrence_day_of_month,
                 until=(
@@ -727,11 +753,7 @@ async def apply_proposal(
                     if series.kind == "course"
                     else series.recurrence_count
                 ),
-                week_numbers=(
-                    list(week_numbers)
-                    if week_numbers is not None
-                    else list(series.course_week_numbers)
-                ),
+                week_numbers=week_list,
             ),
         )
         resolved = await resolve_series_draft(session, owner_id, fields)
