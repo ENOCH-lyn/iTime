@@ -88,6 +88,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "confirm_plan",
     "update_plan_block",
     "create_plan_block",
+    "delete_plan_block",
 )
 
 STATUSES: tuple[str, ...] = ("pending", "applied", "rejected", "expired")
@@ -336,6 +337,86 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "delete_plan_block":
+        plan = await read_plan(
+            session,
+            owner_id,
+            UUID(str(payload["plan_id"])),
+        )
+        current = plan["current_version"]
+        target = next(
+            (
+                item
+                for item in current["blocks"]
+                if item["id"] == str(payload["block_id"])
+            ),
+            None,
+        )
+        if target is None:
+            raise AppError("plan_block_not_found", "未找到此计划块。", status=404)
+        blocks = [
+            ManualPlanBlockInput(
+                task_id=UUID(block["task_id"]),
+                occurrence_key=block["occurrence_key"],
+                local_date=date.fromisoformat(block["local_date"]),
+                starts_at=time.fromisoformat(block["local_starts_at"]),
+                ends_at=time.fromisoformat(block["local_ends_at"]),
+                step_ids=[UUID(step_id) for step_id in block["step_ids"]],
+            )
+            for block in current["blocks"]
+            if block["id"] != target["id"]
+        ]
+        unscheduled = [
+            ManualUnscheduledItemInput(
+                task_id=UUID(item["task_id"]),
+                occurrence_key=item["occurrence_key"],
+                remaining_minutes=int(item["remaining_minutes"]),
+                reason=item["reason"],
+                explanation=item["explanation"],
+            )
+            for item in current["unscheduled_items"]
+            if str(item["task_id"]) != str(target["task_id"])
+        ]
+        unscheduled.append(
+            ManualUnscheduledItemInput(
+                task_id=UUID(target["task_id"]),
+                occurrence_key=target["occurrence_key"],
+                remaining_minutes=max(1, int(target["estimated_minutes"])),
+                reason="outside_scope",
+                explanation="AI 已从本周计划中移除该计划块。",
+            )
+        )
+        saved = await create_manual_plan_version(
+            session,
+            owner_id,
+            ManualPlanVersionInput(
+                operation_id=UUID(str(proposal.operation_id)),
+                week_start_date=date.fromisoformat(plan["week_start_date"]),
+                expected_plan_version=int(plan["version"]),
+                density=current["density"],
+                buffer_minutes=int(current["buffer_minutes"]),
+                availability_start=time.fromisoformat(
+                    current["availability_start"]
+                ),
+                availability_end=time.fromisoformat(
+                    current["availability_end"]
+                ),
+                blocks=blocks,
+                unscheduled_items=unscheduled,
+            ),
+        )
+        saved_plan = saved["plan"]
+        _mark_applied(
+            proposal,
+            current_time,
+            UUID(saved_plan["id"]),
+            int(saved_plan["version"]),
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "plan": saved_plan,
+        }
     if proposal.tool_name == "create_plan_block":
         plan = await read_plan(
             session,

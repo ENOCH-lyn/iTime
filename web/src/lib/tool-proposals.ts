@@ -13,6 +13,7 @@ export interface ToolProposal {
     | 'create_calendar_exception'
     | 'update_plan_block'
     | 'create_plan_block'
+    | 'delete_plan_block'
     | string
   operation_id: string
   status: 'pending' | 'applied' | 'rejected' | 'expired'

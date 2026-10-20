@@ -1471,6 +1471,43 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.plan_block_delete is not None:
+            action = result.plan_block_delete
+            plan = await read_plan(session, job.owner_id, action.plan_id)
+            block = next(
+                (
+                    item
+                    for item in plan["current_version"]["blocks"]
+                    if item["id"] == str(action.block_id)
+                ),
+                None,
+            )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="delete_plan_block",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-plan-block-delete:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        "plan_id": str(action.plan_id),
+                        "block_id": str(action.block_id),
+                        "block_title": (
+                            block["task_title_snapshot"] if block else None
+                        ),
+                        "local_date": block["local_date"] if block else None,
+                        "starts_at": block["local_starts_at"] if block else None,
+                        "ends_at": block["local_ends_at"] if block else None,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.course_delete is not None:
             action = result.course_delete
             series = await session.scalar(
