@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import TimetableBoard from '../components/TimetableBoard.vue'
+import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
 import TimetableEventDialog, {
   type EventFormValues,
 } from '../components/TimetableEventDialog.vue'
@@ -270,6 +271,7 @@ const taskDialogOpen = ref(false)
 const taskDialogBusy = ref(false)
 const taskDialogError = ref('')
 const taskInitial = ref({ title: '', date: today.value })
+const settingsOpen = ref(false)
 
 function showNotice(message: string) {
   notice.value = message
@@ -368,6 +370,11 @@ function goToday() {
 }
 
 function openCreate(dayIndex: number, startMinutes: number) {
+  if (!activeTerm.value) {
+    settingsOpen.value = true
+    showNotice('先设置学期，课程才能按周重复。')
+    return
+  }
   const date = weekDays.value[dayIndex]?.date ?? today.value
   eventDialogMode.value = 'create'
   editingSeries.value = null
@@ -605,6 +612,22 @@ function askAI(prompt = aiPrompt.value) {
   void router.push({ path: '/ai', query: { prompt: text } })
 }
 
+async function settingsChanged(message: string) {
+  showNotice(message)
+  try {
+    terms.value = await listTerms()
+    const todayValue = today.value
+    if (!terms.value.some(term => term.id === termId.value)) {
+      termId.value = terms.value.find(term => (
+        term.start_date <= todayValue && term.end_date >= todayValue
+      ))?.id ?? terms.value.at(-1)?.id ?? null
+    }
+    await loadWeek()
+  } catch (reason) {
+    error.value = failure(reason)
+  }
+}
+
 function taskMeta(task: TaskSummary) {
   const parts: string[] = []
   if (task.schedule.due_time) parts.push(task.schedule.due_time.slice(0, 5))
@@ -755,10 +778,21 @@ const avatarLetter = computed(() => (
                 {{ term.name }}
               </option>
             </select>
+            <button type="button" class="tt-term-btn" @click="settingsOpen = true">
+              学期设置
+            </button>
             <button type="button" class="tt-add-btn" @click="openCreateFromHeader">
               <CalendarPlus :size="16" /> 添加课程
             </button>
           </div>
+        </div>
+
+        <div v-if="!activeTerm" class="tt-term-empty">
+          <div>
+            <strong>先设置学期</strong>
+            <span>填好开学日期和周次，课程就能按周重复显示。</span>
+          </div>
+          <button type="button" @click="settingsOpen = true">去设置</button>
         </div>
 
         <TimetableBoard
@@ -878,6 +912,15 @@ const avatarLetter = computed(() => (
       :busy="taskDialogBusy"
       :error="taskDialogError"
       @submit="submitTask"
+    />
+
+    <CalendarSettingsDialog
+      :open="settingsOpen"
+      :settings="settings"
+      :terms="terms"
+      :browser-time-zone="browserTimeZone"
+      @close="settingsOpen = false"
+      @changed="settingsChanged"
     />
   </div>
 </template>
@@ -1232,6 +1275,41 @@ const avatarLetter = computed(() => (
   font-weight: 600;
 }
 .tt-add-btn:hover { background: var(--accent-hover); }
+.tt-term-btn {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+.tt-term-btn:hover { background: var(--selected); color: var(--text); }
+.tt-term-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.tt-term-empty div { display: flex; flex-direction: column; gap: 2px; }
+.tt-term-empty strong { font-size: 13.5px; }
+.tt-term-empty span { font-size: 12px; color: var(--muted); }
+.tt-term-empty button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .tt-board-hint {
   margin: 10px 4px 0;
   font-size: 11.5px;
