@@ -11,6 +11,7 @@ import {
 import { failure, type Failure } from '../lib/api'
 
 const props = defineProps<{ proposalId: string }>()
+const emit = defineEmits<{ applied: [] }>()
 const proposal = ref<AgentProposal | null>(null)
 const loading = ref(false)
 const pending = ref(false)
@@ -57,6 +58,7 @@ async function apply() {
     proposal.value = (
       await applyAgentProposal(proposal.value, crypto.randomUUID())
     ).proposal
+    emit('applied')
   } catch (reason) {
     error.value = failure(reason)
     if (

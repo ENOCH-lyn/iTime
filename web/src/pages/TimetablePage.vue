@@ -15,14 +15,17 @@ import {
   X,
 } from 'lucide-vue-next'
 import TimetableBoard from '../components/TimetableBoard.vue'
+import AgentProposalMessageCard from '../components/AgentProposalMessageCard.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
 import TimetableEventDialog, {
   type EventFormValues,
 } from '../components/TimetableEventDialog.vue'
+import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
 import QuickTaskDialog, {
   type TaskFormValues,
 } from '../components/QuickTaskDialog.vue'
 import { failure, type Failure } from '../lib/api'
+import { getAIJob } from '../lib/ai-jobs'
 import { identity, refreshSession } from '../lib/auth'
 import {
   getSeries,
@@ -46,11 +49,21 @@ import {
   type TaskSummary,
 } from '../lib/tasks'
 import {
+  listPlanningBlocks,
+  type PlanningBlockProjection,
+} from '../lib/plans'
+import {
   emptyRecurrence,
   listTaskOccurrences,
   updateTaskSchedule,
   type TaskOccurrence,
 } from '../lib/task-schedules'
+import {
+  createConversation,
+  listConversationMessages,
+  sendConversationMessage,
+} from '../lib/conversations'
+import '../ai-workspace.css'
 import {
   addDays,
   type BoardEvent,
@@ -82,6 +95,7 @@ const termId = ref<string | null>(null)
 const weekStart = ref(startOfWeek(dateInZone(new Date(), browserTimeZone)))
 const calendarOccurrences = ref<CalendarOccurrence[]>([])
 const taskOccurrences = ref<TaskOccurrence[]>([])
+const planBlocks = ref<PlanningBlockProjection[]>([])
 const tasks = ref<TaskSummary[]>([])
 const quickTitle = ref('')
 const quickBusy = ref(false)
@@ -140,6 +154,12 @@ const range = computed(() => {
     start = Math.min(start, taskStart)
     end = Math.max(end, taskStart + duration)
   }
+  for (const block of planBlocks.value) {
+    const blockStart = timeToMinutes(block.local_starts_at)
+    const blockEnd = timeToMinutes(block.local_ends_at)
+    if (blockStart !== null) start = Math.min(start, blockStart)
+    if (blockEnd !== null) end = Math.max(end, blockEnd)
+  }
   start = Math.max(0, Math.floor((start - 15) / 30) * 30)
   end = Math.min(1440, Math.ceil((end + 15) / 30) * 30)
   if (end - start < 240) end = start + 240
@@ -197,6 +217,24 @@ const boardEvents = computed<BoardEvent[]>(() => {
       task,
     })
   }
+  for (const block of planBlocks.value) {
+    if (block.local_date < startDate || block.local_date > addDays(startDate, 6)) continue
+    const startMin = timeToMinutes(block.local_starts_at)
+    if (startMin === null) continue
+    const endMin = timeToMinutes(block.local_ends_at) ?? startMin + 60
+    output.push({
+      id: `plan:${block.id ?? block.task_id}:${block.local_date}`,
+      title: block.task_title_snapshot,
+      subtitle: '计划安排',
+      dayIndex: daysBetween(startDate, block.local_date),
+      startMin,
+      endMin: Math.max(endMin, startMin + 15),
+      kind: 'plan',
+      colorIndex: 4,
+      cancelled: false,
+      plan: block,
+    })
+  }
   return output
 })
 
@@ -204,13 +242,25 @@ const openTasks = computed(() => tasks.value.filter(task => (
   task.status === 'open' && task.lifecycle === 'active'
 )))
 
+const planByTask = computed(() => {
+  const map = new Map<string, PlanningBlockProjection>()
+  for (const block of planBlocks.value) {
+    if (!map.has(block.task_id)) map.set(block.task_id, block)
+  }
+  return map
+})
+
+function effectiveDueDate(task: TaskSummary) {
+  return task.schedule.due_date ?? planByTask.value.get(task.id)?.local_date ?? null
+}
+
 const taskGroups = computed(() => {
   const overdue: TaskSummary[] = []
   const todayItems: TaskSummary[] = []
   const thisWeek: TaskSummary[] = []
   const later: TaskSummary[] = []
   for (const task of openTasks.value) {
-    const due = task.schedule.due_date
+    const due = effectiveDueDate(task)
     if (!due) {
       later.push(task)
     } else if (due < today.value) {
@@ -232,7 +282,7 @@ const taskGroups = computed(() => {
 })
 
 const todayTaskCount = computed(() => openTasks.value.filter(task => {
-  const due = task.schedule.due_date
+  const due = effectiveDueDate(task)
   return due === today.value || (due !== null && due < today.value)
 }).length)
 
@@ -276,6 +326,13 @@ const settingsOpen = ref(false)
 const selectedTask = ref<TaskSummary | null>(null)
 const taskDetailOpen = ref(false)
 const taskActionBusy = ref(false)
+const aiBusy = ref(false)
+const aiError = ref('')
+const aiReply = ref('')
+const aiProposalId = ref<string | null>(null)
+const aiImportBatchId = ref<string | null>(null)
+const aiConversationId = ref<string | null>(null)
+const aiReviewOpen = ref(false)
 
 function showNotice(message: string) {
   notice.value = message
@@ -291,12 +348,14 @@ async function loadWeek() {
   const start = weekStart.value
   const end = addDays(start, 7)
   try {
-    const [calendar, taskPage] = await Promise.all([
+    const [calendar, taskPage, planPage] = await Promise.all([
       listCalendarOccurrences({ start, end }),
       listTaskOccurrences(start, end),
+      listPlanningBlocks(start, end),
     ])
     calendarOccurrences.value = calendar.items
     taskOccurrences.value = taskPage.items
+    planBlocks.value = planPage.items
   } catch (reason) {
     error.value = failure(reason)
   } finally {
@@ -535,7 +594,12 @@ function openTask(task: TaskSummary) {
 }
 
 function taskDueText(task: TaskSummary) {
+  const plan = planByTask.value.get(task.id)
   const due = task.schedule.due_date
+  if (!due && plan) {
+    const date = parseLocalDate(plan.local_date)
+    return `已排入 ${date.getMonth() + 1}月${date.getDate()}日 ${plan.local_starts_at.slice(0, 5)}`
+  }
   if (!due) return '没有截止日期'
   if (due === today.value) return '今天'
   if (due === addDays(today.value, 1)) return '明天'
@@ -683,10 +747,57 @@ async function submitTask(values: TaskFormValues) {
   }
 }
 
-function askAI(prompt = aiPrompt.value) {
+async function waitForAIJob(jobId: string) {
+  const deadline = Date.now() + 180_000
+  while (Date.now() < deadline) {
+    const job = await getAIJob(jobId)
+    if (['succeeded', 'failed', 'cancelled', 'timed_out'].includes(job.status)) {
+      return job
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 1200))
+  }
+  throw new Error('AI 响应超时，请稍后重试。')
+}
+
+async function askAI(prompt = aiPrompt.value) {
   const text = prompt.trim()
-  if (!text) return
-  void router.push({ path: '/ai', query: { prompt: text } })
+  if (!text || aiBusy.value) return
+  aiBusy.value = true
+  aiError.value = ''
+  aiReply.value = ''
+  aiProposalId.value = null
+  aiImportBatchId.value = null
+  try {
+    const created = await createConversation(crypto.randomUUID())
+    const conversation = created.conversation
+    aiConversationId.value = conversation.id
+    const result = await sendConversationMessage(
+      conversation,
+      crypto.randomUUID(),
+      text,
+      'auto',
+    )
+    aiPrompt.value = ''
+    const job = await waitForAIJob(result.job.id)
+    if (job.error) throw new Error(job.error.message)
+    const output = job.output
+    if (output?.proposal_id) aiProposalId.value = output.proposal_id
+    if (output?.import_batch_id) {
+      aiImportBatchId.value = output.import_batch_id
+      aiReviewOpen.value = true
+    }
+    const page = await listConversationMessages(conversation.id)
+    const assistant = [...page.items].reverse().find(
+      message => message.role === 'assistant' && message.content,
+    )
+    aiReply.value = assistant?.content ?? ''
+  } catch (reason) {
+    aiError.value = reason instanceof Error
+      ? reason.message
+      : failure(reason).message
+  } finally {
+    aiBusy.value = false
+  }
 }
 
 async function settingsChanged(message: string) {
@@ -705,12 +816,20 @@ async function settingsChanged(message: string) {
   }
 }
 
+async function aiProposalApplied() {
+  showNotice('AI 安排已写入')
+  await Promise.all([loadWeek(), loadTasks()])
+}
+
 function taskMeta(task: TaskSummary) {
   const parts: string[] = []
   if (task.schedule.due_time) parts.push(task.schedule.due_time.slice(0, 5))
   if (task.schedule.recurrence.frequency !== 'none') parts.push('重复')
   if (task.estimated_minutes) parts.push(`${task.estimated_minutes} 分钟`)
-  if (task.schedule.due_date && task.schedule.due_date !== today.value) {
+  const plan = planByTask.value.get(task.id)
+  if (!task.schedule.due_date && plan) {
+    parts.push(`排期 ${plan.local_date.slice(5).replace('-', '/')}`)
+  } else if (task.schedule.due_date && task.schedule.due_date !== today.value) {
     parts.push(task.schedule.due_date.slice(5).replace('-', '/'))
   }
   return parts.join(' · ')
@@ -728,6 +847,7 @@ function eventDateText(event: BoardEvent) {
 function eventKindLabel(event: BoardEvent) {
   if (event.kind === 'course') return '课程'
   if (event.kind === 'fixed') return '固定安排'
+  if (event.kind === 'plan') return '计划'
   return '任务'
 }
 
@@ -919,12 +1039,42 @@ const avatarLetter = computed(() => (
             maxlength="500"
             placeholder="例如：每周三 19:00 健身，持续到期末"
           />
-          <button type="submit" :disabled="!aiPrompt.trim()">
-            交给 AI <ArrowRight :size="16" />
+          <button type="submit" :disabled="!aiPrompt.trim() || aiBusy">
+            {{ aiBusy ? 'AI 正在安排…' : '交给 AI' }} <ArrowRight :size="16" />
           </button>
         </form>
-        <RouterLink to="/ai" class="tt-ai-all">打开完整对话</RouterLink>
-        <p class="tt-ai-note">复杂安排会在对话里继续澄清。</p>
+
+        <div v-if="aiBusy" class="tt-ai-running" role="status">
+          <span class="tt-ai-running-dot" /> 正在读取课表并生成安排
+        </div>
+        <p v-if="aiError" class="tt-ai-error" role="alert">{{ aiError }}</p>
+        <p v-if="aiReply && !aiProposalId && !aiImportBatchId" class="tt-ai-reply">
+          {{ aiReply }}
+        </p>
+        <AgentProposalMessageCard
+          v-if="aiProposalId"
+          :proposal-id="aiProposalId"
+          class="tt-ai-proposal"
+          @applied="aiProposalApplied"
+        />
+        <button
+          v-if="aiImportBatchId"
+          type="button"
+          class="tt-ai-review"
+          @click="aiReviewOpen = true"
+        >
+          查看并确认课表导入
+        </button>
+
+        <RouterLink
+          v-if="aiConversationId"
+          :to="{ path: '/ai', query: { conversation: aiConversationId } }"
+          class="tt-ai-all"
+        >
+          在完整对话中继续
+        </RouterLink>
+        <RouterLink v-else to="/ai" class="tt-ai-all">打开完整对话</RouterLink>
+        <p class="tt-ai-note">AI 只会生成预览，确认后才会写入课表或任务。</p>
       </aside>
     </main>
 
@@ -975,6 +1125,13 @@ const avatarLetter = computed(() => (
           >
             打开任务
           </RouterLink>
+          <RouterLink
+            v-if="selectedEvent.kind === 'plan'"
+            to="/plans"
+            class="tt-button secondary"
+          >
+            查看规划
+          </RouterLink>
         </div>
       </div>
     </ElDrawer>
@@ -997,7 +1154,7 @@ const avatarLetter = computed(() => (
         </p>
         <dl>
           <div>
-            <dt>截止</dt>
+            <dt>{{ selectedTask.schedule.due_date ? '截止' : '排期' }}</dt>
             <dd>
               {{ taskDueText(selectedTask) }}
               <template v-if="selectedTask.schedule.due_time">
@@ -1070,6 +1227,20 @@ const avatarLetter = computed(() => (
       @close="settingsOpen = false"
       @changed="settingsChanged"
     />
+
+    <ElDialog
+      v-model="aiReviewOpen"
+      title="确认课表导入"
+      width="min(780px, 94vw)"
+      align-center
+      @closed="loadWeek"
+    >
+      <p v-if="aiReply" class="tt-ai-review-copy">{{ aiReply }}</p>
+      <TimetableImportMessageCard
+        v-if="aiImportBatchId"
+        :batch-id="aiImportBatchId"
+      />
+    </ElDialog>
   </div>
 </template>
 
@@ -1568,6 +1739,73 @@ const avatarLetter = computed(() => (
 }
 .tt-ai-form button:hover:not(:disabled) { background: #e6f4d8; }
 .tt-ai-form button:disabled { opacity: .45; }
+.tt-ai-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #c4d8c8;
+}
+.tt-ai-running-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #d9ebc9;
+  animation: tt-pulse 1.1s ease-in-out infinite;
+}
+@keyframes tt-pulse {
+  0%, 100% { opacity: .35; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.tt-ai-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(158 61 54 / 22%);
+  color: #ffc2b8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.tt-ai-reply {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 7%);
+  color: #e7f2e7;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.tt-ai-proposal {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.tt-ai-review {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: #d9ebc9;
+  color: #1b3023;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.tt-ai-review:hover { background: #e6f4d8; }
+.tt-ai-review-copy {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
 .tt-ai-all {
   display: inline-block;
   margin-top: 12px;
@@ -1575,6 +1813,11 @@ const avatarLetter = computed(() => (
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.tt-ai-proposal :deep(.message-proposal) {
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 .tt-ai-note { margin-top: 10px; font-size: 10.5px; color: #93ac98; }
 .tt-detail { position: relative; padding: 8px 4px; }

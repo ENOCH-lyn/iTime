@@ -358,6 +358,11 @@ function hourTop(mark: number) {
   border-left-style: dashed;
   background: color-mix(in srgb, var(--muted) 10%, var(--surface));
 }
+.board-event.kind-plan {
+  border-left-color: color-mix(in srgb, var(--accent) 70%, #7a5a8f);
+  background: color-mix(in srgb, #775b8f 11%, var(--surface));
+  border-left-style: double;
+}
 .board-now {
   position: absolute;
   left: 0;

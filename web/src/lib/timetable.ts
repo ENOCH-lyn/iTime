@@ -1,7 +1,8 @@
 import type { CalendarOccurrence } from './calendar'
+import type { PlanningBlockProjection } from './plans'
 import type { TaskOccurrence } from './task-schedules'
 
-export type TimetableKind = 'course' | 'fixed' | 'task'
+export type TimetableKind = 'course' | 'fixed' | 'task' | 'plan'
 
 export interface BoardEvent {
   id: string
@@ -15,6 +16,7 @@ export interface BoardEvent {
   cancelled: boolean
   occurrence?: CalendarOccurrence
   task?: TaskOccurrence
+  plan?: PlanningBlockProjection
 }
 
 export interface TimetableDay {
