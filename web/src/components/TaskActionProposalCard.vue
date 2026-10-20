@@ -52,6 +52,23 @@ const changes = computed(() => {
     const parts = String(details.due_date).split('-')
     rows.push(`截止日期改为 ${Number(parts[1])}月${Number(parts[2])}日`)
   }
+  if (details.repeat != null) {
+    const labels: Record<string, string> = {
+      none: '不重复',
+      daily: '每天',
+      weekdays: '每个工作日',
+      weekly: '每周',
+      monthly: '每月',
+      yearly: '每年',
+    }
+    rows.push(`重复规则改为「${labels[String(details.repeat)] ?? String(details.repeat)}」`)
+  }
+  if (Array.isArray(details.repeat_weekdays) && details.repeat_weekdays.length) {
+    const weekdays = ['', '一', '二', '三', '四', '五', '六', '日']
+    rows.push(`重复星期：周${details.repeat_weekdays.map(day => weekdays[Number(day)]).join('、')}`)
+  }
+  if (details.repeat_until != null) rows.push(`重复至 ${String(details.repeat_until)}`)
+  if (details.repeat_count != null) rows.push(`重复 ${String(details.repeat_count)} 次`)
   return rows
 })
 

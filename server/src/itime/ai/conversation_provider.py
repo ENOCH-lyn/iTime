@@ -46,10 +46,12 @@ AGENT_SYSTEM_PROMPT = (
     "that existing import and do not create another timetable import. "
     "Do not claim that anything has been saved; the user must confirm the "
     "proposal. When the user asks to rename, re-estimate, change priority, "
-    "change the due date, complete, or delete a task that already exists in "
-    "the supplied context, call the matching task update/complete/delete tool "
-    "exactly once with its task_id; never invent task IDs. When the user asks "
-    "to delete a course or fixed calendar series, call "
+    "change the due date, change a repeat rule, complete, or delete a task "
+    "that already exists in the supplied context, call the matching task "
+    "update/complete/delete tool exactly once with its task_id; never invent "
+    "task IDs. For repeat rules, set repeat and either repeat_until or "
+    "repeat_count; for weekly also set repeat_weekdays. When the user asks to "
+    "delete a course or fixed calendar series, call "
     "propose_itime_course_delete with the series_id from busy_calendar; never "
     "invent series IDs. When the user asks to rename a course, change its room, "
     "or change its daily start/end time, call propose_itime_course_update with "
@@ -134,6 +136,12 @@ class AgentTaskUpdate(Input):
     estimated_minutes: int | None = Field(default=None, ge=15, le=240, multiple_of=15)
     priority: int | None = Field(default=None, ge=0, le=3)
     due_date: date | None = None
+    repeat: Literal[
+        "none", "daily", "weekdays", "weekly", "monthly", "yearly"
+    ] | None = None
+    repeat_weekdays: list[int] | None = Field(default=None, min_length=1, max_length=7)
+    repeat_until: date | None = None
+    repeat_count: int | None = Field(default=None, ge=1, le=366)
 
     @model_validator(mode="after")
     def has_change(self) -> "AgentTaskUpdate":
@@ -143,8 +151,17 @@ class AgentTaskUpdate(Input):
             and self.estimated_minutes is None
             and self.priority is None
             and self.due_date is None
+            and self.repeat is None
+            and self.repeat_weekdays is None
+            and self.repeat_until is None
+            and self.repeat_count is None
         ):
             raise ValueError("任务更新至少需要一个字段")
+        if self.repeat_until is not None and self.repeat_count is not None:
+            raise ValueError("重复结束日期与次数只能设置一种")
+        if self.repeat in {"daily", "weekdays", "monthly", "yearly"}:
+            if self.repeat_weekdays is not None:
+                raise ValueError("只有每周重复可以指定星期")
         return self
 
 
@@ -280,9 +297,9 @@ def agent_request_body(
                     "name": "propose_itime_task_update",
                     "description": (
                         "Preview an update to an existing iTime task's title, "
-                        "description, estimated minutes, priority, or due date. "
-                        "Use a task_id from the supplied context. Nothing changes "
-                        "until the user confirms."
+                        "description, estimated minutes, priority, due date, or "
+                        "repeat rule. Use a task_id from the supplied context. "
+                        "Nothing changes until the user confirms."
                     ),
                     "parameters": AgentTaskUpdate.model_json_schema(),
                 },

@@ -39,7 +39,7 @@ from itime.database import Base
 from itime.errors import AppError
 from itime.public_links.service import stop_public_link_fetches_for_task
 from itime.tasks.lifecycle_service import expire_task_operation_responses
-from itime.tasks.models import Task, TaskSchedule
+from itime.tasks.models import Task, TaskOccurrenceState, TaskSchedule
 from itime.tasks.progress_service import complete_task
 from itime.tasks.schedule_service import (
     resolve_task_schedule,
@@ -493,6 +493,102 @@ async def apply_proposal(
                 splittable=schedule.splittable,
                 minimum_block_minutes=schedule.minimum_block_minutes,
                 recurrence=RecurrenceInput(),
+            )
+            resolved = await resolve_task_schedule(
+                session,
+                owner_id,
+                task,
+                fields,
+            )
+            for field, value in task_schedule_values(fields, resolved).items():
+                setattr(schedule, field, value)
+            schedule.updated_at = current_time
+        repeat_value = payload.get("repeat")
+        repeat_weekdays = payload.get("repeat_weekdays")
+        repeat_until = payload.get("repeat_until")
+        repeat_count = payload.get("repeat_count")
+        if any(
+            value is not None
+            for value in (repeat_value, repeat_weekdays, repeat_until, repeat_count)
+        ):
+            schedule = await session.scalar(
+                select(TaskSchedule)
+                .where(
+                    TaskSchedule.task_id == task.id,
+                    TaskSchedule.owner_id == owner_id,
+                )
+                .with_for_update()
+            )
+            if schedule is None or schedule.time_zone is None:
+                raise AppError(
+                    "task_schedule_unavailable",
+                    "此任务缺少时间设置，暂时不能由 AI 修改重复规则。",
+                    status=409,
+                )
+            occurrence_state = await session.scalar(
+                select(TaskOccurrenceState.id)
+                .where(TaskOccurrenceState.task_id == task.id)
+                .limit(1)
+            )
+            if occurrence_state is not None:
+                raise AppError(
+                    "task_occurrence_requires_manual_repeat",
+                    "此任务已有实例记录，请先在任务页处理后再改重复规则。",
+                    status=409,
+                )
+            frequency = str(repeat_value or schedule.recurrence_frequency)
+            if frequency == "none" and (
+                repeat_weekdays is not None
+                or repeat_until is not None
+                or repeat_count is not None
+            ):
+                raise AppError(
+                    "invalid_task_schedule",
+                    "取消重复时不能同时设置重复星期或结束条件。",
+                )
+            due_date_value = schedule.start_date
+            if due_date_value is None:
+                raise AppError(
+                    "task_due_date_required",
+                    "重复任务必须有截止日期。",
+                )
+            due_kind = (
+                schedule.due_kind if schedule.due_kind != "none" else "date"
+            )
+            if frequency == "weekly":
+                weekdays = list(repeat_weekdays or schedule.recurrence_weekdays)
+                if not weekdays:
+                    weekdays = [due_date_value.isoweekday()]
+            else:
+                weekdays = []
+            same_frequency = frequency == schedule.recurrence_frequency
+            until = repeat_until
+            count = repeat_count
+            if frequency == "none":
+                until = None
+                count = None
+            else:
+                if until is None and count is None and same_frequency:
+                    until = schedule.recurrence_until
+                    count = schedule.recurrence_count
+                if until is None and count is None:
+                    until = current_time.date() + timedelta(days=120)
+            fields = TaskScheduleFields(
+                due_kind=due_kind,
+                due_date=due_date_value,
+                due_time=schedule.due_local_time,
+                time_zone=schedule.time_zone,
+                splittable=schedule.splittable,
+                minimum_block_minutes=schedule.minimum_block_minutes,
+                recurrence=RecurrenceInput(
+                    frequency=frequency,
+                    interval=(
+                        schedule.recurrence_interval if same_frequency else 1
+                    ),
+                    weekdays=weekdays,
+                    until=until,
+                    count=count,
+                ),
             )
             resolved = await resolve_task_schedule(
                 session,
