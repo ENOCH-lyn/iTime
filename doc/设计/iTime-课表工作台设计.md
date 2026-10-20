@@ -57,7 +57,7 @@
 - **周期性课表**：AI 调用既有 `propose_itime_timetable_import` 工具，创建课表导入批次；面板显示“查看并确认课表导入”，弹窗内复用 `TimetableImportMessageCard` 校对候选并确认，写入日历系列。
 - **任务修改/完成**：AI 调用 `propose_itime_task_update` 或 `propose_itime_task_complete`，面板内渲染 `TaskActionProposalCard`；确认后调用 `/api/v1/ai/tool-proposals/{id}/apply`，由任务服务校验所有权、可编辑性和版本，再更新标题/描述/估时/优先级/截止日期/重复规则或标记完成；重复任务必须指定 occurrence，当前会拒绝整条完成。AI 修改日期只支持非重复任务；重复规则可改成每天/工作日/每周/每月/每年并设置星期与结束日期/次数。
 - 重复任务在首页勾选完成的是本周 occurrence；完成后本周列表隐藏该任务，下一次实例到周次加载时再出现。
-- **计划块调整**：AI 调用 `propose_itime_plan_block_update`、`propose_itime_plan_block_create` 或 `propose_itime_plan_block_delete`，可移动/缩放已有块、把任务安排成新块、或移除块并把任务放回未排；应用时重建整周手动计划版本，固定日程冲突/截止日后移由服务端拒绝。
+- **计划块调整**：AI 调用 `propose_itime_plan_block_update`、`propose_itime_plan_block_create`、`propose_itime_plan_block_delete` 或 `propose_itime_plan_block_batch`，可移动/缩放单块、安排新块、移除块，或一次调整多个块；应用时重建整周手动计划版本，固定日程冲突/截止日后移由服务端拒绝。
 - **口述课表**：AI 面板提供“口述”麦克风按钮，使用浏览器 Web Speech API 把中文语音转写追加到输入框；用户确认文字后再交给 AI 生成课程/导入提案，不直接写入。
 - **单次例外**：AI 调用 `propose_itime_occurrence_exception`，可取消或调整某一次课程；应用时写入 `calendar_exceptions`，只影响该 occurrence，整组重复保持不变。
 - **图片课表**：AI 面板提供“图片课表”入口，上传截图/相册图片后由本地 OCR 提取文字，再交给文本 AI 还原课程；图片未显示周次时默认按当前学期全周、固定安排默认到学期结束，审核弹窗中可调整。
