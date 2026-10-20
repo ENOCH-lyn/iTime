@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { TermPeriod } from '../lib/calendar'
 import {
   EVENT_COLORS,
   eventTimeLabel,
   minutesToLabel,
+  timeToMinutes,
   type BoardEvent,
   type TimetableDay,
 } from '../lib/timetable'
@@ -13,6 +15,7 @@ const HOUR_HEIGHT = 68
 const props = defineProps<{
   days: TimetableDay[]
   items: BoardEvent[]
+  periods: TermPeriod[]
   rangeStart: number
   rangeEnd: number
   nowMinutes: number | null
@@ -43,6 +46,27 @@ const hourMarks = computed(() => {
   }
   return marks
 })
+
+interface PeriodMark {
+  minute: number
+  label: string
+  time: string
+}
+
+const periodMarks = computed<PeriodMark[]>(() => (
+  props.periods
+    .map(period => {
+      const minute = timeToMinutes(period.starts_at)
+      if (minute === null) return null
+      return {
+        minute,
+        label: period.name || `第${period.period_number}节`,
+        time: period.starts_at.slice(0, 5),
+      }
+    })
+    .filter((mark): mark is PeriodMark => mark !== null)
+    .sort((left, right) => left.minute - right.minute)
+))
 
 const positioned = computed<PositionedEvent[]>(() => {
   const output: PositionedEvent[] = []
@@ -113,6 +137,10 @@ function colorFor(event: BoardEvent) {
 function hourTop(mark: number) {
   return Math.max(9, ((mark - props.rangeStart) / 60) * HOUR_HEIGHT)
 }
+
+function minuteTop(minute: number) {
+  return ((minute - props.rangeStart) / 60) * HOUR_HEIGHT
+}
 </script>
 
 <template>
@@ -140,14 +168,27 @@ function hourTop(mark: number) {
         :aria-busy="loading"
       >
         <div class="board-axis" aria-hidden="true">
-          <span
-            v-for="mark in hourMarks"
-            :key="mark"
-            class="board-hour"
-            :style="{ top: `${hourTop(mark)}px` }"
-          >
-            {{ minutesToLabel(mark) }}
-          </span>
+          <template v-if="periodMarks.length">
+            <span
+              v-for="mark in periodMarks"
+              :key="mark.minute"
+              class="board-hour board-period-label"
+              :style="{ top: `${hourTop(mark.minute)}px` }"
+            >
+              <strong>{{ mark.label }}</strong>
+              <small>{{ mark.time }}</small>
+            </span>
+          </template>
+          <template v-else>
+            <span
+              v-for="mark in hourMarks"
+              :key="mark"
+              class="board-hour"
+              :style="{ top: `${hourTop(mark)}px` }"
+            >
+              {{ minutesToLabel(mark) }}
+            </span>
+          </template>
         </div>
 
         <div
@@ -157,7 +198,18 @@ function hourTop(mark: number) {
           :class="{ today: day.isToday }"
           @click="createAt(dayIndex, $event)"
         >
-          <div class="board-lines" aria-hidden="true" />
+          <div class="board-lines" :class="{ 'has-periods': periodMarks.length > 0 }" aria-hidden="true" />
+          <div
+            v-if="periodMarks.length"
+            class="board-period-lines"
+            aria-hidden="true"
+          >
+            <span
+              v-for="mark in periodMarks"
+              :key="mark.minute"
+              :style="{ top: `${minuteTop(mark.minute)}px` }"
+            />
+          </div>
           <button
             v-for="event in eventsForDay(dayIndex)"
             :key="event.id"
@@ -278,6 +330,24 @@ function hourTop(mark: number) {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.board-period-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  transform: translateY(3px);
+  line-height: 1.2;
+}
+.board-period-label strong {
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+.board-period-label small {
+  font-size: 9.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .board-day {
   position: relative;
   height: 100%;
@@ -298,6 +368,21 @@ function hourTop(mark: number) {
     transparent 1px,
     transparent var(--hour-height)
   );
+}
+.board-lines.has-periods {
+  background-image: none;
+}
+.board-period-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.board-period-lines span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
 }
 .board-event {
   position: absolute;

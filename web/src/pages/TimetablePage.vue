@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowRight,
@@ -23,12 +23,14 @@ import TimetableEventDialog, {
 import TimetableImportMessageCard from '../components/TimetableImportMessageCard.vue'
 import QuickTaskDialog, {
   type TaskFormValues,
+  type TaskRepeat,
 } from '../components/QuickTaskDialog.vue'
 import { failure, type Failure } from '../lib/api'
 import { getAIJob } from '../lib/ai-jobs'
 import { identity, refreshSession } from '../lib/auth'
 import {
   getSeries,
+  getTerm,
   getTimeSettings,
   listCalendarOccurrences,
   listTerms,
@@ -44,8 +46,10 @@ import {
 import {
   createTask,
   deleteTask,
+  getTask,
   listTasks,
   setTaskCompletion,
+  updateTask,
   type TaskSummary,
 } from '../lib/tasks'
 import {
@@ -92,6 +96,7 @@ const notice = ref('')
 const settings = ref<TimeSettings | null>(null)
 const terms = ref<Term[]>([])
 const termId = ref<string | null>(null)
+const activeTermDetail = ref<Term | null>(null)
 const weekStart = ref(startOfWeek(dateInZone(new Date(), browserTimeZone)))
 const calendarOccurrences = ref<CalendarOccurrence[]>([])
 const taskOccurrences = ref<TaskOccurrence[]>([])
@@ -110,6 +115,13 @@ const weekDays = computed(() => makeWeek(weekStart.value, today.value))
 const activeTerm = computed(() => (
   terms.value.find(term => term.id === termId.value) ?? null
 ))
+const periods = computed(() => activeTermDetail.value?.periods ?? [])
+const termWeeks = computed(() => {
+  const term = activeTerm.value
+  if (!term) return []
+  const total = Math.floor(daysBetween(term.first_week_monday, term.end_date) / 7) + 1
+  return Array.from({ length: Math.max(1, total) }, (_, index) => index + 1)
+})
 const weekNumber = computed(() => {
   const term = activeTerm.value
   if (!term) return null
@@ -119,6 +131,18 @@ const weekNumber = computed(() => {
 const todayIndex = computed(() => {
   const index = weekDays.value.findIndex(day => day.isToday)
   return index === -1 ? 0 : index
+})
+
+watch(termId, async value => {
+  if (!value) {
+    activeTermDetail.value = null
+    return
+  }
+  try {
+    activeTermDetail.value = await getTerm(value)
+  } catch (reason) {
+    error.value = failure(reason)
+  }
 })
 const todayLabel = computed(() => {
   const date = parseLocalDate(today.value)
@@ -321,7 +345,15 @@ const eventInitial = ref<EventFormValues>({
 const taskDialogOpen = ref(false)
 const taskDialogBusy = ref(false)
 const taskDialogError = ref('')
-const taskInitial = ref({ title: '', date: today.value })
+const editingTask = ref<TaskSummary | null>(null)
+const taskInitial = ref<{
+  title: string
+  date: string
+  repeat?: TaskRepeat
+  weekdays?: number[]
+  estimatedMinutes?: number | null
+  until?: string | null
+}>({ title: '', date: today.value })
 const settingsOpen = ref(false)
 const selectedTask = ref<TaskSummary | null>(null)
 const taskDetailOpen = ref(false)
@@ -333,6 +365,11 @@ const aiProposalId = ref<string | null>(null)
 const aiImportBatchId = ref<string | null>(null)
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
+
+const defaultTaskRepeatUntil = computed(() => {
+  const ends = activeTerm.value?.end_date
+  return ends && ends >= today.value ? ends : addDays(today.value, 120)
+})
 
 function showNotice(message: string) {
   notice.value = message
@@ -395,6 +432,9 @@ async function initialize() {
     termId.value = terms.value.find(term => (
       term.start_date <= todayValue && term.end_date >= todayValue
     ))?.id ?? terms.value.at(-1)?.id ?? null
+    activeTermDetail.value = termId.value
+      ? await getTerm(termId.value)
+      : null
     weekStart.value = startOfWeek(todayValue)
     await Promise.all([loadWeek(), loadTasks()])
   } catch (reason) {
@@ -429,6 +469,14 @@ function moveWeek(offset: number) {
 
 function goToday() {
   weekStart.value = startOfWeek(today.value)
+  void loadWeek()
+}
+
+function goWeek(event: Event) {
+  const value = Number((event.target as HTMLSelectElement).value)
+  const term = activeTerm.value
+  if (!value || !term) return
+  weekStart.value = addDays(term.first_week_monday, (value - 1) * 7)
   void loadWeek()
 }
 
@@ -609,15 +657,22 @@ function taskDueText(task: TaskSummary) {
 
 function taskRepeatText(task: TaskSummary) {
   const recurrence = task.schedule.recurrence
+  const suffix = recurrence.until
+    ? ` · 至 ${parseLocalDate(recurrence.until).getMonth() + 1}月${parseLocalDate(recurrence.until).getDate()}日`
+    : recurrence.count
+      ? ` · ${recurrence.count} 次`
+      : ''
   if (recurrence.frequency === 'none') return '不重复'
-  if (recurrence.frequency === 'daily') return '每天重复'
-  if (recurrence.frequency === 'weekdays') return '每个工作日'
+  if (recurrence.frequency === 'daily') return `每天重复${suffix}`
+  if (recurrence.frequency === 'weekdays') return `每个工作日${suffix}`
   if (recurrence.frequency === 'weekly') {
     const labels = ['一', '二', '三', '四', '五', '六', '日']
     const days = recurrence.weekdays.map(day => labels[day - 1]).join('、')
-    return days ? `每周 ${days}` : '每周重复'
+    return days ? `每周 ${days}${suffix}` : `每周重复${suffix}`
   }
-  return '重复任务'
+  if (recurrence.frequency === 'monthly') return `每月 ${recurrence.day_of_month ?? ''} 日${suffix}`
+  if (recurrence.frequency === 'yearly') return `每年 ${recurrence.month ?? ''}月${recurrence.day_of_month ?? ''}日${suffix}`
+  return `重复任务${suffix}`
 }
 
 async function postponeTask(task: TaskSummary) {
@@ -697,8 +752,72 @@ async function quickAdd() {
   }
 }
 
+function taskRepeatFromFrequency(frequency: string): TaskRepeat {
+  return ['daily', 'weekdays', 'weekly', 'monthly', 'yearly'].includes(frequency)
+    ? frequency as TaskRepeat
+    : 'none'
+}
+
+function buildTaskRecurrence(
+  values: TaskFormValues,
+  existing?: TaskSummary['schedule']['recurrence'],
+) {
+  if (values.repeat === 'none') return emptyRecurrence()
+  const recurrence = emptyRecurrence()
+  const keepCount = !!existing
+    && existing.frequency === values.repeat
+    && existing.count !== null
+    && existing.until === null
+  if (existing && existing.frequency === values.repeat) {
+    recurrence.interval = existing.interval || 1
+    recurrence.week_numbers = [...existing.week_numbers]
+  }
+  if (keepCount) {
+    recurrence.count = existing?.count ?? null
+    recurrence.until = null
+  } else {
+    recurrence.until = values.until
+    recurrence.count = null
+  }
+  recurrence.frequency = values.repeat
+  if (values.repeat === 'weekly') {
+    recurrence.weekdays = values.weekdays
+  } else if (values.repeat === 'monthly' || values.repeat === 'yearly') {
+    const date = parseLocalDate(values.date)
+    recurrence.day_of_month = date.getDate()
+    if (values.repeat === 'yearly') recurrence.month = date.getMonth() + 1
+  }
+  return recurrence
+}
+
 function openTaskDialog() {
-  taskInitial.value = { title: quickTitle.value.trim(), date: today.value }
+  editingTask.value = null
+  taskInitial.value = {
+    title: quickTitle.value.trim(),
+    date: today.value,
+    repeat: 'none',
+    weekdays: [isoWeekday(today.value)],
+    estimatedMinutes: null,
+    until: defaultTaskRepeatUntil.value,
+  }
+  taskDialogError.value = ''
+  taskDialogOpen.value = true
+}
+
+function editTask(task: TaskSummary) {
+  editingTask.value = task
+  const date = task.schedule.due_date ?? today.value
+  taskInitial.value = {
+    title: task.title,
+    date,
+    repeat: taskRepeatFromFrequency(task.schedule.recurrence.frequency),
+    weekdays: task.schedule.recurrence.weekdays.length
+      ? [...task.schedule.recurrence.weekdays]
+      : [isoWeekday(date)],
+    estimatedMinutes: task.estimated_minutes,
+    until: task.schedule.recurrence.until ?? defaultTaskRepeatUntil.value,
+  }
+  taskDetailOpen.value = false
   taskDialogError.value = ''
   taskDialogOpen.value = true
 }
@@ -707,39 +826,55 @@ async function submitTask(values: TaskFormValues) {
   taskDialogBusy.value = true
   taskDialogError.value = ''
   try {
-    const task = await createTask(crypto.randomUUID(), {
-      title: values.title,
-      description: '',
-      project_id: null,
-      estimated_minutes: values.estimatedMinutes,
-      priority: 2,
-      labels: [],
-      links: [],
-      steps: [],
-    })
-    const recurrence = emptyRecurrence()
-    if (values.repeat === 'daily') {
-      recurrence.frequency = 'daily'
-    } else if (values.repeat === 'weekdays') {
-      recurrence.frequency = 'weekdays'
-    } else if (values.repeat === 'weekly') {
-      recurrence.frequency = 'weekly'
-      recurrence.weekdays = values.weekdays
+    if (editingTask.value) {
+      const detail = await getTask(editingTask.value.id)
+      const updated = await updateTask(detail.id, crypto.randomUUID(), detail.version, {
+        title: values.title,
+        description: detail.description,
+        project_id: detail.project?.id ?? null,
+        estimated_minutes: values.estimatedMinutes,
+        priority: detail.priority,
+        labels: detail.labels.map(label => label.name),
+        links: detail.links.map(link => ({ title: link.title, url: link.url })),
+      })
+      await updateTaskSchedule(updated, crypto.randomUUID(), {
+        due_kind: detail.schedule.due_kind === 'none' ? 'date' : detail.schedule.due_kind,
+        due_date: values.date,
+        due_time: detail.schedule.due_time,
+        time_zone: detail.schedule.time_zone ?? timeZone.value,
+        ambiguous_utc_offset_minutes: detail.schedule.ambiguous_utc_offset_minutes,
+        splittable: detail.schedule.splittable,
+        minimum_block_minutes: detail.schedule.minimum_block_minutes,
+        recurrence: buildTaskRecurrence(values, detail.schedule.recurrence),
+      })
+      editingTask.value = null
+      showNotice('任务已更新')
+    } else {
+      const task = await createTask(crypto.randomUUID(), {
+        title: values.title,
+        description: '',
+        project_id: null,
+        estimated_minutes: values.estimatedMinutes,
+        priority: 2,
+        labels: [],
+        links: [],
+        steps: [],
+      })
+      await updateTaskSchedule(task, crypto.randomUUID(), {
+        due_kind: 'date',
+        due_date: values.date,
+        due_time: null,
+        time_zone: timeZone.value,
+        ambiguous_utc_offset_minutes: null,
+        splittable: false,
+        minimum_block_minutes: 15,
+        recurrence: buildTaskRecurrence(values),
+      })
+      quickTitle.value = ''
+      showNotice('任务已创建')
     }
-    await updateTaskSchedule(task, crypto.randomUUID(), {
-      due_kind: 'date',
-      due_date: values.date,
-      due_time: null,
-      time_zone: timeZone.value,
-      ambiguous_utc_offset_minutes: null,
-      splittable: false,
-      minimum_block_minutes: 15,
-      recurrence,
-    })
     taskDialogOpen.value = false
-    quickTitle.value = ''
     await loadTasks()
-    showNotice('任务已创建')
   } catch (reason) {
     taskDialogError.value = failure(reason).message
   } finally {
@@ -810,6 +945,9 @@ async function settingsChanged(message: string) {
         term.start_date <= todayValue && term.end_date >= todayValue
       ))?.id ?? terms.value.at(-1)?.id ?? null
     }
+    activeTermDetail.value = termId.value
+      ? await getTerm(termId.value)
+      : null
     await loadWeek()
   } catch (reason) {
     error.value = failure(reason)
@@ -871,10 +1009,22 @@ const avatarLetter = computed(() => (
         <button type="button" class="tt-icon-btn" aria-label="上一周" @click="moveWeek(-1)">
           <ChevronLeft :size="18" />
         </button>
-        <button type="button" class="tt-weeklabel" @click="goToday">
-          <strong>{{ weekNumber ? `第 ${weekNumber} 周` : '本周' }}</strong>
+        <div class="tt-weeklabel">
+          <select
+            v-if="termWeeks.length"
+            class="tt-week-select"
+            :value="weekNumber ?? ''"
+            aria-label="选择周次"
+            @change="goWeek"
+          >
+            <option v-if="weekNumber === null" value="">学期外</option>
+            <option v-for="week in termWeeks" :key="week" :value="week">
+              第 {{ week }} 周
+            </option>
+          </select>
+          <strong v-else>本周</strong>
           <small>{{ formatRange(weekStart) }}</small>
-        </button>
+        </div>
         <button type="button" class="tt-icon-btn" aria-label="下一周" @click="moveWeek(1)">
           <ChevronRight :size="18" />
         </button>
@@ -1000,6 +1150,7 @@ const avatarLetter = computed(() => (
         <TimetableBoard
           :days="weekDays"
           :items="boardEvents"
+          :periods="periods"
           :range-start="range.start"
           :range-end="range.end"
           :now-minutes="nowMinutes"
@@ -1181,6 +1332,14 @@ const avatarLetter = computed(() => (
             完成
           </button>
           <button
+            type="button"
+            class="tt-button secondary"
+            :disabled="taskActionBusy"
+            @click="editTask(selectedTask)"
+          >
+            编辑
+          </button>
+          <button
             v-if="selectedTask.schedule.recurrence.frequency === 'none'"
             type="button"
             class="tt-button secondary"
@@ -1213,6 +1372,8 @@ const avatarLetter = computed(() => (
 
     <QuickTaskDialog
       v-model="taskDialogOpen"
+      :mode="editingTask ? 'edit' : 'create'"
+      :default-until="defaultTaskRepeatUntil"
       :initial="taskInitial"
       :busy="taskDialogBusy"
       :error="taskDialogError"
@@ -1323,16 +1484,33 @@ const avatarLetter = computed(() => (
   align-items: center;
   gap: 1px;
   min-width: 150px;
-  padding: 4px 10px;
+  padding: 2px 10px;
   border-radius: 10px;
   background: transparent;
   color: var(--text);
 }
-.tt-weeklabel:hover { background: var(--selected); }
 .tt-weeklabel strong {
   font-size: 14px;
   font-weight: 650;
   line-height: 1.25;
+}
+.tt-week-select {
+  max-width: 140px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+}
+.tt-week-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 .tt-weeklabel small {
   font-size: 11px;
@@ -1914,9 +2092,9 @@ const avatarLetter = computed(() => (
 @media (max-width: 640px) {
   .tt-header { padding: 10px 14px 8px; }
   .tt-brand { font-size: 19px; }
-  .tt-weeklabel { min-width: 128px; }
+  .tt-weeklabel { min-width: 118px; }
   .tt-weeklabel small { font-size: 10px; }
-  .tt-today { display: none; }
+  .tt-today { padding: 6px 9px; font-size: 11px; }
   .tt-main { padding: 12px 14px 32px; gap: 14px; }
   .tt-board-top { align-items: flex-start; flex-direction: column; gap: 10px; }
   .tt-board-tools { width: 100%; justify-content: space-between; }

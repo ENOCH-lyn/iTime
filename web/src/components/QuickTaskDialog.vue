@@ -2,7 +2,7 @@
 import { computed, reactive, watch } from 'vue'
 import { isoWeekday, weekdayShortLabels } from '../lib/timetable'
 
-export type TaskRepeat = 'none' | 'daily' | 'weekdays' | 'weekly'
+export type TaskRepeat = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
 
 export interface TaskFormValues {
   title: string
@@ -10,11 +10,21 @@ export interface TaskFormValues {
   repeat: TaskRepeat
   weekdays: number[]
   estimatedMinutes: number | null
+  until: string | null
 }
 
 const props = defineProps<{
   modelValue: boolean
-  initial: { title: string; date: string }
+  mode?: 'create' | 'edit'
+  defaultUntil?: string
+  initial: {
+    title: string
+    date: string
+    repeat?: TaskRepeat
+    weekdays?: number[]
+    estimatedMinutes?: number | null
+    until?: string | null
+  }
   busy: boolean
   error: string
 }>()
@@ -30,21 +40,31 @@ const form = reactive({
   repeat: 'none' as TaskRepeat,
   weekdays: [isoWeekday(props.initial.date)],
   estimatedMinutes: null as number | null,
+  until: '',
 })
 const weekLabels = weekdayShortLabels()
 
 const valid = computed(() => (
   form.title.trim().length > 0
   && /^\d{4}-\d{2}-\d{2}$/.test(form.date)
+  && (form.repeat === 'none' || (
+    /^\d{4}-\d{2}-\d{2}$/.test(form.until)
+    && form.until >= form.date
+  ))
   && (form.repeat !== 'weekly' || form.weekdays.length > 0)
 ))
 
 function reset() {
   form.title = props.initial.title
   form.date = props.initial.date
-  form.repeat = 'none'
-  form.weekdays = [isoWeekday(props.initial.date)]
-  form.estimatedMinutes = null
+  form.repeat = props.initial.repeat ?? 'none'
+  form.weekdays = props.initial.weekdays?.length
+    ? [...props.initial.weekdays]
+    : [isoWeekday(props.initial.date)]
+  form.estimatedMinutes = props.initial.estimatedMinutes ?? null
+  form.until = props.initial.until
+    ?? props.defaultUntil
+    ?? props.initial.date
 }
 
 watch(() => props.modelValue, value => {
@@ -75,6 +95,7 @@ function submit() {
     repeat: form.repeat,
     weekdays: [...form.weekdays].sort((left, right) => left - right),
     estimatedMinutes: form.estimatedMinutes,
+    until: form.repeat === 'none' ? null : form.until,
   })
 }
 </script>
@@ -82,7 +103,7 @@ function submit() {
 <template>
   <ElDialog
     :model-value="modelValue"
-    title="新建任务"
+    :title="mode === 'edit' ? '编辑任务' : '新建任务'"
     width="min(500px, 94vw)"
     align-center
     class="tt-dialog"
@@ -113,6 +134,8 @@ function submit() {
             <option value="daily">每天</option>
             <option value="weekdays">每个工作日</option>
             <option value="weekly">每周</option>
+            <option value="monthly">每月</option>
+            <option value="yearly">每年</option>
           </select>
         </label>
         <label class="tt-field">
@@ -144,6 +167,11 @@ function submit() {
         </button>
       </fieldset>
 
+      <label v-if="form.repeat !== 'none'" class="tt-field">
+        <span>重复到</span>
+        <input v-model="form.until" type="date" :min="form.date">
+      </label>
+
       <p v-if="error" class="tt-error" role="alert">{{ error }}</p>
 
       <div class="tt-actions">
@@ -151,7 +179,7 @@ function submit() {
           取消
         </button>
         <button type="submit" class="tt-button primary" :disabled="!valid || busy">
-          {{ busy ? '创建中…' : '创建任务' }}
+          {{ busy ? '保存中…' : (mode === 'edit' ? '保存修改' : '创建任务') }}
         </button>
       </div>
     </form>
