@@ -10,7 +10,7 @@ import {
   type TimetableDay,
 } from '../lib/timetable'
 
-const HOUR_HEIGHT = 68
+const HOUR_HEIGHT = 76
 
 const props = defineProps<{
   days: TimetableDay[]
@@ -20,6 +20,7 @@ const props = defineProps<{
   rangeEnd: number
   nowMinutes: number | null
   loading: boolean
+  showTeacher: boolean
 }>()
 
 const emit = defineEmits<{
@@ -215,7 +216,14 @@ function minuteTop(minute: number) {
             :key="event.id"
             type="button"
             class="board-event"
-            :class="[`kind-${event.kind}`, { cancelled: event.cancelled }]"
+            :class="[
+              `kind-${event.kind}`,
+              {
+                cancelled: event.cancelled,
+                compact: event.height < 88,
+                mini: event.height < 46,
+              },
+            ]"
             :style="{
               top: `${event.top}px`,
               height: `${event.height}px`,
@@ -228,7 +236,8 @@ function minuteTop(minute: number) {
           >
             <span class="board-event-time">{{ event.timeLabel }}</span>
             <strong>{{ event.title }}</strong>
-            <small v-if="event.subtitle">{{ event.subtitle }}</small>
+            <small v-if="event.subtitle" class="board-event-location">{{ event.subtitle }}</small>
+            <small v-if="showTeacher && event.teacher" class="board-event-teacher">{{ event.teacher }}</small>
           </button>
           <div
             v-if="day.isToday && nowTop !== null"
@@ -259,7 +268,7 @@ function minuteTop(minute: number) {
   scrollbar-width: thin;
 }
 .board {
-  min-width: 760px;
+  min-width: 0;
   position: relative;
 }
 .board-head {
@@ -389,8 +398,8 @@ function minuteTop(minute: number) {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 5px 7px;
+  gap: 3px;
+  padding: 7px 6px;
   overflow: hidden;
   border: 0;
   border-left: 3px solid var(--event-color);
@@ -411,30 +420,42 @@ function minuteTop(minute: number) {
   outline-offset: 1px;
 }
 .board-event-time {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
   color: color-mix(in srgb, var(--event-color) 72%, var(--text));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  letter-spacing: -.02em;
 }
 :global(:root[data-theme="dark"]) .board-event-time {
   color: color-mix(in srgb, var(--event-color) 40%, #f1f7f2);
 }
 .board-event strong {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.28;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .board-event small {
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.25;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.board-event-teacher {
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-weight: 600;
+}
+.board-event.compact .board-event-location { display: none; }
+.board-event.mini { padding: 5px 6px; gap: 1px; }
+.board-event.mini strong { font-size: 11.5px; -webkit-line-clamp: 1; }
+.board-event.mini small { display: none; }
+.board-event.mini .board-event-time { font-size: 9px; }
 .board-event.cancelled {
   opacity: .45;
   text-decoration: line-through;
@@ -492,12 +513,18 @@ function minuteTop(minute: number) {
   0%, 100% { opacity: .3; transform: scale(.8); }
   50% { opacity: 1; transform: scale(1); }
 }
+@media (max-width: 900px) {
+  .board { min-width: 980px; }
+}
+
 @media (max-width: 720px) {
-  .board { min-width: 620px; }
+  .board { min-width: 980px; }
   .board-head { grid-template-columns: 44px repeat(7, minmax(0, 1fr)); }
   .board-body { grid-template-columns: 44px repeat(7, minmax(0, 1fr)); }
   .board-hour { right: 6px; font-size: 10px; }
-  .board-event { padding: 4px 5px; }
-  .board-event strong { font-size: 11px; }
+  .board-event { padding: 6px 7px; }
+  .board-event-time { font-size: 10.5px; }
+  .board-event strong { font-size: 12px; }
+  .board-event small { font-size: 10px; }
 }
 </style>

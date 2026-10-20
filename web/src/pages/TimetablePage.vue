@@ -227,6 +227,7 @@ const boardEvents = computed<BoardEvent[]>(() => {
       id: `course:${occurrence.series_id ?? occurrence.subscription_event_id}:${occurrence.occurrence_key}`,
       title: occurrence.name,
       subtitle: occurrence.location,
+    teacher: occurrence.teacher,
       dayIndex: daysBetween(startDate, occurrence.local_start_date),
       startMin,
       endMin,
@@ -396,6 +397,10 @@ const taskInitial = ref<{
   until?: string | null
 }>({ title: '', date: today.value })
 const settingsOpen = ref(false)
+const showTeacher = ref(localStorage.getItem('itime.showTeacher') !== 'false')
+watch(showTeacher, value => {
+  localStorage.setItem('itime.showTeacher', String(value))
+})
 const selectedTask = ref<TaskSummary | null>(null)
 const taskDetailOpen = ref(false)
 const taskActionBusy = ref(false)
@@ -1455,6 +1460,7 @@ const { pendingLogout, logout } = useAppShell()
           :range-end="range.end"
           :now-minutes="nowMinutes"
           :loading="loading || weekLoading"
+          :show-teacher="showTeacher"
           @select="selectEvent"
           @create="openCreate"
         />
@@ -1735,6 +1741,9 @@ const { pendingLogout, logout } = useAppShell()
       :settings="settings"
       :terms="terms"
       :browser-time-zone="browserTimeZone"
+      :show-teacher="showTeacher"
+      :show-display-settings="true"
+      @update:show-teacher="showTeacher = $event"
       @close="settingsOpen = false"
       @changed="settingsChanged"
     />
@@ -1758,7 +1767,7 @@ const { pendingLogout, logout } = useAppShell()
 
 <style scoped>
 .tt-page {
-  min-height: 100dvh;
+  min-height: 100%;
   overflow-x: clip;
   background:
     radial-gradient(1200px 480px at 12% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),

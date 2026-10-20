@@ -8,6 +8,7 @@ export interface BoardEvent {
   id: string
   title: string
   subtitle: string
+  teacher?: string
   dayIndex: number
   startMin: number
   endMin: number
