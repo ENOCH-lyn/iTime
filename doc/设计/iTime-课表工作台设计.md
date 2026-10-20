@@ -57,6 +57,7 @@
 - **周期性课表**：AI 调用既有 `propose_itime_timetable_import` 工具，创建课表导入批次；面板显示“查看并确认课表导入”，弹窗内复用 `TimetableImportMessageCard` 校对候选并确认，写入日历系列。
 - **任务修改/完成**：AI 调用 `propose_itime_task_update` 或 `propose_itime_task_complete`，面板内渲染 `TaskActionProposalCard`；确认后调用 `/api/v1/ai/tool-proposals/{id}/apply`，由任务服务校验所有权、可编辑性和版本，再更新标题/描述/估时/优先级/截止日期/重复规则或标记完成；重复任务必须指定 occurrence，当前会拒绝整条完成。AI 修改日期只支持非重复任务；重复规则可改成每天/工作日/每周/每月/每年并设置星期与结束日期/次数。
 - 重复任务在首页勾选完成的是本周 occurrence；完成后本周列表隐藏该任务，下一次实例到周次加载时再出现。
+- **单次例外**：AI 调用 `propose_itime_occurrence_exception`，可取消或调整某一次课程；应用时写入 `calendar_exceptions`，只影响该 occurrence，整组重复保持不变。
 - **图片课表**：AI 面板提供“图片课表”入口，上传截图/相册图片后由本地 OCR 提取文字，再交给文本 AI 还原课程；图片未显示周次时默认按当前学期全周、固定安排默认到学期结束，审核弹窗中可调整。
 - **任务删除**：AI 调用 `propose_itime_task_delete`，卡片显示“删除任务”，确认后按任务回收站语义写入 `deleted_at` 与 30 天清理时间，并停止公开链接抓取；确认前不改变数据。
 - **课程修改**：AI 调用 `propose_itime_course_update`，可改课程名、地点和每日开始/结束时间；应用时重新走 `resolve_series_draft` 校验时间与学期，保留星期与周次；不支持改星期/周次范围。

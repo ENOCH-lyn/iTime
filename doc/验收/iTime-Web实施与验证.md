@@ -2575,3 +2575,33 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 2 个候选仍需校对，说明归一化不能覆盖所有固定安排/重复规则组合。
 - 口述/语音课表尚未接入；下一步将增加语音输入并复用同一导入链路。
 
+## M7-X：AI 单次例外（取消/调整一次课程）
+
+课表重复系列需要“只改这一次”的能力。AI 现在可以取消或调整某个 occurrence，并用预览确认。
+
+### 本次范围
+
+- Agent 新增 `propose_itime_occurrence_exception`：参数为 `series_id`、`occurrence_date`、`action`（`cancelled`/`moved`），可选 `moved_start_date`/`moved_starts_at`/`moved_ends_at`；模型不能改整组。
+- 迁移 `0047_ai_occurrence_exception` 把 `create_calendar_exception` 加入提案白名单。
+- 应用逻辑：校验系列/occurrence、检查已有例外，构造 `ExceptionCreate`，复用 `find_occurrence_date`、`validate_exception_fields`、`exception_values` 创建 `calendar_exceptions`，并 bump series 版本、发出同步变更。
+- `CourseActionProposalCard` 支持“取消本次/调整本次”，显示原日期与调课目标，提示“只影响这一次”。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `58e46eb` | `feat(ai): 支持 AI 取消或调整单次课程` | provider、迁移 0047、apply、卡片 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把这周五的「心理学导论」取消一次，只取消这一次”，生成“取消本次”提案；确认后周课表中该事件显示为已取消（`board-event cancelled`），其它周次不受影响。
+- 数据库确认：`calendar_exceptions` 新增 `original_start_date=2026-10-23`、`action=cancelled`。
+- 迁移 `0047` 的 down/up 成功。
+- 后端 `pytest ...`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- “调整本次”的后端路径已实现（日期/时间），但本轮只真实验证了取消；调课 UI 需下一轮验证。
+- 已有例外的 occurrence 不能再次由 AI 创建例外，需要编辑现有例外。
+- 例外只支持取消/移动，不支持只覆盖名称/地点；整组修改仍走课程更新工具。
+
