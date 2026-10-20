@@ -14,11 +14,14 @@ export interface EventFormValues {
   endTime: string
   repeat: boolean
   weekdays: number[]
+  startWeek: number
+  endWeek: number
 }
 
 const props = defineProps<{
   modelValue: boolean
   mode: 'create' | 'edit'
+  weekCount: number
   initial: EventFormValues
   busy: boolean
   error: string
@@ -40,6 +43,11 @@ const valid = computed(() => (
   && /^\d{2}:\d{2}$/.test(form.endTime)
   && form.endTime > form.startTime
   && (!form.repeat || form.weekdays.length > 0)
+  && (form.kind !== 'course' || (
+    form.startWeek >= 1
+    && form.endWeek >= form.startWeek
+    && form.endWeek <= props.weekCount
+  ))
 ))
 
 const validationMessage = computed(() => {
@@ -47,8 +55,15 @@ const validationMessage = computed(() => {
   if (!form.startTime || !form.endTime) return '需要开始和结束时间。'
   if (form.endTime <= form.startTime) return '结束时间需要晚于开始时间。'
   if (form.repeat && !form.weekdays.length) return '每周重复至少要选一天。'
+  if (form.kind === 'course' && form.endWeek < form.startWeek) {
+    return '结束周不能早于开始周。'
+  }
   return ''
 })
+
+const weekOptions = computed(() => (
+  Array.from({ length: Math.max(1, props.weekCount) }, (_, index) => index + 1)
+))
 
 function reset() {
   Object.assign(form, props.initial)
@@ -140,8 +155,27 @@ function submit() {
         </label>
       </div>
 
-      <div class="tt-row">
+      <div v-if="form.kind === 'course'" class="tt-row">
         <label class="tt-field">
+          <span>开始周</span>
+          <select v-model.number="form.startWeek">
+            <option v-for="week in weekOptions" :key="week" :value="week">
+              第 {{ week }} 周
+            </option>
+          </select>
+        </label>
+        <label class="tt-field">
+          <span>结束周</span>
+          <select v-model.number="form.endWeek">
+            <option v-for="week in weekOptions" :key="week" :value="week">
+              第 {{ week }} 周
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div class="tt-row">
+        <label v-if="form.kind !== 'course'" class="tt-field">
           <span>日期</span>
           <input v-model="form.date" type="date" @change="onDateChange">
         </label>

@@ -340,6 +340,8 @@ const eventInitial = ref<EventFormValues>({
   endTime: '10:00',
   repeat: true,
   weekdays: [isoWeekday(today.value)],
+  startWeek: 1,
+  endWeek: 1,
 })
 
 const taskDialogOpen = ref(false)
@@ -499,6 +501,8 @@ function openCreate(dayIndex: number, startMinutes: number) {
     endTime: minutesToLabel(Math.min(startMinutes + 60, 24 * 60 - 30)),
     repeat: true,
     weekdays: [isoWeekday(date)],
+    startWeek: 1,
+    endWeek: Math.max(1, termWeeks.value.length),
   }
   eventDialogOpen.value = true
 }
@@ -518,6 +522,8 @@ async function editSelected() {
   try {
     const series = await getSeries(occurrence.series_id)
     editingSeries.value = series
+    const weekNumbers = series.recurrence.week_numbers ?? []
+    const fallbackWeeks = Math.max(1, termWeeks.value.length)
     eventDialogMode.value = 'edit'
     eventDialogError.value = ''
     eventInitial.value = {
@@ -531,6 +537,10 @@ async function editSelected() {
       weekdays: series.recurrence.weekdays.length
         ? [...series.recurrence.weekdays]
         : [isoWeekday(series.start_date)],
+      startWeek: weekNumbers.length ? Math.min(...weekNumbers) : 1,
+      endWeek: weekNumbers.length
+        ? Math.min(Math.max(...weekNumbers), fallbackWeeks)
+        : fallbackWeeks,
     }
     eventDialogOpen.value = true
   } catch (reason) {
@@ -543,31 +553,42 @@ async function submitEvent(values: EventFormValues) {
   eventDialogError.value = ''
   try {
     let recurrence = emptyRecurrence()
+    let startDate = values.date
     if (values.kind === 'course') {
       const term = activeTerm.value
       if (!term) {
         throw new Error('请先在设置里创建学期，再添加课程。')
       }
-      const firstWeek = Math.floor(daysBetween(term.first_week_monday, values.date) / 7) + 1
-      const lastWeek = Math.floor(daysBetween(term.first_week_monday, term.end_date) / 7) + 1
-      if (firstWeek < 1 || firstWeek > lastWeek) {
-        throw new Error('课程开始日期不在当前学期内。')
-      }
+      const totalWeeks = Math.max(1, termWeeks.value.length)
+      const startWeek = Math.min(Math.max(values.startWeek, 1), totalWeeks)
+      const endWeek = Math.min(Math.max(values.endWeek, startWeek), totalWeeks)
+      const weekdays = values.weekdays.length
+        ? [...values.weekdays].sort((left, right) => left - right)
+        : [isoWeekday(values.date)]
+      const firstWeekday = Math.min(...weekdays)
+      startDate = addDays(
+        term.first_week_monday,
+        (startWeek - 1) * 7 + firstWeekday - 1,
+      )
       recurrence = {
         ...emptyRecurrence(),
         frequency: 'weekly',
-        weekdays: values.weekdays.length ? values.weekdays : [isoWeekday(values.date)],
+        weekdays,
         week_numbers: Array.from(
-          { length: lastWeek - firstWeek + 1 },
-          (_, index) => firstWeek + index,
+          { length: endWeek - startWeek + 1 },
+          (_, index) => startWeek + index,
         ),
       }
     } else if (values.repeat) {
+      const term = activeTerm.value
+      if (!term) {
+        throw new Error('重复安排需要先设置学期。')
+      }
       recurrence = {
         ...emptyRecurrence(),
         frequency: 'weekly',
         weekdays: values.weekdays.length ? values.weekdays : [isoWeekday(values.date)],
-        until: activeTerm.value?.end_date ?? null,
+        until: term.end_date,
       }
     }
     const draft: SeriesDraft = {
@@ -578,7 +599,7 @@ async function submitEvent(values: EventFormValues) {
       location: values.location,
       busy: true,
       time_zone: timeZone.value,
-      start_date: values.date,
+      start_date: startDate,
       starts_at: `${values.startTime}:00`,
       ends_at: `${values.endTime}:00`,
       end_day_offset: 0,
@@ -1364,6 +1385,7 @@ const avatarLetter = computed(() => (
     <TimetableEventDialog
       v-model="eventDialogOpen"
       :mode="eventDialogMode"
+      :week-count="Math.max(1, termWeeks.length)"
       :initial="eventInitial"
       :busy="eventDialogBusy"
       :error="eventDialogError"
