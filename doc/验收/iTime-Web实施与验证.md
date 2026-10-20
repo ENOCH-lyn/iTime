@@ -2419,3 +2419,33 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 旧 `/tasks/full` 仍使用旧 AppShell 视觉，后续需要统一或逐步迁移高级功能。
 - 任务搜索为前端过滤当前加载的 50 条，不是服务端全量搜索。
 
+## M7-S：AI 删除课程
+
+课表的“新增/导入/手动编辑”之外，补上 AI 删除整门课程，继续走预览确认。
+
+### 本次范围
+
+- `busy_calendar` 上下文增加 `series_id` 与 `location`，模型只能引用服务端给出的系列 ID。
+- Agent 新增 `propose_itime_course_delete`；工具结果写入 `ai_action_proposals`，AIJob 输出 `proposal_kind=course_action`。
+- 迁移 `0045_ai_course_delete`：白名单加入 `delete_calendar_series`；降级先清理该工具历史提案。
+- 应用逻辑复用 `calendar.lifecycle_service.trash_calendar_series`：整组重复安排进入 30 天回收站，停止公开订阅/链接的可见性，并发出 `calendar_series` 同步变更。
+- 前端新增 `CourseActionProposalCard`：显示课程名、“确认后整门课程（含重复安排）移入回收站”和确认/拒绝；首页 AI 面板与 `/ai` 对话都能渲染，应用后刷新周课表。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `2fb3e87` | `feat(ai): 支持 AI 删除课程并预览确认` | provider、迁移 0045、apply、课程卡片、测试 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「游泳」这门课从课表里删掉”，AI 返回课程删除提案；确认后周五 18:00-19:00 的课程块消失，数据库 `calendar_series.deleted_at` 非空、version=2。
+- 迁移 `0045` 的 `downgrade -1` 与 `upgrade head` 均成功（降级会清理 `delete_calendar_series` 历史提案）。
+- `pytest tests/test_agent_provider.py tests/ai/test_action_proposals.py`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 只支持删除整门课程，不支持 AI 修改课程时间/地点/星期，也不支持单次例外删除。
+- 删除后恢复仍走日历页/高级管理，AI 未提供恢复工具。
+- 课程删除提案依赖 busy_calendar 中的 series_id；若模型未引用该字段会返回校验错误。
+
