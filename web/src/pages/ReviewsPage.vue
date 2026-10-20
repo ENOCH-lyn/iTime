@@ -420,7 +420,7 @@ async function setView(next: 'review' | 'memories') {
 
 <template>
   <AppShell
-    :current="null"
+    current="reviews"
     has-secondary
     secondary-label="复盘"
     title="复盘"

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { CircleHelp, LogOut, Menu, Settings } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { LogOut, Menu } from 'lucide-vue-next'
 import ProductNavigation from '../components/ProductNavigation.vue'
 import { identity } from '../lib/auth'
 import type { ProductArea } from '../lib/product-navigation'
 import './app-shell.css'
 
-defineProps<{
+const props = defineProps<{
   current: ProductArea | null
   hasSecondary?: boolean
   secondaryLabel?: string
@@ -16,6 +16,9 @@ defineProps<{
 
 const emit = defineEmits<{ logout: [] }>()
 const drawerOpen = ref(false)
+const avatarLetter = computed(() => (
+  identity.value?.user.email?.slice(0, 1).toUpperCase() ?? 'i'
+))
 
 function closeDrawer() {
   drawerOpen.value = false
@@ -29,55 +32,55 @@ function logoutFromDrawer() {
 
 <template>
   <div class="app-shell" :class="{ 'has-secondary': hasSecondary }">
-    <header class="app-shell-mobile-topbar">
+    <header class="app-shell-topbar">
       <ElButton
         text
         class="app-shell-mobile-trigger"
-        :aria-label="'打开导航'"
+        aria-label="打开导航"
         @click="drawerOpen = true"
       >
         <Menu :size="20" aria-hidden="true" />
       </ElButton>
-      <strong class="app-shell-mobile-title">{{ title || 'iTime' }}</strong>
-      <span class="app-shell-mobile-spacer" aria-hidden="true"></span>
-    </header>
-
-    <aside class="app-shell-primary" aria-label="主要导航">
       <RouterLink to="/timetable" class="app-shell-brand">
-        i<span aria-hidden="true">Time</span>
+        iTime<span aria-hidden="true">.</span>
       </RouterLink>
-      <ProductNavigation :current="(current ?? 'ai')" />
-      <div v-if="hasSecondary" class="app-shell-primary-secondary" :aria-label="secondaryLabel">
-        <slot name="secondary" />
+      <div class="app-shell-nav">
+        <ProductNavigation :current="(current ?? 'ai')" />
       </div>
-      <div class="app-shell-primary-footer">
-        <RouterLink to="/settings" class="nav-link">
-          <Settings :size="18" aria-hidden="true" />
-          <span>设置</span>
-        </RouterLink>
-        <RouterLink to="/help" class="nav-link">
-          <CircleHelp :size="18" aria-hidden="true" />
-          <span>帮助</span>
+      <div class="app-shell-actions">
+        <RouterLink to="/ai" class="app-shell-ai">AI</RouterLink>
+        <RouterLink
+          to="/me"
+          class="app-shell-avatar"
+          :aria-label="`账号 ${identity?.user.email ?? ''}`"
+        >
+          {{ avatarLetter }}
         </RouterLink>
         <ElButton
           text
-          class="nav-link app-shell-logout"
+          class="app-shell-desktop-logout"
           :loading="pendingLogout"
           :disabled="pendingLogout"
+          aria-label="退出登录"
           @click="emit('logout')"
         >
-          <LogOut :size="18" aria-hidden="true" />
-          <span>{{ pendingLogout ? '正在退出…' : '退出登录' }}</span>
+          <LogOut :size="17" aria-hidden="true" />
         </ElButton>
-        <p v-if="identity" class="app-shell-identity" aria-hidden="true">
-          {{ identity.user.email }}
-        </p>
       </div>
-    </aside>
+    </header>
 
-    <main id="main-content" class="app-shell-main">
-      <slot />
-    </main>
+    <div class="app-shell-body">
+      <aside
+        v-if="hasSecondary"
+        class="app-shell-secondary"
+        :aria-label="secondaryLabel"
+      >
+        <slot name="secondary" />
+      </aside>
+      <main id="main-content" class="app-shell-main">
+        <slot />
+      </main>
+    </div>
 
     <ElDrawer
       v-model="drawerOpen"
@@ -101,11 +104,9 @@ function logoutFromDrawer() {
         </div>
         <div class="app-shell-drawer-account">
           <RouterLink to="/settings" class="nav-link" @click="closeDrawer">
-            <Settings :size="18" aria-hidden="true" />
             设置
           </RouterLink>
           <RouterLink to="/help" class="nav-link" @click="closeDrawer">
-            <CircleHelp :size="18" aria-hidden="true" />
             帮助
           </RouterLink>
           <ElButton

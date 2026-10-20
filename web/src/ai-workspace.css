@@ -1534,3 +1534,6 @@
     padding: 0;
   }
 }
+
+.conversation-header.no-back { grid-template-columns: minmax(0, 1fr) auto; }
+

@@ -13,7 +13,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <header class="conversation-header" aria-label="会话标题">
+  <header class="conversation-header no-back" aria-label="会话标题">
     <h1 id="conversation-title" tabindex="-1">
       {{ conversation?.title ?? '新对话' }}
     </h1>
