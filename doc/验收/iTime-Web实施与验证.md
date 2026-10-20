@@ -2362,3 +2362,30 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 删除是软删除，30 天后由既有 cleanup worker 物理清理；AI 不提供“永久删除”。
 - 仍不支持 AI 修改任务日期/重复规则、修改/删除课程与计划块。
 
+## M7-Q：AI 修改任务截止日期
+
+在任务修改工具上增加截止日期，覆盖“把这件事挪到明天/23 号”的高频操作。
+
+### 本次范围
+
+- `AgentTaskUpdate` 增加 `due_date`；至少一个变更字段的校验同步扩展。
+- 应用 `update_task` 时，如果带 `due_date`：锁定 `task_schedules`，仅允许 `recurrence_frequency='none'` 且已有 `time_zone` 的任务；用 `resolve_task_schedule`/`task_schedule_values` 写回 `start_date`、`due_kind=date` 等字段，保留 splittable 与最小块，任务版本与同步变更统一提交。
+- `TaskActionProposalCard` 显示“截止日期改为 M月D日”。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `92fdccb` | `feat(ai): 支持 AI 修改任务截止日期` | provider schema、apply、卡片 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把「整理心理学导论笔记」的截止日期改到 10 月 23 日”，AI 生成修改提案；确认后卡片显示“已应用”，任务列表变为 `30 分钟 · 10/23`。
+- 重复任务（如每周任务）请求改日期会返回 409 `ai_recurring_task_date_unsupported`，提示先在任务页调整重复规则。
+- `pytest tests/test_agent_provider.py tests/ai/test_action_proposals.py`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 不支持 AI 修改重复任务的日期/重复规则；不支持 AI 修改或删除课程/计划块。
+- 修改日期会走非重复任务的简单排期路径，不处理 occurrence 补做/调期记录（重复任务已拒绝）。
+
