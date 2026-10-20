@@ -48,7 +48,8 @@ def test_agent_request_exposes_only_confirmed_task_plan_tool() -> None:
         "propose_itime_task_complete",
         "propose_itime_task_delete",
         "propose_itime_course_delete",
-        "propose_itime_course_update",
+        "propose_itime_course_update",
+        "propose_itime_occurrence_exception",
     ]
     assert "2026-10-08" in body["messages"][1]["content"]
 
@@ -63,6 +64,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         usage,
     ) = _agent_json_result(
         json.dumps(
@@ -105,6 +107,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -154,6 +157,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -212,6 +216,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -260,6 +265,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         _,
     ) = _agent_json_result(
         json.dumps(
@@ -307,6 +313,7 @@ def test_agent_response_accepts_text_or_task_plan() -> None:
         task_delete,
         course_update,
         course_delete,
+        occurrence_exception,
         _,
     ) = _agent_json_result(
         json.dumps(

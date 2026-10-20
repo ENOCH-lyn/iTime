@@ -1349,6 +1349,38 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.occurrence_exception is not None:
+            action = result.occurrence_exception
+            series = await session.scalar(
+                select(CalendarSeries).where(
+                    CalendarSeries.id == action.series_id,
+                    CalendarSeries.owner_id == job.owner_id,
+                )
+            )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="create_calendar_exception",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-occurrence:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        **action.model_dump(
+                            mode="json",
+                            exclude={"assistant_message", "series_id"},
+                        ),
+                        "series_id": str(action.series_id),
+                        "series_title": series.name if series is not None else None,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.course_delete is not None:
             action = result.course_delete
             series = await session.scalar(
@@ -1402,7 +1434,11 @@ async def complete_conversation_job(
                     "proposal_kind": (
                         "course_action"
                         if action_proposal.tool_name
-                        in {"delete_calendar_series", "update_calendar_series"}
+                        in {
+                            "delete_calendar_series",
+                            "update_calendar_series",
+                            "create_calendar_exception",
+                        }
                         else "task_action"
                     ),
                 }

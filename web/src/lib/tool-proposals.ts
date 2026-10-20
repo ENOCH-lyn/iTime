@@ -10,6 +10,7 @@ export interface ToolProposal {
     | 'delete_task'
     | 'delete_calendar_series'
     | 'update_calendar_series'
+    | 'create_calendar_exception'
     | string
   operation_id: string
   status: 'pending' | 'applied' | 'rejected' | 'expired'

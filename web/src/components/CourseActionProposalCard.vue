@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
+import { CalendarDays, LoaderCircle, Pencil, Trash2, X } from 'lucide-vue-next'
 import { failure } from '../lib/api'
 import {
   applyToolProposal,
@@ -20,7 +20,26 @@ const details = computed(() => proposal.value?.preview.details ?? {})
 const courseTitle = computed(() => String(details.value.series_title ?? '此课程'))
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isUpdate = computed(() => proposal.value?.tool_name === 'update_calendar_series')
+const isException = computed(() => proposal.value?.tool_name === 'create_calendar_exception')
+const exceptionAction = computed(() => String(details.value.action ?? ''))
+const exceptionTitle = computed(() => (
+  exceptionAction.value === 'cancelled'
+    ? `取消本次「${courseTitle.value}」`
+    : `调整本次「${courseTitle.value}」`
+))
 const changes = computed(() => {
+  if (isException.value) {
+    const rows = [`原安排：${String(details.value.occurrence_date ?? '')}`]
+    if (exceptionAction.value === 'moved') {
+      if (details.value.moved_start_date) rows.push(`改到 ${String(details.value.moved_start_date)}`)
+      const time = (value: unknown) => String(value).slice(0, 5)
+      if (details.value.moved_starts_at) rows.push(`开始 ${time(details.value.moved_starts_at)}`)
+      if (details.value.moved_ends_at) rows.push(`结束 ${time(details.value.moved_ends_at)}`)
+    } else {
+      rows.push('这一次不再上课')
+    }
+    return rows
+  }
   if (!isUpdate.value) return []
   const rows: string[] = []
   if (details.value.name != null) rows.push(`课程名改为「${String(details.value.name)}」`)
@@ -91,9 +110,9 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <component :is="isUpdate ? Pencil : Trash2" :size="17" aria-hidden="true" />
+        <component :is="isException ? CalendarDays : (isUpdate ? Pencil : Trash2)" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」` }}</strong>
+          <strong>{{ isException ? exceptionTitle : (isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」`) }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -101,11 +120,12 @@ watch(() => props.proposalId, load)
       <ul v-if="changes.length" class="course-proposal-changes">
         <li v-for="change in changes" :key="change">{{ change }}</li>
       </ul>
-      <p v-if="!isUpdate" class="course-proposal-hint">确认后整门课程（含重复安排）移入回收站。</p>
+      <p v-if="isException" class="course-proposal-hint">只影响这一次，不改整组重复安排。</p>
+      <p v-else-if="!isUpdate" class="course-proposal-hint">确认后整门课程（含重复安排）移入回收站。</p>
       <div v-if="proposal.status === 'pending'" class="course-proposal-actions">
         <ElButton :type="isUpdate ? 'primary' : 'danger'" :loading="pending" @click="apply">
-          <component :is="isUpdate ? Pencil : Trash2" :size="15" aria-hidden="true" />
-          {{ isUpdate ? '确认修改' : '确认删除' }}
+          <component :is="isException ? CalendarDays : (isUpdate ? Pencil : Trash2)" :size="15" aria-hidden="true" />
+          {{ isException ? (exceptionAction === 'cancelled' ? '确认取消' : '确认调整') : (isUpdate ? '确认修改' : '确认删除') }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝

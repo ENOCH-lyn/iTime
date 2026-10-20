@@ -21,14 +21,21 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from itime.calendar.lifecycle_service import trash_calendar_series
-from itime.calendar.models import CalendarSeries
-from itime.calendar.schemas import (
-    RecurrenceInput as SeriesRecurrenceInput,
+from itime.calendar.exception_service import (
+    exception_result,
+    exception_values,
+    find_occurrence_date,
+    validate_exception_fields,
 )
+from itime.calendar.lifecycle_service import trash_calendar_series
+from itime.calendar.models import CalendarException, CalendarSeries
 from itime.calendar.schemas import (
+    ExceptionCreate,
     SeriesFields,
     SeriesLifecycleInput,
+)
+from itime.calendar.schemas import (
+    RecurrenceInput as SeriesRecurrenceInput,
 )
 from itime.calendar.series_service import (
     resolve_series_draft,
@@ -64,6 +71,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "delete_task",
     "delete_calendar_series",
     "update_calendar_series",
+    "create_calendar_exception",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -321,6 +329,104 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "create_calendar_exception":
+        series_id = UUID(str(payload.get("series_id")))
+        series = await session.scalar(
+            select(CalendarSeries)
+            .where(
+                CalendarSeries.id == series_id,
+                CalendarSeries.owner_id == owner_id,
+            )
+            .with_for_update()
+        )
+        if series is None:
+            raise AppError("calendar_series_not_found", "未找到此课程。", status=404)
+        occurrence_date = date.fromisoformat(str(payload["occurrence_date"]))
+        key = f"{occurrence_date.isoformat()}T{series.starts_at.isoformat()}"
+        original_date = await find_occurrence_date(
+            session,
+            owner_id,
+            series,
+            key,
+        )
+        existing = await session.scalar(
+            select(CalendarException).where(
+                CalendarException.owner_id == owner_id,
+                CalendarException.series_id == series.id,
+                CalendarException.original_start_date == original_date,
+            )
+        )
+        if existing is not None:
+            raise AppError(
+                "calendar_exception_exists",
+                "该次安排已经有单次修改。",
+                status=409,
+            )
+        action = str(payload.get("action"))
+        if action not in {"cancelled", "moved"}:
+            raise AppError("invalid_exception_action", "单次安排动作不受支持。")
+        if action == "moved":
+            moved_date = date.fromisoformat(
+                str(payload.get("moved_start_date") or occurrence_date)
+            )
+            moved_start = time.fromisoformat(
+                str(payload.get("moved_starts_at") or series.starts_at)
+            )
+            moved_end = time.fromisoformat(
+                str(payload.get("moved_ends_at") or series.ends_at)
+            )
+            moved_end_offset = series.end_day_offset
+        else:
+            moved_date = None
+            moved_start = None
+            moved_end = None
+            moved_end_offset = None
+        data = ExceptionCreate(
+            operation_id=UUID(str(proposal.operation_id)),
+            expected_series_version=series.version,
+            occurrence_key=key,
+            action=action,
+            moved_start_date=moved_date,
+            moved_starts_at=moved_start,
+            moved_ends_at=moved_end,
+            moved_end_day_offset=moved_end_offset,
+            moved_time_zone=series.time_zone if action == "moved" else None,
+        )
+        moved_time_zone = validate_exception_fields(series, data)
+        exception = CalendarException(
+            series_id=series.id,
+            owner_id=owner_id,
+            occurrence_key=key,
+            original_start_date=original_date,
+            **exception_values(data, moved_time_zone),
+        )
+        session.add(exception)
+        series.version += 1
+        series.updated_at = current_time
+        await session.flush()
+        emit_change(
+            session,
+            owner_id,
+            "calendar_exception",
+            exception.id,
+            "created",
+            exception.version,
+        )
+        emit_change(
+            session,
+            owner_id,
+            "calendar_series",
+            series.id,
+            "updated",
+            series.version,
+        )
+        _mark_applied(proposal, current_time, series.id, series.version)
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": series_result(series),
+            "exception": exception_result(exception),
+        }
     if proposal.tool_name == "update_calendar_series":
         series_id = UUID(str(payload.get("series_id")))
         series = await session.scalar(
