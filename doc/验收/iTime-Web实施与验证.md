@@ -2662,5 +2662,36 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 
 - 顶栏统一了，旧页面内容区（日历表格、复盘表单等）仍保留各自旧样式细节。
 - 新工作台导航为课表/任务/AI/日历/规划/复盘 + 头像，旧页面多一个显式“我的”；功能入口已对齐。
+
+## M7-AB：AI 调整学习计划块
+
+补齐“计划”侧的工具链：AI 可以移动/缩放一个已有学习计划块，不改任务本身。
+
+### 本次范围
+
+- `busy_calendar` 之外新增 `plan_blocks` 上下文（plan_id、block_id、task、日期、起止时间）。
+- 新增 `propose_itime_plan_block_update`：`plan_id`、`block_id`、可选 `local_date`/`starts_at`/`ends_at`。
+- 应用时读取当前计划，把目标块改成新时间，其余块和未排项原样保留，构造 `ManualPlanVersionInput` 调用 `create_manual_plan_version`；服务端做固定日程冲突与 revision 校验。
+- 复用任务提案卡片渲染“调整计划块”，确认/拒绝走同一 tool-proposal apply/reject。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `0b18e60` | `feat(ai): 支持 AI 调整学习计划块` | provider、apply、上下文、卡片 |
+| `065447a` | `chore: 移除临时计划块验证脚本` | 清理 |
+
+### 验证记录
+
+- 2026-10-20 真实 DeepSeek：输入“把周三晚上 9 点的「组会」计划块挪到 8 点半，时长一小时”，生成调整提案；确认后计划块从 21:00–22:00 移到 20:30–21:30，其它块不变。
+- 数据库确认：当前 plan version=4、source=manual，组会块 `local_starts_at=20:30`。
+- 冲突路径：先尝试移到 20:00，服务端返回 `plan_fixed_conflict`（健身 19:00–20:00 的缓冲不足），提案未被应用。
+- 后端 `pytest ...`：**7 passed**；`ruff` 与 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 只支持移动/缩放单个计划块，不支持新增/删除块或批量重排。
+- 每次调整都会重建整周手动计划版本；输入 revision 变化或固定冲突时会拒绝，需要重新生成。
+- `plan_blocks` 上下文只覆盖未来 7 天。
 - 移动端 AI 会话切换仍依赖抽屉，未做底部 tab。
 
