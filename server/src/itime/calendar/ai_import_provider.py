@@ -15,6 +15,7 @@ from itime.ai.provider import (
     enforce_endpoint_policy,
     resolved_endpoint_allowed,
 )
+from itime.calendar.ocr_service import OcrUnavailable, extract_calendar_text
 from itime.calendar.schemas import SeriesFields
 from itime.calendar.screenshot_schemas import ScreenshotRecognitionOutput
 from itime.config import Settings
@@ -251,6 +252,20 @@ async def recognize_ai_import(
             "课表解析配置暂时无法读取，请联系管理员。",
             "configuration",
         ) from exc
+
+    if source_type == "image" and image:
+        try:
+            ocr_text = await asyncio.to_thread(extract_calendar_text, image)
+        except OcrUnavailable:
+            ocr_text = None
+        if ocr_text:
+            source_type = "text"
+            source_text = (
+                "以下是从课表图片本地 OCR 识别出的文字，"
+                "请据此还原课程、星期、时间和周次：\n"
+                + ocr_text
+            )
+            image = None
 
     if source_type == "image":
         if not image or content_type is None:

@@ -144,6 +144,8 @@ async def _process_screenshot(
         )
         return
 
+    recognition_context = work.context
+
     remaining = (claim.deadline_at - now()).total_seconds()
     if remaining <= 0:
         await reject_or_retry_calendar_import(
@@ -273,6 +275,7 @@ async def _process_screenshot(
         format_name=format_name,
         source_display=source_display,
         quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+        context=recognition_context,
     )
 
 

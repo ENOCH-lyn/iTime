@@ -23,6 +23,7 @@ dependencies = [
     "icalendar>=6,<7",
     "defusedxml>=0.7,<1",
     "python-multipart>=0.0.32",
+    "rapidocr-onnxruntime>=1.4,<2",
 ]
 
 [dependency-groups]

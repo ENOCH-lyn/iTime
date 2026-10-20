@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  ImagePlus,
   MapPin,
   Plus,
   Sparkles,
@@ -28,7 +29,8 @@ import QuickTaskDialog, {
   type TaskRepeat,
 } from '../components/QuickTaskDialog.vue'
 import { failure, type Failure } from '../lib/api'
-import { getAIJob } from '../lib/ai-jobs'
+import { getAIJob, type AIJob } from '../lib/ai-jobs'
+import { createAIImport } from '../lib/calendar-imports'
 import { identity, refreshSession } from '../lib/auth'
 import {
   getSeries,
@@ -391,6 +393,8 @@ const aiProposalId = ref<string | null>(null)
 const aiTaskProposalId = ref<string | null>(null)
 const aiCourseProposalId = ref<string | null>(null)
 const aiImportBatchId = ref<string | null>(null)
+const aiImageBusy = ref(false)
+const aiImageInput = ref<HTMLInputElement | null>(null)
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
 
@@ -964,8 +968,7 @@ async function waitForAIJob(jobId: string) {
   throw new Error('AI 响应超时，请稍后重试。')
 }
 
-async function askAI(prompt = aiPrompt.value) {
-  const text = prompt.trim()
+async function askAI(prompt = aiPrompt.value) {  const text = prompt.trim()
   if (!text || aiBusy.value) return
   aiBusy.value = true
   aiError.value = ''
@@ -1010,6 +1013,47 @@ async function askAI(prompt = aiPrompt.value) {
       : failure(reason).message
   } finally {
     aiBusy.value = false
+  }
+}
+
+function openImagePicker() {
+  if (!aiImageBusy.value) aiImageInput.value?.click()
+}
+
+async function handleImageSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || aiImageBusy.value) return
+  aiImageBusy.value = true
+  aiError.value = ''
+  aiReply.value = ''
+  aiProposalId.value = null
+  aiTaskProposalId.value = null
+  aiCourseProposalId.value = null
+  aiImportBatchId.value = null
+  try {
+    const uploaded = await createAIImport({ sourceType: 'image', file })
+    let job: AIJob = uploaded.job
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      if (['succeeded', 'failed', 'cancelled', 'timed_out'].includes(job.status)) {
+        break
+      }
+      await new Promise(resolve => window.setTimeout(resolve, 1500))
+      job = await getAIJob(job.id)
+    }
+    if (job.status !== 'succeeded') {
+      throw new Error(job.error?.message ?? '图片识别失败，请重试。')
+    }
+    aiImportBatchId.value = uploaded.batch.id
+    aiReviewOpen.value = true
+    aiReply.value = '图片课表已识别，请核对候选课程后再确认。'
+  } catch (reason) {
+    aiError.value = reason instanceof Error
+      ? reason.message
+      : failure(reason).message
+  } finally {
+    aiImageBusy.value = false
   }
 }
 
@@ -1272,6 +1316,26 @@ const avatarLetter = computed(() => (
             {{ aiBusy ? 'AI 正在安排…' : '交给 AI' }} <ArrowRight :size="16" />
           </button>
         </form>
+
+        <div class="tt-ai-image-row">
+          <button
+            type="button"
+            class="tt-ai-image"
+            :disabled="aiImageBusy"
+            @click="openImagePicker"
+          >
+            <ImagePlus :size="15" aria-hidden="true" />
+            {{ aiImageBusy ? '正在识别图片…' : '图片课表' }}
+          </button>
+          <span>截图 / 相册，自动识别课程</span>
+          <input
+            ref="aiImageInput"
+            class="tt-ai-image-input"
+            type="file"
+            accept="image/*"
+            @change="handleImageSelected"
+          >
+        </div>
 
         <div v-if="aiBusy" class="tt-ai-running" role="status">
           <span class="tt-ai-running-dot" /> 正在读取课表并生成安排
@@ -1977,6 +2041,29 @@ const avatarLetter = computed(() => (
 }
 .tt-ai-chips button:hover { background: rgb(255 255 255 / 14%); }
 .tt-ai-form { display: flex; flex-direction: column; gap: 8px; }
+.tt-ai-image-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tt-ai-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 7%);
+  color: #dbe9dc;
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.tt-ai-image:hover { background: rgb(255 255 255 / 12%); }
+.tt-ai-image:disabled { opacity: .55; }
+.tt-ai-image-row > span { font-size: 10.5px; color: #8fa99a; }
+.tt-ai-image-input { display: none; }
 .tt-ai-form textarea {
   width: 100%;
   resize: vertical;

@@ -1,5 +1,6 @@
 import hashlib
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -415,6 +416,83 @@ async def _apply_import_candidates(
         return str(batch.id)
 
 
+def _screenshot_term(context: dict, today: date) -> dict | None:
+    terms = context.get("terms")
+    if not isinstance(terms, list) or not terms:
+        return None
+    for item in terms:
+        if not isinstance(item, dict):
+            continue
+        try:
+            if (
+                date.fromisoformat(item["start_date"])
+                <= today
+                <= date.fromisoformat(item["end_date"])
+            ):
+                return item
+        except (KeyError, TypeError, ValueError):
+            continue
+    return terms[0] if isinstance(terms[0], dict) else None
+
+
+def _normalize_screenshot_draft(
+    draft: dict,
+    context: dict,
+    today: date,
+) -> tuple[dict, list[str]]:
+    kind = draft.get("kind")
+    term = _screenshot_term(context, today)
+    recurrence = draft.get("recurrence")
+    if kind == "fixed" and isinstance(recurrence, dict) and term:
+        if (
+            recurrence.get("frequency") != "none"
+            and recurrence.get("until") is None
+            and recurrence.get("count") is None
+            and term.get("end_date")
+        ):
+            recurrence["until"] = term["end_date"]
+            draft["term_id"] = term.get("id")
+            return draft, [
+                "图片未显示固定安排的结束日期，已按当前学期结束日导入。",
+            ]
+        return draft, []
+    if kind != "course":
+        return draft, []
+    if (
+        draft.get("start_period_number") is not None
+        and draft.get("end_period_number") is not None
+    ):
+        draft["starts_at"] = None
+        draft["ends_at"] = None
+        draft["end_day_offset"] = 0
+    if not isinstance(recurrence, dict):
+        return draft, []
+    if recurrence.get("frequency") != "weekly" or recurrence.get("week_numbers"):
+        return draft, []
+    weekdays = recurrence.get("weekdays")
+    if not isinstance(weekdays, list) or not weekdays:
+        return draft, []
+    if not term or not term.get("first_week_monday"):
+        return draft, []
+    try:
+        first_monday = date.fromisoformat(term["first_week_monday"])
+        end_date = date.fromisoformat(term["end_date"])
+        weekday = int(weekdays[0])
+    except (KeyError, TypeError, ValueError):
+        return draft, []
+    if weekday < 1 or weekday > 7:
+        return draft, []
+    week_count = ((end_date - first_monday).days // 7) + 1
+    if week_count < 1:
+        return draft, []
+    recurrence["week_numbers"] = list(range(1, week_count + 1))
+    draft["term_id"] = term.get("id")
+    draft["start_date"] = None
+    return draft, [
+        "图片未显示课程周次，已按当前学期全周导入，请在审核时确认。",
+    ]
+
+
 async def apply_ai_import_result(
     database: Database,
     claim: ClaimedJob,
@@ -423,24 +501,36 @@ async def apply_ai_import_result(
     format_name: str,
     source_display: str | None = None,
     quality_sample_retention_days: int = 30,
+    context: dict | None = None,
 ) -> str | None:
-    parsed = [
-        ParsedCandidate(
-            raw_data={
-                "raw_text": item.raw_text,
-                "confidence": item.confidence,
-            },
-            draft=item.draft,
-            warnings=[
-                {
-                    "code": "ai_recognition_warning",
-                    "message": warning,
-                }
-                for warning in item.warnings
-            ],
+    context = context or {}
+    parsed: list[ParsedCandidate] = []
+    for item in result.output.items:
+        warnings = list(item.warnings)
+        draft = item.draft
+        if format_name == "screenshot" and isinstance(draft, dict):
+            draft, extra = _normalize_screenshot_draft(
+                draft,
+                context,
+                now().date(),
+            )
+            warnings.extend(extra)
+        parsed.append(
+            ParsedCandidate(
+                raw_data={
+                    "raw_text": item.raw_text,
+                    "confidence": item.confidence,
+                },
+                draft=draft,
+                warnings=[
+                    {
+                        "code": "ai_recognition_warning",
+                        "message": warning,
+                    }
+                    for warning in warnings
+                ],
+            )
         )
-        for item in result.output.items
-    ]
     return await _apply_import_candidates(
         database,
         claim,
