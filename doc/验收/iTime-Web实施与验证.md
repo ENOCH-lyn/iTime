@@ -2867,5 +2867,36 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 旧页面（`/tasks/full`、`/calendar`、`/reviews`）内容区样式仍沿用各自 CSS，只统一了外层顶栏。
 - 课表页仍有旧的 `.tt-nav`/`.tt-brand` 死样式，未清理，不影响渲染。
 - 移动端课表网格需要横向滑动，暂未提供“周视图/日视图”切换。
+
+## M7-AI：本地 Vosk 口述课表
+
+浏览器 Web Speech 在没有语音服务/网络的 Chromium 中不可用。本轮改为“浏览器录音 → 服务端 ffmpeg 转码 → 本地 Vosk 中文模型识别”，音频不出机器，也不依赖第二个云服务。
+
+### 本次范围
+
+- 后端新增 `POST /api/v1/ai/voice/transcribe`：登录 + AI 权限 + CSRF，上传上限 10 MiB，ffmpeg 转 16 kHz 单声道 WAV，Vosk `vosk-model-small-cn-0.22` 识别。
+- 模型默认路径 `server/models/vosk-model-small-cn-0.22`，可用 `ITIME_VOSK_MODEL_PATH` 覆盖；模型不提交 git，`scripts/download-vosk-model.ps1` 负责下载。
+- 前端“口述”改为 MediaRecorder 录音：点击开始、再次点击结束，上传后把识别文本追加到 AI 输入框；录音/识别状态可见。
+- 依赖：`vosk` 加入 `pyproject.toml`/`uv.lock`，模型目录加入 `.gitignore`。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `cd8678e` | `feat(voice): 本地 Vosk 口述课表` | voice service/router、下载脚本、前端录音、依赖 |
+
+### 验证记录
+
+- 2026-10-20 真实 API：用 Windows TTS 生成“每周三晚上七点健身，持续到期末”WAV，上传接口返回“每周三 晚上 七点 健身 持续 到 期末”。
+- 真实 Chromium + 假麦克风音频：点击口述→录音→停止→识别中，输入框出现识别文本；页面错误 0。
+- 模型目录约 42 MiB，未提交；真实 Vosk 识别在本地进程完成。
+- 后端 **7 passed**；`ruff` 通过；前端 `pnpm build` 通过。
+
+### 未覆盖范围与剩余风险
+
+- 目前只装中文小模型，识别质量受口音/环境噪声影响；专业名词可能误识别。
+- 首次请求需要加载模型，会多几百毫秒到数秒；模型文件需部署时单独下载。
+- 假麦克风测试会循环播放音频，输入框可能出现重复片段；真实麦克风只录一次。
+- 浏览器兼容性以 Chromium/Edge 的 MediaRecorder 为准；无麦克风权限时提示直接输入。
 - 移动端 AI 会话切换仍依赖抽屉，未做底部 tab。
 

@@ -39,6 +39,8 @@ uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no
 
 另开终端，在 `server/` 执行 `uv run python -m itime.mail_worker` 启动邮件进程。账号接口把验证/找回邮件写入数据库队列，发送进程中断后可恢复。仅运行 API 不会发送队列中的邮件。
 
+口述课表使用本地 Vosk 中文模型：在 `server/` 运行 `powershell -ExecutionPolicy Bypass -File scripts/download-vosk-model.ps1` 下载模型（约 42 MiB，目录已忽略），并确保 `ffmpeg` 在 PATH；也可用 `ITIME_VOSK_MODEL_PATH` 指定模型目录。音频在 API 进程内转换和识别，不发送到外部语音服务。
+
 截图识别、语音转写、全局对话、日周规划和复盘还需要另开终端，在 `server/` 执行 `uv run python -m itime.ai.worker` 启动 AI 作业进程。管理员须按需创建、测试并发布 `calendar_screenshot`、`transcription`、`conversation`、`planning`、`review` 能力配置，并可为每项能力设置最多两个已测试备用版本；新作业冻结三次尝试的主备顺序，只有可重试故障才切换，且不重置总截止时间。转写按服务端校验的音频分钟计价，其他能力按 Token 计价。未发布对应配置时服务不会接收该能力的新作业。开发环境未设置独立 AI 加密密钥时暂回退到基础加密密钥，生产必须配置不同的 `ITIME_AI_ENCRYPTION_KEY`。
 
 ICS URL 订阅由独立刷新进程执行；在 `server/` 另开终端运行 `uv run python -m itime.calendar.subscription_worker`。生产必须配置独立的 `ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY`，用于加密可能包含访问令牌的订阅 URL；API 与日志只显示主机和省略敏感路径、查询参数后的地址。
