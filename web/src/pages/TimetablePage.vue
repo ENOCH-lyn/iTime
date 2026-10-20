@@ -10,6 +10,7 @@ import {
   Clock3,
   ImagePlus,
   MapPin,
+  Mic,
   Plus,
   Sparkles,
   Trash2,
@@ -395,6 +396,31 @@ const aiCourseProposalId = ref<string | null>(null)
 const aiImportBatchId = ref<string | null>(null)
 const aiImageBusy = ref(false)
 const aiImageInput = ref<HTMLInputElement | null>(null)
+const aiListening = ref(false)
+let aiRecognition: {
+  lang: string
+  interimResults: boolean
+  continuous: boolean
+  onstart: (() => void) | null
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null
+  onerror: ((event: { error?: string }) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+} | null = null
+
+interface SpeechRecognitionResultLike {
+  readonly length: number
+  [index: number]: { transcript: string }
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number
+  results: {
+    readonly length: number
+    [index: number]: SpeechRecognitionResultLike
+  }
+}
 const aiConversationId = ref<string | null>(null)
 const aiReviewOpen = ref(false)
 
@@ -492,6 +518,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.clearInterval(clockTimer)
   window.clearTimeout(noticeTimer)
+  aiRecognition?.stop()
 })
 
 function moveWeek(offset: number) {
@@ -1057,6 +1084,58 @@ async function handleImageSelected(event: Event) {
   }
 }
 
+function toggleVoice() {
+  if (aiListening.value && aiRecognition) {
+    aiRecognition.stop()
+    return
+  }
+  const speechWindow = window as unknown as {
+    SpeechRecognition?: new () => NonNullable<typeof aiRecognition>
+    webkitSpeechRecognition?: new () => NonNullable<typeof aiRecognition>
+  }
+  const SpeechCtor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
+  if (!SpeechCtor) {
+    showNotice('当前浏览器不支持语音识别，请直接输入课表')
+    return
+  }
+  const recognition = new SpeechCtor()
+  recognition.lang = 'zh-CN'
+  recognition.interimResults = true
+  recognition.continuous = false
+  recognition.onstart = () => {
+    aiListening.value = true
+  }
+  recognition.onresult = (event) => {
+    let transcript = ''
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      transcript += event.results[index]?.[0]?.transcript ?? ''
+    }
+    if (transcript.trim()) {
+      aiPrompt.value = `${aiPrompt.value.trim()} ${transcript}`.trim()
+    }
+  }
+  recognition.onerror = (event) => {
+    aiListening.value = false
+    if (event.error !== 'aborted') {
+      showNotice(
+        event.error === 'not-allowed'
+          ? '需要麦克风权限，或直接输入课表'
+          : '语音识别暂不可用，请直接输入课表',
+      )
+    }
+  }
+  recognition.onend = () => {
+    aiListening.value = false
+  }
+  aiRecognition = recognition
+  try {
+    recognition.start()
+  } catch {
+    aiListening.value = false
+    showNotice('语音识别启动失败，请直接输入课表')
+  }
+}
+
 async function settingsChanged(message: string) {
   showNotice(message)
   try {
@@ -1327,7 +1406,16 @@ const avatarLetter = computed(() => (
             <ImagePlus :size="15" aria-hidden="true" />
             {{ aiImageBusy ? '正在识别图片…' : '图片课表' }}
           </button>
-          <span>截图 / 相册，自动识别课程</span>
+          <button
+            type="button"
+            class="tt-ai-voice"
+            :class="{ listening: aiListening }"
+            @click="toggleVoice"
+          >
+            <Mic :size="15" aria-hidden="true" />
+            {{ aiListening ? '正在听…' : '口述' }}
+          </button>
+          <span>截图 / 相册 / 语音，自动识别课程</span>
           <input
             ref="aiImageInput"
             class="tt-ai-image-input"
@@ -2059,6 +2147,25 @@ const avatarLetter = computed(() => (
   color: #dbe9dc;
   font-size: 11.5px;
   font-weight: 550;
+}
+.tt-ai-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 7%);
+  color: #dbe9dc;
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.tt-ai-voice:hover { background: rgb(255 255 255 / 12%); }
+.tt-ai-voice.listening {
+  border-color: #e7a08c;
+  background: rgb(231 160 140 / 18%);
+  color: #ffd9cf;
 }
 .tt-ai-image:hover { background: rgb(255 255 255 / 12%); }
 .tt-ai-image:disabled { opacity: .55; }
