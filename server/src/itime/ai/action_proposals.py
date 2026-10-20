@@ -90,6 +90,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "update_plan_block",
     "create_plan_block",
     "delete_plan_block",
+    "batch_update_plan_blocks",
 )
 
 STATUSES: tuple[str, ...] = ("pending", "applied", "rejected", "expired")
@@ -388,6 +389,103 @@ async def apply_proposal(
         return {
             "proposal": proposal_result(proposal),
             "series": series_result(series),
+        }
+    if proposal.tool_name == "batch_update_plan_blocks":
+        plan = await read_plan(
+            session,
+            owner_id,
+            UUID(str(payload["plan_id"])),
+        )
+        current = plan["current_version"]
+        changes = {
+            UUID(str(change["block_id"])): change
+            for change in payload["changes"]
+        }
+        current_ids = {UUID(block["id"]) for block in current["blocks"]}
+        if set(changes) - current_ids:
+            raise AppError(
+                "plan_block_not_found",
+                "批次中有计划块已不存在，请重新生成。",
+                status=409,
+            )
+        blocks: list[ManualPlanBlockInput] = []
+        for block in current["blocks"]:
+            change = changes.get(UUID(block["id"]))
+            local_date = date.fromisoformat(block["local_date"])
+            starts_at = time.fromisoformat(block["local_starts_at"])
+            ends_at = time.fromisoformat(block["local_ends_at"])
+            if change is not None:
+                if change.get("local_date") is not None:
+                    local_date = date.fromisoformat(str(change["local_date"]))
+                if change.get("starts_at") is not None:
+                    starts_at = time.fromisoformat(str(change["starts_at"]))
+                if change.get("ends_at") is not None:
+                    ends_at = time.fromisoformat(str(change["ends_at"]))
+            if starts_at >= ends_at:
+                raise AppError(
+                    "invalid_plan_time",
+                    "调整后的计划块结束必须晚于开始。",
+                )
+            if (
+                starts_at.minute % 15
+                or ends_at.minute % 15
+                or starts_at.second
+                or ends_at.second
+            ):
+                raise AppError(
+                    "invalid_plan_time",
+                    "计划块必须按 15 分钟对齐。",
+                )
+            blocks.append(
+                ManualPlanBlockInput(
+                    task_id=UUID(block["task_id"]),
+                    occurrence_key=block["occurrence_key"],
+                    local_date=local_date,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    step_ids=[UUID(step_id) for step_id in block["step_ids"]],
+                )
+            )
+        unscheduled = [
+            ManualUnscheduledItemInput(
+                task_id=UUID(item["task_id"]),
+                occurrence_key=item["occurrence_key"],
+                remaining_minutes=int(item["remaining_minutes"]),
+                reason=item["reason"],
+                explanation=item["explanation"],
+            )
+            for item in current["unscheduled_items"]
+        ]
+        saved = await create_manual_plan_version(
+            session,
+            owner_id,
+            ManualPlanVersionInput(
+                operation_id=UUID(str(proposal.operation_id)),
+                week_start_date=date.fromisoformat(plan["week_start_date"]),
+                expected_plan_version=int(plan["version"]),
+                density=current["density"],
+                buffer_minutes=int(current["buffer_minutes"]),
+                availability_start=time.fromisoformat(
+                    current["availability_start"]
+                ),
+                availability_end=time.fromisoformat(
+                    current["availability_end"]
+                ),
+                blocks=blocks,
+                unscheduled_items=unscheduled,
+            ),
+        )
+        saved_plan = saved["plan"]
+        _mark_applied(
+            proposal,
+            current_time,
+            UUID(saved_plan["id"]),
+            int(saved_plan["version"]),
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "plan": saved_plan,
         }
     if proposal.tool_name == "delete_plan_block":
         plan = await read_plan(

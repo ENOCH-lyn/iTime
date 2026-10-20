@@ -1471,6 +1471,55 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.plan_block_batch is not None:
+            action = result.plan_block_batch
+            plan = await read_plan(session, job.owner_id, action.plan_id)
+            blocks = {
+                item["id"]: item
+                for item in plan["current_version"]["blocks"]
+            }
+            changes = []
+            for change in action.changes:
+                block = blocks.get(str(change.block_id))
+                changes.append(
+                    {
+                        **change.model_dump(
+                            mode="json",
+                            exclude={"block_id"},
+                        ),
+                        "block_id": str(change.block_id),
+                        "block_title": (
+                            block["task_title_snapshot"] if block else None
+                        ),
+                        "current_date": block["local_date"] if block else None,
+                        "current_starts_at": (
+                            block["local_starts_at"] if block else None
+                        ),
+                        "current_ends_at": (
+                            block["local_ends_at"] if block else None
+                        ),
+                    }
+                )
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="batch_update_plan_blocks",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-plan-block-batch:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        "plan_id": str(action.plan_id),
+                        "changes": changes,
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.plan_block_create is not None:
             action = result.plan_block_create
             task = await session.scalar(
