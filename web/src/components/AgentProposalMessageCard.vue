@@ -136,12 +136,5 @@ onMounted(load)
         show-icon
       />
     </template>
-    <ElAlert
-      v-else-if="error"
-      type="error"
-      :title="error.message"
-      :closable="false"
-      show-icon
-    />
   </section>
 </template>
