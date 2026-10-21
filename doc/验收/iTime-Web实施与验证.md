@@ -3362,3 +3362,13 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 | --- | --- | --- |
 | `11e6abf` | `feat(admin): 管理员先密码登录，TOTP 改为后台手动开启` | 迁移、登录、后台设置 |
 | `20a74b3` | `docs(admin): 记录手动 TOTP` | 文档 |
+
+## M7-BD：密码会话访问后台
+
+- 修复 `authorized_admin` 强制要求 AdminCredential，导致密码会话 401。
+- 密码会话要求无 TOTP credential；TOTP/恢复码会话要求 credential 存在。
+- 真实 Chromium：管理员密码登录后进入账号安全，显示“未开启”和“开启双重验证”。
+
+### 提交
+
+- `9dd8a74` — `fix(admin): 允许未开启 TOTP 的密码会话访问后台`
