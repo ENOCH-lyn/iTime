@@ -727,6 +727,10 @@ class ConversationWork:
 
 
 MEMORY_CUE = re.compile(r"(记一下|记住|帮我记|记下|记录一下)")
+MEMORY_CONSTRAINT = re.compile(
+    r"(不能占用|不要安排|别安排|固定.*(?:洗澡|吃饭|睡觉|运动)|"
+    r"每天.*(?:洗澡|吃饭|睡觉|运动)|一般.*点.*(?:睡|起))",
+)
 
 
 async def capture_explicit_memory(
@@ -736,15 +740,17 @@ async def capture_explicit_memory(
     content: str,
     current_time: datetime,
 ) -> None:
-    """Persist an explicit “remember this” request before the model runs."""
-    if not MEMORY_CUE.search(content):
+    """Persist explicit memory or a clear lifestyle constraint before the model runs."""
+    cue = MEMORY_CUE.search(content)
+    constraint = MEMORY_CONSTRAINT.search(content)
+    if cue is None and constraint is None:
         return
     settings = await session.scalar(
         select(MemorySettings).where(MemorySettings.owner_id == owner_id)
     )
     if settings is not None and not settings.enabled:
         return
-    text = MEMORY_CUE.sub("", content, count=1)
+    text = MEMORY_CUE.sub("", content, count=1) if cue else content
     text = re.sub(r"^[，,：:\s]+", "", text).strip()
     if len(text) < 4:
         return
@@ -762,7 +768,7 @@ async def capture_explicit_memory(
         return
     memory = Memory(
         owner_id=owner_id,
-        kind="context",
+        kind="constraint" if constraint is not None else "context",
         title=text[:120],
         content=text,
         source_type="ai_tool",
