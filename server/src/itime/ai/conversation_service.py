@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
+import httpx
 from cryptography.fernet import Fernet
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -487,6 +488,7 @@ async def enqueue_message(
             session,
             owner_id,
             time_zone=daily.time_zone,
+            content=content,
         )
         if agent_mode
         else None
@@ -779,11 +781,55 @@ async def capture_explicit_memory(
     emit_change(session, owner_id, "memory", memory.id, "created", memory.version)
 
 
+async def _weather_context(content: str) -> dict | None:
+    if not re.search(r"天气|下雨|降雨|气温|温度|weather|rain", content, re.IGNORECASE):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=4.0, trust_env=True) as client:
+            response = await client.get(
+                "https://wttr.in/",
+                params={"format": "j1", "lang": "zh"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        current = (payload.get("current_condition") or [{}])[0]
+        days = []
+        for day in (payload.get("weather") or [])[:3]:
+            hourly = []
+            for item in day.get("hourly") or []:
+                if str(item.get("time")) in {"0", "600", "1200", "1800"}:
+                    hourly.append({
+                        "time": item.get("time"),
+                        "chanceofrain": item.get("chanceofrain"),
+                        "weather": (item.get("weatherDesc") or [{}])[0].get("value"),
+                        "tempC": item.get("tempC"),
+                    })
+            days.append({
+                "date": day.get("date"),
+                "maxtempC": day.get("maxtempC"),
+                "mintempC": day.get("mintempC"),
+                "hourly": hourly,
+            })
+        return {
+            "source": "wttr.in",
+            "current": {
+                "temp_C": current.get("temp_C"),
+                "feels_like_C": current.get("FeelsLikeC"),
+                "weather": (current.get("weatherDesc") or [{}])[0].get("value"),
+                "humidity": current.get("humidity"),
+            },
+            "days": days,
+        }
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        return {"source": "wttr.in", "error": "天气服务暂时不可用"}
+
+
 async def _agent_context(
     session: AsyncSession,
     owner_id: UUID,
     *,
     time_zone: str,
+    content: str,
 ) -> dict:
     local_now = now().astimezone(ZoneInfo(time_zone))
     local_today = local_now.date()
@@ -838,11 +884,13 @@ async def _agent_context(
         owner_id,
         time_zone=time_zone,
     )
+    weather = await _weather_context(content)
     return {
         "current_date": local_today.isoformat(),
         "current_time": local_now.isoformat(timespec="minutes"),
         "current_weekday": local_now.isoweekday(),
         "time_zone": time_zone,
+        **({"live_weather": weather} if weather is not None else {}),
         "term_id": str(active_term.id) if active_term is not None else None,
         "tasks": [
             {
