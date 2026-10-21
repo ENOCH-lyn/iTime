@@ -54,7 +54,7 @@ const deletionRequestNotice = ref<{ purge_after: string } | null>(null)
 let cooldownUntil = 0
 let timer: number | undefined
 const passwordHint = computed(() => policy.value
-  ? `${policy.value.password_min_length}—${policy.value.password_max_length} 个字符，可使用短语。`
+  ? `至少 ${policy.value.password_min_length} 位。`
   : '')
 const passwordLabel = computed(() => props.mode === 'reset-password' ? '新密码' : '密码')
 const mailFlow = computed(() => (
@@ -416,18 +416,17 @@ async function resend() {
                 :error="errors.password" :disabled="pending" @blur="validate('password')" />
               <FormField v-if="needsConfirmation" id="confirmation" v-model="values.confirmation" label="确认密码" type="password"
                 autocomplete="new-password" :error="errors.confirmation" :disabled="pending" @blur="validate('confirmation')" />
-              <div v-if="mode === 'login'" class="form-meta"><RouterLink to="/forgot-password">忘记密码？</RouterLink></div>
+              <div v-if="mode === 'login' && policy?.email_available" class="form-meta"><RouterLink to="/forgot-password">忘记密码？</RouterLink></div>
               <ElButton type="primary" native-type="submit" class="full-width"
                 :loading="pending"
                 :disabled="pending || (needsToken && !token) || (invitationRequired && !invitationToken)">
                 {{ pending ? '正在处理…' : info.action }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
               </ElButton>
-              <p v-if="mode === 'login'" class="field-hint">本次登录最长保留 {{ Math.round(policy.session_hours / 24 * 10) / 10 }} 天。公共设备使用后请退出。</p>
             </form>
             <p v-if="mode === 'login' && policy?.registration_mode === 'open'" class="auth-switch">还没有账号？<RouterLink to="/register">创建账号</RouterLink></p>
             <p v-else-if="mode === 'login'" class="auth-switch">当前仅接受邀请注册</p>
             <p v-else-if="mode === 'register'" class="auth-switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
-            <RouterLink v-if="['verify-email', 'login'].includes(mode)" to="/resend-verification" class="secondary-link">重新发送验证邮件</RouterLink>
+            <RouterLink v-if="['verify-email', 'login'].includes(mode) && policy?.email_available && policy?.require_email_verification" to="/resend-verification" class="secondary-link">重新发送验证邮件</RouterLink>
             <RouterLink v-if="mode === 'reset-password'" to="/forgot-password" class="secondary-link">重新获取重设链接</RouterLink>
           </template>
         </div>

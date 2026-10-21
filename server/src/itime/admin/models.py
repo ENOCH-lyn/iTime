@@ -28,8 +28,8 @@ class RegistrationPolicy(Base):
     mode: Mapped[str] = mapped_column(String(10), default="open", server_default="open")
     require_email_verification: Mapped[bool] = mapped_column(
         Boolean,
-        default=True,
-        server_default="true",
+        default=False,
+        server_default="false",
     )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

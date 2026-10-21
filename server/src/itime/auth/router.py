@@ -48,7 +48,7 @@ class EmailInput(Input):
         return value.strip().lower() if isinstance(value, str) else value
 
 
-Password = Annotated[SecretStr, Field(min_length=12, max_length=128)]
+Password = Annotated[SecretStr, Field(min_length=8, max_length=128)]
 Token = Annotated[SecretStr, Field(min_length=43, max_length=43)]
 InvitationToken = Annotated[SecretStr, Field(min_length=43, max_length=43)]
 
@@ -92,6 +92,13 @@ EMAIL_RESULT = {
 }
 
 
+def mail_available(settings) -> bool:
+    return (
+        settings.smtp_username is not None
+        or settings.smtp_host not in {"localhost", "127.0.0.1", "::1"}
+    )
+
+
 def invalid_token() -> AppError:
     return AppError(
         "invalid_email_token", "邮件链接已过期、已使用或已被新链接替换，请重新发送。", status=400
@@ -111,12 +118,13 @@ async def policy(request: Request) -> dict:
             retryable=True,
         )
     return {
-        "password_min_length": 12,
+        "password_min_length": 8,
         "password_max_length": 128,
         "session_hours": settings.session_hours,
         "verification_minutes": settings.verification_minutes,
         "password_reset_minutes": settings.password_reset_minutes,
         "mail_cooldown_seconds": settings.mail_cooldown_seconds,
+        "email_available": mail_available(settings),
         "registration_mode": registration.mode,
         "require_email_verification": (
             registration.require_email_verification
@@ -190,6 +198,7 @@ async def register(
                     "当前仅接受邀请注册，请使用与此邮箱匹配的有效邀请链接。",
                     status=403,
                 )
+        verification_required = registration.require_email_verification
         if new_id:
             session.add(UserPrivacySetting(owner_id=user.id))
             session.add(MemorySettings(owner_id=user.id))
@@ -216,7 +225,7 @@ async def register(
                 "registered_by_invitation" if invitation is not None else "registered",
                 invitation.id if invitation is not None else None,
             )
-            if not registration.require_email_verification:
+            if not verification_required:
                 user.email_verified_at = now()
                 device, session_token = await create_session(
                     request,
@@ -238,12 +247,11 @@ async def register(
                     device.id,
                 )
         if (
-            registration.require_email_verification
+            verification_required
             and user.email_verified_at is None
             and user.status == "active"
         ):
             await queue_email(request, session, user, "verify")
-        verification_required = registration.require_email_verification
     if session_token is not None:
         set_session_cookie(request, response, session_token)
     return {

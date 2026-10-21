@@ -302,6 +302,7 @@ export interface Policy {
   verification_minutes: number
   password_reset_minutes: number
   mail_cooldown_seconds: number
+  email_available: boolean
   registration_mode: 'open' | 'invite'
   require_email_verification: boolean
 }
@@ -309,6 +310,11 @@ export interface Policy {
 export function passwordError(value: string, policy: Policy) {
   // Python counts Unicode code points; use the same units as the server.
   const length = Array.from(value).length
-  return length < policy.password_min_length || length > policy.password_max_length
-    ? `请输入 ${policy.password_min_length}—${policy.password_max_length} 个字符。` : ''
+  if (length < policy.password_min_length) {
+    return `密码至少 ${policy.password_min_length} 位。`
+  }
+  if (length > policy.password_max_length) {
+    return '密码过长。'
+  }
+  return ''
 }

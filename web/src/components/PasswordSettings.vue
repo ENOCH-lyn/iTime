@@ -53,7 +53,7 @@ async function submit() {
       <FormField id="current" v-model="values.current" label="当前密码" type="password" autocomplete="current-password"
         :error="errors.current" :disabled="pending" @blur="validate('current')" />
       <FormField id="password" v-model="values.password" label="新密码" type="password" autocomplete="new-password"
-        :hint="`${policy.password_min_length}—${policy.password_max_length} 个字符。`"
+        :hint="`至少 ${policy.password_min_length} 位。`"
         :error="errors.password" :disabled="pending" @blur="validate('password')" />
       <FormField id="confirmation" v-model="values.confirmation" label="确认新密码" type="password" autocomplete="new-password"
         :error="errors.confirmation" :disabled="pending" @blur="validate('confirmation')" />

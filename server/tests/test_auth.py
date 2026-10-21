@@ -273,7 +273,7 @@ def test_registration_without_email_verification_logs_in_only_new_account(
     "body",
     [
         {"email": "invalid", "password": PASSWORD},
-        {"email": "someone@example.com", "password": "tiny!input"},
+        {"email": "someone@example.com", "password": "tiny"},
         {"email": "someone@example.com", "password": "x" * 129},
         {"email": "someone@example.com", "password": PASSWORD, "is_admin": True},
     ],
