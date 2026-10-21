@@ -125,16 +125,19 @@ async function confirmSetup() {
 async function login() {
   if (pending.value || !passwordPolicy.value) return
   error.value = null
-  validate('email'); validate('password'); validate('code')
+  validate('email'); validate('password')
+  if (values.code.trim()) validate('code')
+  else errors.code = ''
   const first = ['email', 'password', 'code'].find(field => errors[field])
   if (first) { await nextTick(); document.getElementById(`admin-${first}`)?.focus(); return }
   pending.value = true
   try {
-    const result = await api<AdminSession>('/admin/auth/login', {
+    const payload: Record<string, unknown> = {
       email: values.email.trim(), password: values.password, method: values.method,
-      code: values.code,
       device_name: `管理网页 · ${navigator.userAgent.includes('Mobile') ? '手机' : '电脑/平板'}`,
-    })
+    }
+    if (values.code.trim()) payload.code = values.code
+    const result = await api<AdminSession>('/admin/auth/login', payload)
     acceptAdminSession(result)
     notifyAdminSessionChange()
     values.password = ''; values.code = ''
@@ -228,11 +231,12 @@ async function copySecret() {
               />
             </div>
             <FormField id="admin-code" v-model="values.code"
-              :label="values.method === 'totp' ? '6 位验证码' : '恢复码'"
+              :label="values.method === 'totp' ? '6 位验证码（如已开启）' : '恢复码（如已开启）'"
               :inputmode="values.method === 'totp' ? 'numeric' : 'text'"
               :maxlength="values.method === 'totp' ? 6 : 32"
               :autocomplete="values.method === 'totp' ? 'one-time-code' : 'off'"
               :error="errors.code" :disabled="pending" @blur="validate('code')" />
+            <p class="field-hint">尚未开启双重验证的管理员可直接登录，登录后在账号安全中开启。</p>
             <ElButton type="primary" native-type="submit" class="full-width" :loading="pending" :disabled="pending">
               {{ pending ? '正在验证…' : '进入管理后台' }}<ArrowRight v-if="!pending" :size="18" aria-hidden="true" />
             </ElButton>

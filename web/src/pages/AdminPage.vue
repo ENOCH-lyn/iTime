@@ -24,6 +24,22 @@ const titles: Record<string, string> = {
 const pending = ref(false)
 const booted = ref(false)
 const error = ref<Failure | null>(null)
+const enrollmentPending = ref(false)
+const enrollmentError = ref<Failure | null>(null)
+
+async function enableTotp() {
+  if (enrollmentPending.value) return
+  enrollmentPending.value = true
+  enrollmentError.value = null
+  try {
+    const result = await api<{ setup_url: string }>('/admin/auth/enrollment', {})
+    window.location.assign(result.setup_url)
+  } catch (reason) {
+    enrollmentError.value = failure(reason)
+  } finally {
+    enrollmentPending.value = false
+  }
+}
 watch(section, () => { document.title = `${titles[section.value]} · iTime 管理后台` }, { immediate: true })
 watch(adminAuthError, value => {
   if (value?.code === 'admin_unauthenticated') void router.replace('/admin/login')
@@ -87,11 +103,21 @@ const links = [
         <AdminAuditEvents v-else-if="section === 'audit'" />
         <template v-else-if="section === 'security'">
           <p class="page-description">管理会话与普通用户登录相互独立。</p>
+          <StatusMessage :error="enrollmentError" />
           <dl class="account-details">
             <div><dt>管理员邮箱</dt><dd class="wrap-anywhere">{{ adminIdentity.admin.email }}</dd></div>
-            <div><dt>第二重验证</dt><dd>已启用 TOTP<small>本次使用{{ adminIdentity.auth_method === 'totp' ? '身份验证器' : '恢复码' }}登录</small></dd></div>
+            <div v-if="adminIdentity.auth_method === 'password'"><dt>第二重验证</dt><dd>未开启<small>当前仅密码登录</small></dd></div>
+            <div v-else><dt>第二重验证</dt><dd>已启用 TOTP<small>本次使用{{ adminIdentity.auth_method === 'totp' ? '身份验证器' : '恢复码' }}登录</small></dd></div>
             <div><dt>当前会话到期</dt><dd>{{ new Date(adminIdentity.expires_at).toLocaleString('zh-CN') }}<small>按当前设备时区显示</small></dd></div>
           </dl>
+          <ElButton
+            v-if="adminIdentity.auth_method === 'password'"
+            :loading="enrollmentPending"
+            :disabled="enrollmentPending"
+            @click="enableTotp"
+          >
+            {{ enrollmentPending ? '正在生成…' : '开启双重验证' }}
+          </ElButton>
           <div class="setting-links">
             <RouterLink to="/admin/password"><div><strong>修改管理密码</strong><p>更新后撤销其他所有登录会话。</p></div><ExternalLink :size="20" aria-hidden="true" /></RouterLink>
             <RouterLink to="/admin/recovery"><div><strong>重新生成恢复码</strong><p>需要当前身份验证器验证码。</p></div><ExternalLink :size="20" aria-hidden="true" /></RouterLink>

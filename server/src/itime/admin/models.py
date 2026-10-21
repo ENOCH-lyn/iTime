@@ -99,7 +99,7 @@ class AdminRecoveryCode(Base):
 class AdminSession(Base):
     __tablename__ = "admin_sessions"
     __table_args__ = (
-        CheckConstraint("auth_method IN ('totp', 'recovery')", name="auth_method"),
+        CheckConstraint("auth_method IN ('password', 'totp', 'recovery')", name="auth_method"),
         Index("ix_admin_sessions_user_created", "user_id", "created_at", "id"),
         Index("ix_admin_sessions_expires", "expires_at"),
     )

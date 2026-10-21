@@ -13,6 +13,7 @@ from itime.admin.models import (
     AdminRecoveryCode,
     AdminSession,
 )
+from itime.admin.operations import _new_enrollment
 from itime.admin.security import (
     ADMIN_COOKIE_NAME,
     RECOVERY_CODE_COUNT,
@@ -56,8 +57,8 @@ class SetupConfirmInput(SetupInput):
 class AdminLoginInput(Input):
     email: str = Field(min_length=3, max_length=254)
     password: Password
-    method: Literal["totp", "recovery"]
-    code: AuthCode
+    method: Literal["password", "totp", "recovery"] = "totp"
+    code: AuthCode | None = None
     device_name: str = Field(default="管理网页", min_length=1, max_length=100)
 
     @field_validator("email", mode="before")
@@ -147,6 +148,23 @@ async def policy(request: Request) -> dict:
         "session_hours": settings.admin_session_hours,
         "setup_minutes": settings.admin_setup_minutes,
         "recovery_code_count": RECOVERY_CODE_COUNT,
+    }
+
+
+@router.post("/enrollment")
+async def create_manual_enrollment(request: Request) -> dict:
+    async with authorized_admin(request) as identity:
+        user_id = identity.user.id
+    async with request.app.state.database.transaction() as session:
+        user = await session.scalar(
+            select(User).where(User.id == user_id).with_for_update()
+        )
+        check_admin(user)
+        raw = await _new_enrollment(session, user, request.app.state.settings)
+    return {
+        "setup_url": (
+            f"{request.app.state.settings.public_origin}/admin/setup#token={raw}"
+        )
     }
 
 
@@ -255,9 +273,17 @@ async def login(data: AdminLoginInput, request: Request, response: Response) -> 
             .with_for_update()
         )
         if credential is None:
+            device, raw = await create_admin_session(
+                request, session, user, data.device_name, "password"
+            )
+            audit(request, session, user, "admin_logged_in_password", device.id)
+            result = admin_session_result(request, user, device, raw)
+            set_admin_cookie(request, response, raw)
+            return result
+        if data.code is None:
             raise AppError(
-                "admin_setup_required",
-                "此管理员尚未完成双重验证设置，请使用服务器生成的一次性设置链接。",
+                "admin_totp_required",
+                "此管理员已开启双重验证，请输入身份验证器验证码。",
                 status=403,
             )
         if data.method == "totp":

@@ -4,7 +4,7 @@ import { ApiError, api, failure, setAdminCsrf, type Failure } from './api'
 export interface AdminSession {
   admin: { id: string; email: string; is_admin: boolean }
   session_id: string
-  auth_method: 'totp' | 'recovery'
+  auth_method: 'password' | 'totp' | 'recovery'
   expires_at: string
   csrf_token: string
 }
