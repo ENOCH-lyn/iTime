@@ -3260,3 +3260,19 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 | --- | --- | --- |
 | `cae8808` | `feat(ai): 天气查询注入实时天气上下文` | 天气上下文、prompt、验证 |
 | `0416f1b` | `docs(ai): 记录天气查询` | 文档与截图 |
+
+## M7-AV：默认管理员与后台入口清理
+
+- 用户登录页增加“管理员登录”入口。
+- 新增 `server/scripts/bootstrap_admin.py`，默认创建 `admin@itime.local`，随机密码并写入 `server/.local/admin-bootstrap.json`（gitignored），不覆盖已有账号。
+- 管理员登录支持 `.local` 域名；实测返回 `admin_setup_required`，说明账号已创建且等待 TOTP 设置。
+- 删除后台的 AI 额度、供应商成本、AI 技术日志、质量样本入口；旧地址重定向到账号安全。
+- `ruff`、`pnpm build` 通过。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `e77cd28` | `feat(admin): 创建本地默认管理员并支持 .local 管理员邮箱` | bootstrap、管理员登录邮箱 |
+| `a92be80` | `refactor(admin): 删除额度成本日志与质量入口` | 后台导航与路由 |
+| `c55bf9a` | `docs(admin): 记录后台入口清理` | 文档 |
