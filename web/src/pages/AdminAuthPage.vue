@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import QrcodeVue from 'qrcode.vue'
 import { ArrowRight, Check, Copy, KeyRound, ShieldCheck } from 'lucide-vue-next'
 import AppearanceControls from '../components/AppearanceControls.vue'
@@ -12,6 +12,7 @@ import { api, failure, localFailure, passwordError, type Failure, type Policy as
 
 const props = defineProps<{ mode: 'login' | 'setup' }>()
 const router = useRouter()
+const route = useRoute()
 interface AdminPolicy { session_hours: number; setup_minutes: number; recovery_code_count: number }
 interface SetupResult { email: string; secret: string; provisioning_uri: string; expires_at: string }
 interface ConfirmResult extends AdminSession { recovery_codes: string[] }
@@ -53,6 +54,9 @@ async function loadPolicy() {
 }
 onMounted(async () => {
   document.title = `${pageTitle.value} · iTime`
+  if (props.mode === 'login' && typeof route.query.email === 'string') {
+    values.email = route.query.email
+  }
   if (props.mode === 'setup') {
     token.value = new URLSearchParams(location.hash.slice(1)).get('token') ?? ''
     await router.replace({ path: '/admin/setup', hash: '' })

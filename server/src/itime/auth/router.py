@@ -1,9 +1,10 @@
+import re
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -39,12 +40,18 @@ class Input(BaseModel):
 
 
 class EmailInput(Input):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=254)
 
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, value):
-        return value.strip().lower() if isinstance(value, str) else value
+        normalized = value.strip().lower() if isinstance(value, str) else value
+        if not isinstance(normalized, str) or not re.fullmatch(
+            r"[^@\s]+@[^@\s]+\.[^@\s]+",
+            normalized,
+        ):
+            raise ValueError("邮箱格式不正确")
+        return normalized
 
 
 Password = Annotated[SecretStr, Field(min_length=8, max_length=128)]
