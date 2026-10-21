@@ -760,7 +760,7 @@ class ConversationWork:
 
 VISION_MODEL = re.compile(
     r"vision|(?:^|[-_])vl(?:$|[-_])|gpt-4o|gpt-4\.1|gemini|claude-3|"
-    r"qwen-vl|glm-4v|internvl|llava",
+    r"qwen-vl|glm-4v|internvl|llava|deepseek-chat",
     re.IGNORECASE,
 )
 
