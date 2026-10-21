@@ -44,6 +44,7 @@ const token = ref('')
 const invitationToken = ref('')
 const cooldown = ref(0)
 const registrationAwaitingVerification = ref(false)
+const registrationStatus = ref<'registered' | 'verification_sent' | 'already_registered' | null>(null)
 const pendingDeletion = ref<{
   requested_at: string
   purge_after: string
@@ -62,8 +63,14 @@ const mailFlow = computed(() => (
   || (props.mode === 'register' && registrationAwaitingVerification.value)
 ))
 const finishedTitle = computed(() => {
-  if (mailFlow.value) return '去邮箱看看吧'
-  if (props.mode === 'register') return '注册请求已受理'
+  if (props.mode === 'register' && registrationStatus.value === 'already_registered') {
+    return '该邮箱已注册'
+  }
+  if (props.mode === 'register' && registrationStatus.value === 'verification_sent') {
+    return '验证邮件已发送'
+  }
+  if (mailFlow.value) return '邮件已发送'
+  if (props.mode === 'register') return '注册成功'
   return '密码已重设'
 })
 const invitationRequired = computed(() =>
@@ -113,6 +120,7 @@ watch(() => props.mode, () => {
   pendingDeletion.value = null
   restored.value = false
   registrationAwaitingVerification.value = false
+  registrationStatus.value = null
   values.password = ''
 })
 
@@ -192,6 +200,7 @@ async function submit() {
       await router.replace('/timetable')
     } else if (props.mode === 'register') {
       const result = await api<{
+        status: 'registered' | 'verification_sent' | 'already_registered'
         message: string
         verification_required: boolean
         session: Session | null
@@ -208,8 +217,9 @@ async function submit() {
         await router.replace('/timetable')
         return
       }
-      registrationAwaitingVerification.value = result.verification_required
-      success.value = result.message
+      registrationStatus.value = result.status
+      registrationAwaitingVerification.value = result.status === 'verification_sent'
+      success.value = result.status === 'already_registered' ? '' : result.message
       finished.value = true
       if (result.verification_required) startCooldown()
     } else {
@@ -302,7 +312,9 @@ async function resend() {
   try {
     await api(`/auth/${props.mode === 'forgot-password' ? 'forgot-password' : 'resend-verification'}`, { email: values.email.trim() })
     startCooldown()
-    success.value = '已受理重新发送请求。请检查收件箱和垃圾邮件，使用最新的链接。'
+    success.value = props.mode === 'forgot-password'
+      ? '重设邮件已发送，请查收。'
+      : '验证邮件已发送，请查收。'
   } catch (err) { error.value = failure(err) }
   finally { pending.value = false }
 }
@@ -362,11 +374,14 @@ async function resend() {
           </template>
           <template v-else-if="finished">
             <MailCheck v-if="mailFlow" class="success-icon" :size="32" aria-hidden="true" />
+            <CircleCheck v-else class="success-icon" :size="32" aria-hidden="true" />
             <h1 tabindex="-1">{{ finishedTitle }}</h1>
-            <p v-if="mailFlow" class="page-description wrap-anywhere">发送至 {{ values.email.trim() }}。邮件可能需要一点时间。</p>
+            <p v-if="mailFlow" class="page-description wrap-anywhere">验证邮件已发送至 {{ values.email.trim() }}。</p>
+            <p v-else-if="mode === 'register' && registrationStatus === 'already_registered'" class="page-description">
+              请直接登录。
+            </p>
             <StatusMessage :error="error" :success="success" />
             <template v-if="mailFlow">
-              <p class="muted">没有收到？先检查垃圾邮件。重新发送后，请使用最新链接。</p>
               <ElButton plain class="full-width" :disabled="pending || cooldown > 0" :loading="pending" @click="resend">
                 {{ pending ? '正在发送…' : cooldown > 0 ? `${cooldown} 秒后可重新发送` : '重新发送邮件' }}
               </ElButton>

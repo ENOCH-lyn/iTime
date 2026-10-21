@@ -88,7 +88,7 @@ class ChangePasswordInput(Input):
 
 EMAIL_RESULT = {
     "status": "accepted",
-    "message": "如果此邮箱需要处理，我们会发送邮件。请检查收件箱和垃圾邮件。",
+    "message": "请求已提交",
 }
 
 
@@ -254,8 +254,18 @@ async def register(
             await queue_email(request, session, user, "verify")
     if session_token is not None:
         set_session_cookie(request, response, session_token)
+    if session_payload is not None:
+        status = "registered"
+        message = "注册成功"
+    elif verification_required:
+        status = "verification_sent"
+        message = "验证邮件已发送，请查收"
+    else:
+        status = "already_registered"
+        message = "该邮箱已注册，请直接登录"
     return {
-        **EMAIL_RESULT,
+        "status": status,
+        "message": message,
         "verification_required": verification_required,
         "session": session_payload,
     }
