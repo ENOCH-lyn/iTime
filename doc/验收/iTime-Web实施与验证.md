@@ -3347,3 +3347,18 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 | --- | --- | --- |
 | `580a6d6` | `feat(ai): 由模型调用 save_memory 生成长期记忆` | provider 工具、worker 持久化 |
 | `7ef98c6` | `docs(ai): 记录 AI 自主记忆` | 文档 |
+
+## M7-BC：管理员手动开启 TOTP
+
+- 未开启 TOTP 时管理员可用密码登录，session `auth_method=password`。
+- 账号安全页提供「开启双重验证」，生成 enrollment 后进入设置。
+- 已开启 TOTP 时必须验证码；未提供返回 `admin_totp_required`。
+- API 实测默认管理员密码登录 200，`auth_method=password`。
+- 边界：管理会话与普通用户会话仍独立；未在浏览器完成 TOTP 绑定全流程。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `11e6abf` | `feat(admin): 管理员先密码登录，TOTP 改为后台手动开启` | 迁移、登录、后台设置 |
+| `20a74b3` | `docs(admin): 记录手动 TOTP` | 文档 |
