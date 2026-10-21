@@ -3392,3 +3392,14 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 回答快照：`tasks/itime/persistent/preview/ai-vision-reply-2026-10-21.txt`。
 - 临时媒体与 `ai_jobs.input_summary.image_media_id` 已写入。
 - 边界：临时图片 24 小时过期；未即时删除。
+
+## M7-BG：普通登录直达管理员
+
+- 普通登录识别管理员后自动调用管理员密码登录。
+- 未开启 TOTP 时直接进入 `/admin/security`，不再第二次输入密码。
+- 已开启 TOTP 时跳转管理员验证页。
+- 真实 Chromium 已验证默认管理员普通登录后直达账号安全。
+
+### 提交
+
+- `890d041` — `feat(admin): 普通登录后直接进入管理员会话`
