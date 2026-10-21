@@ -17,6 +17,12 @@ const pending = ref(false)
 const error = ref('')
 
 const details = computed(() => proposal.value?.preview.details ?? {})
+const batchItems = computed<Record<string, unknown>[]>(() => (
+  Array.isArray(details.value.items)
+    ? details.value.items as Record<string, unknown>[]
+    : []
+))
+const isBatch = computed(() => batchItems.value.length > 0)
 const courseTitle = computed(() => String(details.value.series_title ?? '此课程'))
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isUpdate = computed(() => proposal.value?.tool_name === 'update_calendar_series')
@@ -29,6 +35,18 @@ const exceptionTitle = computed(() => (
     : `调整本次「${courseTitle.value}」`
 ))
 const changes = computed(() => {
+  if (isBatch.value) {
+    return batchItems.value.map((item) => {
+      const repeat = String(item.repeat ?? 'none')
+      const repeatLabel = repeat === 'daily'
+        ? '每天'
+        : repeat === 'weekly'
+          ? `每周${Array.isArray(item.repeat_weekdays) ? item.repeat_weekdays.join('、') : ''}`
+          : ''
+      const range = `${String(item.start_date ?? '')} ${String(item.starts_at ?? '').slice(0, 5)}–${String(item.ends_at ?? '').slice(0, 5)}`
+      return `${String(item.name ?? '安排')} · ${range}${repeatLabel ? ` · ${repeatLabel}` : ''}`
+    })
+  }
   if (isCreate.value) {
     const rows: string[] = []
     if (details.value.weekday != null) {
@@ -138,7 +156,7 @@ watch(() => props.proposalId, load)
       <header>
         <component :is="isCreate ? CalendarPlus : (isException ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ isCreate ? `新建课程「${courseTitle}」` : (isException ? exceptionTitle : (isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」`)) }}</strong>
+          <strong>{{ isBatch ? `新建 ${batchItems.length} 项安排` : (isCreate ? `新建课程「${courseTitle}」` : (isException ? exceptionTitle : (isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」`))) }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -151,7 +169,7 @@ watch(() => props.proposalId, load)
       <div v-if="proposal.status === 'pending'" class="course-proposal-actions">
         <ElButton :type="isUpdate || isCreate ? 'primary' : 'danger'" :loading="pending" @click="apply">
           <component :is="isCreate ? CalendarPlus : (isException ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="15" aria-hidden="true" />
-          {{ isCreate ? '确认新建' : (isException ? (exceptionAction === 'cancelled' ? '确认取消' : '确认调整') : (isUpdate ? '确认修改' : '确认删除')) }}
+          {{ isBatch ? '确认全部' : (isCreate ? '确认新建' : (isException ? (exceptionAction === 'cancelled' ? '确认取消' : '确认调整') : (isUpdate ? '确认修改' : '确认删除'))) }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝

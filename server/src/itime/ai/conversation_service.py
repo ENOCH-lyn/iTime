@@ -1678,6 +1678,28 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.calendar_batch is not None:
+            action = result.calendar_batch
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name="create_calendar_series",
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-calendar-batch:{job.id}")
+                ),
+                preview={
+                    "summary": action.assistant_message,
+                    "details": {
+                        "items": action.model_dump(mode="json")["items"],
+                        "item_count": len(action.items),
+                    },
+                },
+                payload=action.model_dump(mode="json"),
+                expected_version=None,
+                current_time=current,
+            )
         elif result.course_delete is not None:
             action = result.course_delete
             series = await session.scalar(

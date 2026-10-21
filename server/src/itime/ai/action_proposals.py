@@ -42,6 +42,7 @@ from itime.calendar.series_service import (
     series_result,
     series_values,
 )
+from itime.calendar.service import default_term_time_zone
 from itime.database import Base
 from itime.errors import AppError
 from itime.planning.plan_service import create_manual_plan_version, read_plan
@@ -339,6 +340,73 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name == "create_calendar_series" and "items" in payload:
+        time_zone = await default_term_time_zone(session, owner_id)
+        created = []
+        for item in payload["items"]:
+            repeat = str(item.get("repeat") or "none")
+            recurrence = SeriesRecurrenceInput(
+                frequency=repeat,
+                interval=1,
+                weekdays=[int(value) for value in item.get("repeat_weekdays") or []],
+                until=(
+                    date.fromisoformat(str(item["repeat_until"]))
+                    if item.get("repeat_until")
+                    else None
+                ),
+                count=item.get("repeat_count"),
+            )
+            fields = SeriesFields(
+                kind="fixed",
+                term_id=None,
+                name=str(item["name"]),
+                teacher=str(item.get("teacher") or ""),
+                description=str(item.get("description") or ""),
+                location=str(item.get("location") or ""),
+                busy=True,
+                time_zone=time_zone,
+                start_date=date.fromisoformat(str(item["start_date"])),
+                starts_at=time.fromisoformat(str(item["starts_at"])),
+                ends_at=time.fromisoformat(str(item["ends_at"])),
+                end_day_offset=0,
+                recurrence=recurrence,
+            )
+            resolved = await resolve_series_draft(session, owner_id, fields)
+            series = CalendarSeries(
+                owner_id=owner_id,
+                source_type="manual",
+                source_id=None,
+                course_group_id=None,
+                **series_values(fields, resolved),
+            )
+            session.add(series)
+            await session.flush()
+            emit_change(
+                session,
+                owner_id,
+                "calendar_series",
+                series.id,
+                "created",
+                series.version,
+            )
+            created.append(series)
+        if not created:
+            raise AppError(
+                "calendar_batch_empty",
+                "没有可创建的活动。",
+                status=400,
+            )
+        _mark_applied(
+            proposal,
+            current_time,
+            created[0].id,
+            created[0].version,
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": [series_result(series) for series in created],
+        }
     if proposal.tool_name == "create_calendar_series":
         term = await session.scalar(
             select(AcademicTerm).where(
