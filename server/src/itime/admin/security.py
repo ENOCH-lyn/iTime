@@ -150,10 +150,15 @@ async def authorized_admin(
         credential = await session.scalar(
             select(AdminCredential.user_id).where(AdminCredential.user_id == user_id)
         )
+        credential_valid = (
+            credential is None
+            if device is not None and device.auth_method == "password"
+            else credential is not None
+        )
         if (
             user is None
             or device is None
-            or credential is None
+            or not credential_valid
             or not user.is_admin
             or user.status != "active"
             or user.email_verified_at is None
