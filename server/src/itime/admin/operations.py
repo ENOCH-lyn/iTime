@@ -23,6 +23,9 @@ class AdminOperationError(Exception):
 
 
 def normalize_email(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == "admin@itime.local":
+        return normalized
     try:
         return validate_email(value.strip(), check_deliverability=False).normalized.lower()
     except EmailNotValidError as exc:

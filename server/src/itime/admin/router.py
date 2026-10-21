@@ -4,7 +4,7 @@ from uuid import UUID
 import pyotp
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy import delete, select, update
 
 from itime.admin.models import (
@@ -54,7 +54,7 @@ class SetupConfirmInput(SetupInput):
 
 
 class AdminLoginInput(Input):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=254)
     password: Password
     method: Literal["totp", "recovery"]
     code: AuthCode
