@@ -390,6 +390,74 @@ async def apply_proposal(
                 series.version,
             )
             created.append(series)
+            if item.get("create_task"):
+                start_at = time.fromisoformat(str(item["starts_at"]))
+                end_at = time.fromisoformat(str(item["ends_at"]))
+                duration = (
+                    end_at.hour * 60 + end_at.minute
+                    - start_at.hour * 60 - start_at.minute
+                )
+                task = Task(
+                    id=uuid4(),
+                    owner_id=owner_id,
+                    project_id=None,
+                    title=str(item["name"]),
+                    description=str(item.get("description") or ""),
+                    estimated_minutes=max(15, duration),
+                    estimate_source="ai",
+                    priority=0,
+                    status="open",
+                    version=1,
+                    created_at=current_time,
+                    updated_at=current_time,
+                )
+                session.add(task)
+                await session.flush()
+                emit_change(
+                    session,
+                    owner_id,
+                    "task",
+                    task.id,
+                    "created",
+                    task.version,
+                )
+                schedule_fields = TaskScheduleFields(
+                    due_kind="datetime",
+                    due_date=date.fromisoformat(str(item["start_date"])),
+                    due_time=start_at,
+                    time_zone=time_zone,
+                    recurrence=RecurrenceInput(
+                        frequency=repeat,
+                        interval=1,
+                        weekdays=[
+                            int(value)
+                            for value in item.get("repeat_weekdays") or []
+                        ],
+                        until=(
+                            date.fromisoformat(str(item["repeat_until"]))
+                            if item.get("repeat_until")
+                            else None
+                        ),
+                        count=item.get("repeat_count"),
+                    ),
+                )
+                resolved_schedule = await resolve_task_schedule(
+                    session,
+                    owner_id,
+                    task,
+                    schedule_fields,
+                )
+                session.add(
+                    TaskSchedule(
+                        task_id=task.id,
+                        owner_id=owner_id,
+                        predecessor_task_id=None,
+                        **task_schedule_values(
+                            schedule_fields,
+                            resolved_schedule,
+                        ),
+                    )
+                )
         if not created:
             raise AppError(
                 "calendar_batch_empty",
