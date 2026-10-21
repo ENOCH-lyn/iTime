@@ -8,9 +8,6 @@
     </div>
     <nav aria-label="页脚">
       <RouterLink to="/demo">产品演示</RouterLink>
-      <RouterLink to="/help">帮助</RouterLink>
-      <RouterLink to="/terms">用户协议</RouterLink>
-      <RouterLink to="/privacy">隐私说明</RouterLink>
       <RouterLink to="/login">登录</RouterLink>
     </nav>
   </footer>

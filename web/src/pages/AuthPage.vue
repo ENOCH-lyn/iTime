@@ -448,6 +448,6 @@ async function resend() {
         </div>
       </section>
     </main>
-    <footer class="public-footer"><span>iTime · 从容安排每一天</span><RouterLink to="/help">账号帮助</RouterLink></footer>
+    <footer class="public-footer"><span>iTime · 从容安排每一天</span></footer>
   </div>
 </template>
