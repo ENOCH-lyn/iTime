@@ -213,6 +213,7 @@ const nowMinutes = computed(() => {
 const boardEvents = computed<BoardEvent[]>(() => {
   const startDate = weekStart.value
   const output: BoardEvent[] = []
+  const calendarBySignature = new Map<string, BoardEvent>()
   for (const occurrence of calendarOccurrences.value) {
     if (!occurrence.local_start_time) continue
     if (occurrence.local_start_date < startDate || occurrence.local_start_date > addDays(startDate, 6)) {
@@ -223,11 +224,31 @@ const boardEvents = computed<BoardEvent[]>(() => {
     let endMin = timeToMinutes(occurrence.local_end_time) ?? startMin + 60
     if (occurrence.local_end_date !== occurrence.local_start_date) endMin = 1440
     if (endMin <= startMin) endMin = startMin + 30
-    output.push({
+    const signature = [
+      occurrence.kind,
+      occurrence.source_type,
+      occurrence.name,
+      occurrence.teacher,
+      occurrence.location,
+      occurrence.local_start_date,
+      occurrence.local_start_time,
+      occurrence.local_end_time,
+      occurrence.status,
+      occurrence.exception_action ?? '',
+    ].join('|')
+    const duplicate = calendarBySignature.get(signature)
+    if (duplicate) {
+      duplicate.duplicates = [...(duplicate.duplicates ?? []), occurrence]
+      duplicate.duplicateCount = (duplicate.duplicateCount ?? 1) + 1
+      continue
+    }
+    const event: BoardEvent = {
       id: `course:${occurrence.series_id ?? occurrence.subscription_event_id}:${occurrence.occurrence_key}`,
       title: occurrence.name,
       subtitle: occurrence.location,
-    teacher: occurrence.teacher,
+      teacher: occurrence.teacher,
+      duplicateCount: 1,
+      duplicates: [],
       dayIndex: daysBetween(startDate, occurrence.local_start_date),
       startMin,
       endMin,
@@ -235,7 +256,9 @@ const boardEvents = computed<BoardEvent[]>(() => {
       colorIndex: colorIndexFor(occurrence.name),
       cancelled: occurrence.status !== 'scheduled',
       occurrence,
-    })
+    }
+    calendarBySignature.set(signature, event)
+    output.push(event)
   }
   for (const task of taskOccurrences.value) {
     if (task.due_kind !== 'datetime' || !task.due_time) continue
@@ -784,8 +807,36 @@ async function submitEvent(values: EventFormValues) {
   }
 }
 
-async function deleteSelected() {
-  const occurrence = selectedEvent.value?.occurrence
+async function mergeDuplicateCourses(event: BoardEvent) {
+  const duplicates = event.duplicates ?? []
+  const canonicalId = event.occurrence?.series_id
+  const bySeries = new Map<string, CalendarOccurrence>()
+  for (const occurrence of duplicates) {
+    if (occurrence.series_id && occurrence.series_id !== canonicalId) {
+      bySeries.set(occurrence.series_id, occurrence)
+    }
+  }
+  if (!bySeries.size) return
+  if (!window.confirm(
+    `发现 ${event.duplicateCount} 条相同的「${event.title}」。保留一条，清理其余 ${bySeries.size} 条课程数据？`,
+  )) return
+  try {
+    for (const [seriesId, occurrence] of bySeries) {
+      if (occurrence.series_version === null) continue
+      await trashCalendarSeries({
+        id: seriesId,
+        version: occurrence.series_version,
+      })
+    }
+    detailOpen.value = false
+    showNotice(`已清理 ${bySeries.size} 条重复课程`)
+    await loadWeek()
+  } catch (reason) {
+    error.value = failure(reason)
+  }
+}
+
+async function deleteSelected() {  const occurrence = selectedEvent.value?.occurrence
   if (!occurrence?.series_id || occurrence.series_version === null) return
   try {
     const series = await getSeries(occurrence.series_id)
@@ -1603,6 +1654,13 @@ const { pendingLogout, logout } = useAppShell()
             <dd>{{ selectedEvent.occurrence.teacher }}</dd>
           </div>
         </dl>
+        <div v-if="(selectedEvent.duplicateCount ?? 1) > 1" class="tt-duplicate-card">
+          <strong>发现 {{ selectedEvent.duplicateCount }} 条完全相同的课程</strong>
+          <p>它们会平分同一列宽度，看起来像“半宽课程”。可以保留一条，清理其余重复数据。</p>
+          <button type="button" @click="mergeDuplicateCourses(selectedEvent)">
+            保留一条并清理重复
+          </button>
+        </div>
         <p v-if="selectedEvent.occurrence?.description" class="tt-detail-desc">
           <NotebookText :size="15" aria-hidden="true" />
           {{ selectedEvent.occurrence.description }}

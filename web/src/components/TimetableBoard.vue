@@ -77,32 +77,55 @@ const positioned = computed<PositionedEvent[]>(() => {
       .sort((left, right) => (
         left.startMin - right.startMin || left.endMin - right.endMin
       ))
-    const laneEnds: number[] = []
-    const lanes = new Map<string, number>()
+    const clusters: BoardEvent[][] = []
+    let cluster: BoardEvent[] = []
+    let clusterEnd = -1
     for (const item of dayItems) {
       const end = Math.max(item.endMin, item.startMin + 15)
-      let lane = laneEnds.findIndex(laneEnd => laneEnd <= item.startMin)
-      if (lane === -1) {
-        lane = laneEnds.length
-        laneEnds.push(end)
-      } else {
-        laneEnds[lane] = end
+      if (cluster.length > 0 && item.startMin >= clusterEnd) {
+        clusters.push(cluster)
+        cluster = []
+        clusterEnd = -1
       }
-      lanes.set(item.id, lane)
+      cluster.push(item)
+      clusterEnd = Math.max(clusterEnd, end)
     }
-    const laneCount = Math.max(1, laneEnds.length)
-    for (const item of dayItems) {
-      const lane = lanes.get(item.id) ?? 0
-      const start = Math.min(Math.max(item.startMin, props.rangeStart), props.rangeEnd)
-      const end = Math.min(Math.max(item.endMin, start + 15), props.rangeEnd)
-      output.push({
-        ...item,
-        top: ((start - props.rangeStart) / 60) * HOUR_HEIGHT,
-        height: Math.max(30, ((end - start) / 60) * HOUR_HEIGHT - 4),
-        left: `calc(${(lane * 100) / laneCount}% + 2px)`,
-        width: `calc(${100 / laneCount}% - 4px)`,
-        timeLabel: eventTimeLabel(item),
-      })
+    if (cluster.length > 0) clusters.push(cluster)
+
+    for (const items of clusters) {
+      const laneEnds: number[] = []
+      const lanes = new Map<string, number>()
+      for (const item of items) {
+        const end = Math.max(item.endMin, item.startMin + 15)
+        let lane = laneEnds.findIndex(laneEnd => laneEnd <= item.startMin)
+        if (lane === -1) {
+          lane = laneEnds.length
+          laneEnds.push(end)
+        } else {
+          laneEnds[lane] = end
+        }
+        lanes.set(item.id, lane)
+      }
+      const laneCount = Math.max(1, laneEnds.length)
+      for (const item of items) {
+        const lane = lanes.get(item.id) ?? 0
+        const start = Math.min(
+          Math.max(item.startMin, props.rangeStart),
+          props.rangeEnd,
+        )
+        const end = Math.min(
+          Math.max(item.endMin, start + 15),
+          props.rangeEnd,
+        )
+        output.push({
+          ...item,
+          top: ((start - props.rangeStart) / 60) * HOUR_HEIGHT,
+          height: Math.max(30, ((end - start) / 60) * HOUR_HEIGHT - 4),
+          left: `calc(${(lane * 100) / laneCount}% + 2px)`,
+          width: `calc(${100 / laneCount}% - 4px)`,
+          timeLabel: eventTimeLabel(item),
+        })
+      }
     }
   }
   return output
@@ -235,6 +258,7 @@ function minuteTop(minute: number) {
             @click.stop="emit('select', event)"
           >
             <span class="board-event-time">{{ event.timeLabel }}</span>
+            <span v-if="(event.duplicateCount ?? 1) > 1" class="board-event-dupe">×{{ event.duplicateCount }}</span>
             <strong>{{ event.title }}</strong>
             <small v-if="event.subtitle" class="board-event-location">{{ event.subtitle }}</small>
             <small v-if="showTeacher && event.teacher" class="board-event-teacher">{{ event.teacher }}</small>
@@ -450,6 +474,18 @@ function minuteTop(minute: number) {
 .board-event-teacher {
   color: color-mix(in srgb, var(--text) 72%, var(--muted));
   font-weight: 600;
+}
+.board-event-dupe {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #c68a3a 16%, var(--surface));
+  color: color-mix(in srgb, #8a5c17 80%, var(--text));
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 .board-event.compact .board-event-location { display: none; }
 .board-event.mini { padding: 5px 6px; gap: 1px; }

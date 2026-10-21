@@ -9,6 +9,8 @@ export interface BoardEvent {
   title: string
   subtitle: string
   teacher?: string
+  duplicateCount?: number
+  duplicates?: CalendarOccurrence[]
   dayIndex: number
   startMin: number
   endMin: number
