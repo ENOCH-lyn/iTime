@@ -18,6 +18,7 @@ from itime.ai.admin_governance_router import router as admin_ai_governance_route
 from itime.ai.admin_router import router as admin_ai_config_router
 from itime.ai.agent_router import router as ai_agent_router
 from itime.ai.conversation_router import router as ai_conversation_router
+from itime.ai.document_router import router as ai_document_router
 from itime.ai.job_router import router as ai_job_router
 from itime.ai.privacy_router import router as privacy_settings_router
 from itime.ai.tool_proposal_router import router as ai_tool_proposal_router
@@ -82,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_quota_router)
     app.include_router(ai_agent_router)
     app.include_router(ai_conversation_router)
+    app.include_router(ai_document_router)
     app.include_router(ai_tool_proposal_router)
     app.include_router(ai_voice_router)
     app.include_router(ai_job_router)

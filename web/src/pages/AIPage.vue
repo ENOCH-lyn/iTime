@@ -17,6 +17,7 @@ import {
   refreshSession,
 } from '../lib/auth'
 import { cancelAIJob } from '../lib/ai-jobs'
+import { extractAIDocument } from '../lib/ai-documents'
 import {
   createAIImport,
   uploadCalendarFile,
@@ -48,6 +49,7 @@ const messages = ref<ConversationMessage[]>([])
 const olderCursor = ref<number | null>(null)
 const composer = ref('')
 const composerAttachment = ref<File | null>(null)
+const DOCUMENT_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.csv']
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const loadingOlder = ref(false)
@@ -518,14 +520,23 @@ async function ensureConversation() {
   return createNewConversation()
 }
 
+function isDocumentAttachment(file: File) {
+  const name = file.name.toLocaleLowerCase()
+  const index = name.lastIndexOf('.')
+  return index >= 0 && DOCUMENT_EXTENSIONS.includes(name.slice(index))
+}
+
 async function send() {
   if (sending.value || composerDisabled.value) return
   const attachment = composerAttachment.value
-  const content = composer.value.trim() || (
-    attachment?.type.startsWith('image/')
-      ? '请识别这张课表并生成导入候选。'
-      : '请把这个课表文件整理成可确认的日历候选。'
-  )
+  let content = composer.value.trim()
+  if (!content && attachment) {
+    content = isDocumentAttachment(attachment)
+      ? '请阅读这个文件，提炼重点并给出接下来可执行的建议。'
+      : attachment.type.startsWith('image/')
+        ? '请识别这张课表并生成导入候选。'
+        : '请把这个课表文件整理成可确认的日历候选。'
+  }
   if (!content) return
   sending.value = true
   error.value = null
@@ -544,17 +555,25 @@ async function send() {
       attachmentOperation = attachmentOperation?.fingerprint === attachmentFingerprint
         ? attachmentOperation
         : { id: crypto.randomUUID(), fingerprint: attachmentFingerprint }
-      const imported = attachment.type.startsWith('image/')
-        ? await createAIImport(
-            {
-              sourceType: 'image',
-              file: attachment,
-              conversationId: conversation.id,
-            },
-            attachmentOperation.id,
-          )
-        : await uploadCalendarFile(attachment, attachmentOperation.id)
-      importBatchId = imported.batch.id
+      if (isDocumentAttachment(attachment)) {
+        const extracted = await extractAIDocument(attachment, attachmentOperation.id)
+        const header = `附件《${extracted.filename}》${extracted.truncated ? '（内容过长，已截断）' : ''}`
+        const overhead = content.length + header.length + 2
+        const body = extracted.text.slice(0, Math.max(0, 11_990 - overhead))
+        content = `${content}\n\n${header}\n${body}`.slice(0, 12_000)
+      } else {
+        const imported = attachment.type.startsWith('image/')
+          ? await createAIImport(
+              {
+                sourceType: 'image',
+                file: attachment,
+                conversationId: conversation.id,
+              },
+              attachmentOperation.id,
+            )
+          : await uploadCalendarFile(attachment, attachmentOperation.id)
+        importBatchId = imported.batch.id
+      }
     }
     const fingerprint = JSON.stringify({
       conversation: conversation.id,
