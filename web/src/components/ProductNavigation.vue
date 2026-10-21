@@ -4,7 +4,6 @@ import {
   primaryNavigation,
   type ProductArea,
 } from '../lib/product-navigation'
-import SyncStatusIndicator from './SyncStatusIndicator.vue'
 
 const props = defineProps<{
   current: ProductArea
@@ -61,6 +60,5 @@ watch(() => props.current, revealCurrent)
         <span class="product-label">{{ item.label }}</span>
       </ElMenuItem>
     </ElMenu>
-    <SyncStatusIndicator />
   </nav>
 </template>

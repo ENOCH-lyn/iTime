@@ -19,7 +19,6 @@ import {
 import { cancelAIJob } from '../lib/ai-jobs'
 import { extractAIDocument } from '../lib/ai-documents'
 import {
-  createAIImport,
   uploadCalendarFile,
 } from '../lib/calendar-imports'
 import {
@@ -49,7 +48,6 @@ const messages = ref<ConversationMessage[]>([])
 const olderCursor = ref<number | null>(null)
 const composer = ref('')
 const composerAttachment = ref<File | null>(null)
-const DOCUMENT_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.csv']
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const loadingOlder = ref(false)
@@ -520,10 +518,13 @@ async function ensureConversation() {
   return createNewConversation()
 }
 
-function isDocumentAttachment(file: File) {
+function isCalendarAttachment(file: File) {
   const name = file.name.toLocaleLowerCase()
-  const index = name.lastIndexOf('.')
-  return index >= 0 && DOCUMENT_EXTENSIONS.includes(name.slice(index))
+  return name.endsWith('.xlsx') || name.endsWith('.ics')
+}
+
+function isDocumentAttachment(file: File) {
+  return !isCalendarAttachment(file)
 }
 
 async function send() {
@@ -531,11 +532,11 @@ async function send() {
   const attachment = composerAttachment.value
   let content = composer.value.trim()
   if (!content && attachment) {
-    content = isDocumentAttachment(attachment)
-      ? '请阅读这个文件，提炼重点并给出接下来可执行的建议。'
+    content = isCalendarAttachment(attachment)
+      ? '请把这个课表文件整理成可确认的日历候选。'
       : attachment.type.startsWith('image/')
-        ? '请识别这张课表并生成导入候选。'
-        : '请把这个课表文件整理成可确认的日历候选。'
+        ? '请阅读这张图片，提炼重点并给出接下来可执行的建议。'
+        : '请阅读这个文件，提炼重点并给出接下来可执行的建议。'
   }
   if (!content) return
   sending.value = true
@@ -562,16 +563,7 @@ async function send() {
         const body = extracted.text.slice(0, Math.max(0, 11_990 - overhead))
         content = `${content}\n\n${header}\n${body}`.slice(0, 12_000)
       } else {
-        const imported = attachment.type.startsWith('image/')
-          ? await createAIImport(
-              {
-                sourceType: 'image',
-                file: attachment,
-                conversationId: conversation.id,
-              },
-              attachmentOperation.id,
-            )
-          : await uploadCalendarFile(attachment, attachmentOperation.id)
+        const imported = await uploadCalendarFile(attachment, attachmentOperation.id)
         importBatchId = imported.batch.id
       }
     }

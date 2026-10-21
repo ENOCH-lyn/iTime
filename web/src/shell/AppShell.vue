@@ -50,9 +50,9 @@ function logoutFromDrawer() {
       <div class="app-shell-actions">
         <RouterLink to="/ai" class="app-shell-ai">AI</RouterLink>
         <RouterLink
-          to="/me"
+          to="/settings"
           class="app-shell-avatar"
-          :aria-label="`账号 ${identity?.user.email ?? ''}`"
+          aria-label="设置"
         >
           {{ avatarLetter }}
         </RouterLink>

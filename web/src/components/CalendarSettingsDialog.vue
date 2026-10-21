@@ -32,6 +32,42 @@ const emit = defineEmits<{
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
+const DEFAULT_PERIOD_TIMES = [
+  ['08:30', '09:15'],
+  ['09:25', '10:10'],
+  ['10:30', '11:15'],
+  ['11:25', '12:10'],
+  ['14:00', '14:45'],
+  ['14:55', '15:40'],
+  ['16:00', '16:45'],
+  ['16:55', '17:40'],
+  ['19:00', '19:55'],
+  ['19:55', '20:40'],
+] as const
+const DEFAULT_WEEKS = 20
+
+function defaultPeriods(): TermPeriod[] {
+  return DEFAULT_PERIOD_TIMES.map(([starts_at, ends_at], index) => ({
+    period_number: index + 1,
+    name: `第${index + 1}节`,
+    starts_at,
+    ends_at,
+  }))
+}
+
+function addDays(value: string, days: number) {
+  if (!value) return ''
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day, 12)
+  date.setDate(date.getDate() + days)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function syncEndDate() {
+  if (!values.startDate || !values.weekCount) return
+  values.endDate = addDays(values.startDate, Math.max(1, values.weekCount) * 7 - 1)
+}
 const pendingZone = ref(false)
 const pendingTerm = ref(false)
 const error = ref<Failure | null>(null)
@@ -44,6 +80,7 @@ const values = reactive({
   startDate: '',
   endDate: '',
   firstWeekMonday: '',
+  weekCount: DEFAULT_WEEKS,
   periods: [] as TermPeriod[],
 })
 let zoneOperation: { id: string; fingerprint: string } | null = null
@@ -124,9 +161,8 @@ function startTerm() {
   values.startDate = ''
   values.endDate = ''
   values.firstWeekMonday = ''
-  values.periods = [
-    { period_number: 1, name: '第一节', starts_at: '08:00', ends_at: '08:45' },
-  ]
+  values.weekCount = DEFAULT_WEEKS
+  values.periods = defaultPeriods()
   error.value = null
   success.value = ''
   termOperation = null
@@ -146,6 +182,10 @@ async function editTerm(term: Term) {
     values.startDate = detail.start_date
     values.endDate = detail.end_date
     values.firstWeekMonday = detail.first_week_monday
+    values.weekCount = Math.max(
+      1,
+      Math.min(30, Math.round((Date.parse(detail.end_date) - Date.parse(detail.start_date) + 86_400_000) / 604_800_000)),
+    )
     values.periods = (detail.periods ?? []).map(period => ({
       ...period,
       starts_at: period.starts_at.slice(0, 5),
@@ -168,6 +208,7 @@ function updateStartDate(value: string) {
   if (!editingTerm.value || !values.firstWeekMonday) {
     values.firstWeekMonday = mondayOnOrBefore(value)
   }
+  syncEndDate()
 }
 
 function addPeriod() {
@@ -187,8 +228,13 @@ function removePeriod(index: number) {
 
 async function saveTermForm() {
   if (pendingTerm.value) return
-  if (!values.name.trim() || !values.startDate || !values.endDate || !values.firstWeekMonday) {
-    error.value = localFailure('请填写完整的学期名称和日期。')
+  if (!values.name.trim() || !values.startDate || !values.weekCount || !values.firstWeekMonday) {
+    error.value = localFailure('请填写学期名称、开始日期和周数。')
+    return
+  }
+  syncEndDate()
+  if (!values.endDate) {
+    error.value = localFailure('请填写学期周数。')
     return
   }
   if (values.periods.some(period => (
@@ -340,8 +386,14 @@ async function saveTermForm() {
               @input="updateStartDate(($event.target as HTMLInputElement).value)" />
           </div>
           <div class="field">
+            <label for="term-weeks">学期周数</label>
+            <input id="term-weeks" v-model.number="values.weekCount" type="number" min="1" max="30"
+              :disabled="pendingTerm" @input="syncEndDate" />
+            <p class="field-hint">默认 20 周；结束日期自动计算。</p>
+          </div>
+          <div class="field">
             <label for="term-end-date">结束日期</label>
-            <input id="term-end-date" v-model="values.endDate" type="date" :disabled="pendingTerm" />
+            <input id="term-end-date" :value="values.endDate" type="date" disabled />
           </div>
           <div class="field">
             <label for="term-first-monday">第一周周一</label>

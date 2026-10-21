@@ -10,12 +10,14 @@ from docx.opc.exceptions import PackageNotFoundError
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
+from itime.calendar.ocr_service import OcrUnavailable, extract_calendar_text
 from itime.errors import AppError
 
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_DOCUMENT_CHARS = 12_000
 MAX_PDF_PAGES = 100
 DOCUMENT_SUFFIXES = {".pdf", ".docx", ".txt", ".md", ".markdown", ".csv"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 def _read_error(message: str, status: int = 400) -> AppError:
@@ -77,13 +79,18 @@ def extract_document(filename: str, contents: bytes) -> tuple[str, str, bool]:
         raise _read_error("文件不能超过 10 MB。", status=413)
     if suffix == ".doc":
         raise _read_error("旧版 .doc 请另存为 .docx 后再上传。")
-    if suffix not in DOCUMENT_SUFFIXES:
-        raise _read_error("暂不支持这个格式，请上传 PDF、DOCX、TXT、MD 或 CSV。")
+    if suffix not in DOCUMENT_SUFFIXES and suffix not in IMAGE_SUFFIXES:
+        raise _read_error("暂不支持这个格式，请上传 PDF、DOCX、TXT、MD、CSV 或图片。")
 
     if suffix == ".pdf":
         text = _read_pdf(contents)
     elif suffix == ".docx":
         text = _read_docx(contents)
+    elif suffix in IMAGE_SUFFIXES:
+        try:
+            text = extract_calendar_text(contents)
+        except OcrUnavailable as exc:
+            raise _read_error(f"图片没有可读取的文字：{exc}") from None
     else:
         text = _decode_text(contents)
 

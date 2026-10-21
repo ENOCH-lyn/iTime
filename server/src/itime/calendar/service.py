@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -88,6 +88,67 @@ async def default_term_time_zone(session: AsyncSession, owner_id: UUID) -> str:
             status=409,
         )
     return time_zone
+
+
+DEFAULT_PERIOD_TIMES = (
+    (time(8, 30), time(9, 15)),
+    (time(9, 25), time(10, 10)),
+    (time(10, 30), time(11, 15)),
+    (time(11, 25), time(12, 10)),
+    (time(14, 0), time(14, 45)),
+    (time(14, 55), time(15, 40)),
+    (time(16, 0), time(16, 45)),
+    (time(16, 55), time(17, 40)),
+    (time(19, 0), time(19, 55)),
+    (time(19, 55), time(20, 40)),
+)
+
+
+def default_term_periods(term_id: UUID, owner_id: UUID) -> list[TermPeriod]:
+    return [
+        TermPeriod(
+            term_id=term_id,
+            period_number=index,
+            owner_id=owner_id,
+            name=f"第{index}节",
+            normalized_name=f"第{index}节",
+            starts_at=starts_at,
+            ends_at=ends_at,
+        )
+        for index, (starts_at, ends_at) in enumerate(DEFAULT_PERIOD_TIMES, 1)
+    ]
+
+
+async def ensure_default_term(
+    session: AsyncSession,
+    owner_id: UUID,
+    *,
+    time_zone: str,
+) -> AcademicTerm:
+    """Return the nearest term, creating a 20-week term with 10 periods if none."""
+    term = await session.scalar(
+        select(AcademicTerm)
+        .where(AcademicTerm.owner_id == owner_id)
+        .order_by(AcademicTerm.start_date.desc(), AcademicTerm.updated_at.desc())
+        .limit(1)
+    )
+    if term is not None:
+        return term
+    local_today = datetime.now(ZoneInfo(time_zone)).date()
+    monday = local_today - timedelta(days=local_today.weekday())
+    month = local_today.month
+    term = AcademicTerm(
+        owner_id=owner_id,
+        name=f"{local_today.year}年{'春季' if 2 <= month <= 7 else '秋季'}学期",
+        start_date=local_today,
+        end_date=local_today + timedelta(days=20 * 7 - 1),
+        first_week_monday=monday,
+        time_zone=time_zone,
+    )
+    session.add(term)
+    await session.flush()
+    session.add_all(default_term_periods(term.id, owner_id))
+    return term
 
 
 def period_result(period: TermPeriod) -> dict:

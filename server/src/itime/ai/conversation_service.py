@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -43,8 +44,9 @@ from itime.ai.routing_service import (
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.import_service import import_detail
-from itime.calendar.models import AcademicTerm, CalendarImportBatch, CalendarSeries
+from itime.calendar.models import CalendarImportBatch, CalendarSeries
 from itime.calendar.series_service import query_occurrences
+from itime.calendar.service import ensure_default_term
 from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
@@ -74,6 +76,7 @@ from itime.review.memory_service import (
     memory_references,
     memory_system_message,
 )
+from itime.review.models import Memory, MemorySettings
 from itime.tasks.models import Task
 from itime.tasks.service import emit_change, save_operation
 
@@ -461,6 +464,13 @@ async def enqueue_message(
         )
         or 0
     )
+    await capture_explicit_memory(
+        session,
+        owner_id,
+        conversation.id,
+        content,
+        current,
+    )
     memory_items = await memory_context(session, owner_id)
     messages = await conversation_provider_messages(
         session,
@@ -714,13 +724,69 @@ class ConversationWork:
     agent_context: dict | None
 
 
+MEMORY_CUE = re.compile(r"(记一下|记住|帮我记|记下|记录一下)")
+
+
+async def capture_explicit_memory(
+    session: AsyncSession,
+    owner_id: UUID,
+    conversation_id: UUID,
+    content: str,
+    current_time: datetime,
+) -> None:
+    """Persist an explicit “remember this” request before the model runs."""
+    if not MEMORY_CUE.search(content):
+        return
+    settings = await session.scalar(
+        select(MemorySettings).where(MemorySettings.owner_id == owner_id)
+    )
+    if settings is not None and not settings.enabled:
+        return
+    text = MEMORY_CUE.sub("", content, count=1)
+    text = re.sub(r"^[，,：:\s]+", "", text).strip()
+    if len(text) < 4:
+        return
+    text = text[:2000]
+    existing = await session.scalar(
+        select(Memory.id).where(
+            Memory.owner_id == owner_id,
+            Memory.source_conversation_id == conversation_id,
+            Memory.content == text,
+            Memory.deleted_at.is_(None),
+            Memory.purged_at.is_(None),
+        )
+    )
+    if existing is not None:
+        return
+    memory = Memory(
+        owner_id=owner_id,
+        kind="context",
+        title=text[:120],
+        content=text,
+        source_type="ai_tool",
+        source_proposal_id=None,
+        source_conversation_id=conversation_id,
+        tags=[],
+        deleted_at=None,
+        purge_after=None,
+        purged_at=None,
+        version=1,
+        created_at=current_time,
+        updated_at=current_time,
+    )
+    session.add(memory)
+    await session.flush()
+    emit_change(session, owner_id, "memory", memory.id, "created", memory.version)
+
+
 async def _agent_context(
     session: AsyncSession,
     owner_id: UUID,
     *,
     time_zone: str,
 ) -> dict:
-    local_today = now().astimezone(ZoneInfo(time_zone)).date()
+    local_now = now().astimezone(ZoneInfo(time_zone))
+    local_today = local_now.date()
     tasks = list(
         await session.scalars(
             select(Task)
@@ -767,18 +833,15 @@ async def _agent_context(
     weeks_by_series = {
         series.id: list(series.course_week_numbers) for series in series_rows
     }
-    active_term = await session.scalar(
-        select(AcademicTerm)
-        .where(
-            AcademicTerm.owner_id == owner_id,
-            AcademicTerm.start_date <= local_today,
-            AcademicTerm.end_date >= local_today,
-        )
-        .order_by(AcademicTerm.updated_at.desc())
-        .limit(1)
+    active_term = await ensure_default_term(
+        session,
+        owner_id,
+        time_zone=time_zone,
     )
     return {
         "current_date": local_today.isoformat(),
+        "current_time": local_now.isoformat(timespec="minutes"),
+        "current_weekday": local_now.isoweekday(),
         "time_zone": time_zone,
         "term_id": str(active_term.id) if active_term is not None else None,
         "tasks": [
