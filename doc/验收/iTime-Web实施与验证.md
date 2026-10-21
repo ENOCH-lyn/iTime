@@ -3117,3 +3117,34 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 | SHA | 主题 | 范围 |
 | --- | --- | --- |
 | `565ba24` | `fix(auth): 错误提示只说真实原因` | 登录错误、StatusMessage、冲突提示、帮助/条款/隐私 |
+
+## M7-AQ：AI 文件附件
+
+用户反馈 AI 输入框不能粘贴文件，只能走课表附件；需要 PDF、Word 等常见格式。
+
+### 实现
+
+- AI 输入框支持点击选择和直接粘贴文件。
+- 支持 PDF、DOCX、TXT、MD、CSV；继续支持图片、XLSX、ICS 的课表导入路径。
+- 新增 `POST /api/v1/ai/documents/extract`：10 MB 上限，PDF 最多 100 页，提取文字最多 12,000 字符；内存解析，不落盘、不执行文件内容。
+- `.doc` 提示另存为 `.docx`；扫描版 PDF 提示先转换为可复制文字的 PDF。
+- 提取文字随用户消息进入现有 AI 上下文，原始文件不持久化。
+
+### 验证
+
+- 真实 API：DOCX、PDF、TXT 均提取成功，PDF 文字层可读。
+- 真实 Chromium：粘贴 PDF 出现附件 chip；选择 DOCX 后发送，用户消息包含 `附件《ai-sample.docx》` 和 Word 正文；页面错误 0。
+- `tests/test_ai_documents.py`：4 项通过。
+- `pnpm build`、`ruff` 通过。
+
+### 边界
+
+- 不支持旧版 `.doc`、加密 PDF、扫描版 PDF OCR；
+- 超长文档截断到 12,000 字符并标记；
+- 附件正文作为会话消息保存，原始文件不保存。
+
+### 对应提交
+
+| SHA | 主题 | 范围 |
+| --- | --- | --- |
+| `9ec09a6` | `feat(ai): 支持 PDF/Word 文档附件解析` | 文档解析服务、API、AI 附件 UI、依赖、测试 |
