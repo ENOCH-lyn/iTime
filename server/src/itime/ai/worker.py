@@ -20,6 +20,7 @@ from itime.ai.conversation_service import (
     cleanup_expired_job_events,
     complete_conversation_job,
     load_conversation_work,
+    persist_agent_memories,
     reject_or_retry_conversation_job,
 )
 from itime.ai.cost_service import mark_provider_request_started
@@ -379,6 +380,11 @@ async def _process_conversation(
         settings=settings,
         cipher=cipher,
         quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+    )
+    await persist_agent_memories(
+        database,
+        claim,
+        provider_result.memory_writes or [],
     )
 
 

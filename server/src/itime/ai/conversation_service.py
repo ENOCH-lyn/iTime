@@ -494,7 +494,8 @@ async def enqueue_message(
     )
     if agent_mode and re.search(
         r"天气|下雨|降雨|气温|温度|weather|rain|搜索|查一下|帮我查|"
-        r"最新|新闻|是谁|是什么|多少钱|怎么样",
+        r"最新|新闻|是谁|是什么|多少钱|怎么样|记住|记一下|"
+        r"偏好|习惯|不能占用|不要安排",
         content,
         re.IGNORECASE,
     ):
@@ -791,6 +792,65 @@ async def capture_explicit_memory(
     session.add(memory)
     await session.flush()
     emit_change(session, owner_id, "memory", memory.id, "created", memory.version)
+
+
+async def persist_agent_memories(
+    database: Database,
+    claim: ClaimedJob,
+    writes: list[dict],
+) -> None:
+    if not writes:
+        return
+    current = now()
+    async with database.transaction() as session:
+        settings = await session.scalar(
+            select(MemorySettings).where(MemorySettings.owner_id == claim.owner_id)
+        )
+        if settings is not None and not settings.enabled:
+            return
+        for write in writes[:5]:
+            content = str(write.get("content") or "").strip()[:2000]
+            kind = write.get("kind")
+            if len(content) < 4 or kind not in {"context", "constraint"}:
+                continue
+            title = str(write.get("title") or "").strip()[:120] or content[:120]
+            existing = await session.scalar(
+                select(Memory.id).where(
+                    Memory.owner_id == claim.owner_id,
+                    Memory.source_conversation_id == claim.conversation_id,
+                    Memory.content == content,
+                    Memory.deleted_at.is_(None),
+                    Memory.purged_at.is_(None),
+                )
+            )
+            if existing is not None:
+                continue
+            memory = Memory(
+                owner_id=claim.owner_id,
+                kind=kind,
+                title=title,
+                content=content,
+                source_type="ai_tool",
+                source_proposal_id=None,
+                source_conversation_id=claim.conversation_id,
+                tags=[],
+                deleted_at=None,
+                purge_after=None,
+                purged_at=None,
+                version=1,
+                created_at=current,
+                updated_at=current,
+            )
+            session.add(memory)
+            await session.flush()
+            emit_change(
+                session,
+                claim.owner_id,
+                "memory",
+                memory.id,
+                "created",
+                memory.version,
+            )
 
 
 async def _agent_context(

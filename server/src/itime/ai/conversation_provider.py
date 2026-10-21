@@ -168,6 +168,7 @@ class ConversationProviderResult:
     plan_block_batch: "AgentPlanBlockBatch | None" = None
     course_create: "AgentCourseCreate | None" = None
     calendar_batch: "AgentCalendarBatch | None" = None
+    memory_writes: list[dict[str, Any]] | None = None
 
 
 class AgentTaskUpdate(Input):
@@ -1087,6 +1088,29 @@ LIVE_TOOL_SPECS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": (
+                "Save a durable user preference, constraint or personal fact. "
+                "Use only when the user asks to remember it, or it is a stable "
+                "fact useful for future scheduling."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["context", "constraint"],
+                    },
+                    "title": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["kind", "title", "content"],
+            },
+        },
+    },
 ]
 
 
@@ -1198,6 +1222,7 @@ async def _execute_live_tool(
     *,
     default_location: str | None = None,
     settings: Settings | None = None,
+    memory_writes: list[dict[str, Any]] | None = None,
 ) -> dict:
     if name == "get_weather":
         return await _live_weather(
@@ -1208,6 +1233,19 @@ async def _execute_live_tool(
             str(arguments.get("query") or ""),
             settings,
         )
+    if name == "save_memory":
+        content = str(arguments.get("content") or "").strip()[:2000]
+        title = str(arguments.get("title") or "").strip()[:120] or content[:120]
+        kind = arguments.get("kind")
+        if len(content) < 4 or kind not in {"context", "constraint"}:
+            return {"error": "invalid memory"}
+        if memory_writes is not None:
+            memory_writes.append({
+                "kind": kind,
+                "title": title,
+                "content": content,
+            })
+        return {"saved": True, "title": title}
     return {"error": f"unknown tool: {name}"}
 
 
@@ -1278,6 +1316,7 @@ async def _generate_live_tool_reply(
     http_status: int | None = None
     usage: object | None = None
     content = ""
+    memory_writes: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(timeout_seconds):
             async with httpx.AsyncClient(
@@ -1339,6 +1378,7 @@ async def _generate_live_tool_reply(
                             arguments if isinstance(arguments, dict) else {},
                             default_location=context.get("weather_location"),
                             settings=settings,
+                            memory_writes=memory_writes,
                         )
                         chat_messages.append({
                             "role": "tool",
@@ -1386,6 +1426,7 @@ async def _generate_live_tool_reply(
         provider_request_id=request_id,
         http_status=http_status or 200,
         usage=usage,
+        memory_writes=memory_writes or None,
     )
 
 
