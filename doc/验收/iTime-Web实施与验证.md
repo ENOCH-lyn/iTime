@@ -3372,3 +3372,15 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 ### 提交
 
 - `9dd8a74` — `fix(admin): 允许未开启 TOTP 的密码会话访问后台`
+
+## M7-BE：对话图片视觉路径
+
+- 新增 `/api/v1/ai/images`，临时媒体保存图片，消息携带 `image_media_id`。
+- 视觉模型匹配时 worker 组装 `text + image_url`；非视觉模型保留 OCR。
+- 真实 Chromium 上传截图：84 KB JPEG、1280×889，`temporary_media` 与 `ai_jobs.input_summary.image_media_id` 已写入。
+- 当前模型 `deepseek-chat`，视觉路径未实际调用；OCR 回答已验证。
+- 边界：视觉模型依赖管理员配置；临时媒体未即时清理。
+
+### 提交
+
+- `7081d0b` — `feat(ai): 对话图片上传并支持视觉模型输入`
