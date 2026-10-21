@@ -41,6 +41,7 @@ class UserTimeSettings(Base):
         primary_key=True,
     )
     time_zone: Mapped[str] = mapped_column(String(64))
+    weather_location: Mapped[str | None] = mapped_column(String(120))
     week_starts_on: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     activity_day_start_minute: Mapped[int] = mapped_column(
         Integer,

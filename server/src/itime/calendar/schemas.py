@@ -14,6 +14,7 @@ def clean_time_zone(value: str) -> str:
 class TimeSettingsUpdate(OperationInput):
     expected_version: int = Field(ge=0)
     time_zone: str = Field(min_length=1, max_length=64)
+    weather_location: str | None = Field(default=None, max_length=120)
     week_starts_on: int = Field(default=1, ge=1, le=1)
     activity_day_start_minute: int = Field(default=240, ge=240, le=240)
 
@@ -21,6 +22,11 @@ class TimeSettingsUpdate(OperationInput):
     @classmethod
     def clean_zone(cls, value: str) -> str:
         return clean_time_zone(value)
+
+    @field_validator("weather_location")
+    @classmethod
+    def clean_location(cls, value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
 
 
 class TermCreate(OperationInput):

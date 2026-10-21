@@ -44,7 +44,7 @@ from itime.ai.routing_service import (
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.import_service import import_detail
-from itime.calendar.models import CalendarImportBatch, CalendarSeries
+from itime.calendar.models import CalendarImportBatch, CalendarSeries, UserTimeSettings
 from itime.calendar.series_service import query_occurrences
 from itime.calendar.service import ensure_default_term
 from itime.config import Settings
@@ -802,6 +802,8 @@ async def _agent_context(
 ) -> dict:
     local_now = now().astimezone(ZoneInfo(time_zone))
     local_today = local_now.date()
+    time_settings = await session.get(UserTimeSettings, owner_id)
+    weather_location = time_settings.weather_location if time_settings else None
     tasks = list(
         await session.scalars(
             select(Task)
@@ -858,6 +860,7 @@ async def _agent_context(
         "current_time": local_now.isoformat(timespec="minutes"),
         "current_weekday": local_now.isoweekday(),
         "time_zone": time_zone,
+        "weather_location": weather_location,
         "term_id": str(active_term.id) if active_term is not None else None,
         "tasks": [
             {

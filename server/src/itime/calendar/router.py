@@ -133,6 +133,7 @@ async def update_time_settings(data: TimeSettingsUpdate, request: Request) -> di
             settings = UserTimeSettings(
                 owner_id=identity.user.id,
                 time_zone=time_zone,
+                weather_location=data.weather_location,
                 week_starts_on=data.week_starts_on,
                 activity_day_start_minute=data.activity_day_start_minute,
             )
@@ -148,10 +149,12 @@ async def update_time_settings(data: TimeSettingsUpdate, request: Request) -> di
             )
         elif (
             settings.time_zone != time_zone
+            or settings.weather_location != data.weather_location
             or settings.week_starts_on != data.week_starts_on
             or settings.activity_day_start_minute != data.activity_day_start_minute
         ):
             settings.time_zone = time_zone
+            settings.weather_location = data.weather_location
             settings.week_starts_on = data.week_starts_on
             settings.activity_day_start_minute = data.activity_day_start_minute
             settings.version += 1

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     admin_session_hours: int = Field(default=8, ge=1, le=24)
     admin_setup_minutes: int = Field(default=30, ge=5, le=120)
     ai_private_endpoint_hosts: list[str] = Field(default_factory=list)
+    search_api_url: str = ""
+    search_api_key: SecretStr | None = None
     ai_job_timeout_seconds: int = Field(default=180, ge=30, le=900)
     ai_job_lease_seconds: int = Field(default=210, ge=30, le=1200)
     ai_transcription_queue_limit: int = Field(default=500, ge=1, le=10_000)

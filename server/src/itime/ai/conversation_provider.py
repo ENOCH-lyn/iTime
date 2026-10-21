@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
@@ -1130,7 +1131,37 @@ async def _live_weather(location: str | None) -> dict:
         return {"source": "wttr.in", "error": "weather service unavailable"}
 
 
-async def _live_web_search(query: str) -> dict:
+async def _live_web_search(query: str, settings: Settings | None = None) -> dict:
+    if settings is not None and settings.search_api_url.strip():
+        try:
+            payload = {"query": query, "max_results": 5, "search_depth": "basic"}
+            if settings.search_api_key is not None:
+                payload["api_key"] = settings.search_api_key.get_secret_value()
+            async with httpx.AsyncClient(timeout=8.0, trust_env=True) as client:
+                response = await client.post(settings.search_api_url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            items = []
+            for item in (data.get("results") or [])[:5]:
+                title = str(item.get("title") or "").strip()
+                url = str(item.get("url") or "").strip()
+                snippet = str(item.get("content") or item.get("snippet") or "").strip()
+                if title and url:
+                    items.append({
+                        "title": title[:300],
+                        "url": url[:2048],
+                        "snippet": snippet[:500],
+                    })
+            return {
+                "source": "search_api",
+                "query": query[:200],
+                "items": items,
+            }
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "configured search API failed; falling back to Bing RSS",
+                exc_info=True,
+            )
     try:
         async with httpx.AsyncClient(
             timeout=5.0,
@@ -1161,11 +1192,22 @@ async def _live_web_search(query: str) -> dict:
         return {"source": "bing_rss", "query": query[:200], "error": "search unavailable"}
 
 
-async def _execute_live_tool(name: str, arguments: dict) -> dict:
+async def _execute_live_tool(
+    name: str,
+    arguments: dict,
+    *,
+    default_location: str | None = None,
+    settings: Settings | None = None,
+) -> dict:
     if name == "get_weather":
-        return await _live_weather(arguments.get("location"))
+        return await _live_weather(
+            arguments.get("location") or default_location
+        )
     if name == "web_search":
-        return await _live_web_search(str(arguments.get("query") or ""))
+        return await _live_web_search(
+            str(arguments.get("query") or ""),
+            settings,
+        )
     return {"error": f"unknown tool: {name}"}
 
 
@@ -1295,6 +1337,8 @@ async def _generate_live_tool_reply(
                         result = await _execute_live_tool(
                             str(function.get("name") or ""),
                             arguments if isinstance(arguments, dict) else {},
+                            default_location=context.get("weather_location"),
+                            settings=settings,
                         )
                         chat_messages.append({
                             "role": "tool",

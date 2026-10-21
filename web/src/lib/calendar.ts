@@ -5,6 +5,7 @@ import type { PlanningBlockProjection } from './plans'
 export interface TimeSettings {
   initialized: boolean
   time_zone: string | null
+  weather_location: string | null
   week_starts_on: 1
   activity_day_start_minute: 240
   version: number
@@ -286,11 +287,13 @@ export async function saveTimeSettings(
   settings: TimeSettings,
   timeZone: string,
   operationId: string = crypto.randomUUID(),
+  weatherLocation: string | null = settings.weather_location,
 ) {
   return (await api<{ settings: TimeSettings }>('/time-settings', {
     operation_id: operationId,
     expected_version: settings.version,
     time_zone: timeZone,
+    weather_location: weatherLocation,
     week_starts_on: 1,
     activity_day_start_minute: 240,
   }, 'PUT')).settings

@@ -9,17 +9,55 @@ import StatusMessage from '../components/StatusMessage.vue'
 import AppShell from '../shell/AppShell.vue'
 import { useAppShell } from '../shell/useAppShell'
 import { authError, identity, refreshSession } from '../lib/auth'
+import { failure, type Failure } from '../lib/api'
+import { getTimeSettings, saveTimeSettings, type TimeSettings } from '../lib/calendar'
 
 const router = useRouter()
 const { pendingLogout, logoutError, logout } = useAppShell()
 const passwordOpen = ref(false)
 const booted = ref(false)
+const timeSettings = ref<TimeSettings | null>(null)
+const weatherLocation = ref('')
+const locationPending = ref(false)
+const locationError = ref<Failure | null>(null)
+const locationSaved = ref('')
+
+async function loadTimeSettings() {
+  try {
+    const settings = await getTimeSettings()
+    timeSettings.value = settings
+    weatherLocation.value = settings.weather_location ?? ''
+  } catch (reason) {
+    locationError.value = failure(reason)
+  }
+}
+
+async function saveWeatherLocation() {
+  if (!timeSettings.value || locationPending.value) return
+  locationPending.value = true
+  locationError.value = null
+  locationSaved.value = ''
+  try {
+    timeSettings.value = await saveTimeSettings(
+      timeSettings.value,
+      timeSettings.value.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      crypto.randomUUID(),
+      weatherLocation.value.trim() || null,
+    )
+    locationSaved.value = '已保存'
+  } catch (reason) {
+    locationError.value = failure(reason)
+  } finally {
+    locationPending.value = false
+  }
+}
 
 onMounted(async () => {
   document.title = '设置 · iTime'
   await refreshSession()
   booted.value = true
   if (!identity.value) await router.replace('/login')
+  else await loadTimeSettings()
 })
 </script>
 
@@ -94,6 +132,28 @@ onMounted(async () => {
                 <ExternalLink :size="16" aria-hidden="true" />
               </RouterLink>
             </div>
+          </section>
+
+          <section class="settings-section" aria-labelledby="weather-location-title">
+            <h2 id="weather-location-title">天气地点</h2>
+            <form class="settings-row" @submit.prevent="saveWeatherLocation">
+              <div>
+                <label for="weather-location"><strong>城市</strong></label>
+                <p>AI 查天气时使用这个地点。</p>
+                <input
+                  id="weather-location"
+                  v-model="weatherLocation"
+                  maxlength="120"
+                  placeholder="例如 上海"
+                  autocomplete="address-level2"
+                >
+              </div>
+              <ElButton native-type="submit" :loading="locationPending" :disabled="locationPending">
+                保存
+              </ElButton>
+            </form>
+            <StatusMessage :error="locationError" />
+            <p v-if="locationSaved" class="muted" role="status">{{ locationSaved }}</p>
           </section>
         </template>
       </div>

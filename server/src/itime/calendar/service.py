@@ -39,6 +39,7 @@ def time_settings_result(settings: UserTimeSettings | None) -> dict:
         return {
             "initialized": False,
             "time_zone": None,
+            "weather_location": None,
             "week_starts_on": 1,
             "activity_day_start_minute": 240,
             "version": 0,
@@ -48,6 +49,7 @@ def time_settings_result(settings: UserTimeSettings | None) -> dict:
     return {
         "initialized": True,
         "time_zone": settings.time_zone,
+        "weather_location": settings.weather_location,
         "week_starts_on": settings.week_starts_on,
         "activity_day_start_minute": settings.activity_day_start_minute,
         "version": settings.version,
