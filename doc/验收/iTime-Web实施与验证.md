@@ -3384,3 +3384,11 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 ### 提交
 
 - `7081d0b` — `feat(ai): 对话图片上传并支持视觉模型输入`
+
+## M7-BF：图片真实视觉验证
+
+- 使用图片附件、不附带 OCR 文本，`deepseek-chat` 接收 `image_url` 后成功描述截图内容：课表、任务、AI 面板。
+- 会话：`cc425591-1a58-4081-aa21-cd2631c32ec3`。
+- 回答快照：`tasks/itime/persistent/preview/ai-vision-reply-2026-10-21.txt`。
+- 临时媒体与 `ai_jobs.input_summary.image_media_id` 已写入。
+- 边界：临时图片 24 小时过期；未即时删除。
