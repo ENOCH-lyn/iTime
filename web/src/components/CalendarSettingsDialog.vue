@@ -7,7 +7,6 @@ import {
   getTerm,
   replaceTermPeriods,
   saveTerm,
-  saveTimeSettings,
   type Term,
   type TermPeriod,
   type TimeSettings,
@@ -83,7 +82,6 @@ const values = reactive({
   weekCount: DEFAULT_WEEKS,
   periods: [] as TermPeriod[],
 })
-let zoneOperation: { id: string; fingerprint: string } | null = null
 let termOperation: { id: string; fingerprint: string } | null = null
 let periodsOperation: { id: string; fingerprint: string } | null = null
 
@@ -97,7 +95,6 @@ watch(() => props.open, async open => {
   success.value = ''
   termFormOpen.value = false
   editingTerm.value = null
-  zoneOperation = null
   termOperation = null
   periodsOperation = null
   await nextTick()
@@ -129,31 +126,6 @@ function close() {
   emit('close')
 }
 
-async function saveZone() {
-  if (!props.settings || pendingZone.value) return
-  if (!zone.value.trim()) {
-    error.value = localFailure('请输入 IANA 时区名称。')
-    return
-  }
-  error.value = null
-  success.value = ''
-  const fingerprint = JSON.stringify({
-    version: props.settings.version,
-    time_zone: zone.value.trim(),
-  })
-  zoneOperation = operationId(zoneOperation, fingerprint)
-  pendingZone.value = true
-  try {
-    await saveTimeSettings(props.settings, zone.value.trim(), zoneOperation.id)
-    zoneOperation = null
-    success.value = '当前时区已更新；既有安排仍保留各自保存的时区。'
-    emit('changed', success.value)
-  } catch (reason) {
-    error.value = failure(reason)
-  } finally {
-    pendingZone.value = false
-  }
-}
 
 function startTerm() {
   editingTerm.value = null
@@ -299,8 +271,8 @@ async function saveTermForm() {
     <div class="calendar-dialog-heading">
       <Clock3 :size="22" aria-hidden="true" />
       <div>
-        <h2 id="calendar-settings-title">时间与学期</h2>
-        <p>日历按当前时区查询；课程可使用学期周次和连续节次。</p>
+        <h2 id="calendar-settings-title">学期与节次</h2>
+        <p>课程按学期周次和节次展开。</p>
       </div>
       <button type="button" class="calendar-settings-close" aria-label="关闭" :disabled="pendingZone || pendingTerm" @click="close">
         <X :size="18" aria-hidden="true" />
@@ -308,27 +280,6 @@ async function saveTermForm() {
     </div>
 
     <StatusMessage :error="error" :success="success" />
-
-    <section class="calendar-settings-section">
-      <div class="settings-section-heading">
-        <div>
-          <h3>当前时区</h3>
-          <p>默认来自本浏览器。修改后不会重写既有安排的时区。</p>
-        </div>
-        <button type="button" class="button secondary compact-button" :disabled="pendingZone" @click="zone = browserTimeZone">
-          使用本机时区
-        </button>
-      </div>
-      <form class="timezone-form" @submit.prevent="saveZone">
-        <div class="field">
-          <label for="calendar-time-zone">IANA 时区</label>
-          <input id="calendar-time-zone" v-model="zone" autocomplete="off" :disabled="pendingZone" />
-        </div>
-        <button type="submit" class="button compact-button" :disabled="pendingZone">
-          {{ pendingZone ? '正在保存…' : '保存时区' }}
-        </button>
-      </form>
-    </section>
 
     <section v-if="showDisplaySettings" class="calendar-settings-section">
       <div class="settings-section-heading">

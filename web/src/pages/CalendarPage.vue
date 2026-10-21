@@ -679,11 +679,6 @@ watch(pageError, value => {
               {{ planSourceConflicts.overlap_count
                 ? `${planSourceConflicts.overlap_count} 个来源与计划块重叠。`
                 : '计划内容尚未自动调整。' }}
-              <RouterLink
-                :to="{ path: '/plans', query: { scope: 'week', date: anchor } }"
-              >
-                打开规划处理
-              </RouterLink>
             </p>
           </div>
         </div>

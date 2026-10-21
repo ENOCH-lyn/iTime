@@ -1742,13 +1742,14 @@ const { pendingLogout, logout } = useAppShell()
           >
             打开任务
           </RouterLink>
-          <RouterLink
+          <button
             v-if="selectedEvent.kind === 'plan'"
-            to="/plans"
+            type="button"
             class="tt-button secondary"
+            @click="router.push('/calendar')"
           >
-            查看规划
-          </RouterLink>
+            在日历中查看
+          </button>
         </div>
       </div>
     </ElDrawer>

@@ -787,17 +787,6 @@ async function saveTaskMakeup() {
         <p v-if="occurrence?.description" class="occurrence-description">{{ occurrence.description }}</p>
         <p v-if="task?.description" class="occurrence-description">{{ task.description }}</p>
 
-        <template v-if="plan">
-          <div class="occurrence-actions">
-            <RouterLink
-              :to="{ path: '/plans', query: { scope: 'week', date: plan.local_date } }"
-              class="button secondary"
-            >
-              <CalendarClock :size="17" aria-hidden="true" />前往规划页
-            </RouterLink>
-          </div>
-        </template>
-
         <template v-if="occurrence">
           <div v-if="occurrence.source_type === 'subscription'" class="occurrence-actions">
             <button
