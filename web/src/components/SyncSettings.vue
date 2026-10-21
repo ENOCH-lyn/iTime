@@ -158,12 +158,6 @@ onMounted(refreshSyncServerStatus)
       >
         <h2 id="sync-conflict-title">同步冲突</h2>
         <p>{{ syncStatus.task_conflict.error?.message ?? '任务步骤已变化，请核对后处理。' }}</p>
-        <p
-          v-if="syncStatus.task_conflict.error?.request_id"
-          class="request-id wrap-anywhere"
-        >
-          请求编号 {{ syncStatus.task_conflict.error.request_id }}
-        </p>
         <div class="sync-conflict-actions">
           <RouterLink to="/tasks" class="button secondary">查看任务</RouterLink>
           <button type="button" class="button danger" @click="discardTaskConflict">

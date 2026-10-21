@@ -1423,9 +1423,6 @@ onBeforeUnmount(() => {
               </template>
               <p v-if="sourceConflict.readError" class="subscription-conflict-error">
                 {{ sourceConflict.readError.message }}
-                <template v-if="sourceConflict.readError.request_id">
-                  请求编号：{{ sourceConflict.readError.request_id }}
-                </template>
               </p>
               <div class="subscription-conflict-actions">
                 <button type="button" class="text-button subscription-conflict-read"
@@ -1618,9 +1615,6 @@ onBeforeUnmount(() => {
                     <p v-if="overrideConflict.readError"
                       class="subscription-conflict-error">
                       {{ overrideConflict.readError.message }}
-                      <template v-if="overrideConflict.readError.request_id">
-                        请求编号：{{ overrideConflict.readError.request_id }}
-                      </template>
                     </p>
                     <div class="subscription-conflict-actions">
                       <button type="button"

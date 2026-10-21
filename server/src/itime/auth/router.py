@@ -21,7 +21,6 @@ from itime.auth.session import (
     authorized,
     check_user,
     create_session,
-    invalid_credentials,
     public_user,
     session_result,
     set_session_cookie,
@@ -362,13 +361,15 @@ async def login(data: LoginInput, request: Request, response: Response) -> dict:
     await rate_limit(request, "login", data.email)
     async with request.app.state.database.transaction() as session:
         encoded = await session.scalar(select(User.password_hash).where(User.email == data.email))
+    if encoded is None:
+        raise AppError("invalid_credentials", "该邮箱未注册。", status=401)
     security = request.app.state.security
     if not await security.verify_password(data.password.get_secret_value(), encoded):
-        raise invalid_credentials()
+        raise AppError("invalid_credentials", "密码不正确。", status=401)
     async with request.app.state.database.transaction() as session:
         user = await session.scalar(select(User).where(User.email == data.email).with_for_update())
         if user is None or user.password_hash != encoded:
-            raise invalid_credentials()
+            raise AppError("invalid_credentials", "密码不正确。", status=401)
         if user.status == "pending_deletion":
             deletion = await active_deletion_for_user(session, user.id)
             if deletion is None:
@@ -475,7 +476,7 @@ async def change_password(data: ChangePasswordInput, request: Request, response:
     await rate_limit(request, "change-password", str(user_id))
     security = request.app.state.security
     if not await security.verify_password(data.current_password.get_secret_value(), old_hash):
-        raise invalid_credentials()
+        raise AppError("invalid_credentials", "当前密码不正确。", status=401)
     encoded = await security.hash_password(data.new_password.get_secret_value())
     async with authorized(request, write=True) as identity:
         session, user = identity.session, identity.user

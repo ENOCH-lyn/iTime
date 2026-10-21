@@ -13,7 +13,7 @@ onMounted(() => { document.title = '帮助中心 · iTime' })
     <main id="main-content" class="public-content">
       <header class="public-content-heading">
         <h1 tabindex="-1">帮助中心</h1>
-        <p>从整理第一项任务开始；遇到失败时，先确认保存状态和请求编号。</p>
+        <p>从整理第一项任务开始；遇到失败时，先看提示里的原因和下一步。</p>
       </header>
 
       <nav class="help-index" aria-label="帮助主题">
@@ -51,19 +51,15 @@ onMounted(() => { document.title = '帮助中心 · iTime' })
       <section id="account" class="help-section">
         <h2>账号安全</h2>
         <div>
-          <h3>没有收到验证或重设邮件</h3>
-          <p>请核对邮箱地址并检查垃圾邮件。重新发送后旧链接会失效，请使用最新邮件。</p>
-          <div class="help-actions">
-            <RouterLink to="/resend-verification">重新发送验证邮件</RouterLink>
-            <RouterLink to="/forgot-password">找回密码</RouterLink>
-          </div>
+          <h3>无法登录或忘记密码</h3>
+          <p>请联系管理员重置密码；不要重复注册。当前环境没有配置邮件服务。</p>
           <h3>密码忘记了，或发现不认识的设备</h3>
-          <p>通过邮箱重设密码会退出所有设备。已经登录时，也可在设置中查看设备并远程退出。</p>
+          <p>修改密码会退出所有设备。已经登录时，也可在设置中查看设备并远程退出。</p>
           <div class="help-actions">
             <RouterLink to="/settings#devices">查看登录设备</RouterLink>
           </div>
           <h3>账号已停用</h3>
-          <p>请联系为你提供 iTime 服务的管理员，并提供账号邮箱和错误请求编号。重复注册不会恢复已停用的账号。</p>
+          <p>请联系为你提供 iTime 服务的管理员，并提供账号邮箱和错误提示。重复注册不会恢复已停用的账号。</p>
         </div>
       </section>
 
@@ -71,9 +67,9 @@ onMounted(() => { document.title = '帮助中心 · iTime' })
         <h2>失败恢复</h2>
         <div>
           <h3>操作失败，是否已经保存？</h3>
-          <p>错误提示会说明“未保存、已保存或状态未知”。网络中断时服务端可能已经处理请求，应先重新读取当前结果，再使用原操作重试。</p>
+          <p>先看提示里的结果和下一步；网络中断时先重新打开页面确认，不要直接重复提交。</p>
           <h3>怎样提供排查信息？</h3>
-          <p>保留错误提示中的请求编号和发生时间。不要发送密码、邮箱验证链接、恢复码或管理员密钥。</p>
+          <p>记录错误提示和发生时间。不要发送密码、邮箱验证链接、恢复码或管理员密钥。</p>
         </div>
       </section>
     </main>
