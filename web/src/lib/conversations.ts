@@ -123,6 +123,7 @@ export async function sendConversationMessage(
   responseMode: ConversationResponseMode = 'auto',
   planning?: PlanningFields,
   importBatchId?: string,
+  imageMediaId?: string,
 ) {
   return api<{
     operation_id: string
@@ -138,6 +139,7 @@ export async function sendConversationMessage(
       response_mode: responseMode,
       ...(responseMode === 'planning' ? { planning } : {}),
       ...(importBatchId ? { import_batch_id: importBatchId } : {}),
+      ...(imageMediaId ? { image_media_id: imageMediaId } : {}),
     },
   )
 }

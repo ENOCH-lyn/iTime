@@ -17,7 +17,7 @@ import {
   refreshSession,
 } from '../lib/auth'
 import { cancelAIJob } from '../lib/ai-jobs'
-import { extractAIDocument } from '../lib/ai-documents'
+import { extractAIDocument, uploadAIImage } from '../lib/ai-documents'
 import {
   uploadCalendarFile,
 } from '../lib/calendar-imports'
@@ -546,6 +546,7 @@ async function send() {
     const conversation = await ensureConversation()
     if (!conversation) return
     let importBatchId: string | undefined
+    let imageMediaId: string | undefined
     if (attachment) {
       const attachmentFingerprint = [
         conversation.id,
@@ -562,6 +563,10 @@ async function send() {
         const overhead = content.length + header.length + 2
         const body = extracted.text.slice(0, Math.max(0, 11_990 - overhead))
         content = `${content}\n\n${header}\n${body}`.slice(0, 12_000)
+        if (attachment.type.startsWith('image/')) {
+          const image = await uploadAIImage(attachment, attachmentOperation.id)
+          imageMediaId = image.media_id
+        }
       } else {
         const imported = await uploadCalendarFile(attachment, attachmentOperation.id)
         importBatchId = imported.batch.id
@@ -584,6 +589,7 @@ async function send() {
       'auto',
       undefined,
       importBatchId,
+      imageMediaId,
     )
     sendOperation = null
     attachmentOperation = null

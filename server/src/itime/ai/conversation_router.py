@@ -330,4 +330,5 @@ async def create_message(
             response_mode=data.response_mode,
             planning=data.planning,
             import_batch_id=data.import_batch_id,
+            image_media_id=data.image_media_id,
         )

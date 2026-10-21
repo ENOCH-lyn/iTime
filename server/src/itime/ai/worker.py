@@ -287,7 +287,7 @@ async def _process_conversation(
     claim: ClaimedJob,
 ) -> None:
     try:
-        work = await load_conversation_work(database, claim)
+        work = await load_conversation_work(database, claim, cipher)
     except ConversationWorkUnavailable as exc:
         await reject_or_retry_conversation_job(
             database,

@@ -1,11 +1,13 @@
+import base64
 import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +35,7 @@ from itime.ai.job_service import (
     finish_running_attempt,
     job_result,
 )
-from itime.ai.models import AIConfigVersion, AIJob
+from itime.ai.models import AIConfigVersion, AIJob, TemporaryMedia
 from itime.ai.provider import ProviderConfig
 from itime.ai.relevance import relevance_score
 from itime.ai.routing_service import (
@@ -350,6 +352,7 @@ async def enqueue_message(
     response_mode: str = "text",
     planning: PlanningRequestFields | None = None,
     import_batch_id: UUID | None = None,
+    image_media_id: UUID | None = None,
 ) -> dict:
     conversation = await locked_conversation(session, owner_id, conversation_id)
     if conversation.version != expected_version:
@@ -544,6 +547,28 @@ async def enqueue_message(
             "related_context_count": len(context_message_ids),
         }
     input_summary["memory_references"] = memory_references(memory_items)
+    if image_media_id is not None:
+        if capability != "conversation":
+            raise AppError(
+                "conversation_image_invalid",
+                "规划消息不能附带图片。",
+                status=400,
+            )
+        media = await session.get(TemporaryMedia, image_media_id)
+        if (
+            media is None
+            or media.owner_id != owner_id
+            or media.purpose != "calendar_screenshot"
+            or media.deleted_at is not None
+            or media.expires_at <= now()
+            or media.encrypted_content is None
+        ):
+            raise AppError(
+                "conversation_image_invalid",
+                "图片已过期或不可用，请重新上传。",
+                status=400,
+            )
+        input_summary["image_media_id"] = str(media.id)
     input_summary["public_source_references"] = [
         {
             "link_id": source["link_id"],
@@ -727,10 +752,21 @@ class ConversationWorkUnavailable(Exception):
 @dataclass(frozen=True)
 class ConversationWork:
     config: ProviderConfig
-    messages: list[dict[str, str]]
+    messages: list[dict[str, Any]]
     request_body: dict
     generation: int
     agent_context: dict | None
+
+
+VISION_MODEL = re.compile(
+    r"vision|(?:^|[-_])vl(?:$|[-_])|gpt-4o|gpt-4\.1|gemini|claude-3|"
+    r"qwen-vl|glm-4v|internvl|llava",
+    re.IGNORECASE,
+)
+
+
+def _supports_vision(model: str) -> bool:
+    return bool(VISION_MODEL.search(model))
 
 
 MEMORY_CUE = re.compile(r"(记一下|记住|帮我记|记下|记录一下)")
@@ -1077,6 +1113,7 @@ async def conversation_provider_messages(
 async def load_conversation_work(
     database: Database,
     claim: ClaimedJob,
+    cipher: Fernet | None = None,
 ) -> ConversationWork:
     if claim.conversation_id is None:
         raise ConversationWorkUnavailable(
@@ -1194,6 +1231,33 @@ async def load_conversation_work(
             memory_items=memory_items,
             public_sources=generation.public_source_context,
         )
+        image_media_id = job.input_summary.get("image_media_id")
+        if (
+            image_media_id
+            and cipher is not None
+            and _supports_vision(config.model)
+        ):
+            media = await session.get(TemporaryMedia, UUID(str(image_media_id)))
+            if (
+                media is not None
+                and media.encrypted_content is not None
+                and media.deleted_at is None
+            ):
+                try:
+                    raw = cipher.decrypt(media.encrypted_content)
+                    data_url = (
+                        f"data:{media.content_type};base64,"
+                        + base64.b64encode(raw).decode()
+                    )
+                    for message in reversed(messages):
+                        if message.get("role") == "user":
+                            message["content"] = [
+                                {"type": "text", "text": str(message.get("content") or "")},
+                                {"type": "image_url", "image_url": {"url": data_url}},
+                            ]
+                            break
+                except (InvalidToken, ValueError):
+                    pass
         agent_context = (
             job.input_summary.get("agent_context")
             if job.input_summary.get("agent_mode") is True
