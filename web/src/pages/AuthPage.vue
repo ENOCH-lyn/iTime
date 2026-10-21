@@ -441,6 +441,7 @@ async function resend() {
             <p v-if="mode === 'login' && policy?.registration_mode === 'open'" class="auth-switch">还没有账号？<RouterLink to="/register">创建账号</RouterLink></p>
             <p v-else-if="mode === 'login'" class="auth-switch">当前仅接受邀请注册</p>
             <p v-else-if="mode === 'register'" class="auth-switch">已有账号？<RouterLink to="/login">登录</RouterLink></p>
+            <RouterLink v-if="mode === 'login'" to="/admin/login" class="secondary-link">管理员登录</RouterLink>
             <RouterLink v-if="['verify-email', 'login'].includes(mode) && policy?.email_available && policy?.require_email_verification" to="/resend-verification" class="secondary-link">重新发送验证邮件</RouterLink>
             <RouterLink v-if="mode === 'reset-password'" to="/forgot-password" class="secondary-link">重新获取重设链接</RouterLink>
           </template>
