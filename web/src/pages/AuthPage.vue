@@ -13,6 +13,7 @@ import FormField from '../components/FormField.vue'
 import StatusMessage from '../components/StatusMessage.vue'
 import AppearanceControls from '../components/AppearanceControls.vue'
 import { cancelAccountDeletion } from '../lib/account-deletion'
+import { acceptAdminSession, notifyAdminSessionChange, type AdminSession } from '../lib/admin'
 import { api, failure, localFailure, passwordError, type Failure, type Policy } from '../lib/api'
 import { acceptSession, notifySessionChange, type Session } from '../lib/auth'
 
@@ -239,7 +240,20 @@ async function submit() {
     const current = failure(err)
     const details = current.details
     if (props.mode === 'login' && current.code === 'admin_login_required') {
-      await router.replace({ path: '/admin/login', query: { email: values.email.trim() } })
+      try {
+        const admin = await api<AdminSession>('/admin/auth/login', {
+          email: values.email.trim(),
+          password: values.password,
+          method: 'totp',
+          device_name: '管理网页',
+        })
+        acceptAdminSession(admin)
+        notifyAdminSessionChange()
+        values.password = ''
+        await router.replace('/admin/security')
+      } catch {
+        await router.replace({ path: '/admin/login', query: { email: values.email.trim() } })
+      }
       return
     }
     if (
