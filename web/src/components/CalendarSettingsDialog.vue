@@ -2,7 +2,6 @@
 import { nextTick, reactive, ref, watch } from 'vue'
 import { Clock3, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
-import { ElMessageBox } from 'element-plus'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
   deleteTerm,
@@ -177,26 +176,28 @@ async function editTerm(term: Term) {
   }
 }
 
-async function removeTerm(term: Term) {
-  try {
-    await ElMessageBox.confirm(
-      `删除学期“${term.name}”？此学期不能还有课程。`,
-      '删除学期',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+const deleteTarget = ref<Term | null>(null)
+const deleteError = ref('')
+
+function requestDeleteTerm(term: Term) {
+  deleteTarget.value = term
+  deleteError.value = ''
+}
+
+async function confirmDeleteTerm() {
+  if (!deleteTarget.value) return
   pendingTerm.value = true
+  deleteError.value = ''
   error.value = null
   success.value = ''
   try {
-    await deleteTerm(term.id)
+    await deleteTerm(deleteTarget.value.id)
+    deleteTarget.value = null
     success.value = '学期已删除。'
     termFormOpen.value = false
     emit('changed', success.value)
   } catch (reason) {
-    error.value = failure(reason)
+    deleteError.value = failure(reason).message
   } finally {
     pendingTerm.value = false
   }
@@ -348,7 +349,7 @@ async function saveTermForm() {
             <Pencil :size="16" aria-hidden="true" />
           </button>
           <button type="button" class="small-icon-button" :aria-label="`删除${term.name}`"
-            :title="`删除${term.name}`" :disabled="pendingTerm" @click="removeTerm(term)">
+            :title="`删除${term.name}`" :disabled="pendingTerm" @click="requestDeleteTerm(term)">
             <Trash2 :size="16" aria-hidden="true" />
           </button>
         </li>
@@ -430,6 +431,26 @@ async function saveTermForm() {
 
     <div class="dialog-actions">
       <button type="button" class="button secondary" :disabled="pendingZone || pendingTerm" @click="close">完成</button>
+    </div>
+
+    <div
+      v-if="deleteTarget"
+      class="confirm-backdrop"
+      role="presentation"
+      @click.self="!pendingTerm && (deleteTarget = null)"
+    >
+      <section class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-term-title">
+        <h2 id="delete-term-title">删除学期</h2>
+        <p>删除学期“{{ deleteTarget.name }}”？</p>
+        <p class="confirm-warning">此学期下的课程会一起删除，且无法恢复。</p>
+        <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-cancel" :disabled="pendingTerm" @click="deleteTarget = null">取消</button>
+          <button type="button" class="confirm-danger" :disabled="pendingTerm" @click="confirmDeleteTerm">
+            {{ pendingTerm ? '正在删除…' : '删除' }}
+          </button>
+        </div>
+      </section>
     </div>
   </dialog>
 </template>

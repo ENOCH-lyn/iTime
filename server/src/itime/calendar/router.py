@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 
 from itime.auth.security import now
 from itime.auth.session import authorized
@@ -466,10 +466,11 @@ async def delete_term(term_id: UUID, request: Request) -> dict:
             )
         )
         if course_count:
-            raise AppError(
-                "term_has_courses",
-                "此学期还有课程，先删除或迁移课程后再删除学期。",
-                status=409,
+            await identity.session.execute(
+                delete(CalendarSeries).where(
+                    CalendarSeries.owner_id == identity.user.id,
+                    CalendarSeries.term_id == term.id,
+                )
             )
         await identity.session.delete(term)
         emit_change(
@@ -480,7 +481,7 @@ async def delete_term(term_id: UUID, request: Request) -> dict:
             "deleted",
             term.version,
         )
-        return {"status": "deleted"}
+        return {"status": "deleted", "deleted_courses": course_count or 0}
 
 
 def series_warnings(occurrence_keys: tuple[str, ...]) -> list[dict]:

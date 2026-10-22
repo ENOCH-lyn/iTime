@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessageBox, type UploadFile, type UploadFiles, type UploadInstance } from 'element-plus'
+import type { UploadFile, UploadFiles, UploadInstance } from 'element-plus'
 import {
   Check,
   Download,
@@ -317,28 +317,34 @@ async function loadHistory() {
   }
 }
 
-async function deleteHistoryBatch(item: CalendarImportBatch) {
+const deleteTarget = ref<CalendarImportBatch | null>(null)
+const deletePending = ref(false)
+const deleteError = ref('')
+
+function requestDelete(item: CalendarImportBatch) {
+  deleteTarget.value = item
+  deleteError.value = ''
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value || deletePending.value) return
+  deletePending.value = true
+  deleteError.value = ''
   try {
-    await ElMessageBox.confirm(
-      `删除“${sourceName(item)}”的导入记录？候选不会再显示。`,
-      '删除导入记录',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  try {
-    await deleteCalendarImport(item.id)
-    history.value = history.value.filter(entry => entry.id !== item.id)
-    if (batch.value?.id === item.id) {
+    await deleteCalendarImport(deleteTarget.value.id)
+    history.value = history.value.filter(entry => entry.id !== deleteTarget.value?.id)
+    if (batch.value?.id === deleteTarget.value.id) {
       detail.value = null
       selectedIds.value = []
       lastBatchId.value = null
     }
+    deleteTarget.value = null
     success.value = '导入记录已删除。'
     await loadHistory()
   } catch (reason) {
-    error.value = failure(reason)
+    deleteError.value = failure(reason).message
+  } finally {
+    deletePending.value = false
   }
 }
 
@@ -871,9 +877,9 @@ function onCandidateUpdated(
               tabindex="0"
               :aria-label="`删除${sourceName(item)}的导入记录`"
               :title="`删除${sourceName(item)}的导入记录`"
-              @click.stop="deleteHistoryBatch(item)"
-              @keydown.enter.stop="deleteHistoryBatch(item)"
-              @keydown.space.prevent.stop="deleteHistoryBatch(item)"
+              @click.stop="requestDelete(item)"
+              @keydown.enter.stop="requestDelete(item)"
+              @keydown.space.prevent.stop="requestDelete(item)"
             >
               <X :size="15" aria-hidden="true" />
             </span>
@@ -1030,4 +1036,23 @@ function onCandidateUpdated(
       </ElButton>
     </template>
   </ElDialog>
+
+  <div
+    v-if="deleteTarget"
+    class="confirm-backdrop"
+    role="presentation"
+    @click.self="!deletePending && (deleteTarget = null)"
+  >
+    <section class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-import-title">
+      <h2 id="delete-import-title">删除导入记录</h2>
+      <p>删除“{{ sourceName(deleteTarget) }}”的导入记录？候选不会再显示。</p>
+      <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
+      <div class="confirm-actions">
+        <button type="button" class="confirm-cancel" :disabled="deletePending" @click="deleteTarget = null">取消</button>
+        <button type="button" class="confirm-danger" :disabled="deletePending" @click="confirmDelete">
+          {{ deletePending ? '正在删除…' : '删除' }}
+        </button>
+      </div>
+    </section>
+  </div>
 </template>

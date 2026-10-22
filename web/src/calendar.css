@@ -1154,6 +1154,78 @@
   color: var(--danger, #b42318);
 }
 
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  background: rgb(17 24 22 / 42%);
+  padding: 16px;
+}
+
+.confirm-card {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 24%);
+  padding: 20px;
+}
+
+.confirm-card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.confirm-card p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.confirm-warning {
+  color: var(--danger, #b42318);
+}
+
+.confirm-error {
+  color: var(--danger, #b42318);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.confirm-cancel,
+.confirm-danger {
+  min-height: 34px;
+  padding: 0 16px;
+  border-radius: 7px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.confirm-cancel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.confirm-danger {
+  border: 1px solid var(--danger, #b42318);
+  background: var(--danger, #b42318);
+  color: #fff;
+}
+
+.confirm-cancel:disabled,
+.confirm-danger:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
 .state-label[data-state="valid"],
 .state-label[data-state="confirmed"],
 .state-label[data-state="succeeded"] {
