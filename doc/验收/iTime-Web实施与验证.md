@@ -3524,3 +3524,11 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 浏览器复查任务详情、AI 会话、月视图、设置、手机和深色页面，页面错误 0。
 - `pnpm build` 通过。
 - 证据：`tasks/itime/docs/27-界面层级修正与月视图措辞.md`、`persistent/preview/m3-task-detail-2026-10-22.png`、`m3-chat-conversation-2026-10-22.png`、`m3-month-2026-10-22.png`。
+
+## M7-BS：删除任务高级管理页
+
+- 用户明确要求删除“任务视图 / 收集箱 / 目标”相关设计。
+- 删除 `/tasks/full` 页面、`TaskEditor`、`TaskListPanel`、`TaskWorkspaceNavigation`、`ProjectDialog` 与 `task-workspace.css`（约 106 KB 源码）。
+- `/tasks/full` 重定向到 `/tasks`；页面不再出现“任务视图 / 收集箱 / 目标”，页面错误 0。
+- 保留 `/tasks` 快速添加、筛选、完成、编辑标题/日期/重复/预计用时、推迟与删除；后端数据未删除。
+- 删除清单、风险与回滚见 `tasks/itime/docs/28-删除任务高级管理页.md`。

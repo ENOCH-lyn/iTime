@@ -5,7 +5,6 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
-  ChevronRight,
   Plus,
   Repeat2,
   Trash2,
@@ -514,9 +513,6 @@ const { pendingLogout, logout } = useAppShell()
           <button type="button" class="tw-add" @click="openCreate()">
             <Plus :size="16" /> 添加任务
           </button>
-          <RouterLink to="/tasks/full" class="tw-advanced">
-            高级管理（步骤 / 标签 / 回收站）<ChevronRight :size="15" />
-          </RouterLink>
         </div>
       </section>
 
@@ -645,7 +641,6 @@ const { pendingLogout, logout } = useAppShell()
           >
             推迟到明天
           </button>
-          <RouterLink to="/tasks/full" class="tw-button ghost">高级管理</RouterLink>
           <button type="button" class="tw-button danger" :disabled="taskActionBusy" @click="removeTask(selectedTask)">
             <Trash2 :size="15" /> 删除
           </button>

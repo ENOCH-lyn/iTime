@@ -23,7 +23,7 @@ const router = createRouter({
     { path: '/timetable', component: () => import('./pages/TimetablePage.vue') },
     { path: '/timetable/month', component: () => import('./pages/CalendarPage.vue') },
     { path: '/tasks', component: () => import('./pages/TaskWorkspacePage.vue') },
-    { path: '/tasks/full', component: () => import('./pages/TasksPage.vue') },
+    { path: '/tasks/full', redirect: '/tasks' },
     { path: '/plans', redirect: '/timetable' },
     {
       path: '/calendar',
