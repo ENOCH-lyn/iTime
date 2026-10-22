@@ -43,8 +43,8 @@ const actionLabel = computed(() => {
 const statusLabel = computed(() => {
   if (!proposal.value) return ''
   if (proposal.value.status === 'pending') return '待确认'
-  if (proposal.value.status === 'applied') return '已应用'
-  if (proposal.value.status === 'rejected') return '已拒绝'
+  if (proposal.value.status === 'applied') return '已确认，Agent 继续执行'
+  if (proposal.value.status === 'rejected') return '已拒绝，Agent 继续处理'
   return '已过期'
 })
 const changes = computed(() => {
@@ -142,6 +142,7 @@ async function reject() {
   error.value = ''
   try {
     proposal.value = (await rejectToolProposal(proposal.value)).proposal
+    emit('applied')
   } catch (reason) {
     error.value = failure(reason).message
   } finally {

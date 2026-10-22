@@ -203,15 +203,17 @@ defineExpose({ scrollToLatest })
                 && message.job?.output?.proposal_id
                 && message.job.output.proposal_kind === 'course_action'"
               :proposal-id="message.job.output.proposal_id"
+              @applied="emit('changed')"
             />
             <TaskActionProposalCard
-              v-if="message.role === 'assistant'
+              v-else-if="message.role === 'assistant'
                 && message.job?.output?.proposal_id
                 && message.job.output.proposal_kind === 'task_action'"
               :proposal-id="message.job.output.proposal_id"
+              @applied="emit('changed')"
             />
             <AgentProposalMessageCard
-              v-if="message.role === 'assistant'
+              v-else-if="message.role === 'assistant'
                 && message.job?.output?.proposal_id
                 && message.job.output.proposal_kind === 'task_plan'"
               :proposal-id="message.job.output.proposal_id"

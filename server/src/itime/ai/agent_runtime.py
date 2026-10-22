@@ -14,11 +14,24 @@ from cryptography.fernet import Fernet, InvalidToken
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from itime.ai.action_proposals import ActionProposal, create_proposal, get_proposal
 from itime.ai.agent_models import AgentRun
 from itime.ai.conversation_provider import (
+    AgentCalendarBatch,
+    AgentCourseCreate,
+    AgentCourseDelete,
+    AgentCourseUpdate,
+    AgentOccurrenceException,
+    AgentPlanBlockBatch,
+    AgentPlanBlockCreate,
+    AgentPlanBlockDelete,
+    AgentPlanBlockUpdate,
+    AgentTaskComplete,
+    AgentTaskDelete,
+    AgentTaskUpdate,
     ConversationProviderError,
     _live_weather,
     _live_web_search,
@@ -28,17 +41,42 @@ from itime.ai.models import TemporaryMedia
 from itime.ai.provider import ProviderConfig
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_conversation_image_import
-from itime.calendar.models import AcademicTerm
+from itime.calendar.models import AcademicTerm, CalendarSeries
 from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
+from itime.planning.plan_service import read_plan
+from itime.tasks.models import Task
 
 logger = logging.getLogger(__name__)
 
-WRITE_TOOLS = {
+TERM_TOOLS = {
     "propose_itime_term_create": "create_term",
     "propose_itime_term_update": "update_term",
 }
+
+ACTION_TOOLS: dict[str, tuple[str, type]] = {
+    "propose_itime_task_update": ("update_task", AgentTaskUpdate),
+    "propose_itime_task_complete": ("complete_task", AgentTaskComplete),
+    "propose_itime_task_delete": ("delete_task", AgentTaskDelete),
+    "propose_itime_course_update": ("update_calendar_series", AgentCourseUpdate),
+    "propose_itime_course_delete": ("delete_calendar_series", AgentCourseDelete),
+    "propose_itime_occurrence_exception": (
+        "create_calendar_exception",
+        AgentOccurrenceException,
+    ),
+    "propose_itime_plan_block_update": ("update_plan_block", AgentPlanBlockUpdate),
+    "propose_itime_plan_block_create": ("create_plan_block", AgentPlanBlockCreate),
+    "propose_itime_plan_block_delete": ("delete_plan_block", AgentPlanBlockDelete),
+    "propose_itime_plan_block_batch": (
+        "batch_update_plan_blocks",
+        AgentPlanBlockBatch,
+    ),
+    "propose_itime_course_create": ("create_calendar_series", AgentCourseCreate),
+    "propose_itime_calendar_batch": ("create_calendar_series", AgentCalendarBatch),
+}
+
+WRITE_TOOLS = {*TERM_TOOLS, *ACTION_TOOLS}
 
 
 class AgentState(TypedDict):
@@ -280,47 +318,188 @@ def _term_payload(action: str, arguments: dict) -> dict:
     return payload
 
 
+def _validation_message(exc: ValidationError) -> str:
+    errors = exc.errors()
+    if not errors:
+        return "参数格式不正确"
+    first = errors[0]
+    location = ".".join(
+        str(part) for part in first.get("loc", ()) if part != "body"
+    )
+    message = str(first.get("msg") or "参数格式不正确")
+    return f"{location}: {message}" if location else message
+
+
+async def _action_details(
+    session,
+    owner_id: UUID,
+    tool_name: str,
+    payload: dict,
+) -> dict:
+    details: dict[str, Any] = {
+        key: value
+        for key, value in payload.items()
+        if key != "assistant_message"
+    }
+    if tool_name in {"update_task", "complete_task", "delete_task"}:
+        task = await session.get(Task, UUID(str(payload["task_id"])))
+        if task is not None and task.owner_id == owner_id:
+            details["task_title"] = task.title
+    if "series_id" in payload:
+        series = await session.get(
+            CalendarSeries,
+            UUID(str(payload["series_id"])),
+        )
+        if series is not None and series.owner_id == owner_id:
+            details["series_title"] = series.name
+    if tool_name in {"update_plan_block", "delete_plan_block"}:
+        plan = await read_plan(
+            session,
+            owner_id,
+            UUID(str(payload["plan_id"])),
+        )
+        block = next(
+            (
+                item
+                for item in plan["current_version"]["blocks"]
+                if item["id"] == str(payload["block_id"])
+            ),
+            None,
+        )
+        if block is not None:
+            details["block_title"] = block["task_title_snapshot"]
+            if tool_name == "delete_plan_block":
+                details["local_date"] = block["local_date"]
+                details["starts_at"] = block["local_starts_at"]
+                details["ends_at"] = block["local_ends_at"]
+    if tool_name == "batch_update_plan_blocks":
+        plan = await read_plan(
+            session,
+            owner_id,
+            UUID(str(payload["plan_id"])),
+        )
+        blocks = {
+            item["id"]: item
+            for item in plan["current_version"]["blocks"]
+        }
+        changes = []
+        for change in payload.get("changes", []):
+            if not isinstance(change, dict):
+                continue
+            block = blocks.get(str(change.get("block_id")))
+            changes.append(
+                {
+                    **change,
+                    "block_title": (
+                        block["task_title_snapshot"] if block else None
+                    ),
+                    "current_date": block["local_date"] if block else None,
+                    "current_starts_at": (
+                        block["local_starts_at"] if block else None
+                    ),
+                    "current_ends_at": (
+                        block["local_ends_at"] if block else None
+                    ),
+                }
+            )
+        details["changes"] = changes
+    if tool_name == "create_plan_block":
+        task = await session.get(Task, UUID(str(payload["task_id"])))
+        if task is not None and task.owner_id == owner_id:
+            details["task_title"] = task.title
+    if tool_name == "create_calendar_series":
+        if isinstance(payload.get("items"), list):
+            details["item_count"] = len(payload["items"])
+        else:
+            details["series_title"] = payload.get("name")
+    return details
+
+
 async def _ensure_proposal(
     deps: AgentDependencies,
     state: AgentState,
     call: dict,
-    action: str,
+    action_name: str,
 ) -> ActionProposal:
-    payload = _term_payload(action, call["arguments"])
     operation_id = f"a:{deps.run_id}:{state['turn']}:{state['tool_index']}"
+    if action_name in TERM_TOOLS:
+        tool_name = TERM_TOOLS[action_name]
+        payload = _term_payload(tool_name, call["arguments"])
+        async with deps.database.transaction() as session:
+            existing = await session.scalar(
+                select(ActionProposal).where(
+                    ActionProposal.owner_id == deps.owner_id,
+                    ActionProposal.conversation_id == deps.conversation_id,
+                    ActionProposal.tool_name == tool_name,
+                    ActionProposal.operation_id == operation_id,
+                )
+            )
+            if existing is not None:
+                return existing
+            details: dict[str, Any] = {
+                "kind": tool_name,
+                **{
+                    key: value
+                    for key, value in payload.items()
+                    if key != "assistant_message"
+                },
+            }
+            if tool_name == "update_term":
+                term = await session.scalar(
+                    select(AcademicTerm).where(
+                        AcademicTerm.id == UUID(payload["term_id"]),
+                        AcademicTerm.owner_id == deps.owner_id,
+                    )
+                )
+                if term is not None:
+                    details["name"] = payload.get("name") or term.name
+            return await create_proposal(
+                session,
+                deps.owner_id,
+                conversation_id=deps.conversation_id,
+                source_message_id=deps.response_message_id,
+                tool_name=tool_name,
+                operation_id=operation_id,
+                preview={
+                    "summary": payload.get("assistant_message") or "",
+                    "details": details,
+                },
+                payload=payload,
+                expected_version=None,
+                current_time=now(),
+            )
+    tool_name, model = ACTION_TOOLS[action_name]
+    try:
+        action = model.model_validate(call["arguments"])
+    except ValidationError as exc:
+        raise ValueError(_validation_message(exc)) from exc
+    payload = action.model_dump(mode="json")
     async with deps.database.transaction() as session:
         existing = await session.scalar(
             select(ActionProposal).where(
                 ActionProposal.owner_id == deps.owner_id,
                 ActionProposal.conversation_id == deps.conversation_id,
-                ActionProposal.tool_name == action,
+                ActionProposal.tool_name == tool_name,
                 ActionProposal.operation_id == operation_id,
             )
         )
         if existing is not None:
             return existing
-        details: dict[str, Any] = {
-            "kind": action,
-            **{key: value for key, value in payload.items() if key != "assistant_message"},
-        }
-        if action == "update_term":
-            term = await session.scalar(
-                select(AcademicTerm).where(
-                    AcademicTerm.id == UUID(payload["term_id"]),
-                    AcademicTerm.owner_id == deps.owner_id,
-                )
-            )
-            if term is not None:
-                details["name"] = payload.get("name") or term.name
+        details = await _action_details(
+            session,
+            deps.owner_id,
+            tool_name,
+            payload,
+        )
         return await create_proposal(
             session,
             deps.owner_id,
             conversation_id=deps.conversation_id,
             source_message_id=deps.response_message_id,
-            tool_name=action,
+            tool_name=tool_name,
             operation_id=operation_id,
             preview={
-                "summary": payload.get("assistant_message") or "",
+                "summary": action.assistant_message,
                 "details": details,
             },
             payload=payload,
@@ -333,10 +512,10 @@ async def _decide_proposal(
     deps: AgentDependencies,
     state: AgentState,
     call: dict,
-    action: str,
+    action_name: str,
 ) -> dict:
     try:
-        proposal = await _ensure_proposal(deps, state, call, action)
+        proposal = await _ensure_proposal(deps, state, call, action_name)
     except AppError as exc:
         return {"error": exc.message}
     except ValueError as exc:
@@ -357,16 +536,17 @@ async def _decide_proposal(
                 proposal.id,
             )
     if proposal.status == "applied":
-        return {
+        result = {
             "ok": True,
             "proposal_id": str(proposal.id),
-            "term_id": (
-                str(proposal.applied_resource_id)
-                if proposal.applied_resource_id is not None
-                else None
-            ),
+            "tool_name": proposal.tool_name,
             "message": "用户已批准，操作已完成。",
         }
+        if proposal.applied_resource_id is not None:
+            result["resource_id"] = str(proposal.applied_resource_id)
+            if proposal.tool_name in {"create_term", "update_term"}:
+                result["term_id"] = str(proposal.applied_resource_id)
+        return result
     if proposal.status == "rejected":
         return {
             "ok": False,
@@ -449,7 +629,7 @@ async def _execute_tool(
             "message": "已开始从图片识别并导入课表，完成后需要在课表页确认候选。",
         }, []
     if name in WRITE_TOOLS:
-        return await _decide_proposal(deps, state, call, WRITE_TOOLS[name]), []
+        return await _decide_proposal(deps, state, call, name), []
     return {"error": f"unknown tool: {name}"}, []
 
 

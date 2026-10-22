@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from itime.ai.action_proposals import create_proposal
+from itime.ai.action_proposals import ActionProposal, create_proposal
 from itime.ai.agent_models import AgentRun
 from itime.ai.conversation_models import (
     AIJobEvent,
@@ -382,18 +382,35 @@ async def enqueue_message(
             status=409,
         )
     waiting_run = await session.scalar(
-        select(AgentRun.id).where(
+        select(AgentRun)
+        .where(
             AgentRun.owner_id == owner_id,
             AgentRun.conversation_id == conversation.id,
             AgentRun.status == "waiting_approval",
         )
+        .with_for_update()
     )
     if waiting_run is not None:
-        raise AppError(
-            "agent_approval_pending",
-            "请先确认或拒绝待处理的工具调用。",
-            status=409,
-        )
+        # 用户直接发送了新消息，说明已经绕过旧审批；取消旧 run，避免会话被永久阻塞。
+        current_wait = now()
+        if waiting_run.pending_proposal_id is not None:
+            pending_proposal = await session.scalar(
+                select(ActionProposal)
+                .where(
+                    ActionProposal.id == waiting_run.pending_proposal_id,
+                    ActionProposal.owner_id == owner_id,
+                )
+                .with_for_update()
+            )
+            if pending_proposal is not None and pending_proposal.status == "pending":
+                pending_proposal.status = "rejected"
+                pending_proposal.rejected_at = current_wait
+                pending_proposal.updated_at = current_wait
+                pending_proposal.version += 1
+        waiting_run.status = "cancelled"
+        waiting_run.pending_proposal_id = None
+        waiting_run.updated_at = current_wait
+        waiting_run.version += 1
     await lock_owner_ai_job_capacity(session, owner_id)
     current = now()
     daily = await get_or_create_daily_allowance(
@@ -513,14 +530,11 @@ async def enqueue_message(
         if agent_mode
         else None
     )
-    if agent_mode and re.search(
-        r"天气|下雨|降雨|气温|温度|weather|rain|搜索|查一下|帮我查|"
-        r"最新|新闻|是谁|是什么|多少钱|怎么样|记住|记一下|"
-        r"偏好|习惯|不能占用|不要安排|学期|term|课表|导入|截图|课程",
-        content,
-        re.IGNORECASE,
-    ):
-        agent_context["_live_tool_loop"] = True
+    if agent_mode:
+        if LEGACY_TASK_PLAN.search(content):
+            agent_context["_structured_agent"] = True
+        else:
+            agent_context["_live_tool_loop"] = True
     if planning_snapshot is not None:
         provider = planning_provider_config(config)
         snapshot_payload = planning_snapshot_payload(planning_snapshot)
@@ -1084,7 +1098,17 @@ async def complete_agent_job(
                     "proposal_kind": (
                         "term_action"
                         if outcome.proposal_tool_name in {"create_term", "update_term"}
-                        else "task_action"
+                        else (
+                            "course_action"
+                            if outcome.proposal_tool_name
+                            in {
+                                "delete_calendar_series",
+                                "update_calendar_series",
+                                "create_calendar_exception",
+                                "create_calendar_series",
+                            }
+                            else "task_action"
+                        )
                     ),
                 }
                 if outcome.proposal_id is not None
@@ -1152,6 +1176,11 @@ def _supports_vision(model: str) -> bool:
 
 
 MEMORY_CUE = re.compile(r"(记一下|记住|帮我记|记下|记录一下)")
+LEGACY_TASK_PLAN = re.compile(
+    r"(新建|创建|添加|加|安排|规划|计划).{0,16}(任务|待办|作业|学习|复习)"
+    r"|(希望|想|要).{0,12}(学习|复习|写|做|读)"
+    r"|(今天|明天|后天|本周|下周|周末).{0,16}(学习|复习|写作业|做作业|读书)"
+)
 MEMORY_CONSTRAINT = re.compile(
     r"(不能占用|不要安排|别安排|固定.*(?:洗澡|吃饭|睡觉|运动)|"
     r"每天.*(?:洗澡|吃饭|睡觉|运动)|一般.*点.*(?:睡|起))",

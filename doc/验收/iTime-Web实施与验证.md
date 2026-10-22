@@ -3481,3 +3481,14 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 证据：`tasks/itime/docs/23-真Agent循环与审批恢复.md`、`persistent/preview/agent-*.png`。
 - 测试：Agent/导入 30 passed，对话 21 passed，`ruff check` 与 `pnpm build` 通过。
 - 边界：结构化任务/课程/计划块写操作仍走旧路径；待审批超时与孤儿 run 清理未做。
+
+## M7-BO：Agent 工具全覆盖与审批兜底
+
+- Agent 图补齐 12 个 ActionProposal 工具：任务、课程、单次调课、计划块、批量活动。
+- Agent 消息默认进入 LangGraph；仅新建任务并排学习计划保留 task_plan 旧路径。
+- 有等待审批时直接发新消息会取消旧 run，避免会话锁死。
+- 修复审批卡重复渲染导致的“未找到此提案”。
+- 真实 DeepSeek：任务估时 60→30；每周一/三 20:00 跑步至 2026-12-31；审批后同 run 继续。
+- 浏览器：任务审批卡只渲染一次，确认后同页出现结果，页面错误 0。
+- 测试：Agent/对话/导入 36 passed，`ruff check`、`pnpm build` 通过。
+- 证据：`tasks/itime/docs/24-Agent工具全覆盖与审批兜底.md`、`persistent/preview/agent-task-*.png`。
