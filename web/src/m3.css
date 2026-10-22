@@ -736,3 +736,30 @@ select {
   background-color: rgb(0 0 0 / 32%);
   backdrop-filter: none;
 }
+.app-root .el-button.is-link,
+.app-root .el-button.is-text {
+  background: transparent;
+  border-color: transparent;
+}
+.app-root .el-button.is-link.el-button--danger,
+.app-root .el-button.is-text.el-button--danger {
+  color: var(--m3-error);
+}
+.app-root .el-drawer__close-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface-variant);
+}
+.app-root .el-drawer__close-btn:hover {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+}
+.m3-navigation a::after {
+  display: none;
+}
+.m3-navigation a:hover .m3-navigation__icon {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+}
+.m3-navigation a.active:hover .m3-navigation__icon {
+  background: var(--m3-secondary-container);
+}

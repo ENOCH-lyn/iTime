@@ -3543,3 +3543,12 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 真实 Chromium：桌面/手机周月切换、事件创建、AI 草稿/发送，页面错误 0；手机无横向溢出。
 - `pnpm build` 通过。
 - 证据：`tasks/itime/docs/29-交互重写-日历融合.md`、`persistent/preview/ui-*.png`。
+
+## M7-BU：逐图修复与交互再审计
+
+- 对照上一轮用户发送的 UI 截图逐项修复：底栏状态层灰块、手机发送按钮空白/溢出、会话范围双层胶囊、会话列表大胶囊、提案卡空白绿色按钮、搜索框粗绿边、设置关闭 X 过大。
+- 删除右上角重复 AI 图标和日历页 AI 侧栏；AI“新建会话”改为草稿态，首次发送才创建。
+- 手机月视图恢复 7×6 网格；事件块统一 M3 色条/背景/圆角。
+- 计算样式验证 link 按钮背景 transparent、文字 primary；新建会话 0 -> 0，发送 0 -> 1。
+- 真实 Chromium 桌面/手机验证，页面错误 0；`pnpm build` 通过。
+- 证据：`tasks/itime/docs/30-逐图修复与交互再审计.md`、`persistent/preview/m3-chat-conversation-2026-10-22.png`、`ui-mobile-ai-draft-2026-10-23.png`、`ui-mobile-calendar-settings-2026-10-23.png`。

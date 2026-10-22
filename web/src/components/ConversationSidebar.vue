@@ -32,10 +32,6 @@ const emit = defineEmits<{
 }>()
 
 const search = ref('')
-const conversationScope = computed({
-  get: () => props.archived ? 'archived' : 'active',
-  set: value => emit('archivedView', value === 'archived'),
-})
 const visibleConversations = computed(() => {
   const query = search.value.trim().toLocaleLowerCase()
   if (!query) return props.conversations
@@ -87,15 +83,26 @@ function activityLabel(conversation: Conversation) {
       </template>
     </ElInput>
 
-    <ElSegmented
-      v-model="conversationScope"
-      class="conversation-tabs"
-      :options="[
-        { label: '进行中', value: 'active' },
-        { label: '已归档', value: 'archived' },
-      ]"
-      aria-label="会话范围"
-    />
+    <div class="conversation-tabs" role="tablist" aria-label="会话范围">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="!archived"
+        :class="{ selected: !archived }"
+        @click="emit('archivedView', false)"
+      >
+        进行中
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="archived"
+        :class="{ selected: archived }"
+        @click="emit('archivedView', true)"
+      >
+        已归档
+      </button>
+    </div>
 
     <div v-if="aiFrozen" class="conversation-sidebar-notice" role="status">
       <CirclePause :size="16" aria-hidden="true" />

@@ -499,17 +499,17 @@ dialog.calendar-dialog::backdrop {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   margin-left: auto;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
+  border: 0;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
+  color: var(--m3-on-surface-variant);
   cursor: pointer;
 }
-.calendar-settings-close:hover { background: var(--selected); color: var(--text); }
+.calendar-settings-close:hover { background: var(--m3-surface-container-highest); color: var(--m3-on-surface); }
 .calendar-settings-close:disabled { opacity: .4; }
 .calendar-dialog-heading h2 {
   margin: 0;
