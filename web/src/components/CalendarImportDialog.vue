@@ -24,6 +24,7 @@ import {
   cancelCalendarImportJob,
   confirmCalendarImport,
   createAIImport,
+  deleteCalendarImport,
   getCalendarImport,
   getCalendarImportJob,
   listCalendarImports,
@@ -313,6 +314,23 @@ async function loadHistory() {
     return history.value
   } finally {
     if (revision === historyRevision) historyLoading.value = false
+  }
+}
+
+async function deleteHistoryBatch(item: CalendarImportBatch) {
+  if (!window.confirm(`删除“${sourceName(item)}”的导入记录？候选不会再显示。`)) return
+  try {
+    await deleteCalendarImport(item.id)
+    history.value = history.value.filter(entry => entry.id !== item.id)
+    if (batch.value?.id === item.id) {
+      detail.value = null
+      selectedIds.value = []
+      lastBatchId.value = null
+    }
+    success.value = '导入记录已删除。'
+    await loadHistory()
+  } catch (reason) {
+    error.value = failure(reason)
   }
 }
 
@@ -838,6 +856,18 @@ function onCandidateUpdated(
             </span>
             <span class="state-label" :data-state="item.state">
               {{ batchStateLabels[item.state] }}
+            </span>
+            <span
+              class="history-delete"
+              role="button"
+              tabindex="0"
+              :aria-label="`删除${sourceName(item)}的导入记录`"
+              :title="`删除${sourceName(item)}的导入记录`"
+              @click.stop="deleteHistoryBatch(item)"
+              @keydown.enter.stop="deleteHistoryBatch(item)"
+              @keydown.space.prevent.stop="deleteHistoryBatch(item)"
+            >
+              <X :size="15" aria-hidden="true" />
             </span>
           </ElButton>
         </div>

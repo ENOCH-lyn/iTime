@@ -322,6 +322,10 @@ export async function getTerm(id: string) {
   return (await api<{ term: Term }>(`/terms/${id}`)).term
 }
 
+export async function deleteTerm(id: string) {
+  return api<{ status: string }>(`/terms/${id}`, undefined, 'DELETE')
+}
+
 export async function saveTerm(
   term: Term | null,
   fields: Pick<Term, 'name' | 'start_date' | 'end_date' | 'first_week_monday'>,

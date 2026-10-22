@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Query, Request, Response
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 
 from itime.ai.job_service import delete_media
 from itime.ai.models import AIJob, TemporaryMedia
@@ -435,6 +435,41 @@ async def update_import_candidate(
             result,
         )
         return result
+
+
+@router.delete("/{batch_id}")
+async def delete_calendar_import(batch_id: UUID, request: Request) -> dict:
+    async with authorized(request, write=True) as identity:
+        batch = await locked_import_batch(
+            identity.session,
+            identity.user.id,
+            batch_id,
+        )
+        if batch.state in {"queued", "processing"}:
+            raise AppError(
+                "calendar_import_busy",
+                "导入仍在处理中，暂不能删除。",
+                status=409,
+            )
+        if batch.state == "confirmed":
+            raise AppError(
+                "calendar_import_confirmed",
+                "已确认的导入不能删除。",
+                status=409,
+            )
+        source_id = batch.source_id
+        await identity.session.execute(
+            delete(CalendarImportCandidate).where(
+                CalendarImportCandidate.owner_id == identity.user.id,
+                CalendarImportCandidate.batch_id == batch.id,
+            )
+        )
+        await identity.session.delete(batch)
+        await identity.session.flush()
+        source = await identity.session.get(CalendarSource, source_id)
+        if source is not None and source.owner_id == identity.user.id:
+            await identity.session.delete(source)
+        return {"status": "deleted"}
 
 
 @router.post("/{batch_id}/confirm")

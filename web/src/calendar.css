@@ -1107,7 +1107,7 @@
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
 }
@@ -1135,6 +1135,23 @@
 
 .import-history-list strong {
   font-size: .8125rem;
+}
+
+.history-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.history-delete:hover,
+.history-delete:focus-visible {
+  background: var(--danger-soft, #fef0ee);
+  color: var(--danger, #b42318);
 }
 
 .state-label[data-state="valid"],

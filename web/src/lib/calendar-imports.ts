@@ -142,6 +142,10 @@ export async function getCalendarImport(batchId: string) {
   return api<CalendarImportDetail>(`/calendar/imports/${batchId}`)
 }
 
+export async function deleteCalendarImport(batchId: string) {
+  return api<{ status: string }>(`/calendar/imports/${batchId}`, undefined, 'DELETE')
+}
+
 export async function uploadCalendarFile(
   file: File,
   operationId: string = crypto.randomUUID(),

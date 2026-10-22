@@ -453,6 +453,36 @@ async def replace_term_periods(
         return result
 
 
+@router.delete("/terms/{term_id}")
+async def delete_term(term_id: UUID, request: Request) -> dict:
+    async with authorized(request, write=True) as identity:
+        term = await locked_term(identity.session, identity.user.id, term_id)
+        course_count = await identity.session.scalar(
+            select(func.count())
+            .select_from(CalendarSeries)
+            .where(
+                CalendarSeries.owner_id == identity.user.id,
+                CalendarSeries.term_id == term.id,
+            )
+        )
+        if course_count:
+            raise AppError(
+                "term_has_courses",
+                "此学期还有课程，先删除或迁移课程后再删除学期。",
+                status=409,
+            )
+        await identity.session.delete(term)
+        emit_change(
+            identity.session,
+            identity.user.id,
+            "term",
+            term.id,
+            "deleted",
+            term.version,
+        )
+        return {"status": "deleted"}
+
+
 def series_warnings(occurrence_keys: tuple[str, ...]) -> list[dict]:
     return [
         {

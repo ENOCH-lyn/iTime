@@ -46,9 +46,13 @@ from itime.ai.routing_service import (
 from itime.auth.security import now
 from itime.calendar.ai_import_enqueue import enqueue_text_calendar_import
 from itime.calendar.import_service import import_detail
-from itime.calendar.models import CalendarImportBatch, CalendarSeries, UserTimeSettings
+from itime.calendar.models import (
+    AcademicTerm,
+    CalendarImportBatch,
+    CalendarSeries,
+    UserTimeSettings,
+)
 from itime.calendar.series_service import query_occurrences
-from itime.calendar.service import ensure_default_term
 from itime.config import Settings
 from itime.database import Database
 from itime.errors import AppError
@@ -946,10 +950,11 @@ async def _agent_context(
     weeks_by_series = {
         series.id: list(series.course_week_numbers) for series in series_rows
     }
-    active_term = await ensure_default_term(
-        session,
-        owner_id,
-        time_zone=time_zone,
+    active_term = await session.scalar(
+        select(AcademicTerm)
+        .where(AcademicTerm.owner_id == owner_id)
+        .order_by(AcademicTerm.start_date.desc(), AcademicTerm.updated_at.desc())
+        .limit(1)
     )
     return {
         "current_date": local_today.isoformat(),

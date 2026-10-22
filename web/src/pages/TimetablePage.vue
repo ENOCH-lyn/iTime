@@ -47,16 +47,13 @@ import {
   listCalendarOccurrences,
   listSeries,
   listTerms,
-  replaceTermPeriods,
   saveSeries,
-  saveTerm,
   saveTimeSettings,
   trashCalendarSeries,
   type CalendarOccurrence,
   type CalendarSeries,
   type SeriesDraft,
   type Term,
-  type TermPeriod,
   type TimeSettings,
 } from '../lib/calendar'
 import {
@@ -605,57 +602,10 @@ function openCreate(dayIndex: number, startMinutes: number) {
   void openCreateWithTerm(dayIndex, startMinutes)
 }
 
-const DEFAULT_PERIODS: TermPeriod[] = [
-  { period_number: 1, name: '第1节', starts_at: '08:30', ends_at: '09:15' },
-  { period_number: 2, name: '第2节', starts_at: '09:25', ends_at: '10:10' },
-  { period_number: 3, name: '第3节', starts_at: '10:30', ends_at: '11:15' },
-  { period_number: 4, name: '第4节', starts_at: '11:25', ends_at: '12:10' },
-  { period_number: 5, name: '第5节', starts_at: '14:00', ends_at: '14:45' },
-  { period_number: 6, name: '第6节', starts_at: '14:55', ends_at: '15:40' },
-  { period_number: 7, name: '第7节', starts_at: '16:00', ends_at: '16:45' },
-  { period_number: 8, name: '第8节', starts_at: '16:55', ends_at: '17:40' },
-  { period_number: 9, name: '第9节', starts_at: '19:00', ends_at: '19:55' },
-  { period_number: 10, name: '第10节', starts_at: '19:55', ends_at: '20:40' },
-]
-
-async function ensureDefaultTerm() {
-  let current = settings.value
-  if (!current) {
-    current = await getTimeSettings()
-    settings.value = current
-  }
-  if (!current.time_zone) throw new Error('请先在设置中保存时区。')
-  const start = today.value
-  const monday = startOfWeek(start)
-  const month = Number(start.slice(5, 7))
-  const name = `${start.slice(0, 4)}年${month >= 2 && month <= 7 ? '春季' : '秋季'}学期`
-  const saved = await saveTerm(
-    null,
-    {
-      name,
-      start_date: start,
-      end_date: addDays(start, 20 * 7 - 1),
-      first_week_monday: monday,
-    },
-    current.time_zone,
-    crypto.randomUUID(),
-  )
-  const withPeriods = await replaceTermPeriods(saved, DEFAULT_PERIODS, crypto.randomUUID())
-  terms.value = await listTerms()
-  termId.value = withPeriods.id
-  activeTermDetail.value = await getTerm(withPeriods.id)
-  weekStart.value = startOfWeek(start)
-  showNotice('已自动创建当前学期：20 周、10 个节次')
-}
-
 async function openCreateWithTerm(dayIndex: number, startMinutes: number) {
   if (!activeTerm.value) {
-    try {
-      await ensureDefaultTerm()
-    } catch (reason) {
-      showNotice(failure(reason).message)
-      return
-    }
+    showNotice('请先在“学期设置”中填写学期开始日期和周数，再添加课程。')
+    return
   }
   const date = weekDays.value[dayIndex]?.date ?? today.value
   eventDialogMode.value = 'create'

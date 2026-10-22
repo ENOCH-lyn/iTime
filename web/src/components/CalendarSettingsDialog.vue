@@ -4,6 +4,7 @@ import { Clock3, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
+  deleteTerm,
   getTerm,
   replaceTermPeriods,
   saveTerm,
@@ -175,6 +176,23 @@ async function editTerm(term: Term) {
   }
 }
 
+async function removeTerm(term: Term) {
+  if (!window.confirm(`删除学期“${term.name}”？此学期不能还有课程。`)) return
+  pendingTerm.value = true
+  error.value = null
+  success.value = ''
+  try {
+    await deleteTerm(term.id)
+    success.value = '学期已删除。'
+    termFormOpen.value = false
+    emit('changed', success.value)
+  } catch (reason) {
+    error.value = failure(reason)
+  } finally {
+    pendingTerm.value = false
+  }
+}
+
 function updateStartDate(value: string) {
   values.startDate = value
   if (!editingTerm.value || !values.firstWeekMonday) {
@@ -319,6 +337,10 @@ async function saveTermForm() {
           <button type="button" class="small-icon-button" :aria-label="`编辑${term.name}`"
             :title="`编辑${term.name}`" :disabled="pendingTerm" @click="editTerm(term)">
             <Pencil :size="16" aria-hidden="true" />
+          </button>
+          <button type="button" class="small-icon-button" :aria-label="`删除${term.name}`"
+            :title="`删除${term.name}`" :disabled="pendingTerm" @click="removeTerm(term)">
+            <Trash2 :size="16" aria-hidden="true" />
           </button>
         </li>
       </ul>
