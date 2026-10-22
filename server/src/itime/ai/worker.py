@@ -5,9 +5,17 @@ import asyncio
 import hashlib
 import logging
 from collections.abc import Awaitable
+from uuid import UUID
 
 from cryptography.fernet import Fernet
 
+from itime.ai.agent_runtime import (
+    AgentOutcome,
+    fail_agent_run,
+    get_agent_run,
+    resume_agent_run,
+    start_agent_run,
+)
 from itime.ai.conversation_provider import (
     ConversationGenerationSuperseded,
     ConversationProviderError,
@@ -18,6 +26,7 @@ from itime.ai.conversation_service import (
     ConversationWorkUnavailable,
     append_conversation_delta,
     cleanup_expired_job_events,
+    complete_agent_job,
     complete_conversation_job,
     load_conversation_work,
     persist_agent_memories,
@@ -328,8 +337,52 @@ async def _process_conversation(
         return await mark_provider_request_started(database, claim)
 
     try:
-        operation = (
-            generate_agent_reply(
+        if work.agent_resume is not None:
+            run = await get_agent_run(
+                database,
+                claim.owner_id,
+                UUID(str(work.agent_run_id)),
+            )
+            if run is None:
+                await reject_or_retry_conversation_job(
+                    database,
+                    claim,
+                    work.generation,
+                    error_code="ai_agent_run_missing",
+                    error_message="Agent 会话已不存在，请重新发送消息。",
+                    error_stage="validation",
+                    retryable=False,
+                )
+                return
+            operation = resume_agent_run(
+                database,
+                settings,
+                cipher,
+                claim=claim,
+                run=run,
+                config=work.config,
+                response_message_id=work.response_message_id,
+                decision=str(work.agent_resume.get("decision") or "approved"),
+                on_request_started=mark_started,
+            )
+        elif (
+            work.agent_context is not None
+            and work.agent_context.get("_live_tool_loop") is True
+        ):
+            operation = start_agent_run(
+                database,
+                settings,
+                cipher,
+                claim=claim,
+                config=work.config,
+                messages=work.messages,
+                context=work.agent_context,
+                image_media_id=work.image_media_id,
+                response_message_id=work.response_message_id,
+                on_request_started=mark_started,
+            )
+        elif work.agent_context is not None:
+            operation = generate_agent_reply(
                 work.config,
                 settings,
                 cipher,
@@ -339,8 +392,8 @@ async def _process_conversation(
                 on_delta=persist_delta,
                 on_request_started=mark_started,
             )
-            if work.agent_context is not None
-            else stream_conversation_reply(
+        else:
+            operation = stream_conversation_reply(
                 work.config,
                 settings,
                 cipher,
@@ -349,7 +402,6 @@ async def _process_conversation(
                 on_delta=persist_delta,
                 on_request_started=mark_started,
             )
-        )
         provider_result = await _with_lease_heartbeat(
             database,
             claim,
@@ -370,6 +422,44 @@ async def _process_conversation(
             provider_request_id=exc.provider_request_id,
             http_status=exc.http_status,
             provider_usage=exc.usage,
+        )
+        return
+    except Exception:
+        logger.exception(
+            "agent_job_failed",
+            extra={"job_id": str(claim.id)},
+        )
+        if work.agent_run_id is not None:
+            await fail_agent_run(
+                database,
+                work.agent_run_id,
+                "ai_agent_failed",
+                "Agent 执行失败，请重新发送消息。",
+            )
+        await reject_or_retry_conversation_job(
+            database,
+            claim,
+            work.generation,
+            error_code="ai_agent_failed",
+            error_message="Agent 执行失败，请重新发送消息。",
+            error_stage="worker",
+            retryable=False,
+        )
+        return
+    if isinstance(provider_result, AgentOutcome):
+        await complete_agent_job(
+            database,
+            claim,
+            work.generation,
+            provider_result,
+            settings=settings,
+            cipher=cipher,
+            quality_sample_retention_days=settings.ai_quality_sample_retention_days,
+        )
+        await persist_agent_memories(
+            database,
+            claim,
+            provider_result.memory_writes,
         )
         return
     await complete_conversation_job(

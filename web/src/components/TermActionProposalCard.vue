@@ -70,6 +70,7 @@ async function reject() {
   error.value = ''
   try {
     proposal.value = (await rejectToolProposal(proposal.value)).proposal
+    emit('applied')
   } catch (reason) {
     error.value = failure(reason).message
   } finally {
@@ -108,7 +109,10 @@ watch(() => props.proposalId, load)
         </ElButton>
       </div>
       <p v-else-if="proposal.status === 'applied'" class="term-proposal-done">
-        <Check :size="15" aria-hidden="true" />已写入学期
+        <Check :size="15" aria-hidden="true" />已确认，Agent 继续执行
+      </p>
+      <p v-else-if="proposal.status === 'rejected'" class="term-proposal-done">
+        <X :size="15" aria-hidden="true" />已拒绝，Agent 继续处理
       </p>
       <StatusMessage v-if="error" :error="{ code: 'term_proposal_error', message: error, request_id: null, saved: 'unknown', retryable: false }" />
       <span class="term-proposal-icon" aria-hidden="true">

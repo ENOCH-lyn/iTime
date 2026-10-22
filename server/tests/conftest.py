@@ -19,6 +19,10 @@ from itime.config import Settings
 
 SERVER = Path(__file__).resolve().parents[1]
 
+# uvicorn >= 0.54 forces ProactorEventLoop on Windows, which psycopg async
+# cannot use. Keep the default Selector loop for every test subprocess.
+os.environ.setdefault("UVICORN_LOOP", "none")
+
 
 def psycopg_url(url: str) -> str:
     return url.replace("postgresql+psycopg://", "postgresql://", 1)

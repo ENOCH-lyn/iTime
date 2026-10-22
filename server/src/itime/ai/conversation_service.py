@@ -12,6 +12,7 @@ from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from itime.ai.action_proposals import create_proposal
+from itime.ai.agent_models import AgentRun
 from itime.ai.conversation_models import (
     AIJobEvent,
     ChatGeneration,
@@ -380,6 +381,19 @@ async def enqueue_message(
             "此会话仍在生成回复，请等待完成或先取消。",
             status=409,
         )
+    waiting_run = await session.scalar(
+        select(AgentRun.id).where(
+            AgentRun.owner_id == owner_id,
+            AgentRun.conversation_id == conversation.id,
+            AgentRun.status == "waiting_approval",
+        )
+    )
+    if waiting_run is not None:
+        raise AppError(
+            "agent_approval_pending",
+            "请先确认或拒绝待处理的工具调用。",
+            status=409,
+        )
     await lock_owner_ai_job_capacity(session, owner_id)
     current = now()
     daily = await get_or_create_daily_allowance(
@@ -502,7 +516,7 @@ async def enqueue_message(
     if agent_mode and re.search(
         r"天气|下雨|降雨|气温|温度|weather|rain|搜索|查一下|帮我查|"
         r"最新|新闻|是谁|是什么|多少钱|怎么样|记住|记一下|"
-        r"偏好|习惯|不能占用|不要安排|学期|term",
+        r"偏好|习惯|不能占用|不要安排|学期|term|课表|导入|截图|课程",
         content,
         re.IGNORECASE,
     ):
@@ -573,6 +587,8 @@ async def enqueue_message(
                 status=400,
             )
         input_summary["image_media_id"] = str(media.id)
+        if agent_context is not None:
+            agent_context["_live_tool_loop"] = True
     input_summary["public_source_references"] = [
         {
             "link_id": source["link_id"],
@@ -753,6 +769,364 @@ class ConversationWorkUnavailable(Exception):
         self.stage = stage
 
 
+async def enqueue_agent_resume(
+    session: AsyncSession,
+    owner_id: UUID,
+    *,
+    proposal,
+    decision: str,
+    timeout_seconds: int,
+) -> dict:
+    """Queue a resume of the same Agent run after a tool-call decision."""
+    if decision not in {"approved", "rejected"}:
+        raise ValueError("decision must be approved or rejected")
+    run = await session.scalar(
+        select(AgentRun)
+        .where(
+            AgentRun.owner_id == owner_id,
+            AgentRun.pending_proposal_id == proposal.id,
+            AgentRun.status == "waiting_approval",
+        )
+        .with_for_update()
+    )
+    if run is None:
+        raise AppError(
+            "agent_run_not_waiting",
+            "此工具调用没有等待中的 Agent，请刷新后重试。",
+            status=409,
+        )
+    conversation = await locked_conversation(
+        session,
+        owner_id,
+        run.conversation_id,
+    )
+    if conversation.archived_at is not None:
+        raise AppError(
+            "conversation_archived",
+            "此会话已归档，无法继续执行。",
+            status=409,
+        )
+    active_job = await session.scalar(
+        select(AIJob.id).where(
+            AIJob.owner_id == owner_id,
+            AIJob.conversation_id == conversation.id,
+            AIJob.status.in_(ACTIVE_JOB_STATES),
+        )
+    )
+    if active_job is not None:
+        raise AppError(
+            "conversation_generation_active",
+            "此会话仍在生成回复，请稍后再确认。",
+            status=409,
+        )
+    await lock_owner_ai_job_capacity(session, owner_id)
+    route = await load_active_config_route(
+        session,
+        "conversation",
+        unavailable_message="全局 AI 对话暂未配置，请稍后重试。",
+    )
+    config = route.primary
+    current = now()
+    daily = await get_or_create_daily_allowance(
+        session,
+        owner_id,
+        accepted_at=current,
+    )
+    last_sequence = (
+        await session.scalar(
+            select(func.max(ConversationMessage.sequence)).where(
+                ConversationMessage.conversation_id == conversation.id,
+            )
+        )
+        or 0
+    )
+    response_message = ConversationMessage(
+        id=uuid4(),
+        owner_id=owner_id,
+        conversation_id=conversation.id,
+        sequence=last_sequence + 1,
+        role="assistant",
+        status="queued",
+        content="",
+        created_at=current,
+        updated_at=current,
+    )
+    session.add(response_message)
+    await session.flush()
+    input_summary = {
+        "resource_type": "agent_resume",
+        "agent_mode": True,
+        "agent_run_id": str(run.id),
+        "proposal_id": str(proposal.id),
+        "decision": decision,
+        "response_message_id": str(response_message.id),
+        "history_through_sequence": last_sequence,
+        "image_media_id": (
+            str(run.image_media_id) if run.image_media_id is not None else None
+        ),
+        "memory_references": [],
+        "public_source_references": [],
+    }
+    estimate = maximum_reservation_estimate(
+        [
+            estimate_reservation_budget(
+                route_config,
+                request_body={
+                    "model": route_config.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "继续执行已批准的工具调用。" * 800,
+                        }
+                    ],
+                },
+                input_summary=input_summary,
+                capability="conversation",
+            )
+            for route_config in route.configs
+        ]
+    )
+    job = AIJob(
+        id=uuid4(),
+        owner_id=owner_id,
+        capability="conversation",
+        config_version_id=config.id,
+        input_media_id=None,
+        conversation_id=conversation.id,
+        quota_mode="user",
+        status="queued",
+        input_summary=input_summary,
+        available_at=current,
+        deadline_at=current + timedelta(seconds=timeout_seconds),
+        attempt_count=0,
+        max_attempts=3,
+        last_event_sequence=0,
+        version=1,
+    )
+    session.add(job)
+    await session.flush()
+    await replace_job_config_route(session, job, route)
+    session.add(
+        ChatGeneration(
+            job_id=job.id,
+            owner_id=owner_id,
+            conversation_id=conversation.id,
+            request_message_id=None,
+            response_message_id=response_message.id,
+            history_through_sequence=last_sequence,
+            context_message_ids=[],
+            public_source_context=[],
+        )
+    )
+    append_job_event(
+        session,
+        job,
+        generation=0,
+        kind="job_state",
+        payload={
+            "status": "queued",
+            "message_id": str(response_message.id),
+            "attempt": 0,
+        },
+    )
+    await reserve_job_budget(
+        session,
+        owner_id=owner_id,
+        job=job,
+        accepted_at=current,
+        estimate=estimate,
+        daily=daily,
+    )
+    run.status = "running"
+    run.pending_proposal_id = None
+    run.last_job_id = job.id
+    run.source_message_id = response_message.id
+    run.updated_at = current
+    run.version += 1
+    conversation.version += 1
+    conversation.updated_at = current
+    emit_change(
+        session,
+        owner_id,
+        "conversation",
+        conversation.id,
+        "updated",
+        conversation.version,
+    )
+    await session.flush()
+    return {
+        "job_id": str(job.id),
+        "message_id": str(response_message.id),
+        "agent_run_id": str(run.id),
+    }
+
+
+async def complete_agent_job(
+    database: Database,
+    claim: ClaimedJob,
+    generation_number: int,
+    outcome,
+    *,
+    settings: Settings,
+    cipher: Fernet,
+    quality_sample_retention_days: int = 30,
+) -> bool:
+    current = now()
+    async with database.transaction() as session:
+        job = await session.scalar(
+            select(AIJob)
+            .where(
+                AIJob.id == claim.id,
+                AIJob.owner_id == claim.owner_id,
+                AIJob.status == "running",
+                AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
+                AIJob.deadline_at > current,
+            )
+            .with_for_update()
+        )
+        if job is None:
+            return False
+        generation = await session.scalar(
+            select(ChatGeneration)
+            .where(
+                ChatGeneration.job_id == job.id,
+                ChatGeneration.stream_generation == generation_number,
+            )
+            .with_for_update()
+        )
+        if generation is None:
+            return False
+        message = await session.scalar(
+            select(ConversationMessage)
+            .where(
+                ConversationMessage.id == generation.response_message_id,
+                ConversationMessage.owner_id == claim.owner_id,
+            )
+            .with_for_update()
+        )
+        conversation = await session.scalar(
+            select(Conversation)
+            .where(
+                Conversation.id == generation.conversation_id,
+                Conversation.owner_id == claim.owner_id,
+            )
+            .with_for_update()
+        )
+        if message is None or conversation is None or message.status != "running":
+            return False
+        body_log = await locked_attempt_body_log(
+            session,
+            job,
+            claim.attempt_number,
+        )
+        if body_log is None or body_log.status != "running":
+            return False
+        validate_response_body(outcome.content)
+        body_log.response_body = outcome.content
+        finalized = await finish_running_attempt(
+            session,
+            job,
+            status="succeeded",
+            provider_request_id=outcome.provider_request_id,
+            http_status=outcome.http_status,
+            provider_usage=outcome.usage,
+        )
+        if finalized is None:
+            raise AppError(
+                "ai_quota_state_invalid",
+                "最终成功尝试状态不完整。",
+                status=503,
+                saved="unknown",
+            )
+        await settle_success(
+            session,
+            job=job,
+            provider_cost=finalized.provider_cost,
+        )
+        run = await session.scalar(
+            select(AgentRun)
+            .where(
+                AgentRun.id == outcome.run_id,
+                AgentRun.owner_id == claim.owner_id,
+            )
+            .with_for_update()
+        )
+        if run is None:
+            return False
+        run.last_content = outcome.content[:100_000]
+        run.last_job_id = job.id
+        run.source_message_id = message.id
+        run.error_code = None
+        run.error_message = None
+        run.updated_at = current
+        run.version += 1
+        if outcome.final:
+            run.status = "completed"
+            run.pending_proposal_id = None
+        else:
+            run.status = "waiting_approval"
+            run.pending_proposal_id = outcome.proposal_id
+        message.content = outcome.content
+        message.status = "complete"
+        message.error_code = None
+        message.error_message = None
+        message.updated_at = current
+        message.completed_at = current
+        job.status = "succeeded"
+        job.output = {
+            "resource_type": "conversation_message",
+            "message_id": str(message.id),
+            "agent_run_id": str(run.id),
+            **(
+                {
+                    "proposal_id": str(outcome.proposal_id),
+                    "proposal_kind": (
+                        "term_action"
+                        if outcome.proposal_tool_name in {"create_term", "update_term"}
+                        else "task_action"
+                    ),
+                }
+                if outcome.proposal_id is not None
+                else {}
+            ),
+        }
+        job.error_code = None
+        job.error_message = None
+        job.finished_at = current
+        job.updated_at = current
+        job.version += 1
+        append_job_event(
+            session,
+            job,
+            generation=generation_number,
+            kind="job_state",
+            payload={
+                "status": "succeeded",
+                "message_id": str(message.id),
+                "attempt": claim.attempt_number,
+            },
+        )
+        clear_job_lease(job)
+        conversation.version += 1
+        conversation.updated_at = current
+        emit_change(
+            session,
+            job.owner_id,
+            "conversation",
+            conversation.id,
+            "updated",
+            conversation.version,
+        )
+        await create_quality_sample_if_enabled(
+            session,
+            job,
+            body_log,
+            retention_days=quality_sample_retention_days,
+        )
+        return True
+
+
 @dataclass(frozen=True)
 class ConversationWork:
     config: ProviderConfig
@@ -760,6 +1134,10 @@ class ConversationWork:
     request_body: dict
     generation: int
     agent_context: dict | None
+    agent_run_id: UUID | None = None
+    agent_resume: dict | None = None
+    image_media_id: UUID | None = None
+    response_message_id: UUID | None = None
 
 
 VISION_MODEL = re.compile(
@@ -1244,22 +1622,46 @@ async def load_conversation_work(
             claim.owner_id,
             references=job.input_summary.get("memory_references", []),
         )
-        messages = await conversation_provider_messages(
-            session,
-            owner_id=claim.owner_id,
-            conversation_id=generation.conversation_id,
-            history_through_sequence=generation.history_through_sequence,
-            context_message_ids=generation.context_message_ids,
-            memory_items=memory_items,
-            public_sources=generation.public_source_context,
+        agent_context = (
+            job.input_summary.get("agent_context")
+            if job.input_summary.get("agent_mode") is True
+            else None
         )
-        image_media_id = job.input_summary.get("image_media_id")
+        if agent_context is not None and not isinstance(agent_context, dict):
+            raise ConversationWorkUnavailable(
+                "ai_job_input_invalid",
+                "Agent 上下文无效，请重新发送消息。",
+                "validation",
+            )
+        agent_resume = (
+            job.input_summary
+            if job.input_summary.get("resource_type") == "agent_resume"
+            else None
+        )
+        raw_image_media_id = job.input_summary.get("image_media_id")
+        image_media_id = (
+            UUID(str(raw_image_media_id)) if raw_image_media_id else None
+        )
+        if agent_resume is not None:
+            messages: list[dict[str, Any]] = []
+        else:
+            messages = await conversation_provider_messages(
+                session,
+                owner_id=claim.owner_id,
+                conversation_id=generation.conversation_id,
+                history_through_sequence=generation.history_through_sequence,
+                context_message_ids=generation.context_message_ids,
+                memory_items=memory_items,
+                public_sources=generation.public_source_context,
+            )
         if (
-            image_media_id
+            agent_context is None
+            and agent_resume is None
+            and image_media_id is not None
             and cipher is not None
             and _supports_vision(config.model)
         ):
-            media = await session.get(TemporaryMedia, UUID(str(image_media_id)))
+            media = await session.get(TemporaryMedia, image_media_id)
             if (
                 media is not None
                 and media.encrypted_content is not None
@@ -1280,18 +1682,24 @@ async def load_conversation_work(
                             break
                 except (InvalidToken, ValueError):
                     pass
-        agent_context = (
-            job.input_summary.get("agent_context")
-            if job.input_summary.get("agent_mode") is True
-            else None
-        )
-        if agent_context is not None and not isinstance(agent_context, dict):
-            raise ConversationWorkUnavailable(
-                "ai_job_input_invalid",
-                "Agent 上下文无效，请重新发送消息。",
-                "validation",
-            )
         await session.flush()
+        if agent_resume is not None:
+            return ConversationWork(
+                config=provider,
+                messages=[],
+                request_body={
+                    "resource_type": "agent_resume",
+                    "agent_run_id": agent_resume.get("agent_run_id"),
+                    "proposal_id": agent_resume.get("proposal_id"),
+                    "decision": agent_resume.get("decision"),
+                },
+                generation=generation.stream_generation,
+                agent_context=None,
+                agent_run_id=UUID(str(agent_resume["agent_run_id"])),
+                agent_resume=agent_resume,
+                image_media_id=image_media_id,
+                response_message_id=response_message.id,
+            )
         return ConversationWork(
             config=provider,
             messages=messages,
@@ -1302,6 +1710,8 @@ async def load_conversation_work(
             ),
             generation=generation.stream_generation,
             agent_context=agent_context,
+            image_media_id=image_media_id,
+            response_message_id=response_message.id,
         )
 
 

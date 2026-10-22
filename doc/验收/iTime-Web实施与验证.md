@@ -3469,3 +3469,15 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 ### 提交
 
 - `4764a69` — `feat(ai): 学期审批通过后自动续跑导入任务`
+
+## M7-BN：LangGraph 真 Agent 循环
+
+- 新增持久化 Agent 运行时：`agent -> tool -> agent`，模型不再调用工具时才结束。
+- 写工具通过 `interrupt()` 暂停；确认/拒绝后用 `Command(resume=...)` 恢复同一 `thread_id` 与 `agent_run`，不再新建伪造用户消息。
+- 新增 `ai_agent_runs` 与迁移 `0057_agent_runs`；`ai_chat_generations.request_message_id` 允许 agent_resume 为空，触发器只放行该类型。
+- 工具：天气、搜索、列学期、存记忆、创建/编辑学期、从会话图片启动课表导入。
+- 真实服务：同一 run 创建 `2028 春季学期` 后自动创建视觉导入作业，3 个候选；拒绝学期创建后 Agent 继续询问调整。
+- 浏览器：上传课表图片 -> 确认学期卡 -> 同页出现导入完成与 3 门课程，页面错误 0。
+- 证据：`tasks/itime/docs/23-真Agent循环与审批恢复.md`、`persistent/preview/agent-*.png`。
+- 测试：Agent/导入 30 passed，对话 21 passed，`ruff check` 与 `pnpm build` 通过。
+- 边界：结构化任务/课程/计划块写操作仍走旧路径；待审批超时与孤儿 run 清理未做。
