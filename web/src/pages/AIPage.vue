@@ -557,16 +557,15 @@ async function send() {
       attachmentOperation = attachmentOperation?.fingerprint === attachmentFingerprint
         ? attachmentOperation
         : { id: crypto.randomUUID(), fingerprint: attachmentFingerprint }
-      if (isDocumentAttachment(attachment)) {
+      if (attachment.type.startsWith('image/')) {
+        const image = await uploadAIImage(attachment, attachmentOperation.id)
+        imageMediaId = image.media_id
+      } else if (isDocumentAttachment(attachment)) {
         const extracted = await extractAIDocument(attachment, attachmentOperation.id)
         const header = `附件《${extracted.filename}》${extracted.truncated ? '（内容过长，已截断）' : ''}`
         const overhead = content.length + header.length + 2
         const body = extracted.text.slice(0, Math.max(0, 11_990 - overhead))
         content = `${content}\n\n${header}\n${body}`.slice(0, 12_000)
-        if (attachment.type.startsWith('image/')) {
-          const image = await uploadAIImage(attachment, attachmentOperation.id)
-          imageMediaId = image.media_id
-        }
       } else {
         const imported = await uploadCalendarFile(attachment, attachmentOperation.id)
         importBatchId = imported.batch.id
