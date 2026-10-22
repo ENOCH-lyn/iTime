@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import type { UploadFile, UploadFiles, UploadInstance } from 'element-plus'
+import { ElMessageBox, type UploadFile, type UploadFiles, type UploadInstance } from 'element-plus'
 import {
   Check,
   Download,
@@ -318,7 +318,15 @@ async function loadHistory() {
 }
 
 async function deleteHistoryBatch(item: CalendarImportBatch) {
-  if (!window.confirm(`删除“${sourceName(item)}”的导入记录？候选不会再显示。`)) return
+  try {
+    await ElMessageBox.confirm(
+      `删除“${sourceName(item)}”的导入记录？候选不会再显示。`,
+      '删除导入记录',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   try {
     await deleteCalendarImport(item.id)
     history.value = history.value.filter(entry => entry.id !== item.id)

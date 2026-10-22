@@ -2,6 +2,7 @@
 import { nextTick, reactive, ref, watch } from 'vue'
 import { Clock3, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
+import { ElMessageBox } from 'element-plus'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
   deleteTerm,
@@ -177,7 +178,15 @@ async function editTerm(term: Term) {
 }
 
 async function removeTerm(term: Term) {
-  if (!window.confirm(`删除学期“${term.name}”？此学期不能还有课程。`)) return
+  try {
+    await ElMessageBox.confirm(
+      `删除学期“${term.name}”？此学期不能还有课程。`,
+      '删除学期',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   pendingTerm.value = true
   error.value = null
   success.value = ''
