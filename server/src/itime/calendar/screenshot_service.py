@@ -467,6 +467,9 @@ def _normalize_screenshot_draft(
         draft["end_day_offset"] = 0
     if not isinstance(recurrence, dict):
         return draft, []
+    if recurrence.get("frequency") == "weekly":
+        recurrence["count"] = None
+        recurrence["until"] = None
     if recurrence.get("frequency") != "weekly" or recurrence.get("week_numbers"):
         return draft, []
     weekdays = recurrence.get("weekdays")
@@ -508,7 +511,7 @@ async def apply_ai_import_result(
     for item in result.output.items:
         warnings = list(item.warnings)
         draft = item.draft
-        if format_name == "screenshot" and isinstance(draft, dict):
+        if isinstance(draft, dict):
             draft, extra = _normalize_screenshot_draft(
                 draft,
                 context,
