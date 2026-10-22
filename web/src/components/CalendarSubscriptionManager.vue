@@ -1382,10 +1382,10 @@ onBeforeUnmount(() => {
               <strong>最近刷新失败</strong>
               <p>{{ detail.subscription.last_error?.message ?? '来源暂时无法刷新。' }}</p>
               <p v-if="detail.subscription.last_success_at">
-                上次成功刷新的 {{ detail.subscription.event_count ?? 0 }} 条事件仍保留在月视图中，
+                上次成功刷新的 {{ detail.subscription.event_count ?? 0 }} 条事件仍保留在日历中，
                 本次失败没有清空旧内容。
               </p>
-              <p v-else>此来源尚无成功快照，月视图中没有可保留的订阅事件。</p>
+              <p v-else>此来源尚无成功快照，日历中没有可保留的订阅事件。</p>
             </div>
             <p v-else-if="detail.subscription.error_event_count"
               class="subscription-retained-warning">
@@ -1780,4 +1780,5 @@ onBeforeUnmount(() => {
     </div>
   </section>
 </template>
+
 

@@ -125,10 +125,10 @@ onMounted(async () => {
             <div class="settings-row settings-time-link">
               <div>
                 <strong>学期与节次</strong>
-                <p>在月视图中管理学期、课表和节次。</p>
+                <p>在日历中管理学期、课表和节次。</p>
               </div>
-              <RouterLink to="/timetable/month" class="settings-command-link">
-                打开月视图
+              <RouterLink to="/calendar?view=month" class="settings-command-link">
+                打开日历
                 <ExternalLink :size="16" aria-hidden="true" />
               </RouterLink>
             </div>

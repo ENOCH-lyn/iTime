@@ -42,18 +42,10 @@ function logoutFromDrawer() {
       >
         <span class="material-symbols-rounded" aria-hidden="true">menu</span>
       </button>
-      <RouterLink to="/timetable" class="app-shell-brand m3-top-app-bar__title">
+      <RouterLink to="/calendar" class="app-shell-brand m3-top-app-bar__title">
         iTime<span aria-hidden="true">.</span>
       </RouterLink>
       <div class="app-shell-actions">
-        <RouterLink
-          to="/ai"
-          class="m3-icon-button app-shell-ai"
-          aria-label="AI"
-          title="AI"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">smart_toy</span>
-        </RouterLink>
         <RouterLink
           to="/settings"
           class="app-shell-avatar"

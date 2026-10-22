@@ -329,6 +329,21 @@ async function selectConversation(conversation: Conversation) {
   await syncCurrent()
 }
 
+function startDraft() {
+  if (sending.value) return
+  selected.value = null
+  messages.value = []
+  eventGeneration = 0
+  lastEventSequence = 0
+  stopEvents()
+  composer.value = ''
+  composerAttachment.value = null
+  error.value = null
+  success.value = ''
+  void router.replace('/ai')
+  void nextTick(() => document.getElementById('conversation-message')?.focus())
+}
+
 function createNewConversation(): Promise<Conversation | null> {
   if (createPromise) return createPromise
   createPromise = performCreateConversation()
@@ -369,8 +384,7 @@ async function prepareDifficultyDraft(difficultyId: string) {
       error.value = localFailure('这条困难记录已不在活动列表中。')
       return
     }
-    if (!selected.value) await createNewConversation()
-    if (!selected.value) return
+    if (!selected.value) startDraft()
     composer.value = [
       '我遇到了这个困难：',
       difficulty.content,
@@ -692,7 +706,7 @@ function invalidAttachment(message: string) {
         :create-disabled="authLoading || creating"
         :ai-frozen="identity?.user.ai_access === 'frozen'"
         @select="selectConversation"
-        @create="createNewConversation"
+        @create="startDraft"
         @archived-view="switchArchived"
         @load-more="loadConversationList(true)"
         @rename="openRename"
@@ -709,7 +723,7 @@ function invalidAttachment(message: string) {
         :create-disabled="authLoading || creating"
         :ai-frozen="identity?.user.ai_access === 'frozen'"
         @select="(v) => { selectConversation(v); close() }"
-        @create="() => { createNewConversation(); close() }"
+        @create="() => { startDraft(); close() }"
         @archived-view="switchArchived"
         @load-more="loadConversationList(true)"
         @rename="(v) => { openRename(v); close() }"

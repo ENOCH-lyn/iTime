@@ -164,7 +164,7 @@ function removeAttachment() {
         aria-label="发送消息"
         @click="submit">
         <SendHorizontal :size="18" aria-hidden="true" />
-        <span>{{ pending ? '正在发送…' : '发送' }}</span>
+        <span class="composer-send-label">{{ pending ? '正在发送…' : '发送' }}</span>
       </ElButton>
     </div>
   </form>

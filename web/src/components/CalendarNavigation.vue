@@ -21,10 +21,10 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <nav class="secondary-nav calendar-navigation" aria-label="课表管理">
-    <p class="nav-heading">课表管理</p>
+  <nav class="secondary-nav calendar-navigation" aria-label="日历管理">
+    <p class="nav-heading">日历管理</p>
     <button type="button" class="nav-link" @click="emit('createSeries')">
-      <Plus :size="18" aria-hidden="true" />新建安排
+      <Plus :size="18" aria-hidden="true" />添加日程
     </button>
     <button type="button" class="nav-link" data-calendar-import-trigger @click="emit('openImport')">
       <FileUp :size="18" aria-hidden="true" />导入日历
@@ -42,4 +42,6 @@ const emit = defineEmits<{
     </div>
   </nav>
 </template>
+
+
 

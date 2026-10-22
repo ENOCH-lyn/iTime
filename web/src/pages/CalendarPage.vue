@@ -18,6 +18,7 @@ import CalendarSeriesDialog from '../components/CalendarSeriesDialog.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
 import CalendarTrashDialog from '../components/CalendarTrashDialog.vue'
 import StatusMessage from '../components/StatusMessage.vue'
+import TimetableBoard from '../components/TimetableBoard.vue'
 import AppShell from '../shell/AppShell.vue'
 import { useAppShell } from '../shell/useAppShell'
 import { failure, type Failure } from '../lib/api'
@@ -46,12 +47,21 @@ import {
   type PlanSourceConflictSummary,
 } from '../lib/plans'
 import { useSyncRefresh } from '../lib/use-sync-refresh'
+import {
+  colorIndexFor,
+  timeToMinutes,
+  type BoardEvent,
+  type TimetableDay,
+} from '../lib/timetable'
 import '../calendar.css'
+import '../calendar-hub.css'
 
 const route = useRoute()
 const router = useRouter()
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const view = ref<'week' | 'month'>('month')
+const view = ref<'week' | 'month'>(
+  route.query.view === 'month' ? 'month' : 'week',
+)
 const routeDate = typeof route.query.date === 'string' ? route.query.date : ''
 const anchor = ref(validDate(routeDate)
   ? routeDate
@@ -176,19 +186,28 @@ const monthKey = computed(() => anchor.value.slice(0, 7))
 const title = computed(() => {
   const first = parseLocalDate(days.value[0])
   const last = parseLocalDate(days.value.at(-1) ?? days.value[0])
-  const formatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' })
-  if (view.value === 'month') return formatter.format(parseLocalDate(anchor.value))
+  if (view.value === 'month') {
+    return new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+    }).format(parseLocalDate(anchor.value))
+  }
+  const sameMonth = first.getFullYear() === last.getFullYear()
+    && first.getMonth() === last.getMonth()
+  const sameYear = first.getFullYear() === last.getFullYear()
   const firstLabel = new Intl.DateTimeFormat('zh-CN', {
-    year: first.getFullYear() === last.getFullYear() ? undefined : 'numeric',
-    month: 'short',
+    year: 'numeric',
+    month: 'long',
     day: 'numeric',
   }).format(first)
-  const lastLabel = new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(last)
-  return `${firstLabel} - ${lastLabel}`
+  const lastLabel = sameMonth
+    ? `${last.getDate()}日`
+    : new Intl.DateTimeFormat('zh-CN', {
+      year: sameYear ? undefined : 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(last)
+  return `${firstLabel} – ${lastLabel}`
 })
 const visibleItems = computed(() => calendarItems.value.filter(item => (
   (
@@ -207,6 +226,79 @@ const visibleItems = computed(() => calendarItems.value.filter(item => (
     || !['cancelled', 'source_cancelled', 'skipped'].includes(item.state)
   )
 )))
+const weekDays = computed(() => days.value.slice(0, 7))
+const boardDays = computed<TimetableDay[]>(() => weekDays.value.map(date => {
+  const value = parseLocalDate(date)
+  return {
+    date,
+    weekday: new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(value),
+    dayNumber: value.getDate(),
+    month: value.getMonth() + 1,
+    isToday: date === today.value,
+  }
+}))
+const inWeek = (date: string) => (
+  weekDays.value.length > 0
+  && date >= weekDays.value[0]
+  && date <= weekDays.value[weekDays.value.length - 1]
+)
+const weekTimedItems = computed(() => (
+  view.value === 'week'
+    ? visibleItems.value.filter(item => inWeek(item.date) && !!item.time)
+    : []
+))
+const weekUntimedItems = computed(() => (
+  view.value === 'week'
+    ? visibleItems.value.filter(item => inWeek(item.date) && !item.time)
+    : []
+))
+const boardEvents = computed<BoardEvent[]>(() => weekTimedItems.value.map(item => {
+  const dayIndex = weekDays.value.indexOf(item.date)
+  const startMin = timeToMinutes(item.time) ?? 0
+  let endMin = timeToMinutes(item.end_time) ?? startMin + 60
+  if (endMin <= startMin) endMin = item.end_date !== item.date ? 1440 : startMin + 60
+  return {
+    id: item.id,
+    title: item.title,
+    subtitle: item.subtitle,
+    dayIndex,
+    startMin,
+    endMin,
+    kind: item.kind,
+    colorIndex: colorIndexFor(item.title),
+    cancelled: ['cancelled', 'source_cancelled', 'skipped'].includes(item.state),
+    occurrence: item.calendar,
+    task: item.task,
+    plan: item.plan,
+  }
+}))
+const boardRange = computed(() => {
+  let start = 8 * 60
+  let end = 22 * 60
+  for (const item of weekTimedItems.value) {
+    const itemStart = timeToMinutes(item.time)
+    const itemEnd = timeToMinutes(item.end_time)
+    if (itemStart !== null) start = Math.min(start, itemStart)
+    if (itemEnd !== null) end = Math.max(end, itemEnd)
+  }
+  start = Math.max(0, Math.floor(start / 60) * 60)
+  end = Math.min(1440, Math.ceil(end / 60) * 60)
+  return { start, end: Math.max(end, start + 60) }
+})
+const boardPeriods = computed(() => (
+  terms.value.find(term => (
+    term.start_date <= weekDays.value[0] && term.end_date >= weekDays.value[6]
+  ))?.periods ?? []
+))
+const showTeacher = ref(localStorage.getItem('itime.showTeacher') !== 'false')
+watch(showTeacher, value => {
+  localStorage.setItem('itime.showTeacher', String(value))
+})
+const nowMinutes = computed(() => {
+  if (!weekDays.value.includes(today.value)) return null
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+})
 const selectedSeries = computed(() => {
   const id = selected.value?.calendar?.series_id
   return id ? series.value.find(item => item.id === id) ?? null : null
@@ -219,8 +311,41 @@ watch(authError, value => {
 watch([view, anchor], () => { void loadOccurrences() })
 watch(anchor, value => { jumpDate.value = value })
 
+function setView(next: 'week' | 'month') {
+  if (view.value === next) return
+  view.value = next
+  selected.value = null
+}
+
+watch([view, anchor], () => {
+  if (route.path !== '/calendar') return
+  if (route.query.view === view.value && route.query.date === anchor.value) return
+  void router.replace({
+    path: '/calendar',
+    query: { ...route.query, view: view.value, date: anchor.value },
+  })
+})
+
+watch(() => route.query, query => {
+  if (route.path !== '/calendar') return
+  const nextView = query.view === 'month' ? 'month' : 'week'
+  if (view.value !== nextView) view.value = nextView
+  const nextDate = typeof query.date === 'string' && validDate(query.date)
+    ? query.date
+    : anchor.value
+  if (nextDate !== anchor.value) {
+    anchorTouched = true
+    anchor.value = nextDate
+  }
+}, { deep: true })
+
+function selectBoardEvent(event: BoardEvent) {
+  const item = calendarItems.value.find(candidate => candidate.id === event.id)
+  if (item) void selectItem(item)
+}
+
 onMounted(async () => {
-  document.title = '月视图 · iTime'
+  document.title = '日历 · iTime'
   await refreshSession()
   if (!identity.value) {
     await router.replace('/login')
@@ -468,7 +593,7 @@ async function closeImport() {
   if (typeof route.query.import === 'string') {
     const query = { ...route.query }
     delete query.import
-    await router.replace({ path: '/timetable/month', query })
+    await router.replace({ path: '/calendar', query })
   }
   await nextTick()
   if (opener?.isConnected && opener.offsetParent !== null) {
@@ -584,8 +709,8 @@ watch(pageError, value => {
   <AppShell
     current="timetable"
     has-secondary
-    secondary-label="课表管理"
-    title="月视图"
+    secondary-label="日历管理"
+    title="日历"
     :pending-logout="pendingLogout"
     @logout="logout"
   >
@@ -632,13 +757,32 @@ watch(pageError, value => {
               <input v-model="jumpDate" type="date" aria-label="跳转日期"
                 @input="applyJumpDate" @blur="restoreJumpDate" />
             </label>
-            <RouterLink to="/timetable" class="button calendar-week-link">周课表</RouterLink>
+            <div class="calendar-view-switch" role="tablist" aria-label="日历视图">
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="view === 'week'"
+                :class="{ active: view === 'week' }"
+                @click="setView('week')"
+              >
+                周
+              </button>
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="view === 'month'"
+                :class="{ active: view === 'month' }"
+                @click="setView('month')"
+              >
+                月
+              </button>
+            </div>
             <button type="button" class="small-icon-button filter-button" aria-label="筛选日历"
               title="筛选日历" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
               <Filter :size="18" aria-hidden="true" />
             </button>
-            <button type="button" class="button calendar-new-button" aria-label="新建安排" @click="openCreate">
-              <CalendarPlus :size="18" aria-hidden="true" /><span>新建安排</span>
+            <button type="button" class="button calendar-new-button" aria-label="添加日程" @click="openCreate">
+              <CalendarPlus :size="18" aria-hidden="true" /><span>添加日程</span>
             </button>
           </div>
         </header>
@@ -675,7 +819,47 @@ watch(pageError, value => {
           </div>
         </div>
 
+        <div v-if="view === 'week'" class="calendar-week-view">
+          <TimetableBoard
+            :days="boardDays"
+            :items="boardEvents"
+            :periods="boardPeriods"
+            :range-start="boardRange.start"
+            :range-end="boardRange.end"
+            :now-minutes="nowMinutes"
+            :loading="loading && !loaded"
+            :show-teacher="showTeacher"
+            @select="selectBoardEvent"
+            @create="openCreate"
+          />
+          <section v-if="weekUntimedItems.length" class="calendar-unscheduled" aria-label="本周待安排">
+            <header>
+              <h2>本周待安排</h2>
+              <span>{{ weekUntimedItems.length }} 项</span>
+            </header>
+            <div class="calendar-unscheduled-list">
+              <button
+                v-for="item in weekUntimedItems"
+                :key="item.id"
+                type="button"
+                :data-event-id="item.id"
+                class="calendar-unscheduled-item"
+                @click="selectItem(item)"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">
+                  {{ item.kind === 'task' ? 'task_alt' : 'event' }}
+                </span>
+                <span>
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.subtitle || '未设置时间' }}</small>
+                </span>
+              </button>
+            </div>
+          </section>
+        </div>
+
         <CalendarGrid
+          v-else
           :days="days"
           :items="visibleItems"
           :view="view"
@@ -686,11 +870,11 @@ watch(pageError, value => {
           @select="selectItem"
         />
 
-        <div v-if="loaded && !loading && !visibleItems.length" class="calendar-empty">
+        <div v-if="view === 'month' && loaded && !loading && !visibleItems.length" class="calendar-empty">
           <CalendarPlus :size="28" aria-hidden="true" />
           <h2>这段日期还没有安排</h2>
           <p>可以创建课程、固定安排，或为任务设置截止日期。</p>
-          <button type="button" class="button" @click="openCreate">新建安排</button>
+          <button type="button" class="button" @click="openCreate">添加日程</button>
         </div>
 
         <button v-if="loaded" type="button" class="calendar-refresh small-icon-button"
@@ -750,4 +934,5 @@ watch(pageError, value => {
     />
   </AppShell>
 </template>
+
 

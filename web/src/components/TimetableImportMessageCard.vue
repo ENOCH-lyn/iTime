@@ -155,15 +155,15 @@ async function cancel() {
 
 function adjust() {
   void router.push({
-    path: '/timetable/month',
+    path: '/calendar',
     query: { import: props.batchId },
   })
 }
 
 function openCalendar() {
   void router.push({
-    path: '/timetable/month',
-    query: firstDate.value ? { date: firstDate.value } : {},
+    path: '/calendar',
+    query: { view: 'week', ...(firstDate.value ? { date: firstDate.value } : {}) },
   })
 }
 </script>
@@ -254,7 +254,7 @@ function openCalendar() {
           @click="openCalendar"
         >
           <CalendarCheck :size="16" aria-hidden="true" />
-          在月视图中查看
+          在日历中查看
         </ElButton>
         <ElButton
           v-if="['failed', 'expired'].includes(batch.state)"
@@ -269,3 +269,4 @@ function openCalendar() {
     </template>
   </section>
 </template>
+

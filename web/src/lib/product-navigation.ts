@@ -9,9 +9,9 @@ export type ProductArea =
 export const primaryNavigation = [
   {
     key: 'timetable',
-    to: '/timetable',
-    label: '课表',
-    symbol: 'calendar_view_week',
+    to: '/calendar',
+    label: '日历',
+    symbol: 'calendar_month',
   },
   {
     key: 'tasks',

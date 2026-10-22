@@ -31,11 +31,6 @@
   margin-left: auto;
 }
 
-.app-shell-ai {
-  color: var(--m3-on-surface-variant);
-  text-decoration: none;
-}
-
 .app-shell-avatar {
   display: grid;
   place-items: center;

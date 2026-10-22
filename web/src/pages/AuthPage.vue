@@ -154,7 +154,7 @@ async function verifyEmail() {
     acceptSession(session)
     notifySessionChange()
     token.value = ''
-    await router.replace('/timetable')
+    await router.replace('/calendar')
   } catch (reason) {
     error.value = failure(reason)
     await nextTick()
@@ -198,7 +198,7 @@ async function submit() {
       })
       acceptSession(session)
       notifySessionChange()
-      await router.replace('/timetable')
+      await router.replace('/calendar')
     } else if (props.mode === 'register') {
       const result = await api<{
         status: 'registered' | 'verification_sent' | 'already_registered'
@@ -215,7 +215,7 @@ async function submit() {
       if (result.session) {
         acceptSession(result.session)
         notifySessionChange()
-        await router.replace('/timetable')
+        await router.replace('/calendar')
         return
       }
       registrationStatus.value = result.status
@@ -360,7 +360,7 @@ async function resend() {
               已创建新的登录会话。此前终止的 AI、导出和临时文件不会自动恢复。
             </p>
             <StatusMessage :success="success" />
-            <ElButton type="primary" class="full-width" @click="router.replace('/timetable')">
+            <ElButton type="primary" class="full-width" @click="router.replace('/calendar')">
               进入 iTime<ArrowRight :size="18" aria-hidden="true" />
             </ElButton>
           </template>
@@ -468,3 +468,4 @@ async function resend() {
     <footer class="public-footer"><span>iTime · 从容安排每一天</span></footer>
   </div>
 </template>
+

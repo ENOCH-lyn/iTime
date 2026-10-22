@@ -1,8 +1,8 @@
 # iTime 界面与交互规范
 
-更新：2026-10-22。全站视觉以 [Material 3](https://m3.material.io/) 为唯一依据：M3 color roles、type scale、shape scale、elevation、state layer、navigation rail / navigation bar、top app bar、filled/outlined/text buttons、cards、text fields、dialogs、segmented buttons。Element Plus 仅作为表单、弹窗、上传、日期等行为底座，外观由 `tokens.css` 与 `m3.css` 覆盖。自托管 Roboto 与 Material Symbols Rounded。实现记录见 [Material 3 界面重写](../docs/26-Material3界面重写.md)。
+更新：2026-10-23。全站视觉以 [Material 3](https://m3.material.io/) 为唯一依据：M3 color roles、type scale、shape scale、elevation、state layer、navigation rail / navigation bar、top app bar、filled/outlined/text buttons、cards、text fields、dialogs、segmented buttons。Element Plus 仅作为表单、弹窗、上传、日期等行为底座，外观由 `tokens.css` 与 `m3.css` 覆盖。自托管 Roboto 与 Material Symbols Rounded。实现记录见 [Material 3 界面重写](../docs/26-Material3界面重写.md) 与 [交互重写：日历融合](../docs/29-交互重写-日历融合.md)。
 
-2026-10-22 起，课表与日历合并为一个“课表”功能：周视图 `/timetable`，月视图 `/timetable/month`；一级导航为“课表 / 任务 / AI”。本文旧段落中仍写作“日历”的地方，按课表月视图理解。
+2026-10-23 起，课表与日历真正合并为单一“日历”功能：`/calendar` 一个页面内切换周/月视图，共享当前日期、工具栏和事件详情；一级导航为“日历 / 任务 / AI”。旧 `/timetable`、`/timetable/month` 只做重定向，不再拥有独立页面。本文旧段落中把“课表”和“日历”分开描述的地方，以 `/calendar` 统一页为准。
 
 ## 1. 信息架构与页面
 

@@ -104,6 +104,13 @@ const visibleDays = computed(() => props.days.filter(day => (
             <CheckCircle2 v-else-if="item.state === 'completed'" class="event-complete" :size="14" aria-label="已完成" />
           </button>
           <p v-if="view === 'week' && !itemsFor(day).length" class="calendar-day-empty">无安排</p>
+          <div v-if="view === 'month' && itemsFor(day).length" class="calendar-day-dots" aria-hidden="true">
+            <span
+              v-for="item in itemsFor(day).slice(0, 4)"
+              :key="item.id"
+              :class="`dot-${item.kind}`"
+            />
+          </div>
         </div>
       </article>
     </section>

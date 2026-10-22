@@ -34,8 +34,10 @@ const statusType = computed(() => {
   return 'info'
 })
 const calendarDestination = computed(() => ({
-  path: '/timetable/month',
-  query: proposal.value ? { date: proposal.value.payload.local_date } : {},
+  path: '/calendar',
+  query: proposal.value
+    ? { date: proposal.value.payload.local_date, view: 'week' }
+    : { view: 'week' },
 }))
 
 async function load() {
@@ -126,7 +128,7 @@ onMounted(load)
         link
         type="primary"
       >
-        在月视图中查看
+        在日历中查看
       </ElButton>
       <ElAlert
         v-if="error"

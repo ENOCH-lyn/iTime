@@ -486,7 +486,7 @@ async function save() {
     const conflicts = result.conflicts.items.length
     emit(
       'saved',
-      splitting.value ? '已从本次开始创建新的后继系列。' : current ? '系列修改已保存。' : '新安排已创建。',
+      splitting.value ? '已从本次开始创建新的后继系列。' : current ? '系列修改已保存。' : '日程已创建。',
       conflicts,
     )
     dialog.value?.close()
@@ -521,7 +521,7 @@ async function save() {
         <component :is="values.kind === 'course' ? BookOpen : CalendarClock" :size="22" aria-hidden="true" />
         <div>
           <h2 id="calendar-series-title">
-            {{ splitting ? '修改本次及以后' : editing ? '编辑整个系列' : '新建安排' }}
+            {{ splitting ? '修改本次及以后' : editing ? '编辑整个系列' : '添加日程' }}
           </h2>
           <p>{{ splitting ? '此前实例保持不变，所选实例开始使用新设置。' : '课程按学期周次展开，固定安排按日期规则展开。' }}</p>
         </div>
@@ -706,9 +706,10 @@ async function save() {
       <div class="dialog-actions">
         <button type="button" class="button secondary" :disabled="pending" @click="close">取消</button>
         <button type="submit" class="button" :disabled="pending">
-          {{ pending ? '正在保存…' : splitting ? '保存本次及以后' : editing ? '保存整个系列' : '创建安排' }}
+          {{ pending ? '正在保存…' : splitting ? '保存本次及以后' : editing ? '保存整个系列' : '创建日程' }}
         </button>
       </div>
     </form>
   </dialog>
 </template>
+
