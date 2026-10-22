@@ -19,6 +19,7 @@ import CourseActionProposalCard from './CourseActionProposalCard.vue'
 import MarkdownMessage from './MarkdownMessage.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
 import TaskActionProposalCard from './TaskActionProposalCard.vue'
+import TermActionProposalCard from './TermActionProposalCard.vue'
 import TimetableImportMessageCard from './TimetableImportMessageCard.vue'
 
 const props = defineProps<{
@@ -32,6 +33,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   loadOlder: []
   retryMessage: [message: ConversationMessage]
+  changed: []
 }>()
 
 const viewport = ref<HTMLElement | null>(null)
@@ -213,6 +215,11 @@ defineExpose({ scrollToLatest })
                 && message.job?.output?.proposal_id
                 && message.job.output.proposal_kind === 'task_plan'"
               :proposal-id="message.job.output.proposal_id"
+            />
+            <TermActionProposalCard
+              v-else-if="message.role === 'assistant' && message.job?.output?.proposal_kind === 'term_action' && message.job.output.proposal_id"
+              :proposal-id="message.job.output.proposal_id"
+              @applied="emit('changed')"
             />
             <ProposalMessageCard
               v-else-if="message.role === 'assistant' && message.job?.output?.proposal_id"

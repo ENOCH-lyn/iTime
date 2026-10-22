@@ -502,7 +502,7 @@ async def enqueue_message(
     if agent_mode and re.search(
         r"天气|下雨|降雨|气温|温度|weather|rain|搜索|查一下|帮我查|"
         r"最新|新闻|是谁|是什么|多少钱|怎么样|记住|记一下|"
-        r"偏好|习惯|不能占用|不要安排",
+        r"偏好|习惯|不能占用|不要安排|学期|term",
         content,
         re.IGNORECASE,
     ):
@@ -956,6 +956,14 @@ async def _agent_context(
         .order_by(AcademicTerm.start_date.desc(), AcademicTerm.updated_at.desc())
         .limit(1)
     )
+    all_terms = list(
+        await session.scalars(
+            select(AcademicTerm)
+            .where(AcademicTerm.owner_id == owner_id)
+            .order_by(AcademicTerm.start_date.desc())
+            .limit(10)
+        )
+    )
     return {
         "current_date": local_today.isoformat(),
         "current_time": local_now.isoformat(timespec="minutes"),
@@ -963,6 +971,15 @@ async def _agent_context(
         "time_zone": time_zone,
         "weather_location": weather_location,
         "term_id": str(active_term.id) if active_term is not None else None,
+        "terms": [
+            {
+                "id": str(term.id),
+                "name": term.name,
+                "start_date": term.start_date.isoformat(),
+                "end_date": term.end_date.isoformat(),
+            }
+            for term in all_terms
+        ],
         "tasks": [
             {
                 "id": str(task.id),
@@ -1875,6 +1892,48 @@ async def complete_conversation_job(
                 expected_version=None,
                 current_time=current,
             )
+        elif result.term_action is not None:
+            action = dict(result.term_action)
+            action_kind = str(action.pop("action", ""))
+            tool_name = (
+                "create_term"
+                if action_kind == "propose_itime_term_create"
+                else "update_term"
+            )
+            term_details = {
+                "kind": tool_name,
+                **{
+                    key: value
+                    for key, value in action.items()
+                    if key != "assistant_message"
+                },
+            }
+            if tool_name == "update_term" and action.get("term_id"):
+                existing_term = await session.scalar(
+                    select(AcademicTerm).where(
+                        AcademicTerm.id == UUID(str(action["term_id"])),
+                        AcademicTerm.owner_id == job.owner_id,
+                    )
+                )
+                if existing_term is not None:
+                    term_details["name"] = existing_term.name
+            action_proposal = await create_proposal(
+                session,
+                job.owner_id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+                tool_name=tool_name,
+                operation_id=str(
+                    uuid5(NAMESPACE_URL, f"itime:agent-term-action:{job.id}")
+                ),
+                preview={
+                    "summary": action.get("assistant_message", ""),
+                    "details": term_details,
+                },
+                payload=action,
+                expected_version=None,
+                current_time=current,
+            )
         message.content = (
             result.content
             if import_error is None
@@ -1898,15 +1957,19 @@ async def complete_conversation_job(
                 {
                     "proposal_id": str(action_proposal.id),
                     "proposal_kind": (
-                        "course_action"
-                        if action_proposal.tool_name
-                        in {
-                            "delete_calendar_series",
-                            "update_calendar_series",
-                            "create_calendar_exception",
-                            "create_calendar_series",
-                        }
-                        else "task_action"
+                        "term_action"
+                        if action_proposal.tool_name in {"create_term", "update_term"}
+                        else (
+                            "course_action"
+                            if action_proposal.tool_name
+                            in {
+                                "delete_calendar_series",
+                                "update_calendar_series",
+                                "create_calendar_exception",
+                                "create_calendar_series",
+                            }
+                            else "task_action"
+                        )
                     ),
                 }
                 if action_proposal is not None

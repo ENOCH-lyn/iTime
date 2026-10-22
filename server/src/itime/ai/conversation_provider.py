@@ -173,6 +173,7 @@ class ConversationProviderResult:
     course_create: "AgentCourseCreate | None" = None
     calendar_batch: "AgentCalendarBatch | None" = None
     memory_writes: list[dict[str, Any]] | None = None
+    term_action: dict[str, Any] | None = None
 
 
 class AgentTaskUpdate(Input):
@@ -1083,6 +1084,48 @@ LIVE_TOOL_SPECS = [
     {
         "type": "function",
         "function": {
+            "name": "propose_itime_term_create",
+            "description": (
+                "Propose creating a new academic term. Use only after the user "
+                "has explicitly provided the term start date. The proposal is "
+                "shown for approval before it is written."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assistant_message": {"type": "string"},
+                    "name": {"type": "string"},
+                    "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "week_count": {"type": "integer", "minimum": 1, "maximum": 30},
+                },
+                "required": ["assistant_message", "name", "start_date", "week_count"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_itime_term_update",
+            "description": (
+                "Propose editing an existing academic term. Use the term_id from "
+                "service context and only fields the user asked to change."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assistant_message": {"type": "string"},
+                    "term_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "start_date": {"type": "string"},
+                    "week_count": {"type": "integer", "minimum": 1, "maximum": 30},
+                },
+                "required": ["assistant_message", "term_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "web_search",
             "description": "Search the web for current facts, news, people or places.",
             "parameters": {
@@ -1227,6 +1270,7 @@ async def _execute_live_tool(
     default_location: str | None = None,
     settings: Settings | None = None,
     memory_writes: list[dict[str, Any]] | None = None,
+    term_actions: list[dict[str, Any]] | None = None,
 ) -> dict:
     if name == "get_weather":
         return await _live_weather(
@@ -1250,6 +1294,10 @@ async def _execute_live_tool(
                 "content": content,
             })
         return {"saved": True, "title": title}
+    if name in {"propose_itime_term_create", "propose_itime_term_update"}:
+        if term_actions is not None:
+            term_actions.append({"action": name, **arguments})
+        return {"proposed": True}
     return {"error": f"unknown tool: {name}"}
 
 
@@ -1321,6 +1369,7 @@ async def _generate_live_tool_reply(
     usage: object | None = None
     content = ""
     memory_writes: list[dict[str, Any]] = []
+    term_actions: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(timeout_seconds):
             async with httpx.AsyncClient(
@@ -1383,6 +1432,7 @@ async def _generate_live_tool_reply(
                             default_location=context.get("weather_location"),
                             settings=settings,
                             memory_writes=memory_writes,
+                            term_actions=term_actions,
                         )
                         chat_messages.append({
                             "role": "tool",
@@ -1431,6 +1481,7 @@ async def _generate_live_tool_reply(
         http_status=http_status or 200,
         usage=usage,
         memory_writes=memory_writes or None,
+        term_action=term_actions[0] if term_actions else None,
     )
 
 

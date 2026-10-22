@@ -42,7 +42,7 @@ from itime.calendar.series_service import (
     series_result,
     series_values,
 )
-from itime.calendar.service import default_term_time_zone
+from itime.calendar.service import default_term_periods, default_term_time_zone, validate_term_dates
 from itime.database import Base
 from itime.errors import AppError
 from itime.planning.plan_service import create_manual_plan_version, read_plan
@@ -80,6 +80,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "update_calendar_series",
     "create_calendar_exception",
     "create_calendar_series",
+    "create_term",
+    "update_term",
     "start_review",
     "write_review_report",
     "save_memory",
@@ -340,6 +342,76 @@ async def apply_proposal(
             details={"current_version": proposal.version},
         )
     payload = proposal.payload
+    if proposal.tool_name in {"create_term", "update_term"}:
+        if proposal.tool_name == "create_term":
+            start = date.fromisoformat(str(payload["start_date"]))
+            weeks = int(payload.get("week_count") or 20)
+            end = start + timedelta(days=weeks * 7 - 1)
+            first_monday = start - timedelta(days=start.weekday())
+            validate_term_dates(start, end, first_monday)
+            term = AcademicTerm(
+                owner_id=owner_id,
+                name=str(payload["name"]).strip(),
+                start_date=start,
+                end_date=end,
+                first_week_monday=first_monday,
+                time_zone=await default_term_time_zone(session, owner_id),
+            )
+            session.add(term)
+            await session.flush()
+            session.add_all(default_term_periods(term.id, owner_id))
+            await session.flush()
+            emit_change(
+                session,
+                owner_id,
+                "term",
+                term.id,
+                "created",
+                term.version,
+            )
+        else:
+            term = await session.scalar(
+                select(AcademicTerm)
+                .where(
+                    AcademicTerm.id == UUID(str(payload["term_id"])),
+                    AcademicTerm.owner_id == owner_id,
+                )
+                .with_for_update()
+            )
+            if term is None:
+                raise AppError("term_not_found", "未找到此学期。", status=404)
+            if "name" in payload and payload["name"]:
+                term.name = str(payload["name"]).strip()
+            if "start_date" in payload and payload["start_date"]:
+                start = date.fromisoformat(str(payload["start_date"]))
+                weeks = (
+                    int(payload["week_count"])
+                    if payload.get("week_count")
+                    else ((term.end_date - term.start_date).days // 7) + 1
+                )
+                end = start + timedelta(days=weeks * 7 - 1)
+                first_monday = start - timedelta(days=start.weekday())
+                validate_term_dates(start, end, first_monday)
+                term.start_date = start
+                term.end_date = end
+                term.first_week_monday = first_monday
+            term.version += 1
+            term.updated_at = current_time
+            emit_change(
+                session,
+                owner_id,
+                "term",
+                term.id,
+                "updated",
+                term.version,
+            )
+        proposal.status = "applied"
+        proposal.applied_at = current_time
+        proposal.updated_at = current_time
+        proposal.applied_resource_id = term.id
+        proposal.applied_resource_version = term.version
+        proposal.version += 1
+        return {"proposal": proposal_result(proposal), "term_id": str(term.id)}
     if proposal.tool_name == "create_calendar_series" and "items" in payload:
         time_zone = await default_term_time_zone(session, owner_id)
         created = []
