@@ -712,7 +712,7 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
             <Archive v-if="working.lifecycle === 'archived'" :size="20" aria-hidden="true" />
             <Trash2 v-else-if="working.lifecycle === 'trashed'" :size="20" aria-hidden="true" />
             <div>
-              <strong v-if="working.lifecycle === 'active'">整理任务</strong>
+              <strong v-if="working.lifecycle === 'active'">任务操作</strong>
               <strong v-else-if="working.lifecycle === 'archived'">此任务已归档</strong>
               <strong v-else>此任务在回收站中</strong>
               <p v-if="working.lifecycle === 'active'">归档不会改变任务的完成状态。</p>
@@ -933,7 +933,7 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
           <div class="editor-section-heading">
             <div>
               <h2 id="task-links-title">链接</h2>
-              <p>{{ links.length }} 条</p>
+              <p v-if="links.length">{{ links.length }} 条</p>
             </div>
             <button v-if="editable" type="button" class="button secondary compact-button"
               :disabled="!!pendingAction || links.length >= 20" @click="addLink">
@@ -1022,7 +1022,7 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
               </button>
             </div>
           </div>
-          <p v-if="!links.length" class="section-empty">暂无链接。</p>
+          <p v-if="!links.length" class="section-empty">暂无链接。添加后 AI 可以读取网页内容。</p>
           <p v-if="fieldErrors.links" class="field-error">{{ fieldErrors.links }}</p>
         </section>
       </fieldset>
@@ -1030,9 +1030,6 @@ async function changeLifecycle(action: 'archive' | 'unarchive' | 'delete' | 'res
       <footer class="task-editor-footer">
         <span v-if="working">版本 {{ working.version }} · 最近更新 {{ new Date(working.updated_at).toLocaleString('zh-CN') }}</span>
         <span v-else>尚未保存</span>
-        <button v-if="editable" type="submit" class="button" :disabled="!!pendingAction">
-          <Save :size="17" aria-hidden="true" />{{ pendingAction === 'save' ? '正在保存…' : creating ? '创建任务' : '保存修改' }}
-        </button>
       </footer>
     </form>
   </section>

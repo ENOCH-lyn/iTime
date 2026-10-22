@@ -1707,7 +1707,7 @@ const { pendingLogout, logout } = useAppShell()
                 : {},
             })"
           >
-            在日历中查看
+            打开月视图
           </button>
         </div>
       </div>
@@ -2886,4 +2886,21 @@ const { pendingLogout, logout } = useAppShell()
     min-height: 36px;
   }
 }
+.tt-detail { padding: 24px; }
+.tt-detail h2 {
+  color: var(--m3-on-surface);
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+.tt-detail dt {
+  color: var(--m3-on-surface-variant);
+  font: 500 11px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tt-detail dd {
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+  letter-spacing: 0.25px;
+}
+.tt-detail-actions { gap: 8px; }
 </style>

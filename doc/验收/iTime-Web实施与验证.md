@@ -3514,3 +3514,13 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - `pnpm build` 通过。
 - 证据：`tasks/itime/docs/26-Material3界面重写.md`、`persistent/preview/m3-*.png`。
 - 说明：既有 Playwright `auth.spec.ts` 仍期待邮箱验证页，与默认免验证不一致，非本次 UI 重写导致。
+
+## M7-BR：界面层级修正与月视图措辞
+
+- 去掉“在日历中查看”“日历管理”文案，统一为月视图/课表管理；源码中不再出现“日历”字符串。
+- 任务详情去掉重复“保存修改”，新增“任务操作”卡片；链接空态/计数去重；字段改 M3 filled field；页脚不再覆盖表单。
+- 月视图工具栏拆分为独立箭头、今天、日期、周课表、新建安排，主次按钮层级明确。
+- AI 会话标题改为 title-large；设置页返回 AI 对话改为横向。
+- 浏览器复查任务详情、AI 会话、月视图、设置、手机和深色页面，页面错误 0。
+- `pnpm build` 通过。
+- 证据：`tasks/itime/docs/27-界面层级修正与月视图措辞.md`、`persistent/preview/m3-task-detail-2026-10-22.png`、`m3-chat-conversation-2026-10-22.png`、`m3-month-2026-10-22.png`。

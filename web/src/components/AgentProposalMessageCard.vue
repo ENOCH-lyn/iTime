@@ -126,7 +126,7 @@ onMounted(load)
         link
         type="primary"
       >
-        在日历中查看
+        在月视图中查看
       </ElButton>
       <ElAlert
         v-if="error"

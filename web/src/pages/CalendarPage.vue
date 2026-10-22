@@ -584,7 +584,7 @@ watch(pageError, value => {
   <AppShell
     current="timetable"
     has-secondary
-    secondary-label="日历管理"
+    secondary-label="课表管理"
     title="月视图"
     :pending-logout="pendingLogout"
     @logout="logout"
@@ -750,3 +750,4 @@ watch(pageError, value => {
     />
   </AppShell>
 </template>
+

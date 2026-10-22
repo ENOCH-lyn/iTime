@@ -3056,3 +3056,21 @@ dialog.calendar-trash-dialog[open] {
   background: var(--m3-surface);
   color: var(--m3-primary);
 }
+.calendar-stepper {
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.calendar-stepper .small-icon-button {
+  border: 1px solid var(--m3-outline);
+  background: transparent;
+}
+.calendar-stepper .today-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-primary);
+}

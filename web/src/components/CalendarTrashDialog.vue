@@ -602,7 +602,7 @@ defineExpose({ refresh })
         </dl>
         <div class="calendar-trash-restore">
           <p v-if="currentSubscription.lifecycle_status === 'paused'">
-            恢复后仍保持暂停，不会请求来源；已有事件会重新出现在日历。
+            恢复后仍保持暂停，不会请求来源；已有事件会重新出现在月视图。
           </p>
           <p v-else>
             恢复后立即进入刷新队列；刷新完成前保留已保存的来源事件。
@@ -628,3 +628,4 @@ defineExpose({ refresh })
     </div>
   </dialog>
 </template>
+

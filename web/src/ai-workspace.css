@@ -1741,3 +1741,23 @@
   }
   .composer-send span { display: none; }
 }
+.conversation-header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--m3-surface);
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+.conversation-header h1 {
+  color: var(--m3-on-surface);
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+.conversation-header-actions .small-icon-button {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--m3-shape-full);
+}

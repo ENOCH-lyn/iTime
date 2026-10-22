@@ -254,7 +254,7 @@ function openCalendar() {
           @click="openCalendar"
         >
           <CalendarCheck :size="16" aria-hidden="true" />
-          在日历中查看
+          在月视图中查看
         </ElButton>
         <ElButton
           v-if="['failed', 'expired'].includes(batch.state)"
