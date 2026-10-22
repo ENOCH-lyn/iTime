@@ -3437,3 +3437,17 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 ### 提交
 
 - `7609312` — `feat(calendar): 支持删除导入记录和空学期，移除自动建学期`
+
+## M7-BK：AI 学期创建/编辑审批
+
+- 新增 `propose_itime_term_create` / `propose_itime_term_update` 工具。
+- 审批卡 `TermActionProposalCard`，显示名称/开始日期/周数/确认/取消。
+- 应用创建提案：创建学期 + 10 个默认节次。
+- 应用编辑提案：更新开始/结束日期，保留原周数。
+- 真实 Chromium：创建卡片显示；API 应用后数据库 `2027 春季学期` 写入；编辑提案应用后开始日期变为 2027-03-08。
+- 迁移：`0056_term_proposals`。
+- 边界：创建后不会自动继续导入课表。
+
+### 提交
+
+- `f4ec1fe` — `feat(ai): AI 学期创建与编辑审批提案`
