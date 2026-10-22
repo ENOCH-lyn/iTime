@@ -1044,4 +1044,184 @@ const { pendingLogout, logout } = useAppShell()
   .tw-add { padding: 0 10px; }
   .tw-ai-link { display: none; }
 }
+
+/* Material 3 */
+.tw-page {
+  background: var(--m3-surface);
+  color: var(--m3-on-surface);
+}
+.tw-main {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+.tw-title-row h1 {
+  font: 400 32px/40px var(--font);
+  letter-spacing: 0;
+}
+.tw-title-row p {
+  color: var(--m3-on-surface-variant);
+  font: 400 14px/20px var(--font);
+  letter-spacing: 0.25px;
+}
+.tw-add {
+  min-height: 40px;
+  padding: 0 24px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.tw-add:hover {
+  background: color-mix(in srgb, var(--m3-primary) 90%, var(--m3-on-primary));
+}
+.tw-advanced {
+  color: var(--m3-primary);
+  font: 500 14px/20px var(--font);
+}
+.tw-panel {
+  padding: 16px;
+  border: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-md);
+  background: var(--m3-surface-container-lowest);
+  box-shadow: none;
+}
+.tw-toolbar { gap: 12px; }
+.tw-filters {
+  display: inline-flex;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  overflow: hidden;
+}
+.tw-filters button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid var(--m3-outline);
+  border-radius: 0;
+  background: transparent;
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.tw-filters button:last-child { border-right: 0; }
+.tw-filters button.active {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+.tw-toolbar input[type="search"] {
+  min-height: 56px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
+  color: var(--m3-on-surface);
+  font: 400 16px/24px var(--font);
+  letter-spacing: 0.5px;
+}
+.tw-toolbar input[type="search"]::placeholder {
+  color: var(--m3-on-surface-variant);
+}
+.tw-quickadd {
+  min-height: 56px;
+  padding: 0 8px 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--m3-on-surface-variant);
+  border-radius: var(--m3-shape-xs) var(--m3-shape-xs) 0 0;
+  background: var(--m3-surface-container-highest);
+}
+.tw-quickadd:focus-within {
+  border-bottom: 2px solid var(--m3-primary);
+  background: var(--m3-surface-container-highest);
+}
+.tw-quickadd input {
+  font: 400 16px/24px var(--font);
+  color: var(--m3-on-surface);
+}
+.tw-quickadd button {
+  width: auto;
+  min-width: 64px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+  font: 500 14px/20px var(--font);
+  white-space: nowrap;
+}
+.tw-group h2 {
+  color: var(--m3-on-surface-variant);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.tw-task { border-bottom: 1px solid var(--m3-outline-variant); }
+.tw-check {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-outline);
+}
+.tw-check:hover, .tw-check.checked {
+  border-color: var(--m3-primary);
+  color: var(--m3-primary);
+}
+.tw-task-copy strong {
+  color: var(--m3-on-surface);
+  font: 500 16px/24px var(--font);
+  letter-spacing: 0.15px;
+}
+.tw-task-copy small, .tw-due {
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+  letter-spacing: 0.4px;
+}
+.tw-due.overdue { color: var(--m3-error); }
+.tw-empty svg { color: var(--m3-primary); }
+.tw-empty strong {
+  color: var(--m3-on-surface);
+  font: 500 16px/24px var(--font);
+}
+.tw-empty p {
+  color: var(--m3-on-surface-variant);
+  font: 400 14px/20px var(--font);
+}
+.tw-button {
+  min-height: 40px;
+  padding: 0 24px;
+  border-radius: var(--m3-shape-full);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.tw-button.primary {
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+}
+.tw-button.secondary {
+  border: 1px solid var(--m3-outline);
+  background: transparent;
+  color: var(--m3-primary);
+}
+.tw-button.ghost {
+  color: var(--m3-primary);
+  background: transparent;
+}
+.tw-button.danger {
+  border: 0;
+  background: var(--m3-error);
+  color: var(--m3-on-error);
+}
+.tw-detail h2 { font: 500 22px/28px var(--font); }
+.tw-detail dt {
+  color: var(--m3-on-surface-variant);
+  font: 500 11px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tw-detail dd {
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+}
 </style>

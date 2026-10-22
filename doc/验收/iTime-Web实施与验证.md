@@ -3502,3 +3502,15 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 设置页、提案卡、导入卡链接统一到 `/timetable/month`。
 - 浏览器：导航无“日历”，周/月切换、`/calendar?date=...` 重定向通过，页面错误 0。
 - 证据：`tasks/itime/docs/25-课表与日历合并.md`、`persistent/preview/schedule-merged-*.png`。
+
+## M7-BQ：Material 3 界面重写
+
+- 全站采用 M3 color roles、type scale、shape/elevation/state/motion token；种子色 #31654F。
+- Shell：64dp top app bar + 80dp navigation rail（桌面）/ 80dp navigation bar（手机）。
+- 按钮、卡片、文本字段、对话框、segmented button、FAB、chip 按 M3 尺寸与形状重写。
+- 课表、任务、AI、月视图、设置、登录、管理登录全部应用 M3 视觉层。
+- 自托管 Roboto 与 Material Symbols Rounded；Element Plus 仅保留表单/弹窗/上传行为。
+- 桌面、手机、深色页面加载验证通过；登录、快加任务、任务列表、月视图返回、设置对话框冒烟通过，页面错误 0。
+- `pnpm build` 通过。
+- 证据：`tasks/itime/docs/26-Material3界面重写.md`、`persistent/preview/m3-*.png`。
+- 说明：既有 Playwright `auth.spec.ts` 仍期待邮箱验证页，与默认免验证不一致，非本次 UI 重写导致。

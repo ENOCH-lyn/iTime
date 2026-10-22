@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -1352,9 +1353,12 @@ def main():
             env,
             logs / "public-links.log",
         ))
+        node = shutil.which("node")
+        if node is None:
+            raise RuntimeError("node is required for the web e2e environment")
         web_process = stack.enter_context(process(
-            [str(WEB / "node_modules/.bin/vite"), "preview", "--host", "localhost",
-             "--port", "4173"],
+            [node, str(WEB / "node_modules/vite/bin/vite.js"), "preview",
+             "--host", "localhost", "--port", "4173"],
             WEB, env, logs / "web.log",
         ))
         ready("http://localhost:4173", web_process, logs / "web.log")

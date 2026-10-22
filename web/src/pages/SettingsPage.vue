@@ -70,13 +70,13 @@ onMounted(async () => {
   >
     <div class="settings-page-wrapper">
       <nav class="settings-return-nav" aria-label="设置导航">
-        <RouterLink to="/ai" class="icon-button settings-return-link" aria-label="返回 AI 对话">
+        <RouterLink to="/ai" class="settings-return-link" aria-label="返回 AI 对话">
           <ArrowLeft :size="20" aria-hidden="true" />
           <span>返回 AI 对话</span>
         </RouterLink>
       </nav>
 
-      <div id="main-content" class="settings-page">
+      <div class="settings-page">
         <header class="settings-page-header">
           <h1 tabindex="-1">设置</h1>
         </header>

@@ -23,9 +23,9 @@ async function revealCurrent() {
     left: Math.max(
       0,
       container.scrollLeft
-        + currentBox.left
-        - containerBox.left
-        - (container.clientWidth - currentBox.width) / 2,
+      + currentBox.left
+      - containerBox.left
+      - (container.clientWidth - currentBox.width) / 2,
     ),
     behavior: 'auto',
   })
@@ -36,29 +36,19 @@ watch(() => props.current, revealCurrent)
 </script>
 
 <template>
-  <nav ref="navigation" class="product-navigation" aria-label="产品">
-    <ElMenu
-      class="product-menu"
-      :default-active="primaryNavigation.find(item => item.key === current)?.to"
-      router
+  <nav ref="navigation" class="m3-navigation" aria-label="产品">
+    <RouterLink
+      v-for="item in primaryNavigation"
+      :key="item.key"
+      :to="item.to"
+      :class="{ active: current === item.key }"
+      :aria-current="current === item.key ? 'page' : undefined"
+      :aria-label="item.label"
     >
-      <ElMenuItem
-        v-for="item in primaryNavigation"
-        :key="item.key"
-        :index="item.to"
-        class="nav-link"
-        :class="{ selected: current === item.key }"
-        :aria-current="current === item.key ? 'page' : undefined"
-        :aria-label="item.label"
-      >
-        <component
-          :is="item.icon"
-          :size="18"
-          :stroke-width="1.8"
-          aria-hidden="true"
-        />
-        <span class="product-label">{{ item.label }}</span>
-      </ElMenuItem>
-    </ElMenu>
+      <span class="m3-navigation__icon" aria-hidden="true">
+        <span class="material-symbols-rounded">{{ item.symbol }}</span>
+      </span>
+      <span class="m3-navigation__label">{{ item.label }}</span>
+    </RouterLink>
   </nav>
 </template>

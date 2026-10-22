@@ -1,8 +1,13 @@
 import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
+import '@fontsource/roboto/400.css'
+import '@fontsource/roboto/500.css'
+import '@fontsource/roboto/700.css'
+import 'material-symbols/rounded.css'
 import App from './App.vue'
 import './style.css'
 import './element-plus-theme.css'
+import './m3.css'
 import './lib/appearance'
 
 const router = createRouter({

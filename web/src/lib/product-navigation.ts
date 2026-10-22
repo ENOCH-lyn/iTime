@@ -1,9 +1,3 @@
-import {
-  CalendarRange,
-  CheckSquare2,
-  MessageCircleMore,
-} from 'lucide-vue-next'
-
 export type ProductArea =
   | 'timetable'
   | 'ai'
@@ -13,7 +7,22 @@ export type ProductArea =
   | 'me'
 
 export const primaryNavigation = [
-  { key: 'timetable', to: '/timetable', label: '课表', icon: CalendarRange },
-  { key: 'tasks', to: '/tasks', label: '任务', icon: CheckSquare2 },
-  { key: 'ai', to: '/ai', label: 'AI', icon: MessageCircleMore },
+  {
+    key: 'timetable',
+    to: '/timetable',
+    label: '课表',
+    symbol: 'calendar_view_week',
+  },
+  {
+    key: 'tasks',
+    to: '/tasks',
+    label: '任务',
+    symbol: 'checklist',
+  },
+  {
+    key: 'ai',
+    to: '/ai',
+    label: 'AI',
+    symbol: 'smart_toy',
+  },
 ] as const

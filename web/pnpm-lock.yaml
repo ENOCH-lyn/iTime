@@ -11,6 +11,9 @@ importers:
       '@element-plus/icons-vue':
         specifier: ^2.3.2
         version: 2.3.2(vue@3.5.43(typescript@5.9.3))
+      '@fontsource/roboto':
+        specifier: ^5.3.0
+        version: 5.3.0
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
@@ -23,6 +26,9 @@ importers:
       markdown-it:
         specifier: ^15.0.2
         version: 15.0.2
+      material-symbols:
+        specifier: ^0.48.1
+        version: 0.48.1
       qrcode.vue:
         specifier: ^3.7.0
         version: 3.11.0(vue@3.5.43(typescript@5.9.3))
@@ -261,6 +267,9 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+
+  '@fontsource/roboto@5.3.0':
+    resolution: {integrity: sha512-BapRJOWYP+LZ21zp+wBQjfpPYKRoxc4LspJ/RLuI+HSMBD5u/X4O+ESDrSvEqDSy0rAl7GwBJ+09mdc16cVQ1Q==}
 
   '@jridgewell/gen-mapping@0.3.5':
     resolution: {integrity: sha512-IzL8ZoEDIBRWEzlCcRhOaCupYyN5gdIK+Q6fbFdPDg6HqX6jpkItn7DFIpW9LQzXG6Df9sA7+OKnq0qlz/GaQg==}
@@ -651,6 +660,9 @@ packages:
     resolution: {integrity: sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw==}
     hasBin: true
 
+  material-symbols@0.48.1:
+    resolution: {integrity: sha512-rDJyd4SAEXNSZIX1sBTwRtbOrEzta4aN7hNQPKAhFqOY0yayXIJbXf0R1s8YR+ODbzDD9bdiPCabqrGn5NUikA==}
+
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
 
@@ -1013,6 +1025,8 @@ snapshots:
       '@floating-ui/utils': 0.2.12
 
   '@floating-ui/utils@0.2.12': {}
+
+  '@fontsource/roboto@5.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.5':
     dependencies:
@@ -1382,6 +1396,8 @@ snapshots:
       mdurl: 2.1.0
       punycode.js: 2.3.1
       uc.micro: 3.0.0
+
+  material-symbols@0.48.1: {}
 
   mdurl@2.1.0: {}
 

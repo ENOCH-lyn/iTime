@@ -563,4 +563,108 @@ function minuteTop(minute: number) {
   .board-event strong { font-size: 12px; }
   .board-event small { font-size: 10px; }
 }
+
+/* Material 3 board */
+.board-scroll {
+  border: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-md);
+  background: var(--m3-surface-container-lowest);
+  box-shadow: none;
+}
+.board-head {
+  background: var(--m3-surface);
+  border-bottom: 1px solid var(--m3-outline-variant);
+  backdrop-filter: none;
+}
+.board-corner {
+  color: var(--m3-on-surface-variant);
+  font: 500 11px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.board-day-head {
+  border-left: 1px solid var(--m3-outline-variant);
+}
+.board-day-head.today {
+  background: color-mix(in srgb, var(--m3-secondary-container) 56%, transparent);
+}
+.board-weekday {
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.board-date {
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+.board-date small {
+  font: 400 11px/16px var(--font);
+  color: var(--m3-on-surface-variant);
+}
+.board-day-head.today .board-date {
+  color: var(--m3-on-secondary-container);
+}
+.board-day {
+  border-left: 1px solid var(--m3-outline-variant);
+}
+.board-day.today {
+  background: color-mix(in srgb, var(--m3-secondary-container) 28%, transparent);
+}
+.board-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--m3-outline-variant) 0,
+    var(--m3-outline-variant) 1px,
+    transparent 1px,
+    transparent var(--hour-height)
+  );
+}
+.board-hour {
+  color: var(--m3-on-surface-variant);
+  font: 400 11px/16px var(--font);
+}
+.board-period-label strong {
+  color: var(--m3-on-surface);
+  font: 500 11px/16px var(--font);
+}
+.board-period-label small {
+  color: var(--m3-on-surface-variant);
+  font: 400 10px/14px var(--font);
+}
+.board-event {
+  border-left: 3px solid var(--event-color);
+  border-radius: var(--m3-shape-sm);
+  background: color-mix(in srgb, var(--event-color) 12%, var(--m3-surface-container-lowest));
+  color: var(--m3-on-surface);
+}
+.board-event:hover {
+  box-shadow: var(--m3-elevation-2);
+}
+.board-event strong {
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.4px;
+}
+.board-event small {
+  color: var(--m3-on-surface-variant);
+  font: 400 10px/14px var(--font);
+}
+.board-event.kind-plan {
+  border-left-color: var(--m3-tertiary);
+  background: color-mix(in srgb, var(--m3-tertiary-container) 56%, var(--m3-surface-container-lowest));
+}
+.board-event.kind-task {
+  border-left-style: dashed;
+  background: color-mix(in srgb, var(--m3-surface-container-highest) 72%, transparent);
+}
+.board-now,
+.board-now span {
+  background: var(--m3-error);
+}
+.board-loading {
+  background: color-mix(in srgb, var(--m3-surface) 78%, transparent);
+  color: var(--m3-on-surface-variant);
+  font: 400 14px/20px var(--font);
+}
+.board-loading-dot {
+  background: var(--m3-primary);
+}
 </style>

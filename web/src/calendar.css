@@ -58,7 +58,8 @@
 
 .calendar-main {
   min-width: 0;
-  height: 100dvh;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
@@ -2923,4 +2924,135 @@ dialog.calendar-trash-dialog[open] {
     width: 100%;
     min-width: 0;
   }
+}
+
+/* Material 3 calendar */
+.calendar-content {
+  background: var(--m3-surface);
+}
+.calendar-toolbar {
+  min-height: 64px;
+  padding: 12px 24px;
+  background: var(--m3-surface);
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+.calendar-title > span {
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+  letter-spacing: 0.4px;
+}
+.calendar-title h1 {
+  color: var(--m3-on-surface);
+  font: 400 32px/40px var(--font);
+  letter-spacing: 0;
+}
+.calendar-stepper {
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  background: transparent;
+}
+.calendar-stepper .small-icon-button,
+.calendar-toolbar-actions .small-icon-button {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface-variant);
+}
+.calendar-stepper .small-icon-button:hover,
+.calendar-toolbar-actions .small-icon-button:hover {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+}
+.calendar-stepper .today-button {
+  min-height: 40px;
+  color: var(--m3-primary);
+  font: 500 14px/20px var(--font);
+}
+.calendar-jump input {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+}
+.calendar-week-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 20px;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  background: transparent;
+  color: var(--m3-primary);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+  text-decoration: none;
+}
+.calendar-week-link:hover {
+  background: color-mix(in srgb, var(--m3-primary) 8%, transparent);
+}
+.calendar-new-button {
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.calendar-grid {
+  border: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-md);
+  background: var(--m3-surface-container-lowest);
+  overflow: hidden;
+}
+.calendar-weekday {
+  min-height: 48px;
+  background: var(--m3-surface-container-low);
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.calendar-day {
+  border-color: var(--m3-outline-variant);
+  background: var(--m3-surface-container-lowest);
+}
+.calendar-day.outside {
+  background: var(--m3-surface-container-low);
+  color: var(--m3-on-surface-variant);
+}
+.calendar-day.today {
+  background: color-mix(in srgb, var(--m3-secondary-container) 32%, var(--m3-surface-container-lowest));
+}
+.calendar-day > header time {
+  color: var(--m3-on-surface);
+  font: 500 16px/24px var(--font);
+  letter-spacing: 0.15px;
+}
+.calendar-day.today > header time {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+}
+.calendar-day-name {
+  color: var(--m3-on-surface-variant);
+  font: 500 11px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.calendar-day-empty {
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+}
+.calendar-refresh {
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface);
+  color: var(--m3-primary);
 }

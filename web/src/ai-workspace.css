@@ -1537,3 +1537,207 @@
 
 .conversation-header.no-back { grid-template-columns: minmax(0, 1fr) auto; }
 
+
+/* Material 3 chat workspace */
+.conversation-sidebar {
+  padding: 16px;
+  background: var(--m3-surface-container-low);
+  border-right: 1px solid var(--m3-outline-variant);
+}
+.conversation-sidebar-header h2 {
+  color: var(--m3-on-surface);
+  font: 500 16px/24px var(--font);
+  letter-spacing: 0.15px;
+}
+.conversation-create.el-button {
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+  font: 500 14px/20px var(--font);
+}
+.conversation-search .el-input__wrapper {
+  min-height: 56px;
+  padding: 0 20px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
+  box-shadow: none !important;
+  border-bottom: 0;
+}
+.conversation-sidebar .conversation-tabs {
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  background: transparent;
+}
+.conversation-tabs .el-segmented__item {
+  min-height: 38px;
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+}
+.conversation-tabs .el-segmented__item.is-selected {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+.conversation-sidebar .conversation-select.el-button {
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface);
+}
+.conversation-sidebar .conversation-list li.selected .conversation-select {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+.conversation-title-text {
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.conversation-select-copy small {
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+}
+.conversation-sidebar-footer {
+  border-top: 1px solid var(--m3-outline-variant);
+}
+.ai-main {
+  background: var(--m3-surface);
+  color: var(--m3-on-surface);
+}
+.conversation-thread-header {
+  min-height: 64px;
+  padding: 8px 24px;
+  background: var(--m3-surface);
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+.conversation-thread-header h1 {
+  color: var(--m3-on-surface);
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+.conversation-thread-header span {
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+}
+.conversation-welcome {
+  color: var(--m3-on-surface-variant);
+}
+.conversation-welcome svg {
+  color: var(--m3-primary);
+}
+.conversation-welcome h1 {
+  color: var(--m3-on-surface);
+  font: 400 32px/40px var(--font);
+  letter-spacing: 0;
+}
+.conversation-welcome p {
+  color: var(--m3-on-surface-variant);
+  font: 400 14px/20px var(--font);
+}
+.message-author {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary-container);
+  color: var(--m3-on-primary-container);
+}
+.message-user .message-author {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+.message-body {
+  padding: 12px 16px;
+  border-radius: var(--m3-shape-lg);
+  background: var(--m3-surface-container-low);
+  color: var(--m3-on-surface);
+}
+.message-user .message-body {
+  border-radius: var(--m3-shape-lg) var(--m3-shape-lg) var(--m3-shape-xs) var(--m3-shape-lg);
+  background: var(--m3-primary-container);
+  color: var(--m3-on-primary-container);
+}
+.message-meta strong {
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.message-meta time {
+  color: var(--m3-on-surface-variant);
+  font: 400 11px/16px var(--font);
+}
+.message-user .message-meta time {
+  color: var(--m3-on-primary-container);
+}
+.message-content,
+.markdown-message {
+  color: inherit;
+  font: 400 14px/20px var(--font);
+  letter-spacing: 0.25px;
+}
+.markdown-message table th,
+.markdown-message table td {
+  border-color: var(--m3-outline-variant);
+}
+.markdown-message :not(pre) > code,
+.markdown-code-block {
+  background: var(--m3-surface-container-high);
+  border-color: var(--m3-outline-variant);
+}
+.conversation-composer {
+  width: min(820px, calc(100% - 48px));
+  padding: 16px 0 max(20px, env(safe-area-inset-bottom));
+  border-top: 0;
+}
+.conversation-composer .el-textarea__inner {
+  height: 96px;
+  min-height: 96px;
+  padding: 12px 16px;
+  border-radius: var(--m3-shape-xs) var(--m3-shape-xs) 0 0;
+  background: var(--m3-surface-container-highest);
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--m3-on-surface-variant);
+  color: var(--m3-on-surface);
+  font: 400 16px/24px var(--font);
+}
+.conversation-composer .el-textarea__inner:focus {
+  border-bottom: 2px solid var(--m3-primary);
+}
+.composer-attachment {
+  border: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-sm);
+  background: var(--m3-surface-container-low);
+}
+.composer-secondary-actions .el-upload {
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface-variant);
+}
+.composer-secondary-actions .el-upload:hover {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+  color: var(--m3-on-surface);
+}
+.composer-send.el-button {
+  min-height: 40px;
+  padding: 0 24px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+}
+.message-proposal {
+  border-radius: var(--m3-shape-md);
+  background: var(--m3-surface-container-high);
+  border-color: var(--m3-outline-variant);
+}
+.conversation-live-status {
+  color: var(--m3-on-surface-variant);
+}
+.conversation-sidebar .conversation-tabs {
+  --el-segmented-item-selected-bg-color: var(--m3-secondary-container);
+  --el-segmented-item-selected-color: var(--m3-on-secondary-container);
+}
+@media (max-width: 420px) {
+  .composer-send.el-button {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+  }
+  .composer-send span { display: none; }
+}
