@@ -3492,3 +3492,13 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 浏览器：任务审批卡只渲染一次，确认后同页出现结果，页面错误 0。
 - 测试：Agent/对话/导入 36 passed，`ruff check`、`pnpm build` 通过。
 - 证据：`tasks/itime/docs/24-Agent工具全覆盖与审批兜底.md`、`persistent/preview/agent-task-*.png`。
+
+## M7-BP：课表与日历合并
+
+- 顶级导航从“课表/任务/AI/日历”收敛为“课表/任务/AI”。
+- `/timetable` 保留周课表；新增 `/timetable/month` 月视图；`/calendar` 重定向并保留查询参数。
+- 周课表右上角新增“周/月”切换；月视图保留新建安排、导入、回收站、时间与学期。
+- 月视图未选择安排时隐藏详情栏，月网格全宽。
+- 设置页、提案卡、导入卡链接统一到 `/timetable/month`。
+- 浏览器：导航无“日历”，周/月切换、`/calendar?date=...` 重定向通过，页面错误 0。
+- 证据：`tasks/itime/docs/25-课表与日历合并.md`、`persistent/preview/schedule-merged-*.png`。

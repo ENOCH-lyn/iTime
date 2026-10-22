@@ -34,7 +34,7 @@ const statusType = computed(() => {
   return 'info'
 })
 const calendarDestination = computed(() => ({
-  path: '/calendar',
+  path: '/timetable/month',
   query: proposal.value ? { date: proposal.value.payload.local_date } : {},
 }))
 

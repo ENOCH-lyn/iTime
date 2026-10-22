@@ -60,8 +60,12 @@
   min-width: 0;
   height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
+}
+
+.calendar-main.detail-open {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
 }
 
 .calendar-content {

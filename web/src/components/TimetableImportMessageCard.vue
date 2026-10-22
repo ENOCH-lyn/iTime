@@ -155,14 +155,14 @@ async function cancel() {
 
 function adjust() {
   void router.push({
-    path: '/calendar',
+    path: '/timetable/month',
     query: { import: props.batchId },
   })
 }
 
 function openCalendar() {
   void router.push({
-    path: '/calendar',
+    path: '/timetable/month',
     query: firstDate.value ? { date: firstDate.value } : {},
   })
 }

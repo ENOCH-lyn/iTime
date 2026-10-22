@@ -1400,6 +1400,10 @@ const { pendingLogout, logout } = useAppShell()
           <ChevronRight :size="18" />
         </button>
         <button type="button" class="tt-today" @click="goToday">今天</button>
+        <div class="tt-view-switch" aria-label="视图切换">
+          <span class="active">周</span>
+          <RouterLink to="/timetable/month">月</RouterLink>
+        </div>
       </div>
     </header>
 
@@ -1696,7 +1700,12 @@ const { pendingLogout, logout } = useAppShell()
             v-if="selectedEvent.kind === 'plan'"
             type="button"
             class="tt-button secondary"
-            @click="router.push('/calendar')"
+            @click="router.push({
+              path: '/timetable/month',
+              query: selectedEvent.occurrence
+                ? { date: selectedEvent.occurrence.local_start_date }
+                : {},
+            })"
           >
             在日历中查看
           </button>
@@ -1884,6 +1893,25 @@ const { pendingLogout, logout } = useAppShell()
   color: var(--text);
   box-shadow: 0 1px 3px rgb(31 42 36 / 8%);
 }
+.tt-view-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.tt-view-switch span,
+.tt-view-switch a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  text-decoration: none;
+}
+.tt-view-switch .active { background: var(--accent); color: var(--on-accent); }
 .tt-weeknav {
   display: flex;
   align-items: center;

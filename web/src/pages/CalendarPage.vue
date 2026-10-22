@@ -51,7 +51,7 @@ import '../calendar.css'
 const route = useRoute()
 const router = useRouter()
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const view = ref<'week' | 'month'>('week')
+const view = ref<'week' | 'month'>('month')
 const routeDate = typeof route.query.date === 'string' ? route.query.date : ''
 const anchor = ref(validDate(routeDate)
   ? routeDate
@@ -220,7 +220,7 @@ watch([view, anchor], () => { void loadOccurrences() })
 watch(anchor, value => { jumpDate.value = value })
 
 onMounted(async () => {
-  document.title = '日历 · iTime'
+  document.title = '月视图 · iTime'
   await refreshSession()
   if (!identity.value) {
     await router.replace('/login')
@@ -468,7 +468,7 @@ async function closeImport() {
   if (typeof route.query.import === 'string') {
     const query = { ...route.query }
     delete query.import
-    await router.replace({ path: '/calendar', query })
+    await router.replace({ path: '/timetable/month', query })
   }
   await nextTick()
   if (opener?.isConnected && opener.offsetParent !== null) {
@@ -582,10 +582,10 @@ watch(pageError, value => {
 
 <template>
   <AppShell
-    current="calendar"
+    current="timetable"
     has-secondary
     secondary-label="日历管理"
-    title="日历"
+    title="月视图"
     :pending-logout="pendingLogout"
     @logout="logout"
   >
@@ -632,15 +632,7 @@ watch(pageError, value => {
               <input v-model="jumpDate" type="date" aria-label="跳转日期"
                 @input="applyJumpDate" @blur="restoreJumpDate" />
             </label>
-            <fieldset class="segmented-field calendar-view-switch">
-              <legend class="sr-only">日历视图</legend>
-              <label :class="{ selected: view === 'week' }">
-                <input v-model="view" type="radio" value="week" />周
-              </label>
-              <label :class="{ selected: view === 'month' }">
-                <input v-model="view" type="radio" value="month" />月
-              </label>
-            </fieldset>
+            <RouterLink to="/timetable" class="button calendar-week-link">周课表</RouterLink>
             <button type="button" class="small-icon-button filter-button" aria-label="筛选日历"
               title="筛选日历" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
               <Filter :size="18" aria-hidden="true" />
@@ -708,6 +700,7 @@ watch(pageError, value => {
       </section>
 
       <CalendarOccurrencePanel
+        v-if="selected"
         :item="selected"
         :time-zone="settings?.time_zone ?? browserTimeZone"
         :recurring="selectedSeries?.recurrence.frequency !== 'none'"
