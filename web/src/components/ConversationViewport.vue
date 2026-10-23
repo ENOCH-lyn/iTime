@@ -34,7 +34,14 @@ const emit = defineEmits<{
   loadOlder: []
   retryMessage: [message: ConversationMessage]
   changed: []
+  suggest: [text: string]
 }>()
+
+const suggestions = [
+  '帮我安排今天的学习任务',
+  '这周还有哪些任务没完成？',
+  '把明天的课表整理一下',
+]
 
 const viewport = ref<HTMLElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
@@ -133,6 +140,18 @@ defineExpose({ scrollToLatest })
     <div v-if="!conversation" class="conversation-welcome">
       <Bot :size="30" aria-hidden="true" />
       <h2>今天想先理清哪件事？</h2>
+      <p>描述任务或课程，iTime 会先给方案，再由你确认。</p>
+      <div class="conversation-suggestions" aria-label="示例问题">
+        <button
+          v-for="suggestion in suggestions"
+          :key="suggestion"
+          type="button"
+          class="m3-chip"
+          @click="emit('suggest', suggestion)"
+        >
+          {{ suggestion }}
+        </button>
+      </div>
     </div>
 
     <div

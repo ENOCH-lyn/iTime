@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import type { TermPeriod } from '../lib/calendar'
 import {
-  EVENT_COLORS,
   eventTimeLabel,
   minutesToLabel,
   timeToMinutes,
@@ -154,10 +153,6 @@ function createAt(dayIndex: number, event: MouseEvent) {
   emit('create', dayIndex, snapped)
 }
 
-function colorFor(event: BoardEvent) {
-  return EVENT_COLORS[event.colorIndex] ?? EVENT_COLORS[0]
-}
-
 function hourTop(mark: number) {
   return Math.max(9, ((mark - props.rangeStart) / 60) * HOUR_HEIGHT)
 }
@@ -252,7 +247,6 @@ function minuteTop(minute: number) {
               height: `${event.height}px`,
               left: event.left,
               width: event.width,
-              '--event-color': colorFor(event),
             }"
             :aria-label="`${event.timeLabel} ${event.title}`"
             @click.stop="emit('select', event)"
@@ -550,11 +544,11 @@ function minuteTop(minute: number) {
   50% { opacity: 1; transform: scale(1); }
 }
 @media (max-width: 900px) {
-  .board { min-width: 980px; }
+  .board { min-width: 0; }
 }
 
 @media (max-width: 720px) {
-  .board { min-width: 980px; }
+  .board { min-width: 0; }
   .board-head { grid-template-columns: 44px repeat(7, minmax(0, 1fr)); }
   .board-body { grid-template-columns: 44px repeat(7, minmax(0, 1fr)); }
   .board-hour { right: 6px; font-size: 10px; }
@@ -635,25 +629,32 @@ function minuteTop(minute: number) {
   border-radius: var(--m3-shape-sm);
   background: color-mix(in srgb, var(--event-color) 12%, var(--m3-surface-container-lowest));
   color: var(--m3-on-surface);
+  --event-color: var(--m3-primary);
+}
+.board-event.kind-fixed {
+  --event-color: var(--m3-tertiary);
+  background: color-mix(in srgb, var(--event-color) 10%, var(--m3-surface-container-lowest));
+}
+.board-event.kind-task {
+  --event-color: var(--m3-secondary);
+  border-left-style: dashed;
+  background: color-mix(in srgb, var(--event-color) 10%, var(--m3-surface-container-lowest));
+}
+.board-event.kind-plan {
+  --event-color: color-mix(in srgb, var(--m3-primary) 50%, var(--m3-tertiary));
+  border-left-style: solid;
+  background: color-mix(in srgb, var(--event-color) 10%, var(--m3-surface-container-lowest));
 }
 .board-event:hover {
   box-shadow: var(--m3-elevation-2);
 }
 .board-event strong {
-  font: 500 12px/16px var(--font);
-  letter-spacing: 0.4px;
+  font: 500 13px/18px var(--font);
+  letter-spacing: 0.2px;
 }
 .board-event small {
   color: var(--m3-on-surface-variant);
-  font: 400 10px/14px var(--font);
-}
-.board-event.kind-plan {
-  border-left-color: var(--m3-tertiary);
-  background: color-mix(in srgb, var(--m3-tertiary-container) 56%, var(--m3-surface-container-lowest));
-}
-.board-event.kind-task {
-  border-left-style: dashed;
-  background: color-mix(in srgb, var(--m3-surface-container-highest) 72%, transparent);
+  font: 400 10.5px/14px var(--font);
 }
 .board-now,
 .board-now span {

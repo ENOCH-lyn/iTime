@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { BookOpen, CalendarClock } from 'lucide-vue-next'
+import { BookOpen, CalendarClock, X } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { failure, localFailure, type Failure } from '../lib/api'
 import {
@@ -515,7 +515,7 @@ async function save() {
 
 <template>
   <dialog id="calendar-series-dialog" ref="dialog" class="calendar-dialog calendar-series-dialog"
-    aria-labelledby="calendar-series-title" @cancel.prevent="close">
+    aria-labelledby="calendar-series-title" @cancel.prevent="close" @click.self="close">
     <form novalidate @submit.prevent="save">
       <div class="calendar-dialog-heading">
         <component :is="values.kind === 'course' ? BookOpen : CalendarClock" :size="22" aria-hidden="true" />
@@ -525,6 +525,9 @@ async function save() {
           </h2>
           <p>{{ splitting ? '此前实例保持不变，所选实例开始使用新设置。' : '课程按学期周次展开，固定安排按日期规则展开。' }}</p>
         </div>
+        <button type="button" class="m3-icon-button calendar-dialog-close" aria-label="关闭" title="关闭" @click="close">
+          <X :size="20" aria-hidden="true" />
+        </button>
       </div>
 
       <StatusMessage :error="error" />
@@ -712,4 +715,3 @@ async function save() {
     </form>
   </dialog>
 </template>
-

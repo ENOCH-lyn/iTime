@@ -430,7 +430,7 @@ async function saveTermForm() {
     </section>
 
     <div class="dialog-actions">
-      <button type="button" class="button secondary" :disabled="pendingZone || pendingTerm" @click="close">完成</button>
+      <button type="button" class="button" :disabled="pendingZone || pendingTerm" @click="close">完成</button>
     </div>
 
     <div

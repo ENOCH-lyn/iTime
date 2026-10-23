@@ -85,6 +85,7 @@ const taskInitial = ref<{
   repeat?: TaskRepeat
   weekdays?: number[]
   estimatedMinutes?: number | null
+  priority?: number
   until?: string | null
 }>({ title: '', date: today.value })
 const quickTitle = ref('')
@@ -296,6 +297,7 @@ function openCreate(title = '') {
     repeat: 'none',
     weekdays: [parseLocalDate(today.value).getDay() || 7],
     estimatedMinutes: null,
+    priority: 2,
     until: defaultUntil.value,
   }
   dialogError.value = ''
@@ -314,6 +316,7 @@ function editTask(task: TaskSummary) {
       ? [...task.schedule.recurrence.weekdays]
       : [weekday],
     estimatedMinutes: task.estimated_minutes,
+    priority: task.priority || 2,
     until: task.schedule.recurrence.until ?? defaultUntil.value,
   }
   detailOpen.value = false
@@ -362,7 +365,7 @@ async function submitTask(values: TaskFormValues) {
         description: detail.description,
         project_id: detail.project?.id ?? null,
         estimated_minutes: values.estimatedMinutes,
-        priority: detail.priority,
+        priority: values.priority,
         labels: detail.labels.map(label => label.name),
         links: detail.links.map(link => ({ title: link.title, url: link.url })),
       })
@@ -383,7 +386,7 @@ async function submitTask(values: TaskFormValues) {
         description: '',
         project_id: null,
         estimated_minutes: values.estimatedMinutes,
-        priority: 2,
+        priority: values.priority,
         labels: [],
         links: [],
         steps: [],
@@ -496,55 +499,70 @@ const { pendingLogout, logout } = useAppShell()
     :pending-logout="pendingLogout"
     @logout="logout"
   >
-  <div class="tw-page">
-    <div v-if="error" class="tw-banner error" role="alert">
-      {{ error.message }}
-      <button type="button" @click="error = null"><X :size="15" /></button>
-    </div>
-    <div v-if="notice" class="tw-banner success" role="status">{{ notice }}</div>
+    <template #actions>
+      <button type="button" class="m3-button m3-button--filled tw-add" aria-label="添加任务" @click="openCreate()">
+        <Plus :size="18" aria-hidden="true" />
+        <span class="tw-add-label">添加任务</span>
+      </button>
+    </template>
 
-    <main class="tw-main">
-      <section class="tw-title-row">
-        <div>
-          <h1>任务</h1>
-          <p>{{ openCount }} 个待办 · 用周期和优先级把时间管起来</p>
-        </div>
-        <div class="tw-title-actions">
-          <button type="button" class="tw-add" @click="openCreate()">
-            <Plus :size="16" /> 添加任务
-          </button>
-        </div>
-      </section>
+    <div class="tw-page">
+      <div v-if="error" class="tw-banner tw-banner--error" role="alert">
+        <AlertCircle :size="18" aria-hidden="true" />
+        <span>{{ error.message }}</span>
+        <button type="button" class="m3-icon-button" aria-label="关闭提示" @click="error = null">
+          <X :size="18" />
+        </button>
+      </div>
+      <div v-if="notice" class="tw-banner tw-banner--success" role="status">
+        <CheckCircle2 :size="18" aria-hidden="true" />
+        <span>{{ notice }}</span>
+      </div>
 
-      <section class="tw-panel">
+      <div class="tw-main">
+        <p class="tw-count">
+          <strong>{{ openCount }}</strong> 个待办
+          <span aria-hidden="true">·</span>
+          用周期和优先级把时间管起来
+        </p>
+
         <div class="tw-toolbar">
-          <div class="tw-filters" role="tablist" aria-label="任务筛选">
+          <div class="m3-segmented tw-filters" role="tablist" aria-label="任务筛选">
             <button
               v-for="item in filters"
               :key="item.key"
               type="button"
               role="tab"
               :aria-selected="filter === item.key"
-              :class="{ active: filter === item.key }"
+              :class="{ selected: filter === item.key }"
               @click="filter = item.key"
             >
               {{ item.label }}
             </button>
           </div>
-          <input v-model="search" type="search" placeholder="搜索任务" aria-label="搜索任务">
+          <label class="tw-search">
+            <span class="material-symbols-rounded" aria-hidden="true">search</span>
+            <input v-model="search" type="search" placeholder="搜索任务" aria-label="搜索任务">
+          </label>
         </div>
 
         <form class="tw-quickadd" @submit.prevent="quickAdd">
-          <Plus :size="17" aria-hidden="true" />
+          <span class="material-symbols-rounded tw-quickadd-icon" aria-hidden="true">add_task</span>
           <input
             v-model="quickTitle"
             type="text"
             maxlength="200"
-            placeholder="今天要做什么？回车添加"
+            placeholder="添加一个任务"
+            aria-label="快速添加任务"
             :disabled="quickBusy"
           >
-          <button type="submit" :disabled="!quickTitle.trim() || quickBusy">
-            添加
+          <button
+            type="submit"
+            class="m3-icon-button m3-icon-button--filled tw-quickadd-submit"
+            aria-label="添加任务"
+            :disabled="!quickTitle.trim() || quickBusy"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">arrow_upward</span>
           </button>
         </form>
 
@@ -552,9 +570,12 @@ const { pendingLogout, logout } = useAppShell()
           <span v-for="index in 5" :key="index" />
         </div>
 
-        <template v-else>
+        <section v-else class="tw-list" aria-live="polite">
           <div v-for="group in groups" :key="group.key" class="tw-group">
-            <h2 v-if="group.title">{{ group.title }}</h2>
+            <h2 v-if="group.title" class="tw-group-title">
+              {{ group.title }}
+              <span>{{ group.items.length }}</span>
+            </h2>
             <div
               v-for="task in group.items"
               :key="task.id"
@@ -568,655 +589,584 @@ const { pendingLogout, logout } = useAppShell()
                 :aria-label="task.status === 'completed' ? `重新打开：${task.title}` : `完成任务：${task.title}`"
                 @click="completeTask(task)"
               >
-                <Check v-if="task.status === 'completed'" :size="12" />
+                <span class="tw-check-mark">
+                  <Check v-if="task.status === 'completed'" :size="16" />
+                </span>
               </button>
-              <button type="button" class="tw-task-copy" @click="openTask(task)">
-                <strong>{{ task.title }}</strong>
-                <small v-if="taskMeta(task)">{{ taskMeta(task) }}</small>
+              <button type="button" class="tw-task-open" @click="openTask(task)">
+                <span class="tw-task-title">{{ task.title }}</span>
+                <span v-if="taskMeta(task)" class="tw-task-meta">{{ taskMeta(task) }}</span>
               </button>
               <span class="tw-due" :class="{ overdue: isOverdue(task) }">
-                <AlertCircle v-if="isOverdue(task)" :size="13" />
-                <Repeat2 v-else-if="task.schedule.recurrence.frequency !== 'none'" :size="13" />
+                <AlertCircle v-if="isOverdue(task)" :size="14" aria-hidden="true" />
+                <Repeat2 v-else-if="task.schedule.recurrence.frequency !== 'none'" :size="14" aria-hidden="true" />
                 {{ taskDueLabel(task) }}
               </span>
             </div>
           </div>
 
           <div v-if="!filteredTasks.length" class="tw-empty">
-            <CheckCircle2 :size="26" aria-hidden="true" />
+            <span class="material-symbols-rounded" aria-hidden="true">task_alt</span>
             <strong>{{ filter === 'completed' ? '还没有完成的任务' : '这里没有任务' }}</strong>
             <p>{{ filter === 'completed' ? '完成一个任务后会出现在这里。' : '在上方输入，或让 AI 帮你安排。' }}</p>
+            <button v-if="filter !== 'completed'" type="button" class="m3-button m3-button--tonal" @click="openCreate()">
+              添加任务
+            </button>
           </div>
-        </template>
-      </section>
-    </main>
-
-    <ElDrawer
-      v-model="detailOpen"
-      direction="rtl"
-      size="min(400px, 94vw)"
-      :with-header="false"
-    >
-      <div v-if="selectedTask" class="tw-detail">
-        <button type="button" class="tw-detail-close" aria-label="关闭" @click="detailOpen = false">
-          <X :size="18" />
-        </button>
-        <span class="tw-detail-kind">
-          {{ selectedTask.status === 'completed' ? '已完成' : '任务' }}
-        </span>
-        <h2>{{ selectedTask.title }}</h2>
-        <p v-if="selectedTask.description" class="tw-detail-desc">{{ selectedTask.description }}</p>
-        <dl>
-          <div>
-            <dt>截止</dt>
-            <dd>{{ taskDueLabel(selectedTask) }}</dd>
-          </div>
-          <div>
-            <dt>重复</dt>
-            <dd>{{ selectedTask.schedule.recurrence.frequency === 'none' ? '不重复' : '周期任务' }}</dd>
-          </div>
-          <div v-if="selectedTask.estimated_minutes">
-            <dt>预计用时</dt>
-            <dd>{{ selectedTask.estimated_minutes }} 分钟</dd>
-          </div>
-        </dl>
-        <div class="tw-detail-actions">
-          <button
-            type="button"
-            class="tw-button primary"
-            :disabled="taskActionBusy"
-            @click="completeTask(selectedTask)"
-          >
-            {{ selectedTask.status === 'completed' ? '重新打开' : '完成' }}
-          </button>
-          <button type="button" class="tw-button secondary" @click="editTask(selectedTask)">
-            编辑
-          </button>
-          <button
-            v-if="selectedTask.schedule.recurrence.frequency === 'none'"
-            type="button"
-            class="tw-button secondary"
-            :disabled="taskActionBusy"
-            @click="postponeTask(selectedTask)"
-          >
-            推迟到明天
-          </button>
-          <button type="button" class="tw-button danger" :disabled="taskActionBusy" @click="removeTask(selectedTask)">
-            <Trash2 :size="15" /> 删除
-          </button>
-        </div>
+        </section>
       </div>
-    </ElDrawer>
 
-    <QuickTaskDialog
-      v-model="dialogOpen"
-      :mode="editingTask ? 'edit' : 'create'"
-      :default-until="defaultUntil"
-      :initial="taskInitial"
-      :busy="dialogBusy"
-      :error="dialogError"
-      @submit="submitTask"
-    />
-  </div>
+      <ElDrawer
+        v-model="detailOpen"
+        direction="rtl"
+        size="min(400px, 100vw)"
+        :with-header="false"
+        class="tw-detail-drawer"
+      >
+        <div v-if="selectedTask" class="tw-detail">
+          <header class="tw-detail-header">
+            <div>
+              <span class="tw-detail-kind">
+                {{ selectedTask.status === 'completed' ? '已完成' : '任务' }}
+              </span>
+              <h2>{{ selectedTask.title }}</h2>
+            </div>
+            <button type="button" class="m3-icon-button" aria-label="关闭详情" title="关闭" @click="detailOpen = false">
+              <X :size="20" />
+            </button>
+          </header>
+          <div class="tw-detail-body">
+            <p v-if="selectedTask.description" class="tw-detail-desc">{{ selectedTask.description }}</p>
+            <dl class="tw-detail-facts">
+              <div>
+                <dt>截止</dt>
+                <dd>{{ taskDueLabel(selectedTask) }}</dd>
+              </div>
+              <div>
+                <dt>重复</dt>
+                <dd>{{ selectedTask.schedule.recurrence.frequency === 'none' ? '不重复' : '周期任务' }}</dd>
+              </div>
+              <div v-if="selectedTask.estimated_minutes">
+                <dt>预计用时</dt>
+                <dd>{{ selectedTask.estimated_minutes }} 分钟</dd>
+              </div>
+            </dl>
+            <div class="tw-detail-actions">
+              <button
+                type="button"
+                class="m3-button m3-button--filled"
+                :disabled="taskActionBusy"
+                @click="completeTask(selectedTask)"
+              >
+                {{ selectedTask.status === 'completed' ? '重新打开' : '完成' }}
+              </button>
+              <button type="button" class="m3-button m3-button--tonal" @click="editTask(selectedTask)">
+                编辑
+              </button>
+              <button
+                v-if="selectedTask.schedule.recurrence.frequency === 'none'"
+                type="button"
+                class="m3-button m3-button--outlined"
+                :disabled="taskActionBusy"
+                @click="postponeTask(selectedTask)"
+              >
+                推迟到明天
+              </button>
+              <button type="button" class="m3-button m3-button--text tw-detail-delete" :disabled="taskActionBusy" @click="removeTask(selectedTask)">
+                <Trash2 :size="16" aria-hidden="true" />
+                删除任务
+              </button>
+            </div>
+          </div>
+        </div>
+      </ElDrawer>
+
+      <QuickTaskDialog
+        v-model="dialogOpen"
+        :mode="editingTask ? 'edit' : 'create'"
+        :default-until="defaultUntil"
+        :initial="taskInitial"
+        :busy="dialogBusy"
+        :error="dialogError"
+        @submit="submitTask"
+      />
+    </div>
   </AppShell>
 </template>
 
 <style scoped>
 .tw-page {
-  min-height: 100dvh;
-  background:
-    radial-gradient(1100px 420px at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
-    var(--canvas);
-  color: var(--text);
-}
-.tw-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 12px clamp(16px, 3vw, 32px);
-  background: color-mix(in srgb, var(--canvas) 86%, transparent);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-}
-.tw-brand {
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -.04em;
-  color: var(--text);
-  text-decoration: none;
-}
-.tw-brand span { color: var(--accent); }
-.tw-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  max-width: 100%;
-  padding: 3px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.tw-nav a { flex: 0 0 auto; }
-.tw-nav a {
-  padding: 7px 13px;
-  border-radius: 9px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 550;
-  text-decoration: none;
-}
-.tw-nav a:hover { color: var(--text); }
-.tw-nav a.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 3px rgb(31 42 36 / 8%);
-}
-.tw-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.tw-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.tw-add:hover { background: var(--accent-hover); }
-.tw-ai-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: #1e3529;
-  color: #f3f8f4;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-.tw-avatar {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--selected);
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
-}
-.tw-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px clamp(16px, 3vw, 32px) 0;
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 13px;
-}
-.tw-banner.error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error-border); }
-.tw-banner.success { background: var(--selected); color: var(--accent); border: 1px solid var(--border); }
-.tw-banner button { background: transparent; color: inherit; display: grid; place-items: center; }
-.tw-main {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 24px clamp(16px, 4vw, 32px) 64px;
-}
-.tw-title-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-.tw-title-row h1 {
-  font-size: clamp(26px, 3vw, 34px);
-  font-weight: 750;
-  letter-spacing: -.035em;
-  line-height: 1.1;
-}
-.tw-title-row p { margin-top: 6px; font-size: 13px; color: var(--muted); }
-.tw-title-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.tw-advanced {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.tw-advanced:hover { color: var(--accent); }
-.tw-panel {
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgb(31 42 36 / 4%), 0 22px 50px -44px rgb(31 42 36 / 35%);
-}
-.tw-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 12px;
-}
-.tw-filters {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--canvas) 65%, var(--surface));
-}
-.tw-filters button {
-  padding: 7px 13px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 550;
-}
-.tw-filters button.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 3px rgb(31 42 36 / 10%);
-}
-.tw-toolbar input[type="search"] {
-  width: min(220px, 40vw);
-  min-height: 38px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 13px;
-}
-.tw-quickadd {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 12px;
-  margin-bottom: 14px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--canvas) 55%, var(--surface));
-  color: var(--muted);
-}
-.tw-quickadd:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.tw-quickadd input {
-  flex: 1;
-  min-width: 0;
-  padding: 7px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 14px;
-  outline: none;
-}
-.tw-quickadd button {
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.tw-quickadd button:disabled { opacity: .35; }
-.tw-group { margin-top: 16px; }
-.tw-group h2 {
-  margin: 0 0 4px 4px;
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: .04em;
-  color: var(--muted);
-}
-.tw-task {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-}
-.tw-task:last-child { border-bottom: 0; }
-.tw-task.done .tw-task-copy strong { text-decoration: line-through; color: var(--muted); }
-.tw-check {
-  display: grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
-  flex-shrink: 0;
-  padding: 0;
-  border: 1.5px solid color-mix(in srgb, var(--muted) 55%, transparent);
-  border-radius: 50%;
-  background: transparent;
-  color: transparent;
-}
-.tw-check:hover { border-color: var(--accent); color: var(--accent); }
-.tw-check.checked {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.tw-task-copy {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-}
-.tw-task-copy strong {
-  font-size: 14px;
-  font-weight: 550;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-.tw-task-copy small { font-size: 11.5px; color: var(--muted); }
-.tw-due {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.tw-due.overdue { color: var(--error); }
-.tw-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 64px 20px;
-  color: var(--muted);
-  text-align: center;
-}
-.tw-empty svg { color: var(--accent); }
-.tw-empty strong { color: var(--text); font-size: 15px; }
-.tw-empty p { font-size: 12.5px; }
-.tw-skeleton { display: grid; gap: 10px; padding: 12px 4px; }
-.tw-skeleton span {
-  height: 16px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--selected), transparent);
-  animation: tw-shimmer 1.3s ease-in-out infinite;
-}
-@keyframes tw-shimmer {
-  0%, 100% { opacity: .45; }
-  50% { opacity: .9; }
-}
-.tw-detail { position: relative; padding: 8px 4px; }
-.tw-detail-close {
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-}
-.tw-detail-kind {
-  display: inline-block;
-  margin-bottom: 10px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: var(--selected);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
-}
-.tw-detail h2 {
-  padding-right: 36px;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  line-height: 1.3;
-}
-.tw-detail-desc { margin-top: 12px; font-size: 13px; line-height: 1.65; color: var(--muted); white-space: pre-wrap; }
-.tw-detail dl { display: grid; gap: 14px; margin: 20px 0 26px; }
-.tw-detail dt { margin-bottom: 3px; font-size: 11.5px; color: var(--muted); }
-.tw-detail dd { margin: 0; font-size: 14px; }
-.tw-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.tw-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 11px;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-.tw-button.primary { background: var(--accent); color: var(--on-accent); }
-.tw-button.primary:hover { background: var(--accent-hover); }
-.tw-button.secondary { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
-.tw-button.secondary:hover { background: var(--selected); }
-.tw-button.ghost { background: transparent; color: var(--muted); }
-.tw-button.ghost:hover { background: var(--selected); color: var(--text); }
-.tw-button.danger { border: 1px solid var(--error-border); background: var(--error-bg); color: var(--error); }
-.tw-button:disabled { opacity: .5; }
-@media (max-width: 760px) {
-  .tw-header { flex-wrap: wrap; gap: 10px; }
-  .tw-nav { order: 3; width: 100%; justify-content: space-between; }
-  .tw-header-actions { margin-left: auto; }
-  .tw-main { padding-top: 16px; }
-  .tw-title-row { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .tw-toolbar { flex-direction: column; align-items: stretch; }
-  .tw-toolbar input[type="search"] { width: 100%; }
-  .tw-filters { justify-content: space-between; }
-  .tw-filters button { flex: 1; }
-  .tw-panel { padding: 12px; border-radius: 18px; }
-  .tw-add { padding: 0 10px; }
-  .tw-ai-link { display: none; }
+  min-height: 100%;
+  background: var(--m3-surface);
 }
 
-/* Material 3 */
-.tw-page {
-  background: var(--m3-surface);
-  color: var(--m3-on-surface);
-}
 .tw-main {
-  width: min(1120px, 100%);
+  width: 100%;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 24px 24px 64px;
 }
-.tw-title-row h1 {
-  font: 400 32px/40px var(--font);
-  letter-spacing: 0;
-}
-.tw-title-row p {
+
+.tw-count {
+  margin: 0 0 16px;
   color: var(--m3-on-surface-variant);
   font: 400 14px/20px var(--font);
   letter-spacing: 0.25px;
 }
-.tw-add {
-  min-height: 40px;
-  padding: 0 24px;
-  border-radius: var(--m3-shape-full);
-  background: var(--m3-primary);
-  color: var(--m3-on-primary);
-  font: 500 14px/20px var(--font);
-  letter-spacing: 0.1px;
-}
-.tw-add:hover {
-  background: color-mix(in srgb, var(--m3-primary) 90%, var(--m3-on-primary));
-}
-.tw-advanced {
-  color: var(--m3-primary);
-  font: 500 14px/20px var(--font);
-}
-.tw-panel {
-  padding: 16px;
-  border: 1px solid var(--m3-outline-variant);
-  border-radius: var(--m3-shape-md);
-  background: var(--m3-surface-container-lowest);
-  box-shadow: none;
-}
-.tw-toolbar { gap: 12px; }
-.tw-filters {
-  display: inline-flex;
-  gap: 0;
-  padding: 0;
-  border: 1px solid var(--m3-outline);
-  border-radius: var(--m3-shape-full);
-  overflow: hidden;
-}
-.tw-filters button {
-  min-height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-right: 1px solid var(--m3-outline);
-  border-radius: 0;
-  background: transparent;
+.tw-count strong {
   color: var(--m3-on-surface);
-  font: 500 14px/20px var(--font);
-  letter-spacing: 0.1px;
+  font-weight: 500;
 }
-.tw-filters button:last-child { border-right: 0; }
-.tw-filters button.active {
+
+.tw-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.tw-filters {
+  background: var(--m3-surface-container-low);
+  border-color: var(--m3-outline-variant);
+}
+.tw-filters > button {
+  min-width: 68px;
+  padding: 0 16px;
+  border-right-color: var(--m3-outline-variant);
+}
+.tw-filters > button.selected {
   background: var(--m3-secondary-container);
   color: var(--m3-on-secondary-container);
 }
-.tw-toolbar input[type="search"] {
+
+.tw-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 280px;
   min-height: 56px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--m3-shape-full);
-  background: var(--m3-surface-container-high);
-  color: var(--m3-on-surface);
-  font: 400 16px/24px var(--font);
-  letter-spacing: 0.5px;
-}
-.tw-toolbar input[type="search"]::placeholder {
-  color: var(--m3-on-surface-variant);
-}
-.tw-quickadd {
-  min-height: 56px;
-  padding: 0 8px 0 16px;
-  border: 0;
-  border-bottom: 1px solid var(--m3-on-surface-variant);
-  border-radius: var(--m3-shape-xs) var(--m3-shape-xs) 0 0;
-  background: var(--m3-surface-container-highest);
-}
-.tw-quickadd:focus-within {
-  border-bottom: 2px solid var(--m3-primary);
-  background: var(--m3-surface-container-highest);
-}
-.tw-quickadd input {
-  font: 400 16px/24px var(--font);
-  color: var(--m3-on-surface);
-}
-.tw-quickadd button {
-  width: auto;
-  min-width: 64px;
-  height: 40px;
   padding: 0 16px;
   border-radius: var(--m3-shape-full);
-  background: var(--m3-primary);
-  color: var(--m3-on-primary);
-  font: 500 14px/20px var(--font);
-  white-space: nowrap;
-}
-.tw-group h2 {
+  background: var(--m3-surface-container-high);
   color: var(--m3-on-surface-variant);
-  font: 500 14px/20px var(--font);
-  letter-spacing: 0.1px;
+  cursor: text;
 }
-.tw-task { border-bottom: 1px solid var(--m3-outline-variant); }
+.tw-search .material-symbols-rounded {
+  flex: 0 0 auto;
+  font-size: 22px;
+}
+.tw-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--m3-on-surface);
+  font: 400 16px/24px var(--font);
+  letter-spacing: 0.3px;
+  outline: 0;
+}
+.tw-search input::placeholder {
+  color: var(--m3-on-surface-variant);
+}
+
+.tw-quickadd {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  margin-bottom: 24px;
+  padding: 8px 8px 8px 16px;
+  border-radius: var(--m3-shape-lg);
+  background: var(--m3-surface-container-high);
+}
+.tw-quickadd-icon {
+  flex: 0 0 auto;
+  color: var(--m3-on-surface-variant);
+  font-size: 22px;
+}
+.tw-quickadd input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--m3-on-surface);
+  font: 400 16px/24px var(--font);
+  letter-spacing: 0.3px;
+  outline: 0;
+}
+.tw-quickadd input::placeholder {
+  color: var(--m3-on-surface-variant);
+}
+.tw-quickadd-submit {
+  flex: 0 0 auto;
+}
+.tw-quickadd-submit:disabled {
+  background: var(--m3-surface-container-highest);
+  color: color-mix(in srgb, var(--m3-on-surface) 38%, transparent);
+  cursor: not-allowed;
+}
+
+.tw-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tw-group {
+  display: flex;
+  flex-direction: column;
+}
+.tw-group + .tw-group {
+  margin-top: 24px;
+}
+
+.tw-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tw-group-title span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
+  color: var(--m3-on-surface-variant);
+  font: 500 11px/16px var(--font);
+}
+
+.tw-task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  margin: 0 -12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-sm);
+}
+.tw-task:hover {
+  background: color-mix(in srgb, var(--m3-on-surface) 4%, transparent);
+}
+.tw-task:last-child {
+  border-bottom: 0;
+}
+
 .tw-check {
+  display: grid;
+  flex: 0 0 48px;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--m3-shape-full);
+  background: transparent;
+  cursor: pointer;
+}
+.tw-check-mark {
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 24px;
   border: 2px solid var(--m3-outline);
   border-radius: var(--m3-shape-full);
-  color: var(--m3-outline);
+  background: transparent;
+  color: var(--m3-on-primary);
+  transition:
+    background-color var(--m3-duration-short) var(--m3-easing-standard),
+    border-color var(--m3-duration-short) var(--m3-easing-standard);
 }
-.tw-check:hover, .tw-check.checked {
+.tw-check:hover .tw-check-mark {
   border-color: var(--m3-primary);
-  color: var(--m3-primary);
+  background: color-mix(in srgb, var(--m3-primary) 8%, transparent);
 }
-.tw-task-copy strong {
+.tw-check.checked .tw-check-mark {
+  border-color: var(--m3-primary);
+  background: var(--m3-primary);
+}
+
+.tw-task-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
   color: var(--m3-on-surface);
+  text-align: left;
+  cursor: pointer;
+}
+.tw-task-title {
+  overflow: hidden;
   font: 500 16px/24px var(--font);
   letter-spacing: 0.15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.tw-task-copy small, .tw-due {
+.tw-task-meta {
+  overflow: hidden;
   color: var(--m3-on-surface-variant);
   font: 400 12px/16px var(--font);
   letter-spacing: 0.4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.tw-due.overdue { color: var(--m3-error); }
-.tw-empty svg { color: var(--m3-primary); }
+.tw-due {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  white-space: nowrap;
+}
+.tw-due.overdue {
+  color: var(--m3-error);
+}
+.tw-task.done .tw-task-title {
+  color: var(--m3-on-surface-variant);
+  text-decoration: line-through;
+}
+
+.tw-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 64px 24px;
+  color: var(--m3-on-surface-variant);
+  text-align: center;
+}
+.tw-empty .material-symbols-rounded {
+  margin-bottom: 8px;
+  color: var(--m3-primary);
+  font-size: 40px;
+}
 .tw-empty strong {
   color: var(--m3-on-surface);
   font: 500 16px/24px var(--font);
 }
 .tw-empty p {
-  color: var(--m3-on-surface-variant);
+  max-width: 320px;
+  margin: 0;
   font: 400 14px/20px var(--font);
 }
-.tw-button {
-  min-height: 40px;
-  padding: 0 24px;
-  border-radius: var(--m3-shape-full);
-  font: 500 14px/20px var(--font);
-  letter-spacing: 0.1px;
+.tw-empty .m3-button {
+  margin-top: 16px;
 }
-.tw-button.primary {
-  background: var(--m3-primary);
-  color: var(--m3-on-primary);
+
+.tw-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
 }
-.tw-button.secondary {
-  border: 1px solid var(--m3-outline);
-  background: transparent;
-  color: var(--m3-primary);
+.tw-skeleton span {
+  display: block;
+  height: 56px;
+  border-radius: var(--m3-shape-sm);
+  background: linear-gradient(
+    90deg,
+    var(--m3-surface-container-high),
+    var(--m3-surface-container-low),
+    var(--m3-surface-container-high)
+  );
+  background-size: 200% 100%;
+  animation: tw-shimmer 1.4s ease-in-out infinite;
 }
-.tw-button.ghost {
-  color: var(--m3-primary);
-  background: transparent;
+@keyframes tw-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
-.tw-button.danger {
-  border: 0;
-  background: var(--m3-error);
-  color: var(--m3-on-error);
-}
-.tw-detail h2 { font: 500 22px/28px var(--font); }
-.tw-detail dt {
-  color: var(--m3-on-surface-variant);
-  font: 500 11px/16px var(--font);
-  letter-spacing: 0.5px;
-}
-.tw-detail dd {
+
+.tw-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 912px;
+  min-height: 48px;
+  margin: 8px auto 0;
+  padding: 8px 8px 8px 16px;
+  border-radius: var(--m3-shape-sm);
+  background: var(--m3-surface-container-high);
   color: var(--m3-on-surface);
   font: 400 14px/20px var(--font);
+}
+.tw-banner > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tw-banner--error {
+  background: var(--m3-error-container);
+  color: var(--m3-on-error-container);
+}
+.tw-banner--success {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+
+/* Detail side sheet ---------------------------------------------------- */
+:global(.tw-detail-drawer .el-drawer__body) {
+  padding: 0;
+}
+.tw-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--m3-surface-container-low);
+}
+.tw-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 16px 16px 24px;
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+.tw-detail-header > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tw-detail-kind {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tw-detail-header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--m3-on-surface);
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+.tw-detail-body {
+  flex: 1 1 auto;
+  padding: 20px 24px 32px;
+  overflow-y: auto;
+}
+.tw-detail-desc {
+  margin: 0 0 16px;
+  padding: 16px;
+  border-radius: var(--m3-shape-md);
+  background: var(--m3-surface-container);
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+  white-space: pre-wrap;
+}
+.tw-detail-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+.tw-detail-facts > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+.tw-detail-facts dt {
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tw-detail-facts dd {
+  margin: 0;
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+}
+.tw-detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+.tw-detail-actions .m3-button {
+  width: 100%;
+}
+.tw-detail-delete {
+  margin-top: 8px;
+  color: var(--m3-error);
+}
+
+@media (max-width: 839px) {
+  .tw-main {
+    padding: 16px 16px 40px;
+  }
+  .tw-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tw-filters {
+    width: 100%;
+  }
+  .tw-filters > button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 13px;
+  }
+  .tw-search {
+    width: 100%;
+  }
+  .tw-quickadd {
+    margin-bottom: 16px;
+  }
+  .tw-task {
+    gap: 8px;
+    min-height: 64px;
+    margin: 0 -8px;
+    padding: 6px 8px;
+  }
+  .tw-task-title {
+    font-size: 15px;
+  }
+  .tw-due {
+    max-width: 82px;
+    text-align: right;
+    white-space: normal;
+  }
+  .tw-add {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+  .tw-add-label {
+    display: none;
+  }
+  .tw-banner {
+    margin: 8px 16px 0;
+  }
+  .tw-detail-facts > div {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 840px) {
+  .tw-add-label {
+    display: inline;
+  }
 }
 </style>

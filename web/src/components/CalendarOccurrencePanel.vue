@@ -2,7 +2,6 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import {
   AlertTriangle,
-  ArrowLeft,
   CalendarPlus,
   CalendarClock,
   CheckCircle2,
@@ -13,6 +12,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Trash2,
+  X,
 } from 'lucide-vue-next'
 import StatusMessage from './StatusMessage.vue'
 import { ApiError, failure, localFailure, type Failure } from '../lib/api'
@@ -113,16 +113,33 @@ watch(() => props.item?.id, () => {
     })
 }, { immediate: true })
 
-function dateTime(value: string | null) {
-  if (!value) return '时间无效'
-  return new Intl.DateTimeFormat('zh-CN', {
+function occurrenceTimeLabel(value: CalendarOccurrence) {
+  if (!value.start_at || !value.end_at) return '时间无效'
+  const dayFormat = new Intl.DateTimeFormat('en-CA', {
+    timeZone: props.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const dateFormat = new Intl.DateTimeFormat('zh-CN', {
     timeZone: props.timeZone,
     month: 'long',
     day: 'numeric',
     weekday: 'short',
+  })
+  const timeFormat = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: props.timeZone,
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(value))
+    hourCycle: 'h23',
+  })
+  const start = new Date(value.start_at)
+  const end = new Date(value.end_at)
+  const sameDay = dayFormat.format(start) === dayFormat.format(end)
+  if (sameDay) {
+    return `${dateFormat.format(start)} · ${timeFormat.format(start)}–${timeFormat.format(end)}`
+  }
+  return `${dateFormat.format(start)} ${timeFormat.format(start)} – ${dateFormat.format(end)} ${timeFormat.format(end)}`
 }
 
 function localTime(value: string | null) {
@@ -696,11 +713,7 @@ async function saveTaskMakeup() {
   <aside class="occurrence-panel" :class="{ empty: !item }" aria-label="安排详情">
     <template v-if="item">
       <header class="occurrence-header">
-        <button type="button" class="small-icon-button occurrence-back" aria-label="返回日历" title="返回日历"
-          @click="emit('close')">
-          <ArrowLeft :size="19" aria-hidden="true" />
-        </button>
-        <div>
+        <div class="occurrence-heading">
           <p>
             {{ occurrence?.source_type === 'subscription'
               ? 'ICS 订阅'
@@ -712,8 +725,17 @@ async function saveTaskMakeup() {
                     ? '计划块'
                   : '任务截止' }}
           </p>
-          <h1 tabindex="-1">{{ item.title }}</h1>
+          <h2 tabindex="-1">{{ item.title }}</h2>
         </div>
+        <button
+          type="button"
+          class="m3-icon-button occurrence-close"
+          aria-label="关闭详情"
+          title="关闭详情"
+          @click="emit('close')"
+        >
+          <X :size="20" aria-hidden="true" />
+        </button>
       </header>
 
       <div class="occurrence-body">
@@ -732,7 +754,7 @@ async function saveTaskMakeup() {
             <dd v-if="occurrence?.all_day">
               {{ allDayLabel(occurrence) }}
             </dd>
-            <dd v-else-if="occurrence">{{ dateTime(occurrence.start_at) }} 至 {{ dateTime(occurrence.end_at) }}</dd>
+            <dd v-else-if="occurrence">{{ occurrenceTimeLabel(occurrence) }}</dd>
             <dd v-else-if="plan">
               {{ item.date }} {{ item.time?.slice(0, 5) }} 至 {{ item.end_time?.slice(0, 5) }}
             </dd>

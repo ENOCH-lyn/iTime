@@ -47,9 +47,11 @@ function timeLabel(item: CalendarDisplayItem) {
   return end ? `${start}–${end}${item.end_date !== item.date ? ' +1' : ''}` : start
 }
 
-const visibleDays = computed(() => props.days.filter(day => (
-  props.view === 'week' || itemsFor(day).length || day === props.today
-)))
+const visibleDays = computed(() => props.days.filter(day => {
+  if (props.view === 'week') return true
+  return day.startsWith(props.monthKey)
+    && (itemsFor(day).length > 0 || day === props.today)
+}))
 </script>
 
 <template>
@@ -115,7 +117,8 @@ const visibleDays = computed(() => props.days.filter(day => (
       </article>
     </section>
 
-    <section class="calendar-agenda" aria-label="日程列表">
+    <section v-if="visibleDays.length" class="calendar-agenda" aria-label="日程列表">
+      <h2 class="calendar-agenda-title">本月日程</h2>
       <article v-for="day in visibleDays" :key="day" class="agenda-day">
         <header :class="{ today: day === today }">
           <time :datetime="day">{{ shortDate(day) }}</time>

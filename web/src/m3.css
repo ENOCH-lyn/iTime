@@ -763,3 +763,18 @@ select {
 .m3-navigation a.active:hover .m3-navigation__icon {
   background: var(--m3-secondary-container);
 }
+
+/* Focus and disabled states --------------------------------------------- */
+.m3-icon-button:focus-visible,
+.app-shell-avatar:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--m3-primary);
+}
+
+.m3-button:disabled,
+.m3-icon-button:disabled {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--m3-on-surface) 12%, transparent);
+  color: color-mix(in srgb, var(--m3-on-surface) 38%, transparent);
+  cursor: not-allowed;
+}

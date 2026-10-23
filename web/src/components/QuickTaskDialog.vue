@@ -10,6 +10,7 @@ export interface TaskFormValues {
   repeat: TaskRepeat
   weekdays: number[]
   estimatedMinutes: number | null
+  priority: number
   until: string | null
 }
 
@@ -23,6 +24,7 @@ const props = defineProps<{
     repeat?: TaskRepeat
     weekdays?: number[]
     estimatedMinutes?: number | null
+    priority?: number
     until?: string | null
   }
   busy: boolean
@@ -40,6 +42,7 @@ const form = reactive({
   repeat: 'none' as TaskRepeat,
   weekdays: [isoWeekday(props.initial.date)],
   estimatedMinutes: null as number | null,
+  priority: 2,
   until: '',
 })
 const weekLabels = weekdayShortLabels()
@@ -62,6 +65,7 @@ function reset() {
     ? [...props.initial.weekdays]
     : [isoWeekday(props.initial.date)]
   form.estimatedMinutes = props.initial.estimatedMinutes ?? null
+  form.priority = props.initial.priority ?? 2
   form.until = props.initial.until
     ?? props.defaultUntil
     ?? props.initial.date
@@ -95,6 +99,7 @@ function submit() {
     repeat: form.repeat,
     weekdays: [...form.weekdays].sort((left, right) => left - right),
     estimatedMinutes: form.estimatedMinutes,
+    priority: form.priority,
     until: form.repeat === 'none' ? null : form.until,
   })
 }
@@ -148,6 +153,14 @@ function submit() {
             <option :value="60">1 小时</option>
             <option :value="90">1.5 小时</option>
             <option :value="120">2 小时</option>
+          </select>
+        </label>
+        <label class="tt-field">
+          <span>优先级</span>
+          <select v-model.number="form.priority">
+            <option :value="1">低</option>
+            <option :value="2">中</option>
+            <option :value="3">高</option>
           </select>
         </label>
       </div>
@@ -253,5 +266,150 @@ function submit() {
 .tt-button:disabled { opacity: .45; }
 @media (max-width: 560px) {
   .tt-row { grid-template-columns: 1fr 1fr; }
+}
+/* Material 3 dialog surface */
+:global(.tt-dialog.el-dialog) {
+  width: min(520px, calc(100vw - 32px));
+  padding: 24px;
+  border-radius: var(--m3-shape-xl);
+  background: var(--m3-surface-container-high);
+  box-shadow: var(--m3-elevation-3);
+}
+:global(.tt-dialog .el-dialog__header) {
+  padding: 0 0 12px;
+  margin: 0;
+}
+:global(.tt-dialog .el-dialog__title) {
+  color: var(--m3-on-surface);
+  font: 500 22px/28px var(--font);
+  letter-spacing: 0;
+}
+:global(.tt-dialog .el-dialog__headerbtn) {
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--m3-shape-full);
+}
+:global(.tt-dialog .el-dialog__headerbtn:hover) {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+}
+:global(.tt-dialog .el-dialog__headerbtn .el-dialog__close) {
+  color: var(--m3-on-surface-variant);
+  font-size: 20px;
+}
+:global(.tt-dialog .el-dialog__body) {
+  max-height: calc(100dvh - 180px);
+  padding: 0;
+  overflow-y: auto;
+}
+
+.tt-form {
+  gap: 16px;
+}
+.tt-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.tt-field > span {
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tt-field input,
+.tt-field select {
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-xs);
+  background: var(--m3-surface-container-highest);
+  color: var(--m3-on-surface);
+  font: 400 14px/20px var(--font);
+  outline: 0;
+}
+.tt-field input:focus,
+.tt-field select:focus {
+  outline: none;
+  border-color: var(--m3-primary);
+  box-shadow: inset 0 0 0 1px var(--m3-primary);
+}
+.tt-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 8px;
+}
+.tt-weekdays legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+  color: var(--m3-on-surface-variant);
+  font: 500 12px/16px var(--font);
+  letter-spacing: 0.5px;
+}
+.tt-weekday {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--m3-shape-full);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  font: 500 13px/18px var(--font);
+  cursor: pointer;
+}
+.tt-weekday.active {
+  border-color: transparent;
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+.tt-error {
+  margin: 0;
+  color: var(--m3-error);
+  font: 400 12px/16px var(--font);
+}
+.tt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tt-button {
+  min-height: 40px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: var(--m3-shape-full);
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+  cursor: pointer;
+}
+.tt-button.primary {
+  background: var(--m3-primary);
+  color: var(--m3-on-primary);
+}
+.tt-button.primary:disabled {
+  background: var(--m3-surface-container-highest);
+  color: var(--m3-on-surface-variant);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.tt-button.ghost {
+  background: transparent;
+  color: var(--m3-primary);
+}
+.tt-button.ghost:disabled {
+  color: var(--m3-on-surface-variant);
+  opacity: 1;
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  :global(.tt-dialog.el-dialog) {
+    width: calc(100vw - 24px);
+    padding: 20px;
+  }
+  :global(.tt-dialog .el-dialog__body) {
+    max-height: calc(100dvh - 200px);
+  }
+  .tt-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

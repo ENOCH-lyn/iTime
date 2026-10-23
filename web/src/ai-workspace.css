@@ -1882,3 +1882,138 @@
   color: var(--m3-primary);
   box-shadow: inset 0 -2px var(--m3-primary);
 }
+
+/* Integration with the shared M3 app shell ----------------------------- */
+.app-shell-secondary .conversation-sidebar {
+  width: 100%;
+  height: 100%;
+  padding: 8px 4px;
+  border-right: 0;
+  background: transparent;
+}
+.app-shell .ai-main {
+  grid-template-areas:
+    "status"
+    "thread"
+    "composer";
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100% !important;
+  max-height: 100% !important;
+  background: var(--m3-surface);
+}
+.ai-workspace-status {
+  grid-area: status;
+  padding: 12px 24px 0;
+}
+.conversation-viewport-shell {
+  min-height: 0;
+}
+.conversation-welcome {
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+.conversation-welcome h2 {
+  margin: 0;
+  color: var(--m3-on-surface);
+  font: 400 28px/36px var(--font);
+  letter-spacing: 0;
+}
+.conversation-welcome p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--m3-on-surface-variant);
+  font: 400 14px/20px var(--font);
+}
+.conversation-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+  margin-top: 16px;
+}
+.conversation-suggestions .m3-chip {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--m3-shape-sm);
+  border-color: var(--m3-outline-variant);
+  background: var(--m3-surface-container-low);
+  color: var(--m3-on-surface-variant);
+  cursor: pointer;
+}
+.conversation-suggestions .m3-chip:hover {
+  background: var(--m3-surface-container-high);
+  color: var(--m3-on-surface);
+}
+.conversation-composer {
+  border-radius: var(--m3-shape-lg);
+}
+.composer-send.el-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: var(--m3-shape-full);
+}
+.composer-send-label {
+  display: none;
+}
+.composer-attachment-trigger {
+  border-radius: var(--m3-shape-full);
+}
+.ai-conversation-menu {
+  min-width: 200px;
+  padding: 8px 0;
+  border-radius: var(--m3-shape-xs);
+  background: var(--m3-surface-container);
+  box-shadow: var(--m3-elevation-2);
+}
+.ai-conversation-menu .el-dropdown-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 16px;
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+}
+.ai-conversation-menu .el-dropdown-menu__item:not(.is-disabled):hover,
+.ai-conversation-menu .el-dropdown-menu__item:not(.is-disabled):focus {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+  color: var(--m3-on-surface);
+}
+@media (max-width: 839px) {
+  .ai-workspace-status {
+    padding: 8px 16px 0;
+  }
+  .conversation-welcome {
+    padding: 16px;
+  }
+  .conversation-welcome h2 {
+    font-size: 24px;
+    line-height: 32px;
+  }
+  .conversation-suggestions {
+    gap: 6px;
+  }
+  .conversation-suggestions .m3-chip {
+    min-height: 32px;
+    height: 32px;
+    padding: 0 12px;
+    font: 500 13px/18px var(--font);
+  }
+}
+.conversation-viewport-shell {
+  grid-area: thread;
+}
+
+.conversation-sidebar .conversation-tabs button {
+  min-height: 48px;
+  padding: 0 12px;
+  font: 500 14px/20px var(--font);
+  letter-spacing: 0.1px;
+}
+.conversation-sidebar .conversation-tabs {
+  gap: 8px;
+}

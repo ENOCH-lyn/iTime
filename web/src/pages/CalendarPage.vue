@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   AlertTriangle,
@@ -7,12 +7,14 @@ import {
   ChevronLeft,
   ChevronRight,
   CirclePause,
-  Filter,
+  Plus,
   RefreshCw,
+  Settings2,
+  Trash2,
+  Upload,
 } from 'lucide-vue-next'
 import CalendarGrid from '../components/CalendarGrid.vue'
 import CalendarImportDialog from '../components/CalendarImportDialog.vue'
-import CalendarNavigation from '../components/CalendarNavigation.vue'
 import CalendarOccurrencePanel from '../components/CalendarOccurrencePanel.vue'
 import CalendarSeriesDialog from '../components/CalendarSeriesDialog.vue'
 import CalendarSettingsDialog from '../components/CalendarSettingsDialog.vue'
@@ -55,6 +57,7 @@ import {
 } from '../lib/timetable'
 import '../calendar.css'
 import '../calendar-hub.css'
+import '../calendar-page.css'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,17 +94,19 @@ const trashDialog = ref<InstanceType<typeof CalendarTrashDialog> | null>(null)
 const seriesOpen = ref(false)
 const editingSeries = ref<CalendarSeries | null>(null)
 const splittingOccurrence = ref<CalendarOccurrence | null>(null)
-const filtersOpen = ref(false)
 const showTasks = ref(true)
 const showPlans = ref(true)
 const showCourses = ref(true)
 const showFixed = ref(true)
 const showSubscriptions = ref(true)
 const showCancelled = ref(true)
+const compact = ref(false)
+const mobileDay = ref(anchor.value)
 let loadRevision = 0
 let anchorTouched = validDate(routeDate)
 let importOpener: HTMLElement | null = null
 let trashOpener: HTMLElement | null = null
+let compactQuery: MediaQueryList | null = null
 
 function parseLocalDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
@@ -209,6 +214,34 @@ const title = computed(() => {
     }).format(last)
   return `${firstLabel} – ${lastLabel}`
 })
+const weekStart = computed(() => startOfWeek(anchor.value))
+const activeTerm = computed(() => terms.value.find(term => (
+  term.start_date <= weekStart.value && term.end_date >= addDays(weekStart.value, 6)
+)) ?? null)
+const weekNumber = computed(() => {
+  const term = activeTerm.value
+  if (!term) return null
+  const days = Math.round(
+    (parseLocalDate(weekStart.value).getTime() - parseLocalDate(term.first_week_monday).getTime())
+      / 86_400_000,
+  )
+  if (days < 0) return null
+  return Math.floor(days / 7) + 1
+})
+const contextLabel = computed(() => {
+  const parts: string[] = []
+  if (activeTerm.value) parts.push(activeTerm.value.name)
+  if (view.value === 'week' && weekNumber.value) parts.push(`第 ${weekNumber.value} 周`)
+  return parts.join(' · ')
+})
+const filters = computed(() => [
+  { key: 'courses', label: '课程', value: showCourses.value, set: (value: boolean) => { showCourses.value = value } },
+  { key: 'fixed', label: '固定安排', value: showFixed.value, set: (value: boolean) => { showFixed.value = value } },
+  { key: 'tasks', label: '任务', value: showTasks.value, set: (value: boolean) => { showTasks.value = value } },
+  { key: 'plans', label: '计划块', value: showPlans.value, set: (value: boolean) => { showPlans.value = value } },
+  { key: 'subscriptions', label: '订阅', value: showSubscriptions.value, set: (value: boolean) => { showSubscriptions.value = value } },
+  { key: 'cancelled', label: '已取消', value: showCancelled.value, set: (value: boolean) => { showCancelled.value = value } },
+])
 const visibleItems = computed(() => calendarItems.value.filter(item => (
   (
     item.kind === 'task'
@@ -252,6 +285,18 @@ const weekUntimedItems = computed(() => (
     ? visibleItems.value.filter(item => inWeek(item.date) && !item.time)
     : []
 ))
+const mobileDayItems = computed(() => visibleItems.value
+  .filter(item => item.date === mobileDay.value)
+  .sort((left, right) => (left.time ?? '99:99').localeCompare(right.time ?? '99:99')))
+const mobileDayLabel = computed(() => {
+  const value = parseLocalDate(mobileDay.value)
+  const label = new Intl.DateTimeFormat('zh-CN', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(value)
+  return label.replace('日星期', '日 星期')
+})
 const boardEvents = computed<BoardEvent[]>(() => weekTimedItems.value.map(item => {
   const dayIndex = weekDays.value.indexOf(item.date)
   const startMin = timeToMinutes(item.time) ?? 0
@@ -310,6 +355,12 @@ watch(authError, value => {
 })
 watch([view, anchor], () => { void loadOccurrences() })
 watch(anchor, value => { jumpDate.value = value })
+watch([weekDays, today], () => {
+  if (!weekDays.value.length) return
+  if (!weekDays.value.includes(mobileDay.value)) {
+    mobileDay.value = weekDays.value.includes(today.value) ? today.value : weekDays.value[0]
+  }
+}, { immediate: true })
 
 function setView(next: 'week' | 'month') {
   if (view.value === next) return
@@ -344,7 +395,32 @@ function selectBoardEvent(event: BoardEvent) {
   if (item) void selectItem(item)
 }
 
+function onCompactChange(event: MediaQueryListEvent) {
+  compact.value = event.matches
+  if (event.matches && !weekDays.value.includes(mobileDay.value)) {
+    mobileDay.value = weekDays.value.includes(today.value) ? today.value : weekDays.value[0] ?? anchor.value
+  }
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !selected.value) return
+  if (settingsOpen.value || seriesOpen.value || importOpen.value || trashOpen.value) return
+  event.preventDefault()
+  void closeDetail()
+}
+
+function onCalendarCommand(command: string | number | object) {
+  if (command === 'import') void openImport()
+  else if (command === 'trash') void openTrash()
+  else if (command === 'settings') settingsOpen.value = true
+  else if (command === 'refresh') void loadOccurrences()
+}
+
 onMounted(async () => {
+  compactQuery = window.matchMedia('(max-width: 839px)')
+  compact.value = compactQuery.matches
+  compactQuery.addEventListener('change', onCompactChange)
+  window.addEventListener('keydown', onKeydown)
   document.title = '日历 · iTime'
   await refreshSession()
   if (!identity.value) {
@@ -363,6 +439,11 @@ onMounted(async () => {
     : null
   if (requestedImport) await openImport(requestedImport)
   else if (sourceId) await openSubscription(sourceId, eventId)
+})
+
+onUnmounted(() => {
+  compactQuery?.removeEventListener('change', onCompactChange)
+  window.removeEventListener('keydown', onKeydown)
 })
 
 useSyncRefresh(
@@ -553,7 +634,7 @@ async function selectItem(item: CalendarDisplayItem) {
   selected.value = item
   await nextTick()
   if (window.matchMedia('(max-width: 840px)').matches) {
-    document.querySelector<HTMLElement>('.occurrence-header h1')?.focus()
+    document.querySelector<HTMLElement>('.occurrence-header h2')?.focus()
   }
 }
 
@@ -601,7 +682,7 @@ async function closeImport() {
     return
   }
   document.querySelector<HTMLElement>(
-    '.occurrence-header h1, [data-calendar-import-trigger]',
+    '.occurrence-header h2, [data-calendar-import-trigger]',
   )?.focus()
 }
 
@@ -708,118 +789,246 @@ watch(pageError, value => {
 <template>
   <AppShell
     current="timetable"
-    has-secondary
-    secondary-label="日历管理"
     title="日历"
     :pending-logout="pendingLogout"
     @logout="logout"
   >
-    <template #secondary>
-      <CalendarNavigation
-        :series-count="series.length"
-        :term-count="terms.length"
-        @create-series="openCreate"
-        @open-import="openImport"
-        @open-trash="openTrash"
-        @open-settings="settingsOpen = true"
-      />
-    </template>
-    <template #drawer-secondary="{ close }">
-      <CalendarNavigation
-        :series-count="series.length"
-        :term-count="terms.length"
-        @create-series="() => { openCreate(); close() }"
-        @open-import="() => { openImport(); close() }"
-        @open-trash="() => { openTrash(); close() }"
-        @open-settings="() => { settingsOpen = true; close() }"
-      />
-    </template>
-
-    <div class="calendar-main" :class="{ 'detail-open': detailOpen }">
-      <section class="calendar-content">
-        <header class="calendar-toolbar">
-          <div class="calendar-title">
-            <span>{{ settings?.time_zone ?? browserTimeZone }}</span>
-            <h1 tabindex="-1">{{ title }}</h1>
-          </div>
-          <div class="calendar-toolbar-actions">
-            <div class="calendar-stepper" aria-label="日期导航">
-              <button type="button" class="small-icon-button" aria-label="上一段日期" title="上一段日期" @click="moveRange(-1)">
-                <ChevronLeft :size="19" aria-hidden="true" />
-              </button>
-              <button type="button" class="text-button today-button" @click="goToday">今天</button>
-              <button type="button" class="small-icon-button" aria-label="下一段日期" title="下一段日期" @click="moveRange(1)">
-                <ChevronRight :size="19" aria-hidden="true" />
-              </button>
-            </div>
-            <label class="calendar-jump">
-              <span class="sr-only">跳转日期</span>
-              <input v-model="jumpDate" type="date" aria-label="跳转日期"
-                @input="applyJumpDate" @blur="restoreJumpDate" />
-            </label>
-            <div class="calendar-view-switch" role="tablist" aria-label="日历视图">
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="view === 'week'"
-                :class="{ active: view === 'week' }"
-                @click="setView('week')"
-              >
-                周
-              </button>
-              <button
-                type="button"
-                role="tab"
-                :aria-selected="view === 'month'"
-                :class="{ active: view === 'month' }"
-                @click="setView('month')"
-              >
-                月
-              </button>
-            </div>
-            <button type="button" class="small-icon-button filter-button" aria-label="筛选日历"
-              title="筛选日历" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
-              <Filter :size="18" aria-hidden="true" />
-            </button>
-            <button type="button" class="button calendar-new-button" aria-label="添加日程" @click="openCreate">
-              <CalendarPlus :size="18" aria-hidden="true" /><span>添加日程</span>
-            </button>
-          </div>
-        </header>
-
-        <div v-if="filtersOpen" class="calendar-filters">
-          <label class="checkbox-label"><input v-model="showCourses" type="checkbox" />课程</label>
-          <label class="checkbox-label"><input v-model="showFixed" type="checkbox" />固定安排</label>
-          <label class="checkbox-label"><input v-model="showSubscriptions" type="checkbox" />订阅</label>
-          <label class="checkbox-label"><input v-model="showTasks" type="checkbox" />任务截止</label>
-          <label class="checkbox-label"><input v-model="showPlans" type="checkbox" />计划块</label>
-          <label class="checkbox-label"><input v-model="showCancelled" type="checkbox" />已取消/跳过</label>
-        </div>
-
-        <div
-          v-if="pageError || pageSuccess || logoutError || identity?.user.ai_access === 'frozen' || planSourceConflicts.open_count"
-          class="calendar-status"
+    <template #actions>
+      <ElDropdown
+        trigger="click"
+        placement="bottom-end"
+        @command="onCalendarCommand"
+      >
+        <button
+          type="button"
+          class="m3-icon-button calendar-more"
+          aria-label="更多日历操作"
+          title="更多日历操作"
         >
-          <StatusMessage :error="logoutError" />
-          <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
-            <CirclePause :size="20" aria-hidden="true" />
-            <p>此账号的 AI 功能已暂停，日历和手动编辑仍可使用。</p>
-          </div>
-          <StatusMessage :error="pageError" :success="detailOpen ? '' : pageSuccess"
-            :retry-label="pageError?.retryable || pageError?.code.includes('version_conflict') ? '重新读取' : undefined"
-            @retry="initialize" />
-          <div v-if="planSourceConflicts.open_count" class="status calendar-plan-source-status" role="status">
-            <AlertTriangle :size="20" aria-hidden="true" />
-            <p>
-              当前范围有 {{ planSourceConflicts.open_count }} 个订阅来源变化需要复核；
-              {{ planSourceConflicts.overlap_count
-                ? `${planSourceConflicts.overlap_count} 个来源与计划块重叠。`
-                : '计划内容尚未自动调整。' }}
-            </p>
-          </div>
-        </div>
+          <span class="material-symbols-rounded" aria-hidden="true">more_vert</span>
+        </button>
+        <template #dropdown>
+          <ElDropdownMenu class="calendar-overflow-menu">
+            <ElDropdownItem command="import">
+              <Upload :size="18" aria-hidden="true" />
+              <span>导入课表</span>
+            </ElDropdownItem>
+            <ElDropdownItem command="trash">
+              <Trash2 :size="18" aria-hidden="true" />
+              <span>日历回收站</span>
+            </ElDropdownItem>
+            <ElDropdownItem command="settings">
+              <Settings2 :size="18" aria-hidden="true" />
+              <span>时间与学期</span>
+            </ElDropdownItem>
+            <ElDropdownItem command="refresh" divided>
+              <RefreshCw :size="18" aria-hidden="true" />
+              <span>刷新日历</span>
+            </ElDropdownItem>
+          </ElDropdownMenu>
+        </template>
+      </ElDropdown>
+      <button
+        type="button"
+        class="m3-button m3-button--filled calendar-new-button"
+        aria-label="新建日程"
+        @click="openCreate"
+      >
+        <Plus :size="18" aria-hidden="true" />
+        <span class="calendar-new-label">新建日程</span>
+      </button>
+    </template>
 
-        <div v-if="view === 'week'" class="calendar-week-view">
+    <div class="calendar-page">
+      <div class="calendar-toolbar">
+        <div class="calendar-title-block">
+          <h2 tabindex="-1">{{ title }}</h2>
+          <p v-if="contextLabel">{{ contextLabel }}</p>
+        </div>
+        <div class="calendar-toolbar-controls">
+          <div class="calendar-date-controls" aria-label="日期导航">
+            <button
+              type="button"
+              class="m3-icon-button"
+              aria-label="上一段日期"
+              title="上一段日期"
+              @click="moveRange(-1)"
+            >
+              <ChevronLeft :size="20" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="m3-button m3-button--tonal calendar-today"
+              @click="goToday"
+            >
+              今天
+            </button>
+            <button
+              type="button"
+              class="m3-icon-button"
+              aria-label="下一段日期"
+              title="下一段日期"
+              @click="moveRange(1)"
+            >
+              <ChevronRight :size="20" aria-hidden="true" />
+            </button>
+          </div>
+          <div class="m3-segmented calendar-view-switch" role="tablist" aria-label="日历视图">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="view === 'week'"
+              :class="{ selected: view === 'week' }"
+              @click="setView('week')"
+            >
+              周
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="view === 'month'"
+              :class="{ selected: view === 'month' }"
+              @click="setView('month')"
+            >
+              月
+            </button>
+          </div>
+          <label class="calendar-jump" title="跳到指定日期">
+            <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+            <input
+              v-model="jumpDate"
+              type="date"
+              aria-label="跳转日期"
+              @input="applyJumpDate"
+              @blur="restoreJumpDate"
+            >
+          </label>
+        </div>
+      </div>
+
+      <div class="calendar-filter-row" aria-label="显示内容">
+        <span class="calendar-filter-label">显示</span>
+        <button
+          v-for="filter in filters"
+          :key="filter.key"
+          type="button"
+          class="m3-filter-chip"
+          :class="{ selected: filter.value }"
+          :aria-pressed="filter.value"
+          @click="filter.set(!filter.value)"
+        >
+          <span
+            v-if="filter.value"
+            class="material-symbols-rounded"
+            aria-hidden="true"
+          >check</span>
+          {{ filter.label }}
+        </button>
+      </div>
+
+      <div
+        v-if="pageError || pageSuccess || logoutError || identity?.user.ai_access === 'frozen' || planSourceConflicts.open_count"
+        class="calendar-status"
+      >
+        <StatusMessage :error="logoutError" />
+        <div v-if="identity?.user.ai_access === 'frozen'" class="status restriction-status" role="status">
+          <CirclePause :size="20" aria-hidden="true" />
+          <p>此账号的 AI 功能已暂停，日历和手动编辑仍可使用。</p>
+        </div>
+        <StatusMessage :error="pageError" :success="detailOpen ? '' : pageSuccess"
+          :retry-label="pageError?.retryable || pageError?.code.includes('version_conflict') ? '重新读取' : undefined"
+          @retry="initialize" />
+        <div v-if="planSourceConflicts.open_count" class="status calendar-plan-source-status" role="status">
+          <AlertTriangle :size="20" aria-hidden="true" />
+          <p>
+            当前范围有 {{ planSourceConflicts.open_count }} 个订阅来源变化需要复核；
+            {{ planSourceConflicts.overlap_count
+              ? `${planSourceConflicts.overlap_count} 个来源与计划块重叠。`
+              : '计划内容尚未自动调整。' }}
+          </p>
+        </div>
+      </div>
+
+      <div v-if="view === 'week'" class="calendar-week-view">
+        <section v-if="compact" class="mobile-day-view" aria-label="日安排">
+          <div class="mobile-day-strip" role="tablist" aria-label="选择日期">
+            <button
+              v-for="day in boardDays"
+              :key="day.date"
+              type="button"
+              role="tab"
+              :aria-selected="mobileDay === day.date"
+              :class="{ selected: mobileDay === day.date, today: day.isToday }"
+              @click="mobileDay = day.date"
+            >
+              <span>{{ day.weekday.replace('周', '') }}</span>
+              <strong>{{ day.dayNumber }}</strong>
+            </button>
+          </div>
+          <div class="mobile-day-heading">
+            <div>
+              <h3>{{ mobileDayLabel }}</h3>
+              <p>{{ mobileDayItems.length }} 项安排</p>
+            </div>
+          </div>
+          <div v-if="mobileDayItems.length" class="mobile-agenda-list">
+            <button
+              v-for="item in mobileDayItems"
+              :key="item.id"
+              type="button"
+              class="mobile-agenda-item"
+              :data-event-id="item.id"
+              :class="[
+                `kind-${item.kind}`,
+                {
+                  cancelled: ['cancelled', 'source_cancelled', 'skipped'].includes(item.state),
+                  selected: selected?.id === item.id,
+                },
+              ]"
+              @click="selectItem(item)"
+            >
+              <time>{{ item.time ? item.time.slice(0, 5) : '全天' }}</time>
+              <span class="mobile-agenda-bar" aria-hidden="true" />
+              <span class="mobile-agenda-copy">
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.subtitle || (item.kind === 'task' ? '任务截止' : '无地点') }}</small>
+              </span>
+              <AlertTriangle v-if="item.conflict" :size="18" aria-label="存在时间冲突" />
+              <span v-else class="material-symbols-rounded" aria-hidden="true">chevron_right</span>
+            </button>
+          </div>
+          <div v-else class="mobile-day-empty">
+            <CalendarPlus :size="26" aria-hidden="true" />
+            <strong>这一天没有安排</strong>
+            <p>点右上角加号新建日程，或切到月视图查看全月。</p>
+          </div>
+          <section v-if="weekUntimedItems.length" class="calendar-unscheduled mobile-unscheduled" aria-label="本周待安排">
+            <header>
+              <h3>本周待安排</h3>
+              <span>{{ weekUntimedItems.length }} 项</span>
+            </header>
+            <div class="calendar-unscheduled-list">
+              <button
+                v-for="item in weekUntimedItems"
+                :key="item.id"
+                type="button"
+                :data-event-id="item.id"
+                class="calendar-unscheduled-item"
+                @click="selectItem(item)"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">
+                  {{ item.kind === 'task' ? 'task_alt' : 'event' }}
+                </span>
+                <span>
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.subtitle || '未设置时间' }}</small>
+                </span>
+              </button>
+            </div>
+          </section>
+        </section>
+
+        <template v-else>
           <TimetableBoard
             :days="boardDays"
             :items="boardEvents"
@@ -856,47 +1065,50 @@ watch(pageError, value => {
               </button>
             </div>
           </section>
-        </div>
+        </template>
+      </div>
 
-        <CalendarGrid
-          v-else
-          :days="days"
-          :items="visibleItems"
-          :view="view"
-          :month-key="monthKey"
-          :today="today"
-          :selected-id="selected?.id ?? null"
-          :loading="loading && !loaded"
-          @select="selectItem"
-        />
-
-        <div v-if="view === 'month' && loaded && !loading && !visibleItems.length" class="calendar-empty">
-          <CalendarPlus :size="28" aria-hidden="true" />
-          <h2>这段日期还没有安排</h2>
-          <p>可以创建课程、固定安排，或为任务设置截止日期。</p>
-          <button type="button" class="button" @click="openCreate">添加日程</button>
-        </div>
-
-        <button v-if="loaded" type="button" class="calendar-refresh small-icon-button"
-          aria-label="刷新日历" title="刷新日历" :disabled="loading" @click="loadOccurrences">
-          <RefreshCw :size="18" aria-hidden="true" />
-        </button>
-      </section>
-
-      <CalendarOccurrencePanel
-        v-if="selected"
-        :item="selected"
-        :time-zone="settings?.time_zone ?? browserTimeZone"
-        :recurring="selectedSeries?.recurrence.frequency !== 'none'"
-        :series-busy="selectedSeries?.busy ?? true"
-        :success="pageSuccess"
-        @close="closeDetail"
-        @changed="onCalendarChanged"
-        @edit-series="openSeriesEditor($event)"
-        @split-series="openSeriesEditor($event, true)"
-        @open-subscription="openSubscription"
+      <CalendarGrid
+        v-else
+        :days="days"
+        :items="visibleItems"
+        :view="view"
+        :month-key="monthKey"
+        :today="today"
+        :selected-id="selected?.id ?? null"
+        :loading="loading && !loaded"
+        @select="selectItem"
       />
+
+      <div v-if="view === 'month' && loaded && !loading && !visibleItems.length" class="calendar-empty">
+        <CalendarPlus :size="28" aria-hidden="true" />
+        <h2>这段日期还没有安排</h2>
+        <p>可以创建课程、固定安排，或为任务设置截止日期。</p>
+        <button type="button" class="m3-button m3-button--filled" @click="openCreate">
+          新建日程
+        </button>
+      </div>
     </div>
+
+    <div
+      v-if="selected"
+      class="calendar-sheet-scrim"
+      aria-hidden="true"
+      @click="closeDetail"
+    />
+    <CalendarOccurrencePanel
+      v-if="selected"
+      :item="selected"
+      :time-zone="settings?.time_zone ?? browserTimeZone"
+      :recurring="selectedSeries?.recurrence.frequency !== 'none'"
+      :series-busy="selectedSeries?.busy ?? true"
+      :success="pageSuccess"
+      @close="closeDetail"
+      @changed="onCalendarChanged"
+      @edit-series="openSeriesEditor($event)"
+      @split-series="openSeriesEditor($event, true)"
+      @open-subscription="openSubscription"
+    />
 
     <CalendarSettingsDialog
       :open="settingsOpen"
@@ -934,5 +1146,3 @@ watch(pageError, value => {
     />
   </AppShell>
 </template>
-
-

@@ -3552,3 +3552,16 @@ function tools 与长期记忆（ADR-014），S3 阶段再承载日历分钟精�
 - 计算样式验证 link 按钮背景 transparent、文字 primary；新建会话 0 -> 0，发送 0 -> 1。
 - 真实 Chromium 桌面/手机验证，页面错误 0；`pnpm build` 通过。
 - 证据：`tasks/itime/docs/30-逐图修复与交互再审计.md`、`persistent/preview/m3-chat-conversation-2026-10-22.png`、`ui-mobile-ai-draft-2026-10-23.png`、`ui-mobile-calendar-settings-2026-10-23.png`。
+
+## M7-BV：UI 重写（M3）与交互修正
+
+- 登录后主应用 AppShell 重写：桌面 80dp navigation rail + 64dp top app bar，手机 64dp top app bar + 80dp bottom navigation；页面唯一 `h1`，账号入口统一为 M3 菜单。
+- 日历去掉常驻 280dp 管理侧栏：工具栏、筛选、周/月切换重排；桌面周网格、手机日议程、手机 7×6 月网格；详情改为带 scrim 的 modal side sheet，X/scrim/Esc 均可关闭。
+- 任务页：M3 search bar、filter segmented、48dp 复选框热区、任务行/详情层级重排；新建/编辑对话框增加优先级。
+- AI 页：删除重复会话标题栏，顶栏标题随会话变化；空态增加可点击示例；发送按钮改 40dp 圆形 filled icon button；手机抽屉增加关闭按钮。
+- 设置页：删除错误的“返回 AI 对话”，账号/AI 用量/偏好/天气地点改为 M3 卡片。
+- 日程系列对话框：增加关闭按钮、内部滚动与 sticky footer；修复回收站标题被裁切、设置对话框完成按钮被裁切、导入对话框未居中。
+- 真实 Chromium：1440×960、1024×1000、768×1000、390×844 及深色模式，页面错误 0；axe 桌面/手机 8 页 + 日程/任务对话框 0 violations。
+- 交互断言：日历详情 X 关闭 1→0；手机详情 1→0；任务创建优先级=高、编辑回填 3、删除后行数 0；AI 示例点击后输入框写入；账号菜单可到设置。
+- `pnpm build` 通过。
+- 证据：`tasks/itime/docs/31-UI重写-M3与交互修正.md`、`persistent/preview/m3-ui-2026-10-23-*.png`、`m3-ui-2026-10-23-summary.json`。

@@ -653,12 +653,12 @@ function onCandidateUpdated(
 <template>
   <ElDialog
     class="calendar-import-dialog"
+    align-center
     :class="{ 'subscription-mode': importMode === 'subscription' }"
     :model-value="open"
     title="导入日历"
     aria-label="导入日历"
     width="min(980px, calc(100vw - 32px))"
-    top="16px"
     :close-on-click-modal="!pending && !cancelling"
     :close-on-press-escape="!pending && !cancelling"
     :show-close="!pending && !cancelling"

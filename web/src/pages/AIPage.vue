@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CirclePause } from 'lucide-vue-next'
 import ConversationComposer from '../components/ConversationComposer.vue'
-import ConversationHeader from '../components/ConversationHeader.vue'
 import ConversationSidebar from '../components/ConversationSidebar.vue'
 import ConversationViewport from '../components/ConversationViewport.vue'
 import StatusMessage from '../components/StatusMessage.vue'
@@ -84,6 +83,20 @@ const composerDisabled = computed(() => (
   !!selected.value?.archived
   || identity.value?.user.ai_access === 'frozen'
 ))
+const pageTitle = computed(() => selected.value?.title?.trim() || 'AI 助手')
+
+function suggestPrompt(text: string) {
+  composer.value = text
+  void nextTick(() => {
+    document.querySelector<HTMLTextAreaElement>('#conversation-message')?.focus()
+  })
+}
+
+function onConversationCommand(command: string | number | object) {
+  if (!selected.value) return
+  if (command === 'rename') openRename(selected.value)
+  else if (command === 'archive') void toggleArchive(selected.value)
+}
 
 watch(authError, value => {
   if (value?.code === 'unauthenticated') void router.replace('/login')
@@ -692,10 +705,35 @@ function invalidAttachment(message: string) {
     current="ai"
     has-secondary
     secondary-label="会话"
-    title="AI 对话"
+    :title="pageTitle"
     :pending-logout="pendingLogout"
     @logout="logout"
   >
+    <template #actions>
+      <ElDropdown
+        v-if="selected"
+        trigger="click"
+        placement="bottom-end"
+        @command="onConversationCommand"
+      >
+        <button type="button" class="m3-icon-button" aria-label="会话操作" title="会话操作">
+          <span class="material-symbols-rounded" aria-hidden="true">more_vert</span>
+        </button>
+        <template #dropdown>
+          <ElDropdownMenu class="ai-conversation-menu">
+            <ElDropdownItem command="rename">
+              <Pencil :size="18" aria-hidden="true" />
+              <span>重命名</span>
+            </ElDropdownItem>
+            <ElDropdownItem command="archive" :disabled="!!selected.active_job">
+              <ArchiveRestore v-if="selected.archived" :size="18" aria-hidden="true" />
+              <Archive v-else :size="18" aria-hidden="true" />
+              <span>{{ selected.archived ? '重新打开' : '归档' }}</span>
+            </ElDropdownItem>
+          </ElDropdownMenu>
+        </template>
+      </ElDropdown>
+    </template>
     <template #secondary>
       <ConversationSidebar
         :conversations="conversations"
@@ -735,11 +773,6 @@ function invalidAttachment(message: string) {
       class="ai-main"
       :style="{ '--visual-viewport-height': `${visualHeight}px` }"
     >
-      <ConversationHeader
-        :conversation="selected"
-        @rename="openRename"
-        @archive="toggleArchive"
-      />
       <div
         v-if="error || success || logoutError || identity?.user.ai_access === 'frozen'"
         class="ai-workspace-status"
@@ -763,6 +796,7 @@ function invalidAttachment(message: string) {
         :loading-older="loadingOlder"
         @load-older="loadOlder"
         @retry-message="retryMessage"
+        @suggest="suggestPrompt"
       />
       <ConversationComposer
         v-model="composer"

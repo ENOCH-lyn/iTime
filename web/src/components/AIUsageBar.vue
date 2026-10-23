@@ -55,7 +55,7 @@ onMounted(async () => {
 <style scoped>
 .ai-usage {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 .ai-usage-heading {
   display: flex;
@@ -63,20 +63,25 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 12px;
 }
+.ai-usage-heading strong {
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+}
 .ai-usage-heading span {
-  color: var(--muted);
-  font-size: .86rem;
+  color: var(--m3-on-surface-variant);
+  font: 400 13px/18px var(--font);
+  font-variant-numeric: tabular-nums;
 }
 .ai-usage-track {
   height: 8px;
   overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-soft);
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-high);
 }
 .ai-usage-track span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--primary);
+  background: var(--m3-primary);
 }
 </style>
