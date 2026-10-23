@@ -114,7 +114,7 @@ function submit() {
     class="tt-dialog"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <form class="tt-form" @submit.prevent="submit">
+    <form id="tt-form" class="tt-form" @submit.prevent="submit">
       <label class="tt-field">
         <span>要做什么</span>
         <input
@@ -187,15 +187,18 @@ function submit() {
 
       <p v-if="error" class="tt-error" role="alert">{{ error }}</p>
 
+    </form>
+
+    <template #footer>
       <div class="tt-actions">
         <button type="button" class="tt-button ghost" :disabled="busy" @click="close">
           取消
         </button>
-        <button type="submit" class="tt-button primary" :disabled="!valid || busy">
+        <button type="submit" form="tt-form" class="tt-button primary" :disabled="!valid || busy">
           {{ busy ? '保存中…' : (mode === 'edit' ? '保存修改' : '创建任务') }}
         </button>
       </div>
-    </form>
+    </template>
   </ElDialog>
 </template>
 
@@ -411,5 +414,27 @@ function submit() {
   .tt-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+:global(.tt-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+  padding: 0 24px 24px;
+}
+:global(.tt-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+:global(.tt-dialog.el-dialog) {
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+}
+.tt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--m3-outline-variant);
 }
 </style>

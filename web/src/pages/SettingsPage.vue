@@ -168,6 +168,7 @@ onMounted(async () => {
                   maxlength="120"
                   placeholder="例如 上海"
                   autocomplete="address-level2"
+                  @input="locationSaved = ''; locationError = null"
                 >
                 <p class="st-hint">AI 查天气时使用这个地点。</p>
               </div>

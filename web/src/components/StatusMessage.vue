@@ -13,6 +13,7 @@ defineEmits<{ retry: [] }>()
     :closable="false"
     show-icon
     role="alert"
+    tabindex="-1"
   >
     <template #title>{{ error.message }}</template>
     <ElButton v-if="retryLabel" link type="primary" @click="$emit('retry')">
@@ -27,5 +28,6 @@ defineEmits<{ retry: [] }>()
     show-icon
     role="status"
     :title="success"
+    tabindex="-1"
   />
 </template>

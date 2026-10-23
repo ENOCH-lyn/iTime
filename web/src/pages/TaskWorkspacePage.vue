@@ -10,6 +10,8 @@ import {
   Trash2,
   X,
 } from 'lucide-vue-next'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import TaskTrashDialog from '../components/TaskTrashDialog.vue'
 import QuickTaskDialog, {
   type TaskFormValues,
   type TaskRepeat,
@@ -78,6 +80,9 @@ const taskActionBusy = ref(false)
 const dialogOpen = ref(false)
 const dialogBusy = ref(false)
 const dialogError = ref('')
+const removeOpen = ref(false)
+const removeTarget = ref<TaskSummary | null>(null)
+const trashOpen = ref(false)
 const editingTask = ref<TaskSummary | null>(null)
 const taskInitial = ref<{
   title: string
@@ -123,6 +128,17 @@ const groups = computed(() => {
     if (leftDue !== rightDue) return leftDue < rightDue ? -1 : 1
     return right.priority - left.priority
   })
+  if (filter.value === 'today') {
+    const overdue = items.filter(task => {
+      const due = task.schedule.due_date
+      return due !== null && due < today.value
+    })
+    const todayItems = items.filter(task => task.schedule.due_date === today.value)
+    return [
+      { key: 'overdue', title: '已逾期', items: overdue },
+      { key: 'today', title: '今天', items: todayItems },
+    ].filter(group => group.items.length > 0)
+  }
   if (filter.value !== 'all') {
     return [{ key: filter.value, title: '', items }]
   }
@@ -218,7 +234,7 @@ function taskMeta(task: TaskSummary) {
   const parts: string[] = []
   if (task.estimated_minutes) parts.push(`${task.estimated_minutes} 分钟`)
   if (task.schedule.recurrence.frequency !== 'none') parts.push('重复')
-  if (task.priority > 0) {
+  if (task.priority > 0 && task.priority !== 2) {
     parts.push(['', '低优先', '中优先', '高优先'][task.priority] ?? '')
   }
   return parts.join(' · ')
@@ -404,6 +420,7 @@ async function submitTask(values: TaskFormValues) {
       showNotice('任务已创建')
     }
     dialogOpen.value = false
+    if (!editingTask.value && filter.value === 'completed') filter.value = 'all'
     await loadTasks()
   } catch (reason) {
     dialogError.value = failure(reason).message
@@ -438,6 +455,7 @@ async function quickAdd() {
       recurrence: emptyRecurrence(),
     })
     quickTitle.value = ''
+    if (filter.value === 'completed') filter.value = 'all'
     await loadTasks()
     showNotice('已添加到今天')
   } catch (reason) {
@@ -473,8 +491,24 @@ async function postponeTask(task: TaskSummary) {
   }
 }
 
-async function removeTask(task: TaskSummary) {
-  if (!window.confirm(`将「${task.title}」移入回收站？`)) return
+function onTaskCommand(command: string | number | object) {
+  if (command === 'trash') trashOpen.value = true
+}
+
+async function onTrashChanged() {
+  if (filter.value === 'completed') filter.value = 'all'
+  await loadTasks()
+}
+
+function askRemoveTask(task: TaskSummary) {
+  removeTarget.value = task
+  removeOpen.value = true
+}
+
+async function confirmRemoveTask() {
+  const task = removeTarget.value
+  if (!task) return
+  removeOpen.value = false
   taskActionBusy.value = true
   try {
     await deleteTask(task, crypto.randomUUID())
@@ -486,6 +520,7 @@ async function removeTask(task: TaskSummary) {
     error.value = failure(reason)
   } finally {
     taskActionBusy.value = false
+    removeTarget.value = null
   }
 }
 
@@ -500,6 +535,19 @@ const { pendingLogout, logout } = useAppShell()
     @logout="logout"
   >
     <template #actions>
+      <ElDropdown trigger="click" placement="bottom-end" @command="onTaskCommand">
+        <button type="button" class="m3-icon-button" aria-label="更多任务操作" title="更多任务操作">
+          <span class="material-symbols-rounded" aria-hidden="true">more_vert</span>
+        </button>
+        <template #dropdown>
+          <ElDropdownMenu class="tw-overflow-menu">
+            <ElDropdownItem command="trash">
+              <Trash2 :size="18" aria-hidden="true" />
+              <span>任务回收站</span>
+            </ElDropdownItem>
+          </ElDropdownMenu>
+        </template>
+      </ElDropdown>
       <button type="button" class="m3-button m3-button--filled tw-add" aria-label="添加任务" @click="openCreate()">
         <Plus :size="18" aria-hidden="true" />
         <span class="tw-add-label">添加任务</span>
@@ -581,19 +629,20 @@ const { pendingLogout, logout } = useAppShell()
               :key="task.id"
               class="tw-task"
               :class="{ done: task.status === 'completed', overdue: isOverdue(task) }"
+              @click="openTask(task)"
             >
               <button
                 type="button"
                 class="tw-check"
                 :class="{ checked: task.status === 'completed' }"
                 :aria-label="task.status === 'completed' ? `重新打开：${task.title}` : `完成任务：${task.title}`"
-                @click="completeTask(task)"
+                @click.stop="completeTask(task)"
               >
                 <span class="tw-check-mark">
                   <Check v-if="task.status === 'completed'" :size="16" />
                 </span>
               </button>
-              <button type="button" class="tw-task-open" @click="openTask(task)">
+              <button type="button" class="tw-task-open" @click.stop="openTask(task)">
                 <span class="tw-task-title">{{ task.title }}</span>
                 <span v-if="taskMeta(task)" class="tw-task-meta">{{ taskMeta(task) }}</span>
               </button>
@@ -607,9 +656,29 @@ const { pendingLogout, logout } = useAppShell()
 
           <div v-if="!filteredTasks.length" class="tw-empty">
             <span class="material-symbols-rounded" aria-hidden="true">task_alt</span>
-            <strong>{{ filter === 'completed' ? '还没有完成的任务' : '这里没有任务' }}</strong>
-            <p>{{ filter === 'completed' ? '完成一个任务后会出现在这里。' : '在上方输入，或让 AI 帮你安排。' }}</p>
-            <button v-if="filter !== 'completed'" type="button" class="m3-button m3-button--tonal" @click="openCreate()">
+            <strong>
+              {{ filter === 'completed'
+                ? '还没有完成的任务'
+                : search.trim()
+                  ? '没有匹配的任务'
+                  : '这里没有任务' }}
+            </strong>
+            <p>
+              {{ filter === 'completed'
+                ? '完成一个任务后会出现在这里。'
+                : search.trim()
+                  ? '换个关键词，或者清空搜索。'
+                  : '在上方输入，或让 AI 帮你安排。' }}
+            </p>
+            <button
+              v-if="search.trim()"
+              type="button"
+              class="m3-button m3-button--text"
+              @click="search = ''"
+            >
+              清空搜索
+            </button>
+            <button v-else-if="filter !== 'completed'" type="button" class="m3-button m3-button--tonal" @click="openCreate()">
               添加任务
             </button>
           </div>
@@ -650,6 +719,10 @@ const { pendingLogout, logout } = useAppShell()
                 <dt>预计用时</dt>
                 <dd>{{ selectedTask.estimated_minutes }} 分钟</dd>
               </div>
+              <div v-if="selectedTask.priority && selectedTask.priority !== 2">
+                <dt>优先级</dt>
+                <dd>{{ selectedTask.priority === 3 ? '高' : '低' }}</dd>
+              </div>
             </dl>
             <div class="tw-detail-actions">
               <button
@@ -672,7 +745,7 @@ const { pendingLogout, logout } = useAppShell()
               >
                 推迟到明天
               </button>
-              <button type="button" class="m3-button m3-button--text tw-detail-delete" :disabled="taskActionBusy" @click="removeTask(selectedTask)">
+              <button type="button" class="m3-button m3-button--text tw-detail-delete" :disabled="taskActionBusy" @click="askRemoveTask(selectedTask)">
                 <Trash2 :size="16" aria-hidden="true" />
                 删除任务
               </button>
@@ -680,6 +753,22 @@ const { pendingLogout, logout } = useAppShell()
           </div>
         </div>
       </ElDrawer>
+
+      <ConfirmDialog
+        v-model:open="removeOpen"
+        title="删除任务？"
+        :message="removeTarget ? `将「${removeTarget.title}」移入回收站，30 天内可以恢复。` : ''"
+        confirm-label="移到回收站"
+        tone="danger"
+        :busy="taskActionBusy"
+        @confirm="confirmRemoveTask"
+      />
+
+      <TaskTrashDialog
+        :open="trashOpen"
+        @close="trashOpen = false"
+        @changed="onTrashChanged"
+      />
 
       <QuickTaskDialog
         v-model="dialogOpen"
@@ -851,6 +940,7 @@ const { pendingLogout, logout } = useAppShell()
 
 .tw-task {
   display: flex;
+  cursor: pointer;
   align-items: center;
   gap: 12px;
   min-height: 72px;
@@ -1168,5 +1258,29 @@ const { pendingLogout, logout } = useAppShell()
   .tw-add-label {
     display: inline;
   }
+}
+</style>
+
+<style>
+.tw-overflow-menu {
+  min-width: 200px;
+  padding: 8px 0;
+  border-radius: var(--m3-shape-xs);
+  background: var(--m3-surface-container);
+  box-shadow: var(--m3-elevation-2);
+}
+.tw-overflow-menu .el-dropdown-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 16px;
+  color: var(--m3-on-surface);
+  font: 500 14px/20px var(--font);
+}
+.tw-overflow-menu .el-dropdown-menu__item:not(.is-disabled):hover,
+.tw-overflow-menu .el-dropdown-menu__item:not(.is-disabled):focus {
+  background: color-mix(in srgb, var(--m3-on-surface) 8%, transparent);
+  color: var(--m3-on-surface);
 }
 </style>

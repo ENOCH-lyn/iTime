@@ -13,7 +13,10 @@ const props = defineProps<{
   loading: boolean
 }>()
 
-const emit = defineEmits<{ select: [item: CalendarDisplayItem] }>()
+const emit = defineEmits<{
+  select: [item: CalendarDisplayItem]
+  selectDay: [day: string]
+}>()
 const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
 function parseDate(value: string) {
@@ -38,6 +41,12 @@ function shortDate(value: string) {
 
 function itemsFor(day: string) {
   return props.items.filter(item => item.date === day)
+}
+
+function openDay(event: MouseEvent, day: string) {
+  if (props.view !== 'month') return
+  if ((event.target as HTMLElement | null)?.closest('.calendar-event')) return
+  emit('selectDay', day)
 }
 
 function timeLabel(item: CalendarDisplayItem) {
@@ -69,6 +78,8 @@ const visibleDays = computed(() => props.days.filter(day => {
         v-for="day in days"
         :key="day"
         class="calendar-day"
+        :data-date="day"
+        @click="openDay($event, day)"
         :class="{
           today: day === today,
           outside: view === 'month' && !day.startsWith(monthKey),

@@ -147,12 +147,14 @@ function removeAttachment() {
           </ElTooltip>
         </ElUpload>
         <span v-if="countVisible">{{ characterCount }}/12000</span>
+        <span v-if="!active" class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
       </div>
       <ElButton
         v-if="active"
         type="primary"
         class="composer-send"
         aria-label="取消生成"
+        title="停止生成"
         @click="emit('cancel')"
       >
         <Square :size="17" aria-hidden="true" />
@@ -162,6 +164,7 @@ function removeAttachment() {
         :loading="pending"
         :disabled="pending || disabled || !canSubmit"
         aria-label="发送消息"
+        title="发送消息"
         @click="submit">
         <SendHorizontal :size="18" aria-hidden="true" />
         <span class="composer-send-label">{{ pending ? '正在发送…' : '发送' }}</span>

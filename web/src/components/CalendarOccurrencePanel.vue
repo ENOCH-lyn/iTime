@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-vue-next'
+import ConfirmDialog from './ConfirmDialog.vue'
 import StatusMessage from './StatusMessage.vue'
 import { ApiError, failure, localFailure, type Failure } from '../lib/api'
 import { identity } from '../lib/auth'
@@ -75,6 +76,8 @@ const override = reactive({ name: '', description: '', location: '', busy: true 
 const makeup = reactive({ date: '', startsAt: '', endsAt: '', endDayOffset: 0 as 0 | 1 })
 const taskMove = reactive({ date: '', time: '' })
 const taskMakeup = reactive({ date: '', time: '' })
+const panel = ref<HTMLElement | null>(null)
+const trashOpen = ref(false)
 const taskDetail = ref<TaskDetail | null>(null)
 const localCompletedStepIds = ref<string[]>([])
 let taskDetailRevision = 0
@@ -92,7 +95,16 @@ const canCreateTaskMakeup = computed(() => (
   && taskDetail.value?.schedule.recurrence.frequency !== 'none'
 ))
 
-watch(() => props.item?.id, () => {
+watch(action, async value => {
+  if (value === 'none') return
+  await nextTick()
+  document.querySelector<HTMLElement>('.occurrence-action-form')
+    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
+
+watch(() => props.item?.id, async () => {
+  await nextTick()
+  panel.value?.scrollTo({ top: 0, behavior: 'auto' })
   action.value = 'none'
   error.value = null
   operation.value = null
@@ -366,16 +378,16 @@ async function resetSubscriptionOccurrence() {
   }
 }
 
+function askTrashCurrentSeries() {
+  const current = occurrence.value
+  if (!current?.series_id || current.series_version === null || pending.value) return
+  trashOpen.value = true
+}
+
 async function trashCurrentSeries() {
   const current = occurrence.value
-  if (
-    !current?.series_id
-    || current.series_version === null
-    || pending.value
-    || !window.confirm(
-      '删除后安排会立即从普通日历隐藏，并在回收站保留 30 天。已有计划和复盘历史不会改写。',
-    )
-  ) return
+  if (!current?.series_id || current.series_version === null || pending.value) return
+  trashOpen.value = false
   error.value = null
   const fingerprint = JSON.stringify({
     action: 'trash-series',
@@ -710,7 +722,7 @@ async function saveTaskMakeup() {
 </script>
 
 <template>
-  <aside class="occurrence-panel" :class="{ empty: !item }" aria-label="安排详情">
+  <aside ref="panel" class="occurrence-panel" :class="{ empty: !item }" aria-label="安排详情">
     <template v-if="item">
       <header class="occurrence-header">
         <div class="occurrence-heading">
@@ -885,14 +897,14 @@ async function saveTaskMakeup() {
             </div>
             <div class="series-actions">
               <button type="button" class="text-button" :disabled="pending" @click="emit('editSeries', occurrence)">
-                编辑整个系列
+                {{ recurring ? '编辑整个系列' : '编辑日程' }}
               </button>
               <button v-if="canSplit" type="button" class="text-button" :disabled="pending"
                 @click="emit('splitSeries', occurrence)">
                 修改本次及以后
               </button>
               <button type="button" class="text-button danger-text" :disabled="pending"
-                @click="trashCurrentSeries">
+                @click="askTrashCurrentSeries">
                 <Trash2 :size="16" aria-hidden="true" />移到回收站
               </button>
             </div>
@@ -1051,4 +1063,14 @@ async function saveTaskMakeup() {
       <p>查看时间、冲突和单次修改操作。</p>
     </div>
   </aside>
+
+  <ConfirmDialog
+    v-model:open="trashOpen"
+    title="删除这组安排？"
+    message="安排会立即从普通日历隐藏，并在回收站保留 30 天。已有计划和复盘历史不会改写。"
+    confirm-label="移到回收站"
+    tone="danger"
+    :busy="pending"
+    @confirm="trashCurrentSeries"
+  />
 </template>

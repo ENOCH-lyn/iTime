@@ -22,6 +22,7 @@ const props = defineProps<{
   terms: Term[]
   timeZone: string
   initialDate: string
+  initialTime?: { startsAt: string; endsAt: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -273,8 +274,18 @@ watch(() => props.open, async open => {
   values.location = series?.location ?? ''
   values.busy = series?.busy ?? true
   values.startDate = startDate
-  values.startsAt = shortTime(series?.starts_at ?? '09:00')
-  values.endsAt = shortTime(series?.ends_at ?? '10:00')
+  values.startsAt = shortTime(
+    series?.starts_at
+    ?? props.splitOccurrence?.local_start_time
+    ?? props.initialTime?.startsAt
+    ?? '09:00',
+  )
+  values.endsAt = shortTime(
+    series?.ends_at
+    ?? props.splitOccurrence?.local_end_time
+    ?? props.initialTime?.endsAt
+    ?? '10:00',
+  )
   values.endDayOffset = series?.end_day_offset ?? 0
   values.timeMode = series?.start_period_number ? 'period' : 'clock'
   values.startPeriod = series?.start_period_number ?? 1
@@ -582,6 +593,9 @@ async function save() {
             <option v-if="values.kind === 'fixed'" value="">不关联学期</option>
             <option v-for="term in terms" :key="term.id" :value="term.id">{{ term.name }}</option>
           </select>
+          <p v-if="values.kind === 'course' && !terms.length" class="field-hint">
+            还没有学期。可以先把类型改为固定安排，或去“时间与学期”创建学期。
+          </p>
         </div>
         <div class="field span-two">
           <label for="calendar-series-description">说明 <span class="muted">可选</span></label>

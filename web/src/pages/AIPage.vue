@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CirclePause } from 'lucide-vue-next'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ConversationComposer from '../components/ConversationComposer.vue'
 import ConversationSidebar from '../components/ConversationSidebar.vue'
 import ConversationViewport from '../components/ConversationViewport.vue'
@@ -61,6 +62,9 @@ const renameTarget = ref<Conversation | null>(null)
 const renameTitle = ref('')
 const renamePending = ref(false)
 const renameError = ref('')
+const archiveOpen = ref(false)
+const archiveTarget = ref<Conversation | null>(null)
+const archiveBusy = ref(false)
 const visualHeight = ref(window.visualViewport?.height ?? window.innerHeight)
 const viewport = ref<{
   scrollToLatest: (force?: boolean) => Promise<void>
@@ -71,6 +75,7 @@ let eventSource: EventSource | null = null
 let eventGeneration = 0
 let lastEventSequence = 0
 let recoveryTimer = 0
+let successTimer = 0
 let recoveryDelay = 1000
 let createOperation = ''
 let createPromise: Promise<Conversation | null> | null = null
@@ -95,8 +100,16 @@ function suggestPrompt(text: string) {
 function onConversationCommand(command: string | number | object) {
   if (!selected.value) return
   if (command === 'rename') openRename(selected.value)
-  else if (command === 'archive') void toggleArchive(selected.value)
+  else if (command === 'archive') askToggleArchive(selected.value)
 }
+
+watch(success, value => {
+  window.clearTimeout(successTimer)
+  if (!value) return
+  successTimer = window.setTimeout(() => {
+    success.value = ''
+  }, 6000)
+})
 
 watch(authError, value => {
   if (value?.code === 'unauthenticated') void router.replace('/login')
@@ -141,6 +154,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleComposerKeydown, true)
   window.removeEventListener('focus', recoverOnFocus)
   document.removeEventListener('visibilitychange', recoverOnFocus)
+  window.clearTimeout(successTimer)
 })
 
 function updateVisualHeight() {
@@ -488,9 +502,17 @@ async function saveRename() {
   }
 }
 
-async function toggleArchive(conversation: Conversation) {
+function askToggleArchive(conversation: Conversation) {
+  archiveTarget.value = conversation
+  archiveOpen.value = true
+}
+
+async function toggleArchive() {
+  const conversation = archiveTarget.value
+  if (!conversation) return
+  archiveOpen.value = false
+  archiveBusy.value = true
   const action = conversation.archived ? '重新打开' : '归档'
-  if (!window.confirm(`${action}“${conversation.title}”？`)) return
   const fingerprint = `${conversation.id}:${conversation.version}:${action}`
   updateOperation = updateOperation?.fingerprint === fingerprint
     ? updateOperation
@@ -516,6 +538,9 @@ async function toggleArchive(conversation: Conversation) {
     if (error.value.code === 'conversation_version_conflict') {
       await loadConversationList()
     }
+  } finally {
+    archiveBusy.value = false
+    archiveTarget.value = null
   }
 }
 
@@ -748,7 +773,7 @@ function invalidAttachment(message: string) {
         @archived-view="switchArchived"
         @load-more="loadConversationList(true)"
         @rename="openRename"
-        @archive="toggleArchive"
+        @archive="askToggleArchive"
       />
     </template>
     <template #drawer-secondary="{ close }">
@@ -765,7 +790,7 @@ function invalidAttachment(message: string) {
         @archived-view="switchArchived"
         @load-more="loadConversationList(true)"
         @rename="(v) => { openRename(v); close() }"
-        @archive="(v) => { toggleArchive(v); close() }"
+        @archive="(v) => { askToggleArchive(v); close() }"
       />
     </template>
 
@@ -811,6 +836,19 @@ function invalidAttachment(message: string) {
         @invalid-attachment="invalidAttachment"
       />
     </div>
+
+    <ConfirmDialog
+      v-model:open="archiveOpen"
+      :title="archiveTarget?.archived ? '重新打开会话？' : '归档会话？'"
+      :message="archiveTarget
+        ? archiveTarget.archived
+          ? `“${archiveTarget.title}”会回到进行中列表。`
+          : `“${archiveTarget.title}”会从进行中列表移到已归档，可随时重新打开。`
+        : ''"
+      :confirm-label="archiveTarget?.archived ? '重新打开' : '归档'"
+      :busy="archiveBusy"
+      @confirm="toggleArchive"
+    />
 
     <ElDialog
       v-model="renameOpen"
