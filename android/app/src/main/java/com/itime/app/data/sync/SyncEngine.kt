@@ -178,7 +178,7 @@ class SyncEngine(
                         labels = payload.labels,
                     ),
                 )
-                applyTask(task)
+                applyTask(task, force = true)
             }
             Intent.TASK_COMPLETE -> {
                 val payload = json.decodeFromString(TaskCompletePayload.serializer(), op.payloadJson)
@@ -190,7 +190,7 @@ class SyncEngine(
                         completed = payload.completed,
                     ),
                 )
-                applyTask(task)
+                applyTask(task, force = true)
             }
             Intent.TASK_OCCURRENCE -> {
                 val payload = json.decodeFromString(TaskOccurrencePayload.serializer(), op.payloadJson)
@@ -206,7 +206,7 @@ class SyncEngine(
                         completed_step_ids = payload.completedStepIds,
                     ),
                 )
-                applyTask(task)
+                applyTask(task, force = true)
                 occurrence?.let {
                     if (payload.status == "completed") {
                         db.occurrenceDao().upsert(
@@ -236,12 +236,12 @@ class SyncEngine(
                         TaskArchiveBody(op.operationId, version, archived = false),
                     )
                 }
-                applyTask(task)
+                applyTask(task, force = true)
             }
             Intent.TASK_SCHEDULE -> {
                 val payload = json.decodeFromString(TaskSchedulePayload.serializer(), op.payloadJson)
                 val task = api.putSchedule(op.entityId, payload.schedule.toUpdateBody(op.operationId, currentTaskVersion(op.entityId)))
-                applyTask(task)
+                applyTask(task, force = true)
             }
             Intent.SERIES_CREATE -> executeSeriesCreate(op)
             Intent.SERIES_UPDATE -> {
@@ -268,7 +268,7 @@ class SyncEngine(
                         recurrence = payload.recurrence,
                     ),
                 )
-                applySeries(series)
+                applySeries(series, force = true)
             }
             Intent.SERIES_DELETE -> {
                 api.deleteSeries(
@@ -558,7 +558,7 @@ class SyncEngine(
         when (entity.entity_type) {
             "task" -> {
                 val task = json.decodeFromJsonElement(TaskDto.serializer(), data)
-                applyTask(task)
+                applyTask(task, force = false)
             }
             "project" -> {
                 val project = json.decodeFromJsonElement(ProjectDto.serializer(), data)
@@ -592,7 +592,19 @@ class SyncEngine(
         }
     }
 
-    private suspend fun applyTask(task: TaskDto) {
+    private suspend fun hasPendingOps(entityId: String): Boolean =
+        db.outboxDao().forEntity(entityId).any {
+            it.state == "pending" || it.state == "conflict"
+        }
+
+    /**
+     * Applies a server projection.  While a local write for the same entity is
+     * still queued (or waiting for conflict resolution) the local row keeps the
+     * user's values; otherwise an incoming pull would silently revert an
+     * unsynced edit.
+     */
+    private suspend fun applyTask(task: TaskDto, force: Boolean = false) {
+        if (!force && hasPendingOps(task.id)) return
         db.withTransaction { applyTaskInTransaction(task) }
     }
 
@@ -601,7 +613,8 @@ class SyncEngine(
         db.stepDao().upsertAll(task.steps.map { it.toEntity(task.id) })
     }
 
-    private suspend fun applySeries(series: SeriesDto) {
+    private suspend fun applySeries(series: SeriesDto, force: Boolean = false) {
+        if (!force && hasPendingOps(series.id)) return
         db.seriesDao().upsert(series.toEntity())
     }
 
@@ -642,7 +655,17 @@ class SyncEngine(
         } else {
             val server = runCatching { api.syncEntity(op.entityType, op.entityId) }.getOrNull()
             db.outboxDao().delete(operationId)
-            server?.let { applyEntity(it) }
+            server?.let { entity ->
+                when (entity.entity_type) {
+                    "task" -> entity.data?.let {
+                        applyTask(json.decodeFromJsonElement(TaskDto.serializer(), it), force = true)
+                    }
+                    "calendar_series" -> entity.data?.let {
+                        applySeries(json.decodeFromJsonElement(SeriesDto.serializer(), it), force = true)
+                    }
+                    else -> applyEntity(entity)
+                }
+            }
         }
         refreshPendingCounts()
         syncNow("resolve-conflict")

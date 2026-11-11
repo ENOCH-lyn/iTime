@@ -26,7 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -380,11 +379,10 @@ private fun AgendaRow(item: AgendaItem, onComplete: () -> Unit) {
                     )
                 }
                 if (item.sourceKind == "task") {
-                    LinearProgressIndicator(
-                        progress = { 0f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 6.dp, end = 40.dp),
+                    Text(
+                        "任务",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

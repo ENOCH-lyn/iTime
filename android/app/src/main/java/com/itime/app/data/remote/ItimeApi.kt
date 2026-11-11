@@ -190,6 +190,30 @@ class ItimeApi(
     suspend fun syncEntity(entityType: String, entityId: String): SyncEntityDto =
         get("/api/v1/sync/entities/$entityType/$entityId")
 
+    // -------------------------------------------------------------- AI 对话
+
+    suspend fun getAiConversations(limit: Int = 20): AiConversationListDto = get(
+        "/api/v1/ai/conversations",
+        query = mapOf("limit" to limit.toString()),
+    )
+
+    suspend fun createAiConversation(body: AiConversationCreateBody): AiConversationEnvelope =
+        post("/api/v1/ai/conversations", body, AiConversationEnvelope.serializer())
+
+    suspend fun aiMessages(
+        conversationId: String,
+        limit: Int = 100,
+    ): AiMessageListDto = get(
+        "/api/v1/ai/conversations/$conversationId/messages",
+        query = mapOf("limit" to limit.toString()),
+    )
+
+    suspend fun sendAiMessage(
+        conversationId: String,
+        body: AiMessageCreateBody,
+    ): AiMessageEnvelope =
+        post("/api/v1/ai/conversations/$conversationId/messages", body, AiMessageEnvelope.serializer())
+
     // ------------------------------------------------------------ plumbing
 
     private suspend fun extractCookie(setCookie: String): String? {
