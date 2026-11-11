@@ -170,7 +170,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 ) {
                     items(visible, key = { it.id }) { task ->
                         TaskRow(

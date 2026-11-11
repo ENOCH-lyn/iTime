@@ -240,8 +240,10 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                    Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 88.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 ) {
                     items(dayItems, key = { it.id }) { item ->
                         CalendarItemRow(item) { detail = item }
