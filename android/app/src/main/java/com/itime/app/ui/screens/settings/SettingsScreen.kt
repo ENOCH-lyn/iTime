@@ -60,6 +60,7 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
     var showLogout by remember { mutableStateOf(false) }
     var resolving by remember { mutableStateOf<OutboxEntity?>(null) }
     var showZonePicker by remember { mutableStateOf(false) }
+    var serverUrlError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -216,10 +217,24 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
             )
+            serverUrlError?.let { message ->
+                Text(
+                    message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
             TextButton(
                 onClick = {
+                    val normalized = com.itime.app.domain.BaseUrl.normalize(serverUrl)
+                    if (normalized == null) {
+                        serverUrlError = "请输入 http(s)://主机:端口 形式的地址。"
+                        return@TextButton
+                    }
+                    serverUrlError = null
                     scope.launch {
-                        container.auth.updateBaseUrl(serverUrl.trim())
+                        container.auth.updateBaseUrl(normalized)
                     }
                 },
                 modifier = Modifier.padding(horizontal = 8.dp),
