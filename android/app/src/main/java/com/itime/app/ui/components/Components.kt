@@ -17,6 +17,8 @@ import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +86,22 @@ fun EmptyState(
             Spacer(Modifier.height(12.dp))
             TextButton(onClick = onAction) { Text(actionLabel) }
         }
+    }
+}
+
+@Composable
+fun OfflineBanner(modifier: Modifier = Modifier) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(
+            "当前离线，改动会保存在手机上，联网后自动同步。",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp),
+        )
     }
 }
 

@@ -63,6 +63,7 @@ import com.itime.app.data.SyncState
 import com.itime.app.domain.Agenda
 import com.itime.app.domain.AgendaItem
 import com.itime.app.ui.components.EmptyState
+import com.itime.app.ui.components.OfflineBanner
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -241,6 +242,11 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     message = "点右下角新建日程，或从任务页添加任务。",
                 )
             } else {
+                if (syncState.phase == SyncPhase.Offline) {
+                    OfflineBanner(
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
                 PullToRefreshBox(
                     isRefreshing = syncState.phase == SyncPhase.Connecting ||
                         syncState.phase == SyncPhase.Syncing,

@@ -55,6 +55,7 @@ import com.itime.app.data.local.TaskEntity
 import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
 import com.itime.app.ui.components.EmptyState
+import com.itime.app.ui.components.OfflineBanner
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -170,6 +171,11 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                     },
                 )
             } else {
+                if (syncState.phase == SyncPhase.Offline) {
+                    OfflineBanner(
+                        Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
                 PullToRefreshBox(
                     isRefreshing = syncState.phase == SyncPhase.Connecting ||
                         syncState.phase == SyncPhase.Syncing,

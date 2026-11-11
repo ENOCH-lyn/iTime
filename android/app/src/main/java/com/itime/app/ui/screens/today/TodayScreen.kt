@@ -56,6 +56,7 @@ import com.itime.app.domain.AgendaItem
 import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
 import com.itime.app.ui.components.EmptyState
+import com.itime.app.ui.components.OfflineBanner
 import com.itime.app.ui.components.SyncChip
 import com.itime.app.ui.screens.tasks.TaskEditorSheet
 import kotlinx.coroutines.launch
@@ -204,20 +205,7 @@ fun TodayScreen(
         ) {
             if (syncState.phase == SyncPhase.Offline) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                    ) {
-                        Text(
-                            "当前离线，改动会保存在手机上，联网后自动同步。",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
+                    OfflineBanner(Modifier.padding(vertical = 8.dp))
                 }
             }
             item {
