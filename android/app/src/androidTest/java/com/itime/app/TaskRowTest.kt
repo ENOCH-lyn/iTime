@@ -50,6 +50,7 @@ class TaskRowTest {
         onDelete: () -> Unit = {},
         onRestore: () -> Unit = {},
         onArchive: () -> Unit = {},
+        onDuplicate: () -> Unit = {},
     ) {
         composeRule.setContent {
             ItimeTheme(dynamicColor = false) {
@@ -62,6 +63,7 @@ class TaskRowTest {
                     onDelete = onDelete,
                     onRestore = onRestore,
                     onArchive = onArchive,
+                    onDuplicate = onDuplicate,
                 )
             }
         }
@@ -102,6 +104,15 @@ class TaskRowTest {
         composeRule.onNodeWithText("归档").performClick()
         assertTrue(archived)
         assertTrue(!deleted)
+    }
+
+    @Test
+    fun activeRowMenuOffersDuplicate() {
+        var duplicated = false
+        render(onDuplicate = { duplicated = true })
+        composeRule.onNodeWithContentDescription("更多操作").performClick()
+        composeRule.onNodeWithText("复制").performClick()
+        assertTrue(duplicated)
     }
 
     @Test

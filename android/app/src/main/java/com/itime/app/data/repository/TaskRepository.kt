@@ -51,6 +51,22 @@ class TaskRepository(
 
     fun observeProjects() = db.projectDao().observeAll()
 
+    /** Creates a copy of an existing task (title suffixed with 副本). */
+    suspend fun duplicate(id: String): String {
+        val task = db.taskDao().find(id) ?: return ""
+        val draft = TaskDraft(
+            title = "${task.title}（副本）",
+            description = task.description,
+            projectId = task.projectId,
+            estimatedMinutes = (task.estimatedMinutes ?: 0).takeIf { it > 0 },
+            priority = task.priority,
+            labels = task.labels,
+            dueDate = com.itime.app.core.Times.parseDate(task.dueDate),
+            dueTime = com.itime.app.core.Times.parseTime(task.dueTime),
+        )
+        return create(draft)
+    }
+
     /**
      * Creates a project locally and queues it. Tasks may reference the temporary
      * id; the sync engine maps it to the server id before pushing (or rewrites

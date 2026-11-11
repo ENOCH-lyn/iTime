@@ -250,6 +250,9 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                             onArchive = {
                                 scope.launch { container.tasks.archive(task.id, true) }
                             },
+                            onDuplicate = {
+                                scope.launch { container.tasks.duplicate(task.id) }
+                            },
                         )
                     }
                 }

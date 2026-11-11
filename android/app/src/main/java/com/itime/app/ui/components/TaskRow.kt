@@ -45,6 +45,7 @@ fun TaskRow(
     onDelete: () -> Unit,
     onRestore: () -> Unit,
     onArchive: () -> Unit,
+    onDuplicate: () -> Unit = {},
 ) {
     var menu by remember { mutableStateOf(false) }
     Card(
@@ -114,6 +115,13 @@ fun TaskRow(
                             onClick = {
                                 menu = false
                                 onArchive()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("复制") },
+                            onClick = {
+                                menu = false
+                                onDuplicate()
                             },
                         )
                         DropdownMenuItem(
