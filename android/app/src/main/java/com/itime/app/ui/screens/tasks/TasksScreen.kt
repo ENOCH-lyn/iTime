@@ -56,6 +56,7 @@ import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.OfflineBanner
+import com.itime.app.ui.components.TaskRow
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -230,100 +231,3 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
         )
     }
 }
-
-@Composable
-private fun TaskRow(
-    task: TaskEntity,
-    inTrash: Boolean,
-    onToggle: () -> Unit,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
-    onRestore: () -> Unit,
-    onArchive: () -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    Card(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = task.isCompleted, onCheckedChange = { onToggle() })
-            Column(Modifier.weight(1f)) {
-                Text(
-                    task.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (task.isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                val detail = listOfNotNull(
-                    task.projectName,
-                    Times.parseDate(task.dueDate)?.format(DateTimeFormatter.ofPattern("M 月 d 日")),
-                    Times.parseTime(task.dueTime)?.format(DateTimeFormatter.ofPattern("HH:mm")),
-                    task.estimatedMinutes?.let { "$it 分钟" },
-                    task.labels.takeIf { it.isNotEmpty() }?.joinToString(" "),
-                ).joinToString(" · ")
-                if (detail.isNotBlank()) {
-                    Text(
-                        detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (task.pendingSync) {
-                Text(
-                    "待同步",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(end = 4.dp),
-                )
-            }
-            Box {
-                IconButton(onClick = { menu = true }) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = "更多操作")
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (inTrash) {
-                        DropdownMenuItem(
-                            text = { Text("恢复") },
-                            onClick = {
-                                menu = false
-                                onRestore()
-                            },
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("归档") },
-                            onClick = {
-                                menu = false
-                                onArchive()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("删除") },
-                            onClick = {
-                                menu = false
-                                onDelete()
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-    Spacer(Modifier.height(2.dp))
-    Spacer(Modifier.width(0.dp))
-}
-
