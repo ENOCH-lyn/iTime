@@ -28,6 +28,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -79,6 +83,7 @@ fun TodayScreen(
     val zone = Times.zoneOf(settings?.timeZone)
     val today = LocalDate.now(zone)
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<String?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var editorDraft by remember { mutableStateOf(TaskDraft()) }
@@ -116,7 +121,28 @@ fun TodayScreen(
         task.isCompleted && task.completedAt?.startsWith(today.toString()) == true
     } + completedOccurrencesToday.size
 
+    suspend fun completeWithUndo(taskId: String, occurrenceKey: String?, repeating: Boolean) {
+        if (repeating && occurrenceKey != null) {
+            container.tasks.setOccurrenceStatus(taskId, occurrenceKey, "completed")
+        } else {
+            container.tasks.setCompleted(taskId, true)
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = "已完成",
+            actionLabel = "撤销",
+            duration = SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            if (repeating && occurrenceKey != null) {
+                container.tasks.setOccurrenceStatus(taskId, occurrenceKey, "open")
+            } else {
+                container.tasks.setCompleted(taskId, false)
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -219,15 +245,11 @@ fun TodayScreen(
                     if (item.sourceKind == "task") {
                         scope.launch {
                             val task = tasks.firstOrNull { it.id == item.sourceId }
-                            if (task?.isRepeating == true && item.occurrenceKey != null) {
-                                container.tasks.setOccurrenceStatus(
-                                    item.sourceId,
-                                    item.occurrenceKey,
-                                    "completed",
-                                )
-                            } else {
-                                container.tasks.setCompleted(item.sourceId, true)
-                            }
+                            completeWithUndo(
+                                taskId = item.sourceId,
+                                occurrenceKey = item.occurrenceKey,
+                                repeating = task?.isRepeating == true,
+                            )
                         }
                     }
                 }
@@ -270,7 +292,13 @@ fun TodayScreen(
                         Checkbox(
                             checked = false,
                             onCheckedChange = {
-                                scope.launch { container.tasks.setCompleted(task.id, true) }
+                                scope.launch {
+                                    completeWithUndo(
+                                        taskId = task.id,
+                                        occurrenceKey = null,
+                                        repeating = false,
+                                    )
+                                }
                             },
                         )
                         Column(Modifier.weight(1f)) {
