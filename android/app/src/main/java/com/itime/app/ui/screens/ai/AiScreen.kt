@@ -56,6 +56,7 @@ import com.itime.app.data.remote.AiConversationDto
 import com.itime.app.data.remote.AiMessageDto
 import com.itime.app.data.remote.AiToolProposalDto
 import com.itime.app.data.repository.AiRepository
+import com.itime.app.ui.ai.ProposalFormat
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
@@ -289,9 +290,7 @@ private fun ProposalCard(
     onApprove: () -> Unit,
     onReject: () -> Unit,
 ) {
-    val summary = runCatching {
-        proposal.preview?.get("summary")?.jsonPrimitive?.content
-    }.getOrNull() ?: "AI 准备修改你的数据，确认后才会生效。"
+    val summary = ProposalFormat.summary(proposal)
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -302,7 +301,7 @@ private fun ProposalCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(
-                toolLabel(proposal.tool_name),
+                ProposalFormat.toolLabel(proposal.tool_name),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
@@ -312,7 +311,7 @@ private fun ProposalCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
-            proposalDetails(proposal)?.let { detail ->
+            ProposalFormat.details(proposal)?.let { detail ->
                 Spacer(Modifier.height(6.dp))
                 Text(
                     detail,
@@ -337,38 +336,6 @@ private fun ProposalCard(
             }
         }
     }
-}
-
-private fun proposalDetails(proposal: AiToolProposalDto): String? {
-    val details = runCatching {
-        proposal.preview?.get("details")?.jsonObject
-    }.getOrNull() ?: return null
-    fun text(key: String): String? = runCatching {
-        details[key]?.jsonPrimitive?.content
-    }.getOrNull()?.takeIf { it.isNotBlank() && it != "null" }
-    val date = text("local_date")
-    val start = text("starts_at")?.take(5)
-    val end = text("ends_at")?.take(5)
-    val minutes = text("estimated_minutes")
-    val parts = buildList {
-        if (date != null) add(date)
-        if (start != null) add(if (end != null) "$start–$end" else start)
-        if (minutes != null) add("$minutes 分钟")
-    }
-    return parts.joinToString(" · ").takeIf { it.isNotBlank() }
-}
-
-private fun toolLabel(toolName: String): String = when (toolName) {
-    "create_task" -> "新建任务"
-    "update_task" -> "修改任务"
-    "complete_task" -> "完成任务"
-    "delete_task" -> "删除任务"
-    "create_calendar_series" -> "新建日程"
-    "update_calendar_series" -> "修改日程"
-    "delete_calendar_series" -> "删除日程"
-    "create_calendar_exception" -> "调整单次课程"
-    "create_timetable_courses" -> "导入课表"
-    else -> "AI 修改建议"
 }
 
 @Composable
