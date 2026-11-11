@@ -57,6 +57,7 @@ import com.itime.app.data.remote.AiConversationDto
 import com.itime.app.data.remote.AiMessageDto
 import com.itime.app.data.remote.AiToolProposalDto
 import com.itime.app.data.repository.AiRepository
+import com.itime.app.ui.ai.ProposalCard
 import com.itime.app.ui.ai.ProposalFormat
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.SyncChip
@@ -294,61 +295,6 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
                         TextButton(onClick = { error = null }) { Text("知道了") }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProposalCard(
-    proposal: AiToolProposalDto,
-    busy: Boolean,
-    onApprove: () -> Unit,
-    onReject: () -> Unit,
-) {
-    val summary = ProposalFormat.summary(proposal)
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(
-                ProposalFormat.toolLabel(proposal.tool_name),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-            )
-            ProposalFormat.details(proposal)?.let { detail ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onApprove, enabled = !busy) {
-                    if (busy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Text("批准")
-                    }
-                }
-                OutlinedButton(onClick = onReject, enabled = !busy) { Text("拒绝") }
             }
         }
     }
