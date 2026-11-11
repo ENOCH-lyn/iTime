@@ -58,6 +58,8 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
     val scope = rememberCoroutineScope()
     var serverUrl by remember { mutableStateOf(container.sessionStore.baseUrl()) }
     var showLogout by remember { mutableStateOf(false) }
+    var showResync by remember { mutableStateOf(false) }
+    var resyncNotice by remember { mutableStateOf<String?>(null) }
     var resolving by remember { mutableStateOf<OutboxEntity?>(null) }
     var showZonePicker by remember { mutableStateOf(false) }
     var serverUrlError by remember { mutableStateOf<String?>(null) }
@@ -131,6 +133,51 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) { Text("立即同步") }
+            TextButton(
+                onClick = { showResync = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            ) { Text("重新核对数据") }
+            resyncNotice?.let { notice ->
+                Text(
+                    notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+
+            if (showResync) {
+                AlertDialog(
+                    onDismissRequest = { showResync = false },
+                    title = { Text("重新核对数据？") },
+                    text = {
+                        Text(
+                            "将从服务端重新拉取任务、项目与日程，覆盖本地已同步数据；" +
+                                "本地尚未同步的改动仍保留在上传队列中。",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showResync = false
+                                scope.launch {
+                                    runCatching { container.sync.resyncSnapshot() }
+                                        .onSuccess {
+                                            container.sync.requestSync("settings-resync")
+                                            resyncNotice = "已重新核对"
+                                        }
+                                        .onFailure { resyncNotice = it.message ?: "核对失败" }
+                                }
+                            },
+                        ) { Text("开始") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showResync = false }) { Text("取消") }
+                    },
+                )
+            }
 
             if (conflicts.isNotEmpty()) {
                 SectionHeader("需要你决定")
