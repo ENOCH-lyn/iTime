@@ -121,6 +121,11 @@ data class CalendarExceptionCreateBody(
     val expected_series_version: Int,
     val action: String = "cancelled",
     val occurrence_key: String,
+    val moved_start_date: String? = null,
+    val moved_starts_at: String? = null,
+    val moved_ends_at: String? = null,
+    val moved_end_day_offset: Int? = null,
+    val moved_time_zone: String? = null,
 )
 
 @Serializable

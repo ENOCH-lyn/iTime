@@ -12,6 +12,7 @@ import com.itime.app.data.local.TermPeriodEntity
 import com.itime.app.data.local.TimeSettingsEntity
 import com.itime.app.data.remote.RecurrenceBody
 import com.itime.app.data.sync.CalendarExceptionCreatePayload
+import com.itime.app.data.sync.CalendarExceptionMovePayload
 import com.itime.app.data.sync.Intent
 import com.itime.app.data.sync.SeriesCreatePayload
 import com.itime.app.data.sync.SeriesDeletePayload
@@ -115,6 +116,55 @@ class CalendarRepository(
             )
         }
         sync.requestSync("local-cancel-occurrence")
+    }
+
+    /** Moves one occurrence of a repeated series to another date (same times). */
+    suspend fun moveOccurrence(
+        seriesId: String,
+        occurrenceKey: String,
+        newDate: java.time.LocalDate,
+        startsAt: java.time.LocalTime,
+        endsAt: java.time.LocalTime,
+    ) {
+        val series = db.seriesDao().find(seriesId) ?: return
+        db.withTransaction {
+            db.exceptionDao().upsertAll(
+                listOf(
+                    ExceptionEntity(
+                        id = UUID.randomUUID().toString(),
+                        seriesId = seriesId,
+                        occurrenceKey = occurrenceKey,
+                        originalStartDate = occurrenceKey.substringBefore('T'),
+                        action = "moved",
+                        movedStartDate = newDate.toString(),
+                        movedStartsAt = com.itime.app.core.Times.formatTime(startsAt),
+                        movedEndsAt = com.itime.app.core.Times.formatTime(endsAt),
+                        version = 0,
+                    ),
+                ),
+            )
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_SERIES,
+                    entityId = seriesId,
+                    intent = Intent.CALENDAR_EXCEPTION_MOVE,
+                    payloadJson = json.encodeToString(
+                        CalendarExceptionMovePayload.serializer(),
+                        CalendarExceptionMovePayload(
+                            occurrenceKey = occurrenceKey,
+                            movedStartDate = newDate.toString(),
+                            movedStartsAt = com.itime.app.core.Times.formatTime(startsAt),
+                            movedEndsAt = com.itime.app.core.Times.formatTime(endsAt),
+                            timeZone = series.timeZone,
+                        ),
+                    ),
+                    baseVersion = series.version,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+        sync.requestSync("local-move-occurrence")
     }
 
     suspend fun deleteSeries(id: String) {

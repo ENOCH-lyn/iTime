@@ -27,6 +27,9 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
@@ -102,6 +105,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var detail by remember { mutableStateOf<AgendaItem?>(null) }
     var showSeriesEditor by remember { mutableStateOf(false) }
     var editingSeries by remember { mutableStateOf<com.itime.app.data.local.SeriesEntity?>(null) }
+    var moveTarget by remember { mutableStateOf<AgendaItem?>(null) }
 
     val weekStart = anchor.with(DayOfWeek.MONDAY)
     val month = YearMonth.from(anchor)
@@ -302,6 +306,45 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
         }
     }
 
+    moveTarget?.let { target ->
+        val initial = Times.parseDate(target.date.toString()) ?: today
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = initial.atStartOfDay(java.time.ZoneOffset.UTC)
+                .toInstant().toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { moveTarget = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val millis = state.selectedDateMillis ?: return@TextButton
+                        val newDate = java.time.Instant.ofEpochMilli(millis)
+                            .atZone(java.time.ZoneId.of("UTC"))
+                            .toLocalDate()
+                        val start = target.startTime ?: java.time.LocalTime.of(9, 0)
+                        val end = target.endTime ?: start.plusMinutes(90)
+                        scope.launch {
+                            container.calendar.moveOccurrence(
+                                seriesId = target.sourceId,
+                                occurrenceKey = target.occurrenceKey ?: return@launch,
+                                newDate = newDate,
+                                startsAt = start,
+                                endsAt = end,
+                            )
+                            moveTarget = null
+                            detail = null
+                        }
+                    },
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { moveTarget = null }) { Text("取消") }
+            },
+        ) {
+            DatePicker(state = state)
+        }
+    }
+
     if (showSeriesEditor) {
         SeriesEditorSheet(
             repository = container.calendar,
@@ -401,6 +444,10 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("取消本次") }
+                    TextButton(
+                        onClick = { moveTarget = item },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("调整本次") }
                     TextButton(
                         onClick = {
                             scope.launch {
