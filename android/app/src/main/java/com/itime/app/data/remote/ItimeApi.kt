@@ -139,6 +139,15 @@ class ItimeApi(
     suspend fun setOccurrenceStatus(id: String, body: OccurrenceStatusBody): TaskDto =
         put("/api/v1/tasks/$id/occurrences/status", body, TaskEnvelope.serializer()).task
 
+    suspend fun createStep(taskId: String, body: StepCreateBody): TaskDto =
+        post("/api/v1/tasks/$taskId/steps", body, TaskEnvelope.serializer()).task
+
+    suspend fun updateStep(taskId: String, stepId: String, body: StepUpdateBody): TaskDto =
+        put("/api/v1/tasks/$taskId/steps/$stepId", body, TaskEnvelope.serializer()).task
+
+    suspend fun deleteStep(taskId: String, stepId: String, body: StepDeleteBody): TaskDto =
+        deleteWithBody("/api/v1/tasks/$taskId/steps/$stepId", body, TaskEnvelope.serializer()).task
+
     // ------------------------------------------------------------ projects
 
     suspend fun listProjects(): List<ProjectDto> = get<ProjectListDto>("/api/v1/projects").items

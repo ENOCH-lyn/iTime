@@ -14,6 +14,7 @@ import com.itime.app.data.sync.TaskCompletePayload
 import com.itime.app.data.sync.TaskCreatePayload
 import com.itime.app.data.sync.TaskLifecyclePayload
 import com.itime.app.data.sync.TaskOccurrencePayload
+import com.itime.app.data.sync.StepOpPayload
 import com.itime.app.data.sync.TaskSchedulePayload
 import com.itime.app.data.sync.TaskUpdatePayload
 import com.itime.app.domain.RecurrenceSpec
@@ -43,6 +44,77 @@ class TaskRepository(
     fun observeOccurrences(taskId: String) = db.occurrenceDao().observeForTask(taskId)
 
     suspend fun get(id: String): TaskEntity? = db.taskDao().find(id)
+
+    fun observeSteps(taskId: String) = db.stepDao().observeForTask(taskId)
+
+    suspend fun addStep(taskId: String, title: String) {
+        val clean = title.trim()
+        if (clean.isEmpty()) return
+        val task = db.taskDao().find(taskId) ?: return
+        val steps = db.stepDao().forTask(taskId)
+        val stepId = UUID.randomUUID().toString()
+        db.withTransaction {
+            db.stepDao().upsert(
+                StepEntity(
+                    id = stepId,
+                    taskId = taskId,
+                    title = clean,
+                    position = steps.size,
+                ),
+            )
+            enqueue(
+                entityId = taskId,
+                intent = Intent.TASK_STEP_CREATE,
+                payload = json.encodeToString(
+                    StepOpPayload.serializer(),
+                    StepOpPayload(taskId = taskId, stepId = stepId, title = clean),
+                ),
+                baseVersion = task.version,
+            )
+        }
+        sync.requestSync("local-step-create")
+    }
+
+    suspend fun setStepCompleted(taskId: String, stepId: String, completed: Boolean) {
+        val task = db.taskDao().find(taskId) ?: return
+        val step = db.stepDao().find(stepId) ?: return
+        db.withTransaction {
+            db.stepDao().upsert(step.copy(completed = completed))
+            enqueue(
+                entityId = taskId,
+                intent = Intent.TASK_STEP_UPDATE,
+                payload = json.encodeToString(
+                    StepOpPayload.serializer(),
+                    StepOpPayload(
+                        taskId = taskId,
+                        stepId = stepId,
+                        title = step.title,
+                        completed = completed,
+                    ),
+                ),
+                baseVersion = task.version,
+            )
+        }
+        sync.requestSync("local-step-update")
+    }
+
+    suspend fun deleteStep(taskId: String, stepId: String) {
+        val task = db.taskDao().find(taskId) ?: return
+        val step = db.stepDao().find(stepId) ?: return
+        db.withTransaction {
+            db.stepDao().delete(stepId)
+            enqueue(
+                entityId = taskId,
+                intent = Intent.TASK_STEP_DELETE,
+                payload = json.encodeToString(
+                    StepOpPayload.serializer(),
+                    StepOpPayload(taskId = taskId, stepId = stepId, title = step.title),
+                ),
+                baseVersion = task.version,
+            )
+        }
+        sync.requestSync("local-step-delete")
+    }
 
     suspend fun create(draft: TaskDraft): String {
         val id = UUID.randomUUID().toString()

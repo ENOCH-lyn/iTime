@@ -73,6 +73,15 @@ interface StepDao {
     @Query("SELECT * FROM task_steps WHERE taskId = :taskId ORDER BY position")
     suspend fun forTask(taskId: String): List<StepEntity>
 
+    @Query("SELECT * FROM task_steps WHERE id = :id")
+    suspend fun find(id: String): StepEntity?
+
+    @Upsert
+    suspend fun upsert(step: StepEntity)
+
+    @Query("DELETE FROM task_steps WHERE id = :id")
+    suspend fun delete(id: String)
+
     @Upsert
     suspend fun upsertAll(steps: List<StepEntity>)
 

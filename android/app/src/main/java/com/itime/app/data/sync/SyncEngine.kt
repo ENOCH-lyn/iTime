@@ -30,6 +30,9 @@ import com.itime.app.data.remote.SeriesCreateBody
 import com.itime.app.data.remote.SeriesDeletePayloadBody
 import com.itime.app.data.remote.SeriesDto
 import com.itime.app.data.remote.SeriesUpdateBody
+import com.itime.app.data.remote.StepCreateBody
+import com.itime.app.data.remote.StepDeleteBody
+import com.itime.app.data.remote.StepUpdateBody
 import com.itime.app.data.remote.SyncEntityDto
 import com.itime.app.data.remote.SyncEventDto
 import com.itime.app.data.remote.TaskArchiveBody
@@ -241,6 +244,44 @@ class SyncEngine(
             Intent.TASK_SCHEDULE -> {
                 val payload = json.decodeFromString(TaskSchedulePayload.serializer(), op.payloadJson)
                 val task = api.putSchedule(op.entityId, payload.schedule.toUpdateBody(op.operationId, currentTaskVersion(op.entityId)))
+                applyTask(task, force = true)
+            }
+            Intent.TASK_STEP_CREATE -> {
+                val payload = json.decodeFromString(StepOpPayload.serializer(), op.payloadJson)
+                val task = api.createStep(
+                    payload.taskId,
+                    StepCreateBody(
+                        operation_id = op.operationId,
+                        expected_task_version = currentTaskVersion(payload.taskId),
+                        title = payload.title,
+                    ),
+                )
+                applyTask(task, force = true)
+            }
+            Intent.TASK_STEP_UPDATE -> {
+                val payload = json.decodeFromString(StepOpPayload.serializer(), op.payloadJson)
+                val task = api.updateStep(
+                    payload.taskId,
+                    payload.stepId ?: error("step id missing"),
+                    StepUpdateBody(
+                        operation_id = op.operationId,
+                        expected_task_version = currentTaskVersion(payload.taskId),
+                        title = payload.title,
+                        completed = payload.completed,
+                    ),
+                )
+                applyTask(task, force = true)
+            }
+            Intent.TASK_STEP_DELETE -> {
+                val payload = json.decodeFromString(StepOpPayload.serializer(), op.payloadJson)
+                val task = api.deleteStep(
+                    payload.taskId,
+                    payload.stepId ?: error("step id missing"),
+                    StepDeleteBody(
+                        operation_id = op.operationId,
+                        expected_task_version = currentTaskVersion(payload.taskId),
+                    ),
+                )
                 applyTask(task, force = true)
             }
             Intent.SERIES_CREATE -> executeSeriesCreate(op)
@@ -610,6 +651,7 @@ class SyncEngine(
 
     private suspend fun applyTaskInTransaction(task: TaskDto) {
         db.taskDao().upsert(task.toEntity())
+        db.stepDao().deleteForTask(task.id)
         db.stepDao().upsertAll(task.steps.map { it.toEntity(task.id) })
     }
 

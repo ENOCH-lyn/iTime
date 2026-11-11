@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -14,8 +15,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -39,11 +43,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.itime.app.data.local.StepEntity
 import com.itime.app.data.repository.TaskRepository
 import com.itime.app.domain.TaskDraft
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -77,6 +84,10 @@ fun TaskEditorSheet(
     var priority by remember { mutableStateOf(initial.priority) }
     var estimate by remember { mutableStateOf(initial.estimatedMinutes?.toString() ?: "") }
     var showDatePicker by remember { mutableStateOf(false) }
+    var newStep by remember { mutableStateOf("") }
+    val steps by remember(taskId) {
+        if (taskId == null) flowOf(emptyList<StepEntity>()) else repository.observeSteps(taskId)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
     var showTimePicker by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -112,6 +123,7 @@ fun TaskEditorSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.92f)
                 .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
@@ -200,6 +212,55 @@ fun TaskEditorSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (taskId != null) {
+                Spacer(Modifier.height(16.dp))
+                Text("步骤", style = MaterialTheme.typography.labelLarge)
+                steps.forEach { step ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = step.completed,
+                            onCheckedChange = { checked ->
+                                scope.launch { repository.setStepCompleted(taskId, step.id, checked) }
+                            },
+                        )
+                        Text(
+                            step.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = {
+                            scope.launch { repository.deleteStep(taskId, step.id) }
+                        }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "删除步骤")
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newStep,
+                        onValueChange = { newStep = it },
+                        placeholder = { Text("添加步骤") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            repository.let { repo ->
+                                scope.launch {
+                                    repo.addStep(taskId, newStep)
+                                    newStep = ""
+                                }
+                            }
+                        },
+                        enabled = newStep.isNotBlank(),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "添加步骤")
+                    }
+                }
+            }
             if (error != null) {
                 Spacer(Modifier.height(8.dp))
                 Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

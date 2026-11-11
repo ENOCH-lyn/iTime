@@ -149,6 +149,27 @@ data class ProjectCreateBody(
 )
 
 @Serializable
+data class StepCreateBody(
+    val operation_id: String,
+    val expected_task_version: Int,
+    val title: String,
+)
+
+@Serializable
+data class StepUpdateBody(
+    val operation_id: String,
+    val expected_task_version: Int,
+    val title: String,
+    val completed: Boolean,
+)
+
+@Serializable
+data class StepDeleteBody(
+    val operation_id: String,
+    val expected_task_version: Int,
+)
+
+@Serializable
 data class OccurrenceStatusBody(
     val operation_id: String,
     val expected_task_version: Int,

@@ -57,6 +57,14 @@ data class TaskLifecyclePayload(val mode: String)
 data class TaskSchedulePayload(val schedule: ScheduleSpec)
 
 @Serializable
+data class StepOpPayload(
+    val taskId: String,
+    val stepId: String? = null,
+    val title: String = "",
+    val completed: Boolean = false,
+)
+
+@Serializable
 data class SeriesCreatePayload(
     val kind: String,
     val termId: String? = null,
@@ -123,6 +131,9 @@ object Intent {
     const val TASK_OCCURRENCE = "task.occurrence"
     const val TASK_LIFECYCLE = "task.lifecycle"
     const val TASK_SCHEDULE = "task.schedule"
+    const val TASK_STEP_CREATE = "task.step.create"
+    const val TASK_STEP_UPDATE = "task.step.update"
+    const val TASK_STEP_DELETE = "task.step.delete"
     const val SERIES_CREATE = "series.create"
     const val SERIES_UPDATE = "series.update"
     const val SERIES_DELETE = "series.delete"
