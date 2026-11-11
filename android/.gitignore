@@ -9,5 +9,5 @@
 .externalNativeBuild
 .cxx
 /app/build
-/app/schemas
+!/app/schemas
 *.hprof
