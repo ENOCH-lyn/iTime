@@ -6,6 +6,7 @@ import com.itime.app.data.local.OutboxEntity
 import com.itime.app.data.local.StepEntity
 import com.itime.app.data.local.TaskEntity
 import com.itime.app.data.local.TaskWithSteps
+import com.itime.app.data.local.toEntity
 import com.itime.app.data.remote.RecurrenceBody
 import com.itime.app.data.sync.Intent
 import com.itime.app.data.sync.ScheduleSpec
@@ -47,6 +48,17 @@ class TaskRepository(
     suspend fun get(id: String): TaskEntity? = db.taskDao().find(id)
 
     fun observeSteps(taskId: String) = db.stepDao().observeForTask(taskId)
+
+    fun observeProjects() = db.projectDao().observeAll()
+
+    /** Creates a project on the server and mirrors it locally. */
+    suspend fun createProject(name: String): String {
+        val clean = name.trim()
+        if (clean.isEmpty()) return ""
+        val project = sync.createProjectRemote(clean)
+        db.projectDao().upsertAll(listOf(project.toEntity()))
+        return project.id
+    }
 
     suspend fun addStep(taskId: String, title: String) {
         val clean = title.trim()

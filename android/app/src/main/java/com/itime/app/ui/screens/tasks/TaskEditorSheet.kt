@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -86,6 +88,11 @@ fun TaskEditorSheet(
     var priority by remember { mutableStateOf(initial.priority) }
     var estimate by remember { mutableStateOf(initial.estimatedMinutes?.toString() ?: "") }
     var labelsText by remember { mutableStateOf(initial.labels.joinToString(", ")) }
+    val projects by remember { repository.observeProjects() }
+        .collectAsStateWithLifecycle(emptyList())
+    var projectId by remember { mutableStateOf(initial.projectId) }
+    var showProjectDialog by remember { mutableStateOf(false) }
+    var newProjectName by remember { mutableStateOf("") }
     var showDatePicker by remember { mutableStateOf(false) }
     var newStep by remember { mutableStateOf("") }
     val steps by remember(taskId) {
@@ -107,6 +114,7 @@ fun TaskEditorSheet(
                 priority = priority,
                 estimatedMinutes = estimate.trim().toIntOrNull()?.coerceIn(1, 525600),
                 labels = labelsText.split(',').map { it.trim() }.filter { it.isNotEmpty() },
+                projectId = projectId,
                 dueDate = dueDate,
                 dueTime = if (dueDate == null) null else dueTime,
             )
@@ -217,6 +225,32 @@ fun TaskEditorSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
+            Text("项目", style = MaterialTheme.typography.labelLarge)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = projectId == null,
+                    onClick = { projectId = null },
+                    label = { Text("无项目") },
+                )
+                projects.forEach { project ->
+                    FilterChip(
+                        selected = projectId == project.id,
+                        onClick = { projectId = project.id },
+                        label = { Text(project.name) },
+                    )
+                }
+                FilterChip(
+                    selected = false,
+                    onClick = { showProjectDialog = true },
+                    label = { Text("＋ 新建") },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = labelsText,
                 onValueChange = { labelsText = it },
@@ -297,6 +331,39 @@ fun TaskEditorSheet(
                 Button(onClick = ::save) { Text("保存") }
             }
         }
+    }
+
+    if (showProjectDialog) {
+        AlertDialog(
+            onDismissRequest = { showProjectDialog = false },
+            title = { Text("新建项目") },
+            text = {
+                OutlinedTextField(
+                    value = newProjectName,
+                    onValueChange = { newProjectName = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newProjectName.isNotBlank(),
+                    onClick = {
+                        val name = newProjectName
+                        showProjectDialog = false
+                        newProjectName = ""
+                        scope.launch {
+                            runCatching { repository.createProject(name) }
+                                .onSuccess { id -> if (id.isNotEmpty()) projectId = id }
+                                .onFailure { error = "新建项目失败，请检查网络后重试。" }
+                        }
+                    },
+                ) { Text("创建") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProjectDialog = false }) { Text("取消") }
+            },
+        )
     }
 
     if (showDatePicker) {

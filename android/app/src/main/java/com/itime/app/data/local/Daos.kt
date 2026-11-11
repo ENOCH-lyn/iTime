@@ -63,6 +63,16 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET pendingSync = :pending WHERE id = :id")
     suspend fun setPending(id: String, pending: Boolean)
+
+    @Query(
+        "UPDATE tasks SET projectId = :projectId, projectName = :projectName, projectKind = :projectKind WHERE projectId = :oldId",
+    )
+    suspend fun remapProject(
+        oldId: String,
+        projectId: String,
+        projectName: String,
+        projectKind: String,
+    )
 }
 
 @Dao
@@ -102,6 +112,9 @@ interface ProjectDao {
 
     @Upsert
     suspend fun upsertAll(projects: List<ProjectEntity>)
+
+    @Query("DELETE FROM projects WHERE id = :id")
+    suspend fun delete(id: String)
 
     @Query("DELETE FROM projects")
     suspend fun clear()
@@ -305,6 +318,9 @@ interface OutboxDao {
 
     @Query("UPDATE outbox SET state = 'pending' WHERE operationId = :id")
     suspend fun resetToPending(id: String)
+
+    @Query("UPDATE outbox SET payloadJson = :payload WHERE operationId = :id")
+    suspend fun updatePayload(id: String, payload: String)
 
     @Query("UPDATE outbox SET entityId = :newId WHERE entityId = :oldId")
     suspend fun remapEntity(oldId: String, newId: String)

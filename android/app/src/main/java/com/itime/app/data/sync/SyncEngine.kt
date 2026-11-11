@@ -369,7 +369,21 @@ class SyncEngine(
                         description = payload.description,
                     ),
                 )
-                db.projectDao().upsertAll(listOf(project.toEntity()))
+                db.withTransaction {
+                    // The project was created locally with a temporary id; move
+                    // tasks that referenced it before normalising the row.
+                    if (project.id != op.entityId) {
+                        db.projectDao().delete(op.entityId)
+                        db.taskDao().remapProject(
+                            oldId = op.entityId,
+                            projectId = project.id,
+                            projectName = project.name,
+                            projectKind = project.kind,
+                        )
+                        remapQueuedProjectReferences(op.entityId, project.id)
+                    }
+                    db.projectDao().upsertAll(listOf(project.toEntity()))
+                }
             }
             else -> Unit
         }
@@ -703,6 +717,37 @@ class SyncEngine(
         }
     }
 
+    /** Rewrites queued task writes that still point at a temporary project id. */
+    private suspend fun remapQueuedProjectReferences(oldId: String, realId: String) {
+        db.outboxDao().all().forEach { queued ->
+            if (queued.state != "pending" && queued.state != "failed") return@forEach
+            when (queued.intent) {
+                Intent.TASK_CREATE -> {
+                    val payload = runCatching {
+                        json.decodeFromString(TaskCreatePayload.serializer(), queued.payloadJson)
+                    }.getOrNull() ?: return@forEach
+                    if (payload.projectId == oldId) {
+                        db.outboxDao().updatePayload(
+                            queued.operationId,
+                            json.encodeToString(TaskCreatePayload.serializer(), payload.copy(projectId = realId)),
+                        )
+                    }
+                }
+                Intent.TASK_UPDATE -> {
+                    val payload = runCatching {
+                        json.decodeFromString(TaskUpdatePayload.serializer(), queued.payloadJson)
+                    }.getOrNull() ?: return@forEach
+                    if (payload.projectId == oldId) {
+                        db.outboxDao().updatePayload(
+                            queued.operationId,
+                            json.encodeToString(TaskUpdatePayload.serializer(), payload.copy(projectId = realId)),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private suspend fun occurrenceSnapshot(
         taskId: String,
         occurrenceKey: String,
@@ -775,6 +820,15 @@ class SyncEngine(
         refreshPendingCounts()
         syncNow("resolve-conflict")
     }
+
+    /** Creates a project directly on the server (editor needs a real id at once). */
+    suspend fun createProjectRemote(name: String): ProjectDto = api.createProject(
+        com.itime.app.data.remote.ProjectCreateBody(
+            operation_id = java.util.UUID.randomUUID().toString(),
+            kind = "project",
+            name = name,
+        ),
+    )
 
     /** Re-queues a write that previously failed with a permanent error. */
     suspend fun retryOperation(operationId: String) {
