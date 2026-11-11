@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.itime.app.AppContainer
 import com.itime.app.core.Times
@@ -77,13 +79,16 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(TaskFilter.All) }
+    var projectFilter by remember { mutableStateOf<String?>(null) }
+    val projects by container.tasks.observeProjects()
+        .collectAsStateWithLifecycle(emptyList())
     var showEditor by remember { mutableStateOf(false) }
     var editorTaskId by remember { mutableStateOf<String?>(null) }
     var editorDraft by remember { mutableStateOf(TaskDraft()) }
     val today = LocalDate.now()
 
-    val visible = remember(active, trashed, query, filter) {
-        val source = when (filter) {
+    val visible = remember(active, trashed, query, filter, projectFilter) {
+        val base = when (filter) {
             TaskFilter.Trash -> trashed
             TaskFilter.Completed -> active.filter { it.isCompleted }
             TaskFilter.Today -> active.filter {
@@ -91,6 +96,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
             }
             else -> active.filter { !it.isCompleted }
         }
+        val source = if (projectFilter == null) base else base.filter { it.projectId == projectFilter }
         if (query.isBlank()) {
             source
         } else {
@@ -155,6 +161,28 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                         onClick = { filter = option },
                         label = { Text(option.label) },
                     )
+                }
+            }
+            if (projects.isNotEmpty()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = projectFilter == null,
+                        onClick = { projectFilter = null },
+                        label = { Text("全部项目") },
+                    )
+                    projects.forEach { project ->
+                        FilterChip(
+                            selected = projectFilter == project.id,
+                            onClick = { projectFilter = project.id },
+                            label = { Text(project.name) },
+                        )
+                    }
                 }
             }
             if (visible.isEmpty()) {
