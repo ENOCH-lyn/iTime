@@ -104,6 +104,9 @@ private fun MainShell(container: AppContainer) {
                         onOpenCalendar = {
                             navController.navigate(TopDestination.Calendar.route)
                         },
+                        onOpenSettings = {
+                            navController.navigate(TopDestination.Settings.route)
+                        },
                     )
                 }
                 composable(TopDestination.Calendar.route) {

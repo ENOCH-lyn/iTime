@@ -55,6 +55,7 @@ import com.itime.app.domain.Agenda
 import com.itime.app.domain.AgendaItem
 import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
+import com.itime.app.ui.components.ConflictBanner
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.OfflineBanner
 import com.itime.app.ui.components.SyncChip
@@ -72,6 +73,7 @@ fun TodayScreen(
     container: AppContainer,
     syncState: SyncState,
     onOpenCalendar: () -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     val tasks by container.tasks.observeActive().collectAsStateWithLifecycle(emptyList())
     val series by container.calendar.observeSeries().collectAsStateWithLifecycle(emptyList())
@@ -203,6 +205,15 @@ fun TodayScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
         ) {
+            if (syncState.conflictCount > 0) {
+                item {
+                    ConflictBanner(
+                        count = syncState.conflictCount,
+                        onResolve = onOpenSettings,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            }
             if (syncState.phase == SyncPhase.Offline) {
                 item {
                     OfflineBanner(Modifier.padding(vertical = 8.dp))
