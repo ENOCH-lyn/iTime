@@ -59,6 +59,7 @@ import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.OfflineBanner
+import com.itime.app.ui.components.TaskDetailSheet
 import com.itime.app.ui.components.TaskRow
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
@@ -83,6 +84,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(TaskFilter.All) }
     var projectFilter by remember { mutableStateOf<String?>(null) }
+    var detailTaskId by remember { mutableStateOf<String?>(null) }
     val projects by container.tasks.observeProjects()
         .collectAsStateWithLifecycle(emptyList())
     var showEditor by remember { mutableStateOf(false) }
@@ -246,11 +248,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                                     }
                                 }
                             },
-                            onClick = {
-                                editorTaskId = task.id
-                                editorDraft = task.toDraft()
-                                showEditor = true
-                            },
+                            onClick = { detailTaskId = task.id },
                             onDelete = {
                                 scope.launch { container.tasks.trash(task.id) }
                             },
@@ -269,6 +267,35 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                 }
             }
         }
+    }
+
+    visible.firstOrNull { it.id == detailTaskId }?.let { task ->
+        TaskDetailSheet(
+            task = task,
+            onDismiss = { detailTaskId = null },
+            onEdit = {
+                detailTaskId = null
+                editorTaskId = task.id
+                editorDraft = task.toDraft()
+                showEditor = true
+            },
+            onComplete = {
+                scope.launch { container.tasks.setCompleted(task.id, !task.isCompleted) }
+                detailTaskId = null
+            },
+            onDuplicate = {
+                scope.launch { container.tasks.duplicate(task.id) }
+                detailTaskId = null
+            },
+            onArchive = {
+                scope.launch { container.tasks.archive(task.id, true) }
+                detailTaskId = null
+            },
+            onTrash = {
+                scope.launch { container.tasks.trash(task.id) }
+                detailTaskId = null
+            },
+        )
     }
 
     if (showEditor) {
