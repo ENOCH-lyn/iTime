@@ -69,6 +69,7 @@ private enum class TaskFilter(val label: String) {
     Today("今天"),
     Completed("已完成"),
     Trash("回收站"),
+    Archived("已归档"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +77,7 @@ private enum class TaskFilter(val label: String) {
 fun TasksScreen(container: AppContainer, syncState: SyncState) {
     val active by container.tasks.observeActive().collectAsStateWithLifecycle(emptyList())
     val trashed by container.tasks.observeTrashed().collectAsStateWithLifecycle(emptyList())
+    val archived by container.tasks.observeArchived().collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(TaskFilter.All) }
@@ -87,9 +89,10 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
     var editorDraft by remember { mutableStateOf(TaskDraft()) }
     val today = LocalDate.now()
 
-    val visible = remember(active, trashed, query, filter, projectFilter) {
+    val visible = remember(active, trashed, archived, query, filter, projectFilter) {
         val base = when (filter) {
             TaskFilter.Trash -> trashed
+            TaskFilter.Archived -> archived
             TaskFilter.Completed -> active.filter { it.isCompleted }
             TaskFilter.Today -> active.filter {
                 !it.isCompleted && Times.parseDate(it.dueDate)?.let { due -> !due.isAfter(today) } == true
@@ -122,7 +125,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
             )
         },
         floatingActionButton = {
-            if (filter != TaskFilter.Trash) {
+            if (filter != TaskFilter.Trash && filter != TaskFilter.Archived) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         editorTaskId = null
@@ -192,11 +195,13 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                     icon = Icons.Outlined.Checklist,
                     title = when (filter) {
                         TaskFilter.Trash -> "回收站是空的"
+                        TaskFilter.Archived -> "没有已归档的任务"
                         TaskFilter.Completed -> "还没有完成的任务"
                         else -> "没有匹配的任务"
                     },
                     message = when (filter) {
                         TaskFilter.Trash -> "删除的任务会在这里保留 30 天。"
+                        TaskFilter.Archived -> "归档的任务会保留在这里，可随时恢复。"
                         TaskFilter.Completed -> "完成一个任务后会显示在这里。"
                         else -> "换个筛选条件，或者新建一个任务。"
                     },
@@ -221,6 +226,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                         TaskRow(
                             task = task,
                             inTrash = filter == TaskFilter.Trash,
+                            restorable = filter == TaskFilter.Trash || filter == TaskFilter.Archived,
                             onToggle = {
                                 scope.launch {
                                     if (filter == TaskFilter.Trash) {

@@ -45,6 +45,7 @@ class TaskRowTest {
     private fun render(
         task: TaskEntity = task(),
         inTrash: Boolean = false,
+        restorable: Boolean = inTrash,
         onToggle: () -> Unit = {},
         onDelete: () -> Unit = {},
         onRestore: () -> Unit = {},
@@ -55,6 +56,7 @@ class TaskRowTest {
                 TaskRow(
                     task = task,
                     inTrash = inTrash,
+                    restorable = restorable,
                     onToggle = onToggle,
                     onClick = {},
                     onDelete = onDelete,
@@ -100,6 +102,15 @@ class TaskRowTest {
         composeRule.onNodeWithText("归档").performClick()
         assertTrue(archived)
         assertTrue(!deleted)
+    }
+
+    @Test
+    fun archivedRowMenuOffersRestore() {
+        var restored = false
+        render(restorable = true, onRestore = { restored = true })
+        composeRule.onNodeWithContentDescription("更多操作").performClick()
+        composeRule.onNodeWithText("恢复").performClick()
+        assertTrue(restored)
     }
 
     @Test

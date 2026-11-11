@@ -39,6 +39,7 @@ import java.time.format.DateTimeFormatter
 fun TaskRow(
     task: TaskEntity,
     inTrash: Boolean,
+    restorable: Boolean = inTrash,
     onToggle: () -> Unit,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -99,7 +100,7 @@ fun TaskRow(
                     Icon(Icons.Outlined.MoreVert, contentDescription = "更多操作")
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (inTrash) {
+                    if (inTrash || restorable) {
                         DropdownMenuItem(
                             text = { Text("恢复") },
                             onClick = {
