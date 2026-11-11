@@ -534,7 +534,9 @@ function mergeOccurrences(
         calendar: item,
       }
     }),
-    ...tasks.map(item => {
+    ...tasks
+      .filter(item => item.status !== 'completed')
+      .map(item => {
       const due = item.due_kind === 'datetime' && item.due_at
         ? instantInZone(item.due_at, displayTimeZone)
         : { date: item.due_date, time: item.due_time }
