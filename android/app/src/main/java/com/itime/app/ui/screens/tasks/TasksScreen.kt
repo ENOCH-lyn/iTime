@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,6 +60,7 @@ import com.itime.app.domain.TaskDraft
 import com.itime.app.data.repository.toDraft
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.OfflineBanner
+import com.itime.app.ui.components.TaskDetailContent
 import com.itime.app.ui.components.TaskDetailSheet
 import com.itime.app.ui.components.TaskRow
 import com.itime.app.ui.components.SyncChip
@@ -85,6 +87,8 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
     var filter by remember { mutableStateOf(TaskFilter.All) }
     var projectFilter by remember { mutableStateOf<String?>(null) }
     var detailTaskId by remember { mutableStateOf<String?>(null) }
+    var selectedTaskId by remember { mutableStateOf<String?>(null) }
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
     val projects by container.tasks.observeProjects()
         .collectAsStateWithLifecycle(emptyList())
     var showEditor by remember { mutableStateOf(false) }
@@ -219,6 +223,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                     },
                 )
             } else {
+                val listBody: @Composable () -> Unit = {
                 if (syncState.phase == SyncPhase.Offline) {
                     OfflineBanner(
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -248,7 +253,13 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                                     }
                                 }
                             },
-                            onClick = { detailTaskId = task.id },
+                            onClick = {
+                                if (wide) {
+                                    selectedTaskId = task.id
+                                } else {
+                                    detailTaskId = task.id
+                                }
+                            },
                             onDelete = {
                                 scope.launch { container.tasks.trash(task.id) }
                             },
@@ -264,6 +275,45 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                         )
                     }
                 }
+                }
+                }
+                if (wide) {
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        Box(Modifier.weight(0.56f).fillMaxHeight()) { listBody() }
+                        Box(Modifier.weight(0.44f).fillMaxHeight()) {
+                            val selected = visible.firstOrNull { it.id == selectedTaskId }
+                            TaskDetailContent(
+                                task = selected,
+                                onEdit = {
+                                    selected?.let {
+                                        editorTaskId = it.id
+                                        editorDraft = it.toDraft()
+                                        showEditor = true
+                                    }
+                                },
+                                onComplete = {
+                                    selected?.let { scope.launch { container.tasks.setCompleted(it.id, !it.isCompleted) } }
+                                },
+                                onDuplicate = {
+                                    selected?.let { scope.launch { container.tasks.duplicate(it.id) } }
+                                },
+                                onArchive = {
+                                    selected?.let { scope.launch { container.tasks.archive(it.id, true) } }
+                                },
+                                onTrash = {
+                                    selected?.let { scope.launch { container.tasks.trash(it.id) } }
+                                    selectedTaskId = null
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                } else {
+                    listBody()
                 }
             }
         }
