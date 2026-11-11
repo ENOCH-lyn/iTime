@@ -46,6 +46,10 @@ class AgendaTest {
         )
         assertEquals(listOf("2026-11-09", "2026-11-11"), items.map { it.date.toString() })
         assertEquals("09:00", items.first().startTime?.toString())
+        // The server expects the occurrence key to carry seconds ("T09:00:00").
+        items.forEach { item ->
+            assertEquals("${item.date}T09:00:00", item.occurrenceKey)
+        }
     }
 
     @Test
