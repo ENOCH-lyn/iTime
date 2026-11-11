@@ -31,6 +31,7 @@ class ProposalCardTest {
         preview = buildJsonObject {
             put("summary", "明天 14:00–14:45 安排「整理实验报告」")
             putJsonObject("details") {
+                put("task_title", "整理实验报告")
                 put("local_date", "2026-11-12")
                 put("starts_at", "14:00:00")
                 put("ends_at", "14:45:00")
@@ -56,6 +57,7 @@ class ProposalCardTest {
     fun cardShowsToolSummaryAndDetails() {
         render()
         composeRule.onNodeWithText("新建任务").assertIsDisplayed()
+        composeRule.onNodeWithText("任务：整理实验报告").assertIsDisplayed()
         composeRule.onNodeWithText("明天 14:00–14:45 安排「整理实验报告」").assertIsDisplayed()
         composeRule.onNodeWithText("2026-11-12 · 14:00–14:45 · 45 分钟").assertIsDisplayed()
     }

@@ -25,6 +25,19 @@ object ProposalFormat {
         else -> "AI 修改建议"
     }
 
+    /** "任务：整理实验报告" / "日程：数据结构" when the payload names a target. */
+    fun title(proposal: AiToolProposalDto): String? {
+        val details = runCatching {
+            proposal.preview?.get("details")?.jsonObject
+        }.getOrNull() ?: return null
+        fun text(key: String): String? = runCatching {
+            details[key]?.jsonPrimitive?.content
+        }.getOrNull()?.takeIf { it.isNotBlank() && it != "null" }
+        text("task_title")?.let { return "任务：$it" }
+        text("series_title")?.let { return "日程：$it" }
+        return null
+    }
+
     /** "2026-11-12 · 14:00–14:45 · 45 分钟" or null when the payload is empty. */
     fun details(proposal: AiToolProposalDto): String? {
         val details = runCatching {

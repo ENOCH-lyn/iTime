@@ -44,6 +44,21 @@ class ProposalFormatTest {
     }
 
     @Test
+    fun `title prefers task title then series title`() {
+        val taskCard = proposal {
+            put("task_title", "整理实验报告")
+        }
+        assertEquals("任务：整理实验报告", ProposalFormat.title(taskCard))
+
+        val seriesCard = proposal {
+            put("series_title", "数据结构")
+        }
+        assertEquals("日程：数据结构", ProposalFormat.title(seriesCard))
+
+        assertEquals(null, ProposalFormat.title(proposal()))
+    }
+
+    @Test
     fun `details are null when the payload has none`() {
         assertNull(ProposalFormat.details(proposal()))
     }

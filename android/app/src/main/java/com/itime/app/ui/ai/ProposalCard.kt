@@ -46,6 +46,14 @@ fun ProposalCard(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
+            ProposalFormat.title(proposal)?.let { headline ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    headline,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 summary,
