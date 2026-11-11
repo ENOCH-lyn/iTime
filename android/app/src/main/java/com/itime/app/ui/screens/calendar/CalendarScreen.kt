@@ -34,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.itime.app.AppContainer
 import com.itime.app.core.Times
+import com.itime.app.data.SyncPhase
 import com.itime.app.data.SyncState
 import com.itime.app.domain.Agenda
 import com.itime.app.domain.AgendaItem
@@ -239,15 +241,22 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     message = "点右下角新建日程，或从任务页添加任务。",
                 )
             } else {
-                LazyColumn(
-                    Modifier
+                PullToRefreshBox(
+                    isRefreshing = syncState.phase == SyncPhase.Connecting ||
+                        syncState.phase == SyncPhase.Syncing,
+                    onRefresh = { scope.launch { container.sync.syncNow("calendar-pull") } },
+                    modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = 88.dp),
+                ) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 ) {
                     items(dayItems, key = { it.id }) { item ->
                         CalendarItemRow(item) { detail = item }
                     }
+                }
                 }
             }
         }

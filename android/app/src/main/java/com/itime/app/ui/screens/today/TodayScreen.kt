@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -163,10 +164,16 @@ fun TodayScreen(
             }
             return@Scaffold
         }
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = syncState.phase == SyncPhase.Connecting ||
+                syncState.phase == SyncPhase.Syncing,
+            onRefresh = { scope.launch { container.sync.syncNow("today-pull") } },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
+        ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
         ) {
             if (syncState.phase == SyncPhase.Offline) {
@@ -315,6 +322,7 @@ fun TodayScreen(
                     )
                 }
             }
+        }
         }
     }
 

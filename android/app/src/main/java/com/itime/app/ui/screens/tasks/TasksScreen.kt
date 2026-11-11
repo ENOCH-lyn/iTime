@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.itime.app.AppContainer
 import com.itime.app.core.Times
+import com.itime.app.data.SyncPhase
 import com.itime.app.data.SyncState
 import com.itime.app.data.local.TaskEntity
 import com.itime.app.domain.TaskDraft
@@ -168,6 +170,12 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                     },
                 )
             } else {
+                PullToRefreshBox(
+                    isRefreshing = syncState.phase == SyncPhase.Connecting ||
+                        syncState.phase == SyncPhase.Syncing,
+                    onRefresh = { scope.launch { container.sync.syncNow("tasks-pull") } },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
@@ -201,6 +209,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                             },
                         )
                     }
+                }
                 }
             }
         }
