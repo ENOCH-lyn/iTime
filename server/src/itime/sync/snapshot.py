@@ -188,7 +188,8 @@ async def build_snapshot(
             addition_result(item) for item in additions
         ],
         "task_occurrences": [
-            occurrence_state_result(item) for item in occurrences
+            {**occurrence_state_result(item), "task_id": str(item.task_id)}
+            for item in occurrences
         ],
     }
 

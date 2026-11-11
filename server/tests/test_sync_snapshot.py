@@ -216,3 +216,47 @@ def test_snapshot_cursor_replays_writes_that_happen_after_it(client, database_ur
     refreshed = client.get("/api/v1/sync/snapshot").json()
     assert [item["id"] for item in refreshed["tasks"]] == [task["id"]]
     assert refreshed["cursor"] != cursor
+
+
+def test_snapshot_keeps_completed_repeating_occurrence(client, database_url):
+    create_account(client, database_url)
+    task = create_task(client, title="每日复盘")
+    scheduled = client.put(
+        f"/api/v1/tasks/{task['id']}/schedule",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_task_version": task["version"],
+            "due_kind": "datetime",
+            "due_date": "2026-11-12",
+            "due_time": "20:00:00",
+            "time_zone": "Asia/Shanghai",
+            "recurrence": {
+                "frequency": "daily",
+                "interval": 1,
+                "weekdays": [],
+                "until": "2026-11-19",
+            },
+        },
+    )
+    assert scheduled.status_code == 200, scheduled.text
+    task = scheduled.json()["task"]
+
+    completed = client.put(
+        f"/api/v1/tasks/{task['id']}/occurrences/status",
+        json={
+            "operation_id": str(uuid4()),
+            "expected_task_version": task["version"],
+            "expected_occurrence_version": 0,
+            "occurrence_key": "2026-11-12T20:00:00",
+            "status": "completed",
+            "completed_step_ids": [],
+        },
+    )
+    assert completed.status_code == 200, completed.text
+
+    snapshot = client.get("/api/v1/sync/snapshot").json()
+    rows = snapshot["task_occurrences"]
+    assert len(rows) == 1
+    assert rows[0]["task_id"] == task["id"]
+    assert rows[0]["occurrence_key"] == "2026-11-12T20:00:00"
+    assert rows[0]["status"] == "completed"
