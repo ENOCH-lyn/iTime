@@ -233,6 +233,7 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                         return@TextButton
                     }
                     serverUrlError = null
+                    serverUrl = normalized
                     scope.launch {
                         container.auth.updateBaseUrl(normalized)
                     }
