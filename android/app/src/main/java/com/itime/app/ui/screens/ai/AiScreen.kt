@@ -57,6 +57,7 @@ import com.itime.app.data.remote.AiConversationDto
 import com.itime.app.data.remote.AiMessageDto
 import com.itime.app.data.remote.AiToolProposalDto
 import com.itime.app.data.repository.AiRepository
+import com.itime.app.ui.ai.AiErrorBar
 import com.itime.app.ui.ai.ProposalCard
 import com.itime.app.ui.ai.ProposalFormat
 import com.itime.app.ui.components.EmptyState
@@ -76,6 +77,7 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
     var proposal by remember { mutableStateOf<AiToolProposalDto?>(null) }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var lastSent by remember { mutableStateOf<String?>(null) }
     var deciding by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -116,6 +118,7 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
         input = ""
         error = null
         sending = true
+        lastSent = text
         proposal = null
         messages = messages + AiMessageDto(
             id = "local-${System.currentTimeMillis()}",
@@ -281,26 +284,20 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
                     }
                 }
             }
-            error?.let {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter),
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { error = null }) { Text("知道了") }
-                    }
-                }
+            error?.let { message ->
+                AiErrorBar(
+                    message = message,
+                    canRetry = lastSent != null,
+                    retryEnabled = !sending && !deciding,
+                    onRetry = {
+                        val previous = lastSent ?: return@AiErrorBar
+                        error = null
+                        input = previous
+                        send()
+                    },
+                    onDismiss = { error = null },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
