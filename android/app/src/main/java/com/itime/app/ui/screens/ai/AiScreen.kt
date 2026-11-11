@@ -126,15 +126,19 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
             sequence = messages.size,
         )
         scope.launch {
-            runCatching {
-                ai.send(conv, text) { progress -> if (progress.isNotEmpty()) messages = progress }
-            }.onSuccess { latest ->
+            try {
+                val latest = ai.send(conv, text) { progress ->
+                    if (progress.isNotEmpty()) messages = progress
+                }
                 messages = latest
                 conversation = ai.ensureConversation()
                 refreshProposal()
                 container.sync.requestSync("ai-reply")
-            }.onFailure { error = it.message ?: "AI 请求失败，请稍后重试。" }
-            sending = false
+            } catch (failure: Exception) {
+                error = failure.message ?: "AI 请求失败，请稍后重试。"
+            } finally {
+                sending = false
+            }
         }
     }
 
@@ -145,17 +149,19 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
         deciding = true
         error = null
         scope.launch {
-            runCatching {
-                ai.decide(conv.id, current, approve, knownMessages = messages.size) { progress ->
+            try {
+                val latest = ai.decide(conv.id, current, approve, knownMessages = messages.size) { progress ->
                     if (progress.isNotEmpty()) messages = progress
                 }
-            }.onSuccess { latest ->
                 messages = latest
                 proposal = null
                 conversation = ai.ensureConversation()
                 container.sync.requestSync("ai-decided")
-            }.onFailure { error = it.message ?: "处理提案失败。" }
-            deciding = false
+            } catch (failure: Exception) {
+                error = failure.message ?: "处理提案失败。"
+            } finally {
+                deciding = false
+            }
         }
     }
 

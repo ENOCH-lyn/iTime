@@ -60,16 +60,23 @@ class AiRepository(private val api: ItimeApi) {
             content = content,
             response_mode = "auto",
         )
+        // Capture the baseline *before* posting, otherwise the server may
+        // already have projected the new reply into the "accepted" snapshot and
+        // the poller would mistake an old reply for a fresh one.
+        val baselineIds = api.aiMessages(conversation.id).items.map { it.id }.toSet()
         val accepted: AiMessageEnvelope = api.sendAiMessage(conversation.id, body)
         var latest = accepted.messages.ifEmpty {
             api.aiMessages(conversation.id).items
         }.sortedBy { it.sequence }
-        val baseline = latest.size
         onProgress(latest)
+        val startedAt = System.currentTimeMillis()
         repeat(180) { attempt ->
-            val last = latest.lastOrNull()
-            val settled = last != null && last.role == "assistant" && last.status == "complete"
-            if (latest.size > baseline && settled) return latest
+            val freshAssistant = latest.lastOrNull {
+                it.id !in baselineIds && it.role == "assistant"
+            }
+            val ready = freshAssistant != null &&
+                (freshAssistant.status == "complete" || freshAssistant.content.isNotBlank())
+            if (ready || System.currentTimeMillis() - startedAt > 90_000) return latest
             delay(if (attempt < 10) 800 else 1500)
             latest = api.aiMessages(conversation.id).items.sortedBy { it.sequence }
             onProgress(latest)
