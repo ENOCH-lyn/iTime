@@ -199,6 +199,14 @@ class ItimeApi(
         },
     )
 
+    suspend fun taskOccurrences(
+        start: String,
+        end: String,
+    ): List<OccurrenceStateDto> = get<TaskOccurrenceListDto>(
+        "/api/v1/task-occurrences",
+        query = mapOf("start" to start, "end" to end),
+    ).items
+
     suspend fun syncEntity(entityType: String, entityId: String): SyncEntityDto =
         get("/api/v1/sync/entities/$entityType/$entityId")
 

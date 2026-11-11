@@ -251,6 +251,7 @@ class TaskRepository(
                     taskId = taskId,
                     occurrenceKey = occurrenceKey,
                     originalDate = occurrenceKey.substringBefore('T'),
+                    version = 0,
                 )).copy(
                     status = status,
                     completedAt = if (status == "completed") Instant.now().toString() else null,

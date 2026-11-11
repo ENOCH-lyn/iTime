@@ -300,6 +300,9 @@ data class AdditionDto(
 )
 
 @Serializable
+data class TaskOccurrenceListDto(val items: List<OccurrenceStateDto> = emptyList())
+
+@Serializable
 data class OccurrenceStateDto(
     val id: String,
     val occurrence_key: String,

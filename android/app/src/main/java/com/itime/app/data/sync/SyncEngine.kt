@@ -434,6 +434,26 @@ class SyncEngine(
     }
 
     private suspend fun handlePushFailure(op: OutboxEntity, error: ApiException) {
+        if (error.isConflict && op.intent == Intent.TASK_OCCURRENCE) {
+            val payload = json.decodeFromString(TaskOccurrencePayload.serializer(), op.payloadJson)
+            val match = occurrenceSnapshot(op.entityId, payload.occurrenceKey)
+            if (match != null && match.status == payload.status) {
+                db.occurrenceDao().upsert(match.toEntity(op.entityId))
+                db.outboxDao().delete(op.operationId)
+                refreshPendingCounts()
+                return
+            }
+            db.outboxDao().markConflict(
+                op.operationId,
+                error.code,
+                error.message,
+                op.payloadJson,
+                match?.let { json.encodeToString(OccurrenceStateDto.serializer(), it) },
+            )
+            status.update { it.copy(phase = SyncPhase.Conflict) }
+            refreshPendingCounts()
+            return
+        }
         if (error.isConflict) {
             val server = runCatching { api.syncEntity(op.entityType, op.entityId) }.getOrNull()
             if (converges(op, server)) {
@@ -683,6 +703,21 @@ class SyncEngine(
         }
     }
 
+    private suspend fun occurrenceSnapshot(
+        taskId: String,
+        occurrenceKey: String,
+    ): OccurrenceStateDto? {
+        val date = runCatching {
+            java.time.LocalDate.parse(occurrenceKey.substringBefore('T'))
+        }.getOrNull() ?: return null
+        val items = runCatching {
+            api.taskOccurrences(date.toString(), date.plusDays(1).toString())
+        }.getOrNull() ?: return null
+        return items.firstOrNull {
+            it.occurrence_key == occurrenceKey && it.task_id == taskId
+        }
+    }
+
     private suspend fun currentTaskVersion(taskId: String): Int =
         db.taskDao().find(taskId)?.version ?: 1
 
@@ -696,6 +731,21 @@ class SyncEngine(
 
     suspend fun resolveConflict(operationId: String, keepLocal: Boolean) {
         val op = db.outboxDao().find(operationId) ?: return
+        if (keepLocal && op.intent == Intent.TASK_OCCURRENCE) {
+            val payload = json.decodeFromString(TaskOccurrencePayload.serializer(), op.payloadJson)
+            val match = occurrenceSnapshot(op.entityId, payload.occurrenceKey)
+            if (match != null) {
+                db.occurrenceDao().upsert(match.toEntity(op.entityId))
+            } else {
+                db.occurrenceDao().find(op.entityId, payload.occurrenceKey)?.let { local ->
+                    db.occurrenceDao().upsert(local.copy(version = 0))
+                }
+            }
+            db.outboxDao().resetToPending(operationId)
+            refreshPendingCounts()
+            syncNow("resolve-conflict")
+            return
+        }
         if (keepLocal) {
             // Rebase onto the current server version and retry.
             val server = runCatching { api.syncEntity(op.entityType, op.entityId) }.getOrNull()

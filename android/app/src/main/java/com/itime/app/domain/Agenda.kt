@@ -189,6 +189,9 @@ object Agenda {
                 } else {
                     Times.combine(effectiveDate, effectiveTime, zoneForTask)
                 }
+                val fallbackKey = Times.formatDate(date) + "T" + Times.formatTime(
+                    effectiveTime ?: LocalTime.MIDNIGHT,
+                )
                 result += AgendaItem(
                     id = "task:${task.id}:$date",
                     sourceKind = "task",
@@ -203,7 +206,7 @@ object Agenda {
                     endTime = effectiveTime?.plusMinutes(durations.toLong()),
                     allDay = effectiveTime == null,
                     completed = completed,
-                    occurrenceKey = state?.occurrenceKey ?: date.toString(),
+                    occurrenceKey = state?.occurrenceKey ?: fallbackKey,
                     colorSeed = task.id.hashCode(),
                     busy = false,
                 )

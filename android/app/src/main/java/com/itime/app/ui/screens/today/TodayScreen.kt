@@ -96,15 +96,24 @@ fun TodayScreen(
             occurrences = occurrences,
         )
     }
-    val todo = remember(tasks, today) {
+    val completedOccurrencesToday = remember(occurrences, today) {
+        occurrences.filter { occurrence ->
+            occurrence.status == "completed" &&
+                Times.parseDate(occurrence.originalDate) == today
+        }.map { it.taskId }.toSet()
+    }
+    val todo = remember(tasks, today, completedOccurrencesToday) {
         tasks.filter { task ->
             val due = Times.parseDate(task.dueDate)
-            !task.isCompleted && due != null && !due.isAfter(today)
+            !task.isCompleted &&
+                due != null &&
+                !due.isAfter(today) &&
+                task.id !in completedOccurrencesToday
         }.sortedBy { it.dueDate ?: "" }
     }
     val doneToday = tasks.count { task ->
         task.isCompleted && task.completedAt?.startsWith(today.toString()) == true
-    }
+    } + completedOccurrencesToday.size
 
     Scaffold(
         topBar = {
@@ -201,7 +210,18 @@ fun TodayScreen(
             items(agenda, key = { it.id }) { item ->
                 AgendaRow(item) {
                     if (item.sourceKind == "task") {
-                        scope.launch { container.tasks.setCompleted(item.sourceId, true) }
+                        scope.launch {
+                            val task = tasks.firstOrNull { it.id == item.sourceId }
+                            if (task?.isRepeating == true && item.occurrenceKey != null) {
+                                container.tasks.setOccurrenceStatus(
+                                    item.sourceId,
+                                    item.occurrenceKey,
+                                    "completed",
+                                )
+                            } else {
+                                container.tasks.setCompleted(item.sourceId, true)
+                            }
+                        }
                     }
                 }
             }

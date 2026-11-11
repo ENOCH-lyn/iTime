@@ -307,7 +307,16 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     Button(
                         onClick = {
                             scope.launch {
-                                container.tasks.setCompleted(item.sourceId, true)
+                                val task = tasks.firstOrNull { it.id == item.sourceId }
+                                if (task?.isRepeating == true && item.occurrenceKey != null) {
+                                    container.tasks.setOccurrenceStatus(
+                                        item.sourceId,
+                                        item.occurrenceKey,
+                                        "completed",
+                                    )
+                                } else {
+                                    container.tasks.setCompleted(item.sourceId, true)
+                                }
                                 detail = null
                             }
                         },

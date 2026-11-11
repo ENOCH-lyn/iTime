@@ -213,7 +213,7 @@ data class OccurrenceEntity(
     val completedStepIdsCsv: String = "",
     val makeupForKey: String? = null,
     val makeupForDate: String? = null,
-    val version: Int = 1,
+    val version: Int = 0,
 )
 
 @Entity(tableName = "time_settings")
