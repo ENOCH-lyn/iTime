@@ -37,6 +37,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,6 +89,15 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
     var editorTaskId by remember { mutableStateOf<String?>(null) }
     var editorDraft by remember { mutableStateOf(TaskDraft()) }
     val today = LocalDate.now()
+    val pendingShare by container.pendingShare.collectAsStateWithLifecycle()
+
+    LaunchedEffect(pendingShare) {
+        val shared = pendingShare ?: return@LaunchedEffect
+        editorTaskId = null
+        editorDraft = TaskDraft(title = shared.take(200))
+        showEditor = true
+        container.pendingShare.value = null
+    }
 
     val visible = remember(active, trashed, archived, query, filter, projectFilter) {
         val base = when (filter) {

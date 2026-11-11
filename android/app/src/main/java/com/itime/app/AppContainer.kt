@@ -36,6 +36,9 @@ class AppContainer(context: Context) {
 
     val sessionStore = SessionStore(context)
 
+    /** Text shared into the app (ACTION_SEND) waiting to become a task draft. */
+    val pendingShare = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)

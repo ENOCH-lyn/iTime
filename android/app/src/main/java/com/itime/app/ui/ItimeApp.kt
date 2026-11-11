@@ -63,6 +63,15 @@ private fun MainShell(container: AppContainer) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val syncState by container.syncStatus.state.collectAsStateWithLifecycle()
+    val pendingShare by container.pendingShare.collectAsStateWithLifecycle()
+
+    LaunchedEffect(pendingShare) {
+        if (pendingShare != null) {
+            navController.navigate(TopDestination.Tasks.route) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         container.sync.requestSync("app-start")
