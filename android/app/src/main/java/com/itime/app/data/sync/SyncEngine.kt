@@ -776,6 +776,19 @@ class SyncEngine(
         syncNow("resolve-conflict")
     }
 
+    /** Re-queues a write that previously failed with a permanent error. */
+    suspend fun retryOperation(operationId: String) {
+        db.outboxDao().resetToPending(operationId)
+        refreshPendingCounts()
+        syncNow("retry-failed")
+    }
+
+    /** Drops a local write the user chose not to send. */
+    suspend fun discardOperation(operationId: String) {
+        db.outboxDao().delete(operationId)
+        refreshPendingCounts()
+    }
+
     fun extractVersion(element: kotlinx.serialization.json.JsonElement): Int? =
         runCatching { element.jsonObject["version"]?.jsonPrimitive?.intOrNull }.getOrNull()
 

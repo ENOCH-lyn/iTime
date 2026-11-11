@@ -274,6 +274,9 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE state = 'conflict' ORDER BY createdAt ASC")
     fun observeConflicts(): Flow<List<OutboxEntity>>
 
+    @Query("SELECT * FROM outbox WHERE state = 'failed' ORDER BY createdAt ASC")
+    fun observeFailed(): Flow<List<OutboxEntity>>
+
     @Query("SELECT * FROM outbox")
     suspend fun all(): List<OutboxEntity>
 

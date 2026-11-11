@@ -52,6 +52,8 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
     val session by container.auth.session.collectAsStateWithLifecycle()
     val conflicts by container.database.outboxDao().observeConflicts()
         .collectAsStateWithLifecycle(emptyList())
+    val failed by container.database.outboxDao().observeFailed()
+        .collectAsStateWithLifecycle(emptyList())
     val settings by container.calendar.observeTimeSettings().collectAsStateWithLifecycle(null)
     val scope = rememberCoroutineScope()
     var serverUrl by remember { mutableStateOf(container.sessionStore.baseUrl()) }
@@ -145,7 +147,7 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                     ) {
                         Column(Modifier.padding(12.dp)) {
                             Text(
-                                conflictLabel(conflict),
+                                operationLabel(conflict),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
@@ -160,6 +162,43 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                                 OutlinedButton(onClick = { resolving = conflict }) {
                                     Text("处理")
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (failed.isNotEmpty()) {
+                SectionHeader("同步失败")
+                Text(
+                    "这些改动无法自动发送，可以重试或丢弃。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                failed.forEach { operation ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(operationLabel(operation), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                operation.lastErrorMessage ?: "服务器拒绝了这次改动。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Row(
+                                Modifier.padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                OutlinedButton(onClick = {
+                                    scope.launch { container.sync.retryOperation(operation.operationId) }
+                                }) { Text("重试") }
+                                OutlinedButton(onClick = {
+                                    scope.launch { container.sync.discardOperation(operation.operationId) }
+                                }) { Text("丢弃") }
                             }
                         }
                     }
@@ -311,10 +350,15 @@ private fun syncPhaseLabel(state: SyncState): String = when (state.phase) {
     SyncPhase.Error -> "同步出错"
 }
 
-private fun conflictLabel(conflict: OutboxEntity): String = when (conflict.intent) {
+private fun operationLabel(conflict: OutboxEntity): String = when (conflict.intent) {
     "task.update" -> "任务修改"
     "task.complete" -> "任务完成状态"
     "task.schedule" -> "任务日期"
     "calendar_series.update" -> "日程修改"
+    "task.step.create" -> "新增步骤"
+    "task.step.update" -> "步骤勾选"
+    "task.step.delete" -> "删除步骤"
+    "task.step.reorder" -> "步骤排序"
+    "time_settings.update" -> "时区设置"
     else -> "本地改动"
 }
