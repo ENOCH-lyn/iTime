@@ -1213,6 +1213,179 @@ dialog.calendar-dialog .field-hint {
   }
 }
 
+/* Series dialog: header / scrolling body / fixed footer ----------------- */
+dialog.calendar-series-dialog > form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+  max-height: inherit;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.calendar-series-dialog .calendar-dialog-heading {
+  position: static;
+  top: auto;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--m3-outline-variant);
+}
+
+.calendar-series-dialog .calendar-dialog-heading h2 {
+  font-size: 20px;
+  line-height: 26px;
+}
+
+.calendar-series-dialog .calendar-dialog-heading p {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.calendar-series-dialog .calendar-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 24px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.calendar-series-dialog .calendar-kind-switch {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--m3-outline-variant);
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-highest);
+}
+
+.calendar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calendar-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar-section-title {
+  margin: 0;
+  color: var(--m3-on-surface);
+  font: 500 13px/18px var(--font);
+  letter-spacing: 0.6px;
+  text-transform: none;
+}
+
+.calendar-section-hint {
+  margin: 0;
+  color: var(--m3-on-surface-variant);
+  font: 400 12px/16px var(--font);
+}
+
+.calendar-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.calendar-fields .span-two {
+  grid-column: 1 / -1;
+}
+
+.calendar-fields--time {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.calendar-series-dialog input:not([type="checkbox"]):not([type="radio"]),
+.calendar-series-dialog select {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.calendar-series-dialog input[type="checkbox"],
+.calendar-series-dialog input[type="radio"] {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.calendar-series-dialog textarea {
+  min-height: 84px;
+  padding: 10px 12px;
+}
+
+.calendar-series-dialog .field {
+  gap: 5px;
+}
+
+.calendar-series-dialog .field > label {
+  font: 500 11.5px/16px var(--font);
+  letter-spacing: 0.4px;
+}
+
+.calendar-checkbox--inline {
+  grid-column: 1 / -1;
+  min-height: 28px;
+  margin: 0;
+}
+
+.calendar-busy-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-surface-container-highest);
+}
+
+.calendar-series-dialog .weekday-picker {
+  margin-top: 2px;
+}
+
+.calendar-series-dialog .dialog-actions {
+  position: static;
+  bottom: auto;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 14px 24px;
+  border-top: 1px solid var(--m3-outline-variant);
+  background: var(--m3-surface-container-high);
+}
+
+@media (max-width: 600px) {
+  .calendar-series-dialog .calendar-dialog-heading {
+    padding: 16px;
+  }
+  .calendar-series-dialog .calendar-dialog-body {
+    padding: 14px 16px 20px;
+    gap: 20px;
+  }
+  .calendar-fields,
+  .calendar-fields--time {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .calendar-fields .span-two {
+    grid-column: 1;
+  }
+  .calendar-series-dialog .dialog-actions {
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  }
+}
+
 /* Keep non-series dialogs' own headers/actions intact ------------------ */
 dialog.calendar-trash-dialog .calendar-dialog-heading {
   position: static;

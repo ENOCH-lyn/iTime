@@ -24,6 +24,8 @@ export interface ConversationMessage {
   role: 'user' | 'assistant'
   status: 'complete' | 'queued' | 'running' | 'failed' | 'timed_out' | 'cancelled'
   content: string
+  reasoning_content?: string
+  reasoning_steps?: string[]
   error: { code: string; message: string } | null
   job: AIJob | null
   calendar_imports?: CalendarImportBatch[]
@@ -46,11 +48,12 @@ export interface MessagePage {
 export interface AIJobEvent {
   sequence: number
   generation: number
-  kind: 'job_state' | 'content_reset' | 'content_delta'
+  kind: 'job_state' | 'content_reset' | 'content_delta' | 'reasoning_delta'
   payload: {
     status?: AIJob['status']
     message_id?: string
     text?: string
+    step?: string | null
     attempt?: number
     retrying?: boolean
     proposal_id?: string

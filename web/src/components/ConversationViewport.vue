@@ -20,6 +20,7 @@ import MarkdownMessage from './MarkdownMessage.vue'
 import ProposalMessageCard from './ProposalMessageCard.vue'
 import TaskActionProposalCard from './TaskActionProposalCard.vue'
 import TermActionProposalCard from './TermActionProposalCard.vue'
+import ThinkingTrace from './ThinkingTrace.vue'
 import TimetableImportMessageCard from './TimetableImportMessageCard.vue'
 
 const props = defineProps<{
@@ -101,7 +102,7 @@ function loadOlder() {
 
 watch(
   () => props.messages.map(message => (
-    `${message.id}:${message.content.length}:${message.status}`
+    `${message.id}:${message.content.length}:${(message.reasoning_content ?? '').length}:${message.status}`
   )).join('|'),
   async () => {
     const follow = nearBottom.value
@@ -199,6 +200,12 @@ defineExpose({ scrollToLatest })
             <time class="sr-only" :datetime="message.created_at">
               {{ readableTime(message.created_at) }}
             </time>
+            <ThinkingTrace
+              v-if="message.role === 'assistant'"
+              :reasoning="message.reasoning_content ?? ''"
+              :steps="message.reasoning_steps ?? []"
+              :running="['queued', 'running'].includes(message.status)"
+            />
             <MarkdownMessage
               v-if="message.role === 'assistant' && message.content"
               :content="message.content"

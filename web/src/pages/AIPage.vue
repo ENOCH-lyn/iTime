@@ -258,6 +258,8 @@ function handleEvent(raw: MessageEvent<string>) {
     eventGeneration = event.generation
     updateMessage(messageId, {
       content: '',
+      reasoning_content: '',
+      reasoning_steps: [],
       status: 'running',
       error: null,
     })
@@ -265,6 +267,21 @@ function handleEvent(raw: MessageEvent<string>) {
   }
   if (event.generation < eventGeneration) return
   eventGeneration = event.generation
+  if (event.kind === 'reasoning_delta') {
+    const message = messages.value.find(item => item.id === messageId)
+    if (message) {
+      const step = event.payload.step
+      updateMessage(messageId, {
+        reasoning_content: (message.reasoning_content ?? '') + (event.payload.text ?? ''),
+        reasoning_steps: step
+          ? [...(message.reasoning_steps ?? []), step]
+          : message.reasoning_steps,
+        status: 'running',
+      })
+      void scrollToLatest(false)
+    }
+    return
+  }
   if (event.kind === 'content_delta') {
     const message = messages.value.find(item => item.id === messageId)
     if (message) {
@@ -302,7 +319,7 @@ function connectEvents() {
   if (!job || document.hidden) return
   lastEventSequence = job.last_event_sequence
   eventSource = new EventSource(jobEventsUrl(job.id, lastEventSequence))
-  for (const kind of ['job_state', 'content_reset', 'content_delta'] as const) {
+  for (const kind of ['job_state', 'content_reset', 'content_delta', 'reasoning_delta'] as const) {
     eventSource.addEventListener(kind, handleEvent as EventListener)
   }
   eventSource.onerror = () => {

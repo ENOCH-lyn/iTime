@@ -76,6 +76,7 @@ declare module 'vue' {
     TaskScheduleEditor: typeof import('./components/TaskScheduleEditor.vue')['default']
     TaskTrashDialog: typeof import('./components/TaskTrashDialog.vue')['default']
     TermActionProposalCard: typeof import('./components/TermActionProposalCard.vue')['default']
+    ThinkingTrace: typeof import('./components/ThinkingTrace.vue')['default']
     TimetableBoard: typeof import('./components/TimetableBoard.vue')['default']
     TimetableEventDialog: typeof import('./components/TimetableEventDialog.vue')['default']
     TimetableImportMessageCard: typeof import('./components/TimetableImportMessageCard.vue')['default']

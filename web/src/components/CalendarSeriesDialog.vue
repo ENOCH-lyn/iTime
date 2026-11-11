@@ -527,9 +527,9 @@ async function save() {
 <template>
   <dialog id="calendar-series-dialog" ref="dialog" class="calendar-dialog calendar-series-dialog"
     aria-labelledby="calendar-series-title" @cancel.prevent="close" @click.self="close">
-    <form novalidate @submit.prevent="save">
+    <form class="calendar-dialog-form" novalidate @submit.prevent="save">
       <div class="calendar-dialog-heading">
-        <component :is="values.kind === 'course' ? BookOpen : CalendarClock" :size="22" aria-hidden="true" />
+        <component :is="values.kind === 'course' ? BookOpen : CalendarClock" :size="20" aria-hidden="true" />
         <div>
           <h2 id="calendar-series-title">
             {{ splitting ? '修改本次及以后' : editing ? '编辑整个系列' : '添加日程' }}
@@ -541,114 +541,125 @@ async function save() {
         </button>
       </div>
 
-      <StatusMessage :error="error" />
-      <div v-if="conflictResolutionRequired && serverSeries" class="conflict-comparison">
-        <strong>服务器最新版 · 版本 {{ serverSeries.version }}</strong>
-        <p>名称：{{ serverSeries.name }}</p>
-        <p>地点：{{ serverSeries.location || '未设置' }}</p>
-        <p>时间：{{ shortTime(serverSeries.starts_at) }}–{{ shortTime(serverSeries.ends_at) }}</p>
-        <strong>当前填写</strong>
-        <p>名称：{{ values.name }}</p>
-        <p>地点：{{ values.location || '未设置' }}</p>
-        <p>时间：{{ values.startsAt }}–{{ values.endsAt }}</p>
-        <div class="inline-actions">
-          <button type="button" class="text-button" @click="confirmOverwrite">
-            保留当前填写并明确覆盖服务器内容
-          </button>
-          <button type="button" class="text-button" @click="applyLatest">改用服务器内容</button>
-        </div>
-      </div>
-      <p v-if="periodSnapshotChanged" class="conflict-note">
-        当前学期节次表已变化。表单已改用系列原先保存的明确时刻，保存不会静默套用新节次。
-      </p>
-
-      <fieldset class="segmented-field">
-        <legend>类型</legend>
-        <label :class="{ selected: values.kind === 'course' }">
-          <input v-model="values.kind" type="radio" value="course" :disabled="pending || editing" />
-          <BookOpen :size="16" aria-hidden="true" />课程
-        </label>
-        <label :class="{ selected: values.kind === 'fixed' }">
-          <input v-model="values.kind" type="radio" value="fixed" :disabled="pending || editing" />
-          <CalendarClock :size="16" aria-hidden="true" />固定安排
-        </label>
-      </fieldset>
-
-      <div class="calendar-form-grid">
-        <div class="field span-two">
-          <label for="calendar-series-name">名称</label>
-          <input id="calendar-series-name" v-model="values.name" maxlength="200" :disabled="pending" />
-        </div>
-        <div class="field">
-          <label for="calendar-series-location">地点 <span class="muted">可选</span></label>
-          <input id="calendar-series-location" v-model="values.location" maxlength="300" :disabled="pending" />
-        </div>
-        <div class="field">
-          <label for="calendar-series-teacher">教师 <span class="muted">可选</span></label>
-          <input id="calendar-series-teacher" v-model="values.teacher" maxlength="200" :disabled="pending" />
-        </div>
-        <div class="field">
-          <label for="calendar-series-term">学期 {{ values.kind === 'course' ? '' : '（可选）' }}</label>
-          <select id="calendar-series-term" v-model="values.termId" :disabled="pending || splitting">
-            <option v-if="values.kind === 'fixed'" value="">不关联学期</option>
-            <option v-for="term in terms" :key="term.id" :value="term.id">{{ term.name }}</option>
-          </select>
-          <p v-if="values.kind === 'course' && !terms.length" class="field-hint">
-            还没有学期。可以先把类型改为固定安排，或去“时间与学期”创建学期。
-          </p>
-        </div>
-        <div class="field span-two">
-          <label for="calendar-series-description">说明 <span class="muted">可选</span></label>
-          <textarea id="calendar-series-description" v-model="values.description" maxlength="20000"
-            rows="3" :disabled="pending"></textarea>
-        </div>
-      </div>
-
-      <fieldset class="calendar-fieldset">
-        <legend>日期与时间</legend>
-        <div class="calendar-form-grid">
-          <div class="field">
-            <label for="calendar-series-date">{{ values.kind === 'course' ? '首个实例日期' : '开始日期' }}</label>
-            <input id="calendar-series-date" v-model="values.startDate" type="date"
-              :disabled="pending || splitting" @input="resetOffsetChoice" />
+      <div class="calendar-dialog-body">
+        <StatusMessage :error="error" />
+        <div v-if="conflictResolutionRequired && serverSeries" class="conflict-comparison">
+          <strong>服务器最新版 · 版本 {{ serverSeries.version }}</strong>
+          <p>名称：{{ serverSeries.name }}</p>
+          <p>地点：{{ serverSeries.location || '未设置' }}</p>
+          <p>时间：{{ shortTime(serverSeries.starts_at) }}–{{ shortTime(serverSeries.ends_at) }}</p>
+          <strong>当前填写</strong>
+          <p>名称：{{ values.name }}</p>
+          <p>地点：{{ values.location || '未设置' }}</p>
+          <p>时间：{{ values.startsAt }}–{{ values.endsAt }}</p>
+          <div class="inline-actions">
+            <button type="button" class="text-button" @click="confirmOverwrite">
+              保留当前填写并明确覆盖服务器内容
+            </button>
+            <button type="button" class="text-button" @click="applyLatest">改用服务器内容</button>
           </div>
-          <div v-if="values.termId && selectedTerm?.period_count" class="field">
-            <label for="calendar-time-mode">时间填写方式</label>
-            <select id="calendar-time-mode" v-model="values.timeMode" :disabled="pending">
-              <option value="period">按节次</option>
-              <option value="clock">按时刻</option>
-            </select>
+        </div>
+        <p v-if="periodSnapshotChanged" class="conflict-note">
+          当前学期节次表已变化。表单已改用系列原先保存的明确时刻，保存不会静默套用新节次。
+        </p>
+
+        <fieldset class="segmented-field calendar-kind-switch">
+          <legend>类型</legend>
+          <label :class="{ selected: values.kind === 'course' }">
+            <input v-model="values.kind" type="radio" value="course" :disabled="pending || editing" />
+            <BookOpen :size="16" aria-hidden="true" />课程
+          </label>
+          <label :class="{ selected: values.kind === 'fixed' }">
+            <input v-model="values.kind" type="radio" value="fixed" :disabled="pending || editing" />
+            <CalendarClock :size="16" aria-hidden="true" />固定安排
+          </label>
+        </fieldset>
+
+        <section class="calendar-section" aria-labelledby="calendar-section-basic">
+          <div class="calendar-section-head">
+            <h3 id="calendar-section-basic" class="calendar-section-title">基本信息</h3>
           </div>
-          <template v-if="values.timeMode === 'period' && selectedTerm?.periods?.length">
+          <div class="calendar-fields">
+            <div class="field span-two">
+              <label for="calendar-series-name">名称</label>
+              <input id="calendar-series-name" v-model="values.name" maxlength="200" :disabled="pending"
+                :placeholder="values.kind === 'course' ? '例如 高等数学' : '例如 组会'" />
+            </div>
             <div class="field">
-              <label for="calendar-start-period">开始节次</label>
-              <select id="calendar-start-period" v-model.number="values.startPeriod" :disabled="pending">
-                <option v-for="period in selectedTerm.periods" :key="period.period_number" :value="period.period_number">
-                  {{ period.name }} · {{ shortTime(period.starts_at) }}
-                </option>
+              <label for="calendar-series-location">地点 <span class="muted">可选</span></label>
+              <input id="calendar-series-location" v-model="values.location" maxlength="300" :disabled="pending"
+                placeholder="例如 教学楼 A101" />
+            </div>
+            <div class="field">
+              <label for="calendar-series-teacher">教师 <span class="muted">可选</span></label>
+              <input id="calendar-series-teacher" v-model="values.teacher" maxlength="200" :disabled="pending"
+                placeholder="例如 陈老师" />
+            </div>
+            <div class="field span-two">
+              <label for="calendar-series-term">
+                学期
+                <span v-if="values.kind === 'fixed'" class="muted">可选</span>
+              </label>
+              <select id="calendar-series-term" v-model="values.termId" :disabled="pending || splitting">
+                <option v-if="values.kind === 'fixed'" value="">不关联学期</option>
+                <option v-for="term in terms" :key="term.id" :value="term.id">{{ term.name }}</option>
+              </select>
+              <p v-if="values.kind === 'course' && !terms.length" class="field-hint">
+                还没有学期。可以先把类型改为固定安排，或去“时间与学期”创建学期。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="calendar-section" aria-labelledby="calendar-section-time">
+          <div class="calendar-section-head">
+            <h3 id="calendar-section-time" class="calendar-section-title">时间</h3>
+            <p class="calendar-section-hint">课程按所选星期在有效周次内展开。</p>
+          </div>
+          <div class="calendar-fields calendar-fields--time">
+            <div class="field">
+              <label for="calendar-series-date">{{ values.kind === 'course' ? '首个实例日期' : '开始日期' }}</label>
+              <input id="calendar-series-date" v-model="values.startDate" type="date"
+                :disabled="pending || splitting" @input="resetOffsetChoice" />
+            </div>
+            <div v-if="values.termId && selectedTerm?.period_count" class="field">
+              <label for="calendar-time-mode">填写方式</label>
+              <select id="calendar-time-mode" v-model="values.timeMode" :disabled="pending">
+                <option value="period">按节次</option>
+                <option value="clock">按时刻</option>
               </select>
             </div>
-            <div class="field">
-              <label for="calendar-end-period">结束节次</label>
-              <select id="calendar-end-period" v-model.number="values.endPeriod" :disabled="pending">
-                <option v-for="period in selectedTerm.periods" :key="period.period_number" :value="period.period_number">
-                  {{ period.name }} · {{ shortTime(period.ends_at) }}
-                </option>
-              </select>
-            </div>
-          </template>
-          <template v-else>
-            <div class="field">
-              <label for="calendar-start-time">开始时刻</label>
-              <input id="calendar-start-time" v-model="values.startsAt" type="time"
-                :disabled="pending" @input="resetOffsetChoice" />
-            </div>
-            <div class="field">
-              <label for="calendar-end-time">结束时刻</label>
-              <input id="calendar-end-time" v-model="values.endsAt" type="time"
-                :disabled="pending" @input="resetOffsetChoice" />
-            </div>
-            <label class="checkbox-label calendar-checkbox">
+            <template v-if="values.timeMode === 'period' && selectedTerm?.periods?.length">
+              <div class="field">
+                <label for="calendar-start-period">开始节次</label>
+                <select id="calendar-start-period" v-model.number="values.startPeriod" :disabled="pending">
+                  <option v-for="period in selectedTerm.periods" :key="period.period_number" :value="period.period_number">
+                    {{ period.name }} · {{ shortTime(period.starts_at) }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="calendar-end-period">结束节次</label>
+                <select id="calendar-end-period" v-model.number="values.endPeriod" :disabled="pending">
+                  <option v-for="period in selectedTerm.periods" :key="period.period_number" :value="period.period_number">
+                    {{ period.name }} · {{ shortTime(period.ends_at) }}
+                  </option>
+                </select>
+              </div>
+            </template>
+            <template v-else>
+              <div class="field">
+                <label for="calendar-start-time">开始时刻</label>
+                <input id="calendar-start-time" v-model="values.startsAt" type="time"
+                  :disabled="pending" @input="resetOffsetChoice" />
+              </div>
+              <div class="field">
+                <label for="calendar-end-time">结束时刻</label>
+                <input id="calendar-end-time" v-model="values.endsAt" type="time"
+                  :disabled="pending" @input="resetOffsetChoice" />
+              </div>
+            </template>
+            <label class="checkbox-label calendar-checkbox calendar-checkbox--inline">
               <input v-model="values.endDayOffset" type="checkbox" :true-value="1" :false-value="0"
                 :disabled="pending" @change="resetOffsetChoice" />
               跨至次日结束
@@ -663,62 +674,78 @@ async function save() {
               </select>
               <p class="field-hint">当地时钟在夏令时回拨后出现两次，请明确选择偏移再保存。</p>
             </div>
-          </template>
-        </div>
-      </fieldset>
+          </div>
+        </section>
 
-      <fieldset class="calendar-fieldset">
-        <legend>{{ values.kind === 'course' ? '上课周次' : '重复规则' }}</legend>
-        <template v-if="values.kind === 'course'">
-          <div class="field">
-            <label for="calendar-course-weeks">有效周次</label>
-            <input id="calendar-course-weeks" v-model="values.weekNumbers" placeholder="1-16,18" :disabled="pending" />
-            <p class="field-hint">支持逗号和范围，例如 1-8,10,12-16。</p>
+        <section class="calendar-section" aria-labelledby="calendar-section-repeat">
+          <div class="calendar-section-head">
+            <h3 id="calendar-section-repeat" class="calendar-section-title">
+              {{ values.kind === 'course' ? '上课周次' : '重复规则' }}
+            </h3>
           </div>
-        </template>
-        <div v-else class="calendar-form-grid">
-          <div class="field">
-            <label for="calendar-frequency">重复方式</label>
-            <select id="calendar-frequency" v-model="values.frequency" :disabled="pending">
-              <option value="none">不重复</option>
-              <option value="daily">每日</option>
-              <option value="weekdays">工作日</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-              <option value="yearly">每年</option>
-            </select>
-          </div>
-          <div v-if="!['none', 'weekdays'].includes(values.frequency)" class="field">
-            <label for="calendar-interval">每隔</label>
-            <div class="input-with-suffix">
-              <input id="calendar-interval" v-model.number="values.interval" type="number" min="1" max="366" :disabled="pending" />
-              <span>{{ values.frequency === 'daily' ? '天' : values.frequency === 'weekly' ? '周' : values.frequency === 'monthly' ? '月' : '年' }}</span>
+          <div v-if="values.kind === 'course'" class="calendar-fields">
+            <div class="field span-two">
+              <label for="calendar-course-weeks">有效周次</label>
+              <input id="calendar-course-weeks" v-model="values.weekNumbers" placeholder="1-16,18" :disabled="pending" />
+              <p class="field-hint">支持逗号和范围，例如 1-8,10,12-16。</p>
             </div>
           </div>
-        </div>
-        <div v-if="values.kind === 'course' || values.frequency === 'weekly'" class="weekday-picker">
-          <span>星期</span>
-          <label v-for="day in weekdays" :key="day.value">
-            <input type="checkbox" :checked="values.weekdays.includes(day.value)" :disabled="pending"
-              @change="toggleWeekday(day.value, ($event.target as HTMLInputElement).checked)" />
-            <span>{{ day.label }}</span>
-          </label>
-        </div>
-        <div v-if="values.kind === 'fixed' && values.frequency !== 'none'" class="repeat-end">
-          <label><input v-model="values.endKind" type="radio" value="count" :disabled="pending" />共</label>
-          <input v-model.number="values.count" aria-label="重复次数" type="number" min="1" max="366"
-            :disabled="pending || values.endKind !== 'count'" />
-          <span>次</span>
-          <label><input v-model="values.endKind" type="radio" value="until" :disabled="pending" />至</label>
-          <input v-model="values.until" aria-label="重复结束日期" type="date"
-            :disabled="pending || values.endKind !== 'until'" />
-        </div>
-      </fieldset>
+          <div v-else class="calendar-fields">
+            <div class="field">
+              <label for="calendar-frequency">重复方式</label>
+              <select id="calendar-frequency" v-model="values.frequency" :disabled="pending">
+                <option value="none">不重复</option>
+                <option value="daily">每日</option>
+                <option value="weekdays">工作日</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+                <option value="yearly">每年</option>
+              </select>
+            </div>
+            <div v-if="!['none', 'weekdays'].includes(values.frequency)" class="field">
+              <label for="calendar-interval">每隔</label>
+              <div class="input-with-suffix">
+                <input id="calendar-interval" v-model.number="values.interval" type="number" min="1" max="366" :disabled="pending" />
+                <span>{{ values.frequency === 'daily' ? '天' : values.frequency === 'weekly' ? '周' : values.frequency === 'monthly' ? '月' : '年' }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="values.kind === 'course' || values.frequency === 'weekly'" class="weekday-picker">
+            <span>星期</span>
+            <label v-for="day in weekdays" :key="day.value">
+              <input type="checkbox" :checked="values.weekdays.includes(day.value)" :disabled="pending"
+                @change="toggleWeekday(day.value, ($event.target as HTMLInputElement).checked)" />
+              <span>{{ day.label }}</span>
+            </label>
+          </div>
+          <div v-if="values.kind === 'fixed' && values.frequency !== 'none'" class="repeat-end">
+            <label><input v-model="values.endKind" type="radio" value="count" :disabled="pending" />共</label>
+            <input v-model.number="values.count" aria-label="重复次数" type="number" min="1" max="366"
+              :disabled="pending || values.endKind !== 'count'" />
+            <span>次</span>
+            <label><input v-model="values.endKind" type="radio" value="until" :disabled="pending" />至</label>
+            <input v-model="values.until" aria-label="重复结束日期" type="date"
+              :disabled="pending || values.endKind !== 'until'" />
+          </div>
+        </section>
 
-      <label class="checkbox-label calendar-checkbox">
-        <input v-model="values.busy" type="checkbox" :disabled="pending" />
-        标记为占用时间，参与冲突检查
-      </label>
+        <section class="calendar-section" aria-labelledby="calendar-section-notes">
+          <div class="calendar-section-head">
+            <h3 id="calendar-section-notes" class="calendar-section-title">说明</h3>
+            <p class="calendar-section-hint">可选，记录课程要求或准备事项。</p>
+          </div>
+          <div class="field">
+            <label for="calendar-series-description" class="sr-only">说明</label>
+            <textarea id="calendar-series-description" v-model="values.description" maxlength="20000"
+              rows="3" :disabled="pending" placeholder="例如 带上实验报告"></textarea>
+          </div>
+        </section>
+
+        <label class="checkbox-label calendar-checkbox calendar-busy-toggle">
+          <input v-model="values.busy" type="checkbox" :disabled="pending" />
+          标记为占用时间，参与冲突检查
+        </label>
+      </div>
 
       <div class="dialog-actions">
         <button type="button" class="button secondary" :disabled="pending" @click="close">取消</button>
