@@ -268,6 +268,7 @@ private fun TaskRow(
                     },
                 )
                 val detail = listOfNotNull(
+                    task.projectName,
                     Times.parseDate(task.dueDate)?.format(DateTimeFormatter.ofPattern("M 月 d 日")),
                     Times.parseTime(task.dueTime)?.format(DateTimeFormatter.ofPattern("HH:mm")),
                     task.estimatedMinutes?.let { "$it 分钟" },
