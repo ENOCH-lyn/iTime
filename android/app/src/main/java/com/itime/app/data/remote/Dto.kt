@@ -255,6 +255,12 @@ data class SeriesListDto(val items: List<SeriesDto> = emptyList())
 data class SeriesEnvelope(val series: SeriesDto)
 
 @Serializable
+data class SeriesExceptionEnvelope(
+    val exception: ExceptionDto,
+    val series: SeriesDto,
+)
+
+@Serializable
 data class ExceptionDto(
     val id: String,
     val series_id: String,

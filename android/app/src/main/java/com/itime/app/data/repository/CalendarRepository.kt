@@ -11,6 +11,7 @@ import com.itime.app.data.local.TermEntity
 import com.itime.app.data.local.TermPeriodEntity
 import com.itime.app.data.local.TimeSettingsEntity
 import com.itime.app.data.remote.RecurrenceBody
+import com.itime.app.data.sync.CalendarExceptionCreatePayload
 import com.itime.app.data.sync.Intent
 import com.itime.app.data.sync.SeriesCreatePayload
 import com.itime.app.data.sync.SeriesDeletePayload
@@ -80,6 +81,40 @@ class CalendarRepository(
             )
         }
         sync.requestSync("local-update-series")
+    }
+
+    /** Cancels one occurrence of a repeated series (course or fixed event). */
+    suspend fun cancelOccurrence(seriesId: String, occurrenceKey: String) {
+        val series = db.seriesDao().find(seriesId) ?: return
+        db.withTransaction {
+            db.exceptionDao().upsertAll(
+                listOf(
+                    ExceptionEntity(
+                        id = UUID.randomUUID().toString(),
+                        seriesId = seriesId,
+                        occurrenceKey = occurrenceKey,
+                        originalStartDate = occurrenceKey.substringBefore('T'),
+                        action = "cancelled",
+                        version = 0,
+                    ),
+                ),
+            )
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_SERIES,
+                    entityId = seriesId,
+                    intent = Intent.CALENDAR_EXCEPTION_CREATE,
+                    payloadJson = json.encodeToString(
+                        CalendarExceptionCreatePayload.serializer(),
+                        CalendarExceptionCreatePayload(occurrenceKey = occurrenceKey),
+                    ),
+                    baseVersion = series.version,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+        sync.requestSync("local-cancel-occurrence")
     }
 
     suspend fun deleteSeries(id: String) {

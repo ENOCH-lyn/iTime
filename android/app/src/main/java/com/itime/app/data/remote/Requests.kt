@@ -116,6 +116,14 @@ data class SeriesUpdateBody(
 )
 
 @Serializable
+data class CalendarExceptionCreateBody(
+    val operation_id: String,
+    val expected_series_version: Int,
+    val action: String = "cancelled",
+    val occurrence_key: String,
+)
+
+@Serializable
 data class SeriesDeletePayloadBody(
     val operation_id: String,
     val expected_version: Int,

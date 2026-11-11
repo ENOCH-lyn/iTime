@@ -196,6 +196,9 @@ interface ExceptionDao {
 
     @Query("DELETE FROM calendar_exceptions WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM calendar_exceptions WHERE seriesId = :seriesId AND occurrenceKey = :occurrenceKey LIMIT 1")
+    suspend fun findByOccurrence(seriesId: String, occurrenceKey: String): ExceptionEntity?
 }
 
 @Dao

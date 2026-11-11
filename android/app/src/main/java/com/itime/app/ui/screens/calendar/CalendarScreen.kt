@@ -393,6 +393,16 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     }
                     TextButton(
                         onClick = {
+                            val key = item.occurrenceKey ?: return@TextButton
+                            scope.launch {
+                                container.calendar.cancelOccurrence(item.sourceId, key)
+                                detail = null
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("取消本次") }
+                    TextButton(
+                        onClick = {
                             scope.launch {
                                 container.calendar.deleteSeries(item.sourceId)
                                 detail = null

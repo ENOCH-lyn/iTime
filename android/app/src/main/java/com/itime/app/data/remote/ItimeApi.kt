@@ -169,6 +169,15 @@ class ItimeApi(
     suspend fun updateSeries(id: String, body: SeriesUpdateBody): SeriesDto =
         put("/api/v1/calendar/series/$id", body, SeriesEnvelope.serializer()).series
 
+    suspend fun createCalendarException(
+        seriesId: String,
+        body: CalendarExceptionCreateBody,
+    ): SeriesExceptionEnvelope = post(
+        "/api/v1/calendar/series/$seriesId/exceptions",
+        body,
+        SeriesExceptionEnvelope.serializer(),
+    )
+
     suspend fun deleteSeries(id: String, body: SeriesDeletePayloadBody): OperationAckDto =
         deleteWithBody(
             "/api/v1/calendar/series/$id",

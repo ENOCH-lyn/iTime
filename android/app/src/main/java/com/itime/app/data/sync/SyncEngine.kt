@@ -324,6 +324,28 @@ class SyncEngine(
                 )
                 applySeries(series, force = true)
             }
+            Intent.CALENDAR_EXCEPTION_CREATE -> {
+                val payload = json.decodeFromString(
+                    CalendarExceptionCreatePayload.serializer(),
+                    op.payloadJson,
+                )
+                val result = api.createCalendarException(
+                    op.entityId,
+                    com.itime.app.data.remote.CalendarExceptionCreateBody(
+                        operation_id = op.operationId,
+                        expected_series_version = currentSeriesVersion(op.entityId),
+                        action = "cancelled",
+                        occurrence_key = payload.occurrenceKey,
+                    ),
+                )
+                db.withTransaction {
+                    db.exceptionDao()
+                        .findByOccurrence(op.entityId, payload.occurrenceKey)
+                        ?.let { db.exceptionDao().delete(it.id) }
+                    db.exceptionDao().upsertAll(listOf(result.exception.toEntity()))
+                    db.seriesDao().upsertAll(listOf(result.series.toEntity()))
+                }
+            }
             Intent.SERIES_DELETE -> {
                 api.deleteSeries(
                     op.entityId,

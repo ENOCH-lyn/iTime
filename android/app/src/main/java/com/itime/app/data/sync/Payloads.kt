@@ -112,6 +112,11 @@ data class SeriesUpdatePayload(
 data class SeriesDeletePayload(val mode: String = "trash")
 
 @Serializable
+data class CalendarExceptionCreatePayload(
+    val occurrenceKey: String,
+)
+
+@Serializable
 data class TermCreatePayload(
     val name: String,
     val startDate: String,
@@ -144,6 +149,7 @@ object Intent {
     const val SERIES_CREATE = "series.create"
     const val SERIES_UPDATE = "series.update"
     const val SERIES_DELETE = "series.delete"
+    const val CALENDAR_EXCEPTION_CREATE = "calendar.exception.create"
     const val TERM_CREATE = "term.create"
     const val SETTINGS_UPDATE = "settings.update"
     const val PROJECT_CREATE = "project.create"
