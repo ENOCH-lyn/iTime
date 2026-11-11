@@ -2,6 +2,7 @@ package com.itime.app.ui.screens.calendar
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,12 +52,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
+import kotlin.math.min
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.itime.app.AppContainer
 import com.itime.app.core.Times
@@ -192,31 +196,59 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            if (mode == CalendarMode.Week) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    (0..6).forEach { offset ->
-                        val day = weekStart.plusDays(offset.toLong())
-                        DayCell(
-                            day = day,
-                            selected = day == selected,
-                            count = byDay[day].orEmpty().size,
-                            modifier = Modifier.weight(1f),
-                        ) { selected = day }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .pointerInput(mode) {
+                        var dragged = 0f
+                        detectHorizontalDragGestures(
+                            onDragCancel = { dragged = 0f },
+                            onDragEnd = {
+                                if (abs(dragged) > size.width * 0.2f) {
+                                    val direction = if (dragged < 0) 1L else -1L
+                                    if (mode == CalendarMode.Week) {
+                                        anchor = anchor.plusWeeks(direction)
+                                        selected = selected.plusWeeks(direction)
+                                    } else {
+                                        val target = month.plusMonths(direction)
+                                        anchor = target.atDay(1)
+                                        selected = target.atDay(
+                                            min(selected.dayOfMonth, target.lengthOfMonth()),
+                                        )
+                                    }
+                                }
+                                dragged = 0f
+                            },
+                            onHorizontalDrag = { _, amount -> dragged += amount },
+                        )
+                    },
+            ) {
+                if (mode == CalendarMode.Week) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        (0..6).forEach { offset ->
+                            val day = weekStart.plusDays(offset.toLong())
+                            DayCell(
+                                day = day,
+                                selected = day == selected,
+                                count = byDay[day].orEmpty().size,
+                                modifier = Modifier.weight(1f),
+                            ) { selected = day }
+                        }
                     }
+                } else {
+                    WeekdayHeader()
+                    MonthGrid(
+                        gridStart = gridStart,
+                        month = month,
+                        selected = selected,
+                        byDay = byDay,
+                    ) { selected = it }
                 }
-            } else {
-                WeekdayHeader()
-                MonthGrid(
-                    gridStart = gridStart,
-                    month = month,
-                    selected = selected,
-                    byDay = byDay,
-                ) { selected = it }
             }
             Spacer(Modifier.height(8.dp))
             Row(
