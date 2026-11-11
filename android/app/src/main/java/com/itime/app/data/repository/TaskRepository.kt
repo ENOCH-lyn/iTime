@@ -51,13 +51,42 @@ class TaskRepository(
 
     fun observeProjects() = db.projectDao().observeAll()
 
-    /** Creates a project on the server and mirrors it locally. */
+    /**
+     * Creates a project locally and queues it. Tasks may reference the temporary
+     * id; the sync engine maps it to the server id before pushing (or rewrites
+     * already queued task writes once the project exists remotely).
+     */
     suspend fun createProject(name: String): String {
         val clean = name.trim()
         if (clean.isEmpty()) return ""
-        val project = sync.createProjectRemote(clean)
-        db.projectDao().upsertAll(listOf(project.toEntity()))
-        return project.id
+        val id = UUID.randomUUID().toString()
+        db.withTransaction {
+            db.projectDao().upsertAll(
+                listOf(
+                    com.itime.app.data.local.ProjectEntity(
+                        id = id,
+                        kind = "project",
+                        name = clean,
+                    ),
+                ),
+            )
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_PROJECT,
+                    entityId = id,
+                    intent = Intent.PROJECT_CREATE,
+                    payloadJson = json.encodeToString(
+                        com.itime.app.data.sync.ProjectCreatePayload.serializer(),
+                        com.itime.app.data.sync.ProjectCreatePayload(name = clean),
+                    ),
+                    baseVersion = 0,
+                    createdAt = 0L,
+                ),
+            )
+        }
+        sync.requestSync("local-project-create")
+        return id
     }
 
     suspend fun addStep(taskId: String, title: String) {

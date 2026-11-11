@@ -237,6 +237,11 @@ fun TaskEditorSheet(
                     onClick = { projectId = null },
                     label = { Text("无项目") },
                 )
+                FilterChip(
+                    selected = false,
+                    onClick = { showProjectDialog = true },
+                    label = { Text("＋ 新建") },
+                )
                 projects.forEach { project ->
                     FilterChip(
                         selected = projectId == project.id,
@@ -244,11 +249,6 @@ fun TaskEditorSheet(
                         label = { Text(project.name) },
                     )
                 }
-                FilterChip(
-                    selected = false,
-                    onClick = { showProjectDialog = true },
-                    label = { Text("＋ 新建") },
-                )
             }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(

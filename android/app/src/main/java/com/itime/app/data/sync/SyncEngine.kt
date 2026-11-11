@@ -176,7 +176,7 @@ class SyncEngine(
                         expected_version = currentTaskVersion(op.entityId),
                         title = payload.title,
                         description = payload.description,
-                        project_id = payload.projectId,
+                        project_id = resolveProjectId(payload.projectId),
                         estimated_minutes = payload.estimatedMinutes,
                         priority = payload.priority,
                         labels = payload.labels,
@@ -373,6 +373,9 @@ class SyncEngine(
                     // The project was created locally with a temporary id; move
                     // tasks that referenced it before normalising the row.
                     if (project.id != op.entityId) {
+                        db.settingsDao().upsertMeta(
+                            SyncMetaEntity("project.remap:${op.entityId}", project.id),
+                        )
                         db.projectDao().delete(op.entityId)
                         db.taskDao().remapProject(
                             oldId = op.entityId,
@@ -396,7 +399,7 @@ class SyncEngine(
                 operation_id = op.operationId,
                 title = payload.title,
                 description = payload.description,
-                project_id = payload.projectId,
+                project_id = resolveProjectId(payload.projectId),
                 estimated_minutes = payload.estimatedMinutes,
                 priority = payload.priority,
                 labels = payload.labels,
@@ -715,6 +718,12 @@ class SyncEngine(
                 db.outboxDao().remapEntity(localId, term.id)
             }
         }
+    }
+
+    /** Maps a temporary local project id to the server id once it is known. */
+    private suspend fun resolveProjectId(localId: String?): String? {
+        if (localId == null) return null
+        return db.settingsDao().meta("project.remap:$localId") ?: localId
     }
 
     /** Rewrites queued task writes that still point at a temporary project id. */
