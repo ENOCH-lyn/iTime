@@ -78,6 +78,7 @@ declare module 'vue' {
     TermActionProposalCard: typeof import('./components/TermActionProposalCard.vue')['default']
     ThinkingTrace: typeof import('./components/ThinkingTrace.vue')['default']
     TimetableBoard: typeof import('./components/TimetableBoard.vue')['default']
+    TimetableCoursesProposalCard: typeof import('./components/TimetableCoursesProposalCard.vue')['default']
     TimetableEventDialog: typeof import('./components/TimetableEventDialog.vue')['default']
     TimetableImportMessageCard: typeof import('./components/TimetableImportMessageCard.vue')['default']
     VoiceTranscriptionControl: typeof import('./components/VoiceTranscriptionControl.vue')['default']

@@ -109,7 +109,8 @@ def build_recurrence_plan(
             if requested_start_date not in dates:
                 raise AppError(
                     "invalid_course_start_date",
-                    "课程开始日期必须对应所选星期和有效周次。",
+                    "课程的第一个上课日必须正好落在所选星期上，并且这个星期"
+                    "要在有效周次和学期范围内。比如周三的课，起始日期就填一个周三。",
                 )
             dates = [value for value in dates if value >= requested_start_date]
         if len(dates) > MAX_SERIES_OCCURRENCES:

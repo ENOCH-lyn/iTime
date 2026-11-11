@@ -21,6 +21,7 @@ import ProposalMessageCard from './ProposalMessageCard.vue'
 import TaskActionProposalCard from './TaskActionProposalCard.vue'
 import TermActionProposalCard from './TermActionProposalCard.vue'
 import ThinkingTrace from './ThinkingTrace.vue'
+import TimetableCoursesProposalCard from './TimetableCoursesProposalCard.vue'
 import TimetableImportMessageCard from './TimetableImportMessageCard.vue'
 
 const props = defineProps<{
@@ -224,8 +225,15 @@ defineExpose({ scrollToLatest })
                 ? message.status === 'queued' ? '计划正在排队' : '正在生成并校验计划'
                 : message.status === 'queued' ? '正在排队' : '正在生成' }}
             </div>
-            <CourseActionProposalCard
+            <TimetableCoursesProposalCard
               v-if="message.role === 'assistant'
+                && message.job?.output?.proposal_id
+                && message.job.output.proposal_kind === 'timetable_courses'"
+              :proposal-id="message.job.output.proposal_id"
+              @applied="emit('changed')"
+            />
+            <CourseActionProposalCard
+              v-else-if="message.role === 'assistant'
                 && message.job?.output?.proposal_id
                 && message.job.output.proposal_kind === 'course_action'"
               :proposal-id="message.job.output.proposal_id"

@@ -1097,18 +1097,22 @@ async def complete_agent_job(
                 {
                     "proposal_id": str(outcome.proposal_id),
                     "proposal_kind": (
-                        "term_action"
-                        if outcome.proposal_tool_name in {"create_term", "update_term"}
+                        "timetable_courses"
+                        if outcome.proposal_tool_name == "create_timetable_courses"
                         else (
-                            "course_action"
-                            if outcome.proposal_tool_name
-                            in {
-                                "delete_calendar_series",
-                                "update_calendar_series",
-                                "create_calendar_exception",
-                                "create_calendar_series",
-                            }
-                            else "task_action"
+                            "term_action"
+                            if outcome.proposal_tool_name in {"create_term", "update_term"}
+                            else (
+                                "course_action"
+                                if outcome.proposal_tool_name
+                                in {
+                                    "delete_calendar_series",
+                                    "update_calendar_series",
+                                    "create_calendar_exception",
+                                    "create_calendar_series",
+                                }
+                                else "task_action"
+                            )
                         )
                     ),
                 }
@@ -2531,18 +2535,22 @@ async def complete_conversation_job(
                 {
                     "proposal_id": str(action_proposal.id),
                     "proposal_kind": (
-                        "term_action"
-                        if action_proposal.tool_name in {"create_term", "update_term"}
+                        "timetable_courses"
+                        if action_proposal.tool_name == "create_timetable_courses"
                         else (
-                            "course_action"
-                            if action_proposal.tool_name
-                            in {
-                                "delete_calendar_series",
-                                "update_calendar_series",
-                                "create_calendar_exception",
-                                "create_calendar_series",
-                            }
-                            else "task_action"
+                            "term_action"
+                            if action_proposal.tool_name in {"create_term", "update_term"}
+                            else (
+                                "course_action"
+                                if action_proposal.tool_name
+                                in {
+                                    "delete_calendar_series",
+                                    "update_calendar_series",
+                                    "create_calendar_exception",
+                                    "create_calendar_series",
+                                }
+                                else "task_action"
+                            )
                         )
                     ),
                 }

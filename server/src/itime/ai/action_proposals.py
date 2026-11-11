@@ -94,6 +94,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "create_plan_block",
     "delete_plan_block",
     "batch_update_plan_blocks",
+    "create_timetable_courses",
 )
 
 STATUSES: tuple[str, ...] = ("pending", "applied", "rejected", "expired")
@@ -599,6 +600,74 @@ async def apply_proposal(
         return {
             "proposal": proposal_result(proposal),
             "series": series_result(series),
+        }
+    if proposal.tool_name == "create_timetable_courses":
+        term = await session.scalar(
+            select(AcademicTerm).where(
+                AcademicTerm.id == UUID(str(payload["term_id"])),
+                AcademicTerm.owner_id == owner_id,
+            )
+        )
+        if term is None:
+            raise AppError("term_not_found", "未找到此学期。", status=404)
+        created = []
+        for course in payload.get("courses") or []:
+            week_numbers = sorted({int(value) for value in course["week_numbers"]})
+            fields = SeriesFields(
+                kind="course",
+                term_id=term.id,
+                name=str(course["name"]),
+                teacher=str(course.get("teacher") or ""),
+                description=str(course.get("description") or ""),
+                location=str(course.get("location") or ""),
+                busy=True,
+                time_zone=term.time_zone,
+                start_date=None,
+                starts_at=time.fromisoformat(str(course["starts_at"])),
+                ends_at=time.fromisoformat(str(course["ends_at"])),
+                end_day_offset=0,
+                recurrence=SeriesRecurrenceInput(
+                    frequency="weekly",
+                    interval=1,
+                    weekdays=[int(course["weekday"])],
+                    week_numbers=week_numbers,
+                ),
+            )
+            resolved = await resolve_series_draft(session, owner_id, fields)
+            series = CalendarSeries(
+                owner_id=owner_id,
+                source_type="manual",
+                source_id=None,
+                course_group_id=uuid4(),
+                **series_values(fields, resolved),
+            )
+            session.add(series)
+            await session.flush()
+            emit_change(
+                session,
+                owner_id,
+                "calendar_series",
+                series.id,
+                "created",
+                series.version,
+            )
+            created.append(series)
+        if not created:
+            raise AppError(
+                "timetable_courses_empty",
+                "没有可写入的课程。",
+                status=400,
+            )
+        _mark_applied(
+            proposal,
+            current_time,
+            created[0].id,
+            created[0].version,
+        )
+        await session.flush()
+        return {
+            "proposal": proposal_result(proposal),
+            "series": [series_result(series) for series in created],
         }
     if proposal.tool_name == "batch_update_plan_blocks":
         plan = await read_plan(

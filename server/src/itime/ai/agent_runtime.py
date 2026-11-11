@@ -33,6 +33,7 @@ from itime.ai.conversation_provider import (
     AgentTaskComplete,
     AgentTaskDelete,
     AgentTaskUpdate,
+    AgentTimetableCourses,
     ConversationGenerationSuperseded,
     ConversationProviderError,
     _live_weather,
@@ -42,7 +43,6 @@ from itime.ai.conversation_provider import (
 from itime.ai.models import TemporaryMedia
 from itime.ai.provider import ProviderConfig
 from itime.auth.security import now
-from itime.calendar.ai_import_enqueue import enqueue_conversation_image_import
 from itime.calendar.models import AcademicTerm, CalendarSeries
 from itime.config import Settings
 from itime.database import Database
@@ -76,6 +76,10 @@ ACTION_TOOLS: dict[str, tuple[str, type]] = {
     ),
     "propose_itime_course_create": ("create_calendar_series", AgentCourseCreate),
     "propose_itime_calendar_batch": ("create_calendar_series", AgentCalendarBatch),
+    "propose_itime_timetable_courses": (
+        "create_timetable_courses",
+        AgentTimetableCourses,
+    ),
 }
 
 WRITE_TOOLS = {*TERM_TOOLS, *ACTION_TOOLS}
@@ -421,6 +425,9 @@ async def _action_details(
             details["item_count"] = len(payload["items"])
         else:
             details["series_title"] = payload.get("name")
+    if tool_name == "create_timetable_courses":
+        courses = payload.get("courses")
+        details["course_count"] = len(courses) if isinstance(courses, list) else 0
     return details
 
 
@@ -609,33 +616,11 @@ async def _execute_tool(
             }
         ]
     if name == "start_itime_timetable_import":
-        if deps.image_media_id is None:
-            return {
-                "error": "当前会话没有可导入的课表图片。请让用户上传课表截图。"
-            }, []
-        try:
-            term_id = UUID(str(arguments.get("term_id") or ""))
-        except ValueError:
-            return {"error": "term_id must be a UUID from list_terms"}, []
-        try:
-            async with deps.database.transaction() as session:
-                job = await enqueue_conversation_image_import(
-                    session,
-                    owner_id=deps.owner_id,
-                    settings=deps.settings,
-                    cipher=deps.cipher,
-                    media_id=deps.image_media_id,
-                    conversation_id=deps.conversation_id,
-                    message_id=deps.response_message_id,
-                    term_id=term_id,
-                )
-                job_id = str(job.id)
-        except AppError as exc:
-            return {"error": exc.message}, []
         return {
-            "started": True,
-            "job_id": job_id,
-            "message": "已开始从图片识别并导入课表，完成后需要在课表页确认候选。",
+            "error": (
+                "旧的 OCR 导入已停用。请用 propose_itime_timetable_courses "
+                "一次提交你从图片里读到的全部课程。"
+            )
         }, []
     if name in WRITE_TOOLS:
         return await _decide_proposal(deps, state, call, name), []
