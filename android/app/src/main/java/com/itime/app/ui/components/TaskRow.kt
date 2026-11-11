@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -60,7 +61,16 @@ fun TaskRow(
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Checkbox(checked = task.isCompleted, onCheckedChange = { onToggle() })
+            if (task.isRepeating) {
+                Icon(
+                    Icons.Outlined.Repeat,
+                    contentDescription = "重复任务按次完成，请在日历中操作",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            } else {
+                Checkbox(checked = task.isCompleted, onCheckedChange = { onToggle() })
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     task.title,

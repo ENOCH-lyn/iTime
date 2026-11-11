@@ -30,6 +30,7 @@ class TaskRowTest {
         estimate: Int? = 45,
         labelsCsv: String = "学习,本周",
         pending: Boolean = false,
+        recFrequency: String = "none",
     ) = TaskEntity(
         id = "task-1",
         title = title,
@@ -40,6 +41,7 @@ class TaskRowTest {
         estimatedMinutes = estimate,
         labelsCsv = labelsCsv,
         pendingSync = pending,
+        recFrequency = recFrequency,
     )
 
     private fun render(
@@ -104,6 +106,18 @@ class TaskRowTest {
         composeRule.onNodeWithText("归档").performClick()
         assertTrue(archived)
         assertTrue(!deleted)
+    }
+
+    @Test
+    fun repeatingTaskShowsRepeatHintInsteadOfCheckbox() {
+        render(task(recFrequency = "daily"))
+        composeRule
+            .onNodeWithContentDescription("重复任务按次完成，请在日历中操作")
+            .assertIsDisplayed()
+        assertTrue(
+            composeRule.onAllNodes(androidx.compose.ui.test.isToggleable())
+                .fetchSemanticsNodes().isEmpty(),
+        )
     }
 
     @Test

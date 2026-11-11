@@ -273,6 +273,16 @@ class TaskRepository(
 
     suspend fun setCompleted(id: String, completed: Boolean) {
         val existing = db.taskDao().find(id) ?: return
+        if (existing.isRepeating) {
+            // Repeating tasks are completed per occurrence; target today's key
+            // instead of sending a task-level completion the server rejects.
+            val time = com.itime.app.core.Times.parseTime(existing.dueTime)
+                ?: java.time.LocalTime.MIDNIGHT
+            val key = java.time.LocalDate.now().toString() + "T" +
+                com.itime.app.core.Times.formatTime(time)
+            setOccurrenceStatus(id, key, if (completed) "completed" else "open")
+            return
+        }
         db.withTransaction {
             db.taskDao().upsert(
                 existing.copy(
