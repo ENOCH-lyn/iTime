@@ -32,6 +32,13 @@ class AiRepository(private val api: ItimeApi) {
         ).conversation
     }
 
+    suspend fun createConversation(): AiConversationDto = api.createAiConversation(
+        AiConversationCreateBody(
+            operation_id = UUID.randomUUID().toString(),
+            title = "新对话",
+        ),
+    ).conversation
+
     suspend fun messages(conversationId: String): List<AiMessageDto> =
         api.aiMessages(conversationId).items.sortedBy { it.sequence }
 

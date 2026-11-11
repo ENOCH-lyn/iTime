@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
@@ -163,6 +164,21 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
                 title = { Text("AI") },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                runCatching { ai.createConversation() }
+                                    .onSuccess { fresh ->
+                                        conversation = fresh
+                                        messages = emptyList()
+                                        proposal = null
+                                        error = null
+                                    }
+                                    .onFailure { error = it.message }
+                            }
+                        },
+                        enabled = online && !loading,
+                    ) { Icon(Icons.Outlined.AddComment, contentDescription = "新建对话") }
                     IconButton(
                         onClick = { scope.launch { reload() } },
                         enabled = online && !loading,

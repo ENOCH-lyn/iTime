@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.itime.app.AppContainer
+import com.itime.app.BuildConfig
 import com.itime.app.core.Times
 import com.itime.app.data.SyncPhase
 import com.itime.app.data.SyncState
@@ -201,7 +202,12 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
             SectionHeader("关于")
             ListItem(
                 headlineContent = { Text("iTime Android") },
-                supportingContent = { Text("原生 Material 3 客户端 · 离线优先 · 与网页端同步") },
+                supportingContent = {
+                    Text(
+                        "版本 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · " +
+                            "原生 Material 3 客户端 · 离线优先 · 与网页端同步",
+                    )
+                },
             )
             Spacer(Modifier.height(32.dp))
         }
