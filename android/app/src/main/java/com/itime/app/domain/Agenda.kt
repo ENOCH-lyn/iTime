@@ -118,7 +118,7 @@ object Agenda {
                     endTime = localEnd,
                     allDay = false,
                     completed = false,
-                    occurrenceKey = "$date" + "T" + localStart,
+                    occurrenceKey = "$date" + "T" + Times.formatTime(localStart),
                     colorSeed = item.id.hashCode(),
                     busy = exception?.overrideBusy ?: item.busy,
                 )
