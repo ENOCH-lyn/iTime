@@ -157,6 +157,13 @@ class ItimeApi(
     suspend fun updateSeries(id: String, body: SeriesUpdateBody): SeriesDto =
         put("/api/v1/calendar/series/$id", body, SeriesEnvelope.serializer()).series
 
+    suspend fun deleteSeries(id: String, body: SeriesDeletePayloadBody): OperationAckDto =
+        deleteWithBody(
+            "/api/v1/calendar/series/$id",
+            body,
+            OperationAckDto.serializer(),
+        )
+
     suspend fun listTerms(): List<TermDto> = get<TermListDto>("/api/v1/terms").items
 
     suspend fun createTerm(body: TermCreateBody): TermDto =
@@ -193,7 +200,7 @@ class ItimeApi(
     }
 
     private fun baseUrl(): String {
-        val configured = sessionStore.current()?.baseUrl ?: com.itime.app.data.session.DEFAULT_BASE_URL
+        val configured = sessionStore.baseUrl()
         return if (configured.endsWith("/")) configured else "$configured/"
     }
 

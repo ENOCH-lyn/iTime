@@ -116,8 +116,13 @@ data class SeriesUpdateBody(
 )
 
 @Serializable
-data class TermCreateBody(
+data class SeriesDeletePayloadBody(
     val operation_id: String,
+    val expected_version: Int,
+)
+
+@Serializable
+data class TermCreateBody(    val operation_id: String,
     val name: String,
     val start_date: String,
     val end_date: String,

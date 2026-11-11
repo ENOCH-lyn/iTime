@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -18,7 +21,6 @@ data class Session(
     val userId: String,
     val email: String,
     val expiresAt: String? = null,
-    val baseUrl: String = DEFAULT_BASE_URL,
 ) {
     val isUsable: Boolean get() = token.isNotBlank() && userId.isNotBlank()
 }
@@ -26,17 +28,22 @@ data class Session(
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore("itime_session")
 
 /**
- * Persists the device session and the small amount of app-level configuration
- * that must survive process death.
+ * Persists the device session plus the server base URL.
  *
- * The session token lives in app-private storage only. It is never written to
- * logs: [toString] is overridden to redact it.
+ * The session token lives in app-private storage only and is never logged;
+ * [Session] carries no debug rendering of the token.
  */
 class SessionStore(private val context: Context) {
     private val store = context.sessionDataStore
 
     @Volatile
     private var cached: Session? = null
+
+    @Volatile
+    private var cachedBaseUrl: String = DEFAULT_BASE_URL
+
+    private val _baseUrl = MutableStateFlow(DEFAULT_BASE_URL)
+    val baseUrlFlow: StateFlow<String> = _baseUrl.asStateFlow()
 
     private object Keys {
         val token = stringPreferencesKey("token")
@@ -51,10 +58,14 @@ class SessionStore(private val context: Context) {
 
     fun current(): Session? = cached
 
+    fun baseUrl(): String = cachedBaseUrl
+
     suspend fun load(): Session? {
-        val session = store.data.first().toSession()
-        cached = session
-        return session
+        val prefs = store.data.first()
+        cached = prefs.toSession()
+        cachedBaseUrl = normalize(prefs[Keys.baseUrl])
+        _baseUrl.value = cachedBaseUrl
+        return cached
     }
 
     suspend fun save(session: Session) {
@@ -65,7 +76,6 @@ class SessionStore(private val context: Context) {
             prefs[Keys.userId] = session.userId
             prefs[Keys.email] = session.email
             prefs[Keys.expiresAt] = session.expiresAt.orEmpty()
-            prefs[Keys.baseUrl] = session.baseUrl
         }
     }
 
@@ -74,9 +84,26 @@ class SessionStore(private val context: Context) {
         save(current.copy(csrfToken = csrf))
     }
 
+    suspend fun setBaseUrl(url: String) {
+        cachedBaseUrl = normalize(url)
+        _baseUrl.value = cachedBaseUrl
+        store.edit { prefs -> prefs[Keys.baseUrl] = cachedBaseUrl }
+    }
+
     suspend fun clear() {
         cached = null
-        store.edit { prefs -> prefs.clear() }
+        store.edit { prefs ->
+            prefs.remove(Keys.token)
+            prefs.remove(Keys.csrf)
+            prefs.remove(Keys.userId)
+            prefs.remove(Keys.email)
+            prefs.remove(Keys.expiresAt)
+        }
+    }
+
+    private fun normalize(value: String?): String {
+        val raw = value?.takeIf { it.isNotBlank() } ?: return DEFAULT_BASE_URL
+        return if (raw.endsWith("/")) raw else "$raw/"
     }
 
     private fun Preferences.toSession(): Session? {
@@ -89,7 +116,6 @@ class SessionStore(private val context: Context) {
             userId = userId,
             email = this[Keys.email].orEmpty(),
             expiresAt = this[Keys.expiresAt]?.takeIf { it.isNotBlank() },
-            baseUrl = this[Keys.baseUrl] ?: DEFAULT_BASE_URL,
         )
     }
 }
