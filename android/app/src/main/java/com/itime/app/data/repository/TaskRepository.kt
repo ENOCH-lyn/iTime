@@ -15,6 +15,7 @@ import com.itime.app.data.sync.TaskCreatePayload
 import com.itime.app.data.sync.TaskLifecyclePayload
 import com.itime.app.data.sync.TaskOccurrencePayload
 import com.itime.app.data.sync.StepOpPayload
+import com.itime.app.data.sync.StepReorderPayload
 import com.itime.app.data.sync.TaskSchedulePayload
 import com.itime.app.data.sync.TaskUpdatePayload
 import com.itime.app.domain.RecurrenceSpec
@@ -96,6 +97,30 @@ class TaskRepository(
             )
         }
         sync.requestSync("local-step-update")
+    }
+
+    suspend fun moveStep(taskId: String, stepId: String, up: Boolean) {
+        val task = db.taskDao().find(taskId) ?: return
+        val steps = db.stepDao().forTask(taskId).toMutableList()
+        val index = steps.indexOfFirst { it.id == stepId }
+        val target = if (up) index - 1 else index + 1
+        if (index < 0 || target !in steps.indices) return
+        val item = steps.removeAt(index)
+        steps.add(target, item)
+        val reordered = steps.mapIndexed { position, step -> step.copy(position = position) }
+        db.withTransaction {
+            db.stepDao().upsertAll(reordered)
+            enqueue(
+                entityId = taskId,
+                intent = Intent.TASK_STEP_REORDER,
+                payload = json.encodeToString(
+                    StepReorderPayload.serializer(),
+                    StepReorderPayload(taskId = taskId, stepIds = reordered.map { it.id }),
+                ),
+                baseVersion = task.version,
+            )
+        }
+        sync.requestSync("local-step-reorder")
     }
 
     suspend fun deleteStep(taskId: String, stepId: String) {

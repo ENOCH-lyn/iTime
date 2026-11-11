@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
@@ -231,6 +233,18 @@ fun TaskEditorSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
+                        IconButton(
+                            onClick = { scope.launch { repository.moveStep(taskId, step.id, up = true) } },
+                            enabled = steps.firstOrNull()?.id != step.id,
+                        ) {
+                            Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "上移步骤")
+                        }
+                        IconButton(
+                            onClick = { scope.launch { repository.moveStep(taskId, step.id, up = false) } },
+                            enabled = steps.lastOrNull()?.id != step.id,
+                        ) {
+                            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "下移步骤")
+                        }
                         IconButton(onClick = {
                             scope.launch { repository.deleteStep(taskId, step.id) }
                         }) {

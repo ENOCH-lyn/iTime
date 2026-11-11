@@ -170,6 +170,13 @@ data class StepDeleteBody(
 )
 
 @Serializable
+data class StepReorderBody(
+    val operation_id: String,
+    val expected_task_version: Int,
+    val step_ids: List<String>,
+)
+
+@Serializable
 data class OccurrenceStatusBody(
     val operation_id: String,
     val expected_task_version: Int,

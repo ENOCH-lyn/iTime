@@ -59,6 +59,7 @@ import com.itime.app.data.repository.AiRepository
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -311,6 +312,14 @@ private fun ProposalCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
+            proposalDetails(proposal)?.let { detail ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onApprove, enabled = !busy) {
@@ -328,6 +337,25 @@ private fun ProposalCard(
             }
         }
     }
+}
+
+private fun proposalDetails(proposal: AiToolProposalDto): String? {
+    val details = runCatching {
+        proposal.preview?.get("details")?.jsonObject
+    }.getOrNull() ?: return null
+    fun text(key: String): String? = runCatching {
+        details[key]?.jsonPrimitive?.content
+    }.getOrNull()?.takeIf { it.isNotBlank() && it != "null" }
+    val date = text("local_date")
+    val start = text("starts_at")?.take(5)
+    val end = text("ends_at")?.take(5)
+    val minutes = text("estimated_minutes")
+    val parts = buildList {
+        if (date != null) add(date)
+        if (start != null) add(if (end != null) "$start–$end" else start)
+        if (minutes != null) add("$minutes 分钟")
+    }
+    return parts.joinToString(" · ").takeIf { it.isNotBlank() }
 }
 
 private fun toolLabel(toolName: String): String = when (toolName) {

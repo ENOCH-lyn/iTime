@@ -32,6 +32,7 @@ import com.itime.app.data.remote.SeriesDto
 import com.itime.app.data.remote.SeriesUpdateBody
 import com.itime.app.data.remote.StepCreateBody
 import com.itime.app.data.remote.StepDeleteBody
+import com.itime.app.data.remote.StepReorderBody
 import com.itime.app.data.remote.StepUpdateBody
 import com.itime.app.data.remote.SyncEntityDto
 import com.itime.app.data.remote.SyncEventDto
@@ -268,6 +269,18 @@ class SyncEngine(
                         expected_task_version = currentTaskVersion(payload.taskId),
                         title = payload.title,
                         completed = payload.completed,
+                    ),
+                )
+                applyTask(task, force = true)
+            }
+            Intent.TASK_STEP_REORDER -> {
+                val payload = json.decodeFromString(StepReorderPayload.serializer(), op.payloadJson)
+                val task = api.reorderSteps(
+                    payload.taskId,
+                    StepReorderBody(
+                        operation_id = op.operationId,
+                        expected_task_version = currentTaskVersion(payload.taskId),
+                        step_ids = payload.stepIds,
                     ),
                 )
                 applyTask(task, force = true)

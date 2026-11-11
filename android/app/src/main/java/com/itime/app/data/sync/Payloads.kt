@@ -65,6 +65,12 @@ data class StepOpPayload(
 )
 
 @Serializable
+data class StepReorderPayload(
+    val taskId: String,
+    val stepIds: List<String>,
+)
+
+@Serializable
 data class SeriesCreatePayload(
     val kind: String,
     val termId: String? = null,
@@ -134,6 +140,7 @@ object Intent {
     const val TASK_STEP_CREATE = "task.step.create"
     const val TASK_STEP_UPDATE = "task.step.update"
     const val TASK_STEP_DELETE = "task.step.delete"
+    const val TASK_STEP_REORDER = "task.step.reorder"
     const val SERIES_CREATE = "series.create"
     const val SERIES_UPDATE = "series.update"
     const val SERIES_DELETE = "series.delete"

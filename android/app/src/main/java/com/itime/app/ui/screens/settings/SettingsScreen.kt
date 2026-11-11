@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -55,6 +56,7 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
     var serverUrl by remember { mutableStateOf(container.sessionStore.baseUrl()) }
     var showLogout by remember { mutableStateOf(false) }
     var resolving by remember { mutableStateOf<OutboxEntity?>(null) }
+    var showZonePicker by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -187,6 +189,9 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
             ListItem(
                 headlineContent = { Text("时区") },
                 supportingContent = { Text(settings?.timeZone ?: ZoneId.systemDefault().id) },
+                trailingContent = {
+                    TextButton(onClick = { showZonePicker = true }) { Text("修改") }
+                },
             )
             ListItem(
                 headlineContent = { Text("本周起始") },
@@ -200,6 +205,45 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
             )
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (showZonePicker) {
+        val options = listOf(
+            "Asia/Shanghai" to "中国标准时间（北京）",
+            "Asia/Tokyo" to "日本标准时间",
+            "Asia/Singapore" to "新加坡时间",
+            "Europe/London" to "英国时间",
+            "America/New_York" to "美国东部时间",
+            "UTC" to "协调世界时",
+        )
+        AlertDialog(
+            onDismissRequest = { showZonePicker = false },
+            title = { Text("选择时区") },
+            text = {
+                Column {
+                    options.forEach { (id, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            supportingContent = { Text(id) },
+                            trailingContent = {
+                                if ((settings?.timeZone ?: ZoneId.systemDefault().id) == id) {
+                                    Text("当前")
+                                }
+                            },
+                            modifier = Modifier.clickable {
+                                scope.launch {
+                                    container.calendar.updateTimeZone(id)
+                                    showZonePicker = false
+                                }
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showZonePicker = false }) { Text("关闭") }
+            },
+        )
     }
 
     if (showLogout) {
