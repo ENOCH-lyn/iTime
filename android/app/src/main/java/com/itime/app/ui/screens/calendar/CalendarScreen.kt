@@ -133,39 +133,8 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     val byDay = remember(items) { items.groupBy { it.date } }
     val dayItems = byDay[selected].orEmpty()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("日历") },
-                actions = {
-                    SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
-                    IconButton(
-                        onClick = {
-                            editingSeries = null
-                            showSeriesEditor = true
-                        },
-                    ) { Icon(Icons.Filled.Add, contentDescription = "新建日程") }
-                    IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh", force = true) } }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            if (isPortrait) {
-                ExtendedFloatingActionButton(
-                    onClick = { showSeriesEditor = true },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text("新建日程") },
-                )
-            }
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    val periodBlock: @Composable () -> Unit = {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -265,6 +234,8 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     ) { selected = it }
                 }
             }
+    }
+    val agendaBlock: @Composable () -> Unit = {
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier
@@ -313,6 +284,49 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     }
                 }
                 }
+            }    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("日历") },
+                actions = {
+                    SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
+                    IconButton(
+                        onClick = {
+                            editingSeries = null
+                            showSeriesEditor = true
+                        },
+                    ) { Icon(Icons.Filled.Add, contentDescription = "新建日程") }
+                    IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh", force = true) } }) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            if (isPortrait) {
+                ExtendedFloatingActionButton(
+                    onClick = { showSeriesEditor = true },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("新建日程") },
+                )
+            }
+        },
+    ) { padding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            if (wide) {
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    Column(Modifier.weight(0.62f)) { periodBlock() }
+                    Column(Modifier.weight(0.38f)) { agendaBlock() }
+                }
+            } else {
+                periodBlock()
+                agendaBlock()
             }
         }
     }
