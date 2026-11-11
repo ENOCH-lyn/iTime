@@ -1562,6 +1562,7 @@ async def _generate_live_tool_reply(
     http_status: int | None = None
     usage: object | None = None
     content = ""
+    truncated = False
     memory_writes: list[dict[str, Any]] = []
     term_actions: list[dict[str, Any]] = []
     try:
@@ -1608,7 +1609,13 @@ async def _generate_live_tool_reply(
                         )
                     payload = response.json()
                     usage = payload.get("usage") or usage
-                    message = payload["choices"][0]["message"]
+                    choice = payload["choices"][0]
+                    finish_reason = (
+                        choice.get("finish_reason")
+                        if isinstance(choice, dict)
+                        else None
+                    )
+                    message = choice["message"]
                     reasoning_piece = message.get("reasoning_content")
                     if (
                         isinstance(reasoning_piece, str)
@@ -1620,6 +1627,7 @@ async def _generate_live_tool_reply(
                     tool_calls = message.get("tool_calls")
                     if not tool_calls:
                         content = message.get("content") or ""
+                        truncated = finish_reason == "length"
                         break
                     chat_messages.append(message)
                     for call in tool_calls:
@@ -1677,6 +1685,15 @@ async def _generate_live_tool_reply(
         raise ConversationProviderError(
             "conversation_output_empty",
             "AI 服务没有返回可显示内容，请重新尝试。",
+            "validation",
+            provider_request_id=request_id,
+            http_status=http_status,
+            usage=usage,
+        )
+    if truncated:
+        raise ConversationProviderError(
+            "conversation_output_truncated",
+            "这次回复达到长度上限被截断，请让我分两步做，或把要求说得更具体。",
             "validation",
             provider_request_id=request_id,
             http_status=http_status,
@@ -1819,7 +1836,8 @@ async def generate_agent_turn(
                     )
                 payload = response.json()
                 usage = payload.get("usage")
-                message = payload["choices"][0]["message"]
+                choice = payload["choices"][0]
+                message = choice["message"]
                 content = message.get("content") or ""
                 raw_reasoning = message.get("reasoning_content")
                 if isinstance(raw_reasoning, str):
@@ -1829,6 +1847,20 @@ async def generate_agent_turn(
                     tool_calls = [
                         call for call in raw_calls if isinstance(call, dict)
                     ]
+                if (
+                    not tool_calls
+                    and isinstance(choice, dict)
+                    and choice.get("finish_reason") == "length"
+                ):
+                    raise ConversationProviderError(
+                        "conversation_output_truncated",
+                        "这次回复达到长度上限被截断，请让我分两步做，"
+                        "或把要求说得更具体。",
+                        "validation",
+                        provider_request_id=request_id,
+                        http_status=http_status,
+                        usage=usage,
+                    )
     except (ConversationProviderError, ConversationGenerationSuperseded):
         raise
     except (TimeoutError, httpx.TimeoutException) as exc:

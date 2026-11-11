@@ -83,6 +83,7 @@ WRITE_TOOLS = {*TERM_TOOLS, *ACTION_TOOLS}
 
 class AgentState(TypedDict):
     messages: Annotated[list[dict], operator.add]
+    history_length: int
     context: dict
     image_media_id: str | None
     tool_calls: list[dict]
@@ -134,8 +135,9 @@ def _database_url(settings: Settings) -> str:
     )
 
 
-def _last_assistant_content(state: dict) -> str:
-    for message in reversed(state.get("messages") or []):
+def _last_assistant_content(state: dict, *, since: int = 0) -> str:
+    messages = state.get("messages") or []
+    for message in reversed(messages[since:]):
         if not isinstance(message, dict) or message.get("role") != "assistant":
             continue
         content = message.get("content")
@@ -706,7 +708,10 @@ def _outcome(result: dict, run_id: UUID) -> AgentOutcome:
         if not isinstance(value, dict):
             value = {}
         content = (
-            _last_assistant_content(result)
+            _last_assistant_content(
+                result,
+                since=int(result.get("history_length") or 0),
+            )
             or str(value.get("assistant_message") or "").strip()
             or "需要你确认后继续。"
         )
@@ -726,7 +731,10 @@ def _outcome(result: dict, run_id: UUID) -> AgentOutcome:
         )
     content = (
         result.get("final_content")
-        or _last_assistant_content(result)
+        or _last_assistant_content(
+            result,
+            since=int(result.get("history_length") or 0),
+        )
         or "已完成。"
     )
     return AgentOutcome(
@@ -817,6 +825,7 @@ async def start_agent_run(
     )
     initial = {
         "messages": messages,
+        "history_length": len(messages),
         "context": context,
         "image_media_id": str(image_media_id) if image_media_id else None,
         "tool_calls": [],

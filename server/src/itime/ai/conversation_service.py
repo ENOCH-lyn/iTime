@@ -1540,6 +1540,48 @@ async def conversation_provider_messages(
     return messages
 
 
+async def recent_conversation_image(
+    session: AsyncSession,
+    owner_id: UUID,
+    conversation_id: UUID,
+    current: datetime,
+    *,
+    max_age_hours: int = 6,
+) -> UUID | None:
+    """Reuse the last screenshot in this conversation when the new message has none.
+
+    Timetable import needs the image across several turns（先建学期、再导入）,
+    and the agent only received the image attached to the current message.
+    """
+    raw = await session.scalar(
+        select(AIJob.input_summary["image_media_id"].astext)
+        .where(
+            AIJob.owner_id == owner_id,
+            AIJob.conversation_id == conversation_id,
+            AIJob.input_summary["image_media_id"].astext.isnot(None),
+            AIJob.created_at >= current - timedelta(hours=max_age_hours),
+        )
+        .order_by(AIJob.created_at.desc())
+        .limit(1)
+    )
+    if not raw:
+        return None
+    try:
+        media_id = UUID(str(raw))
+    except (TypeError, ValueError):
+        return None
+    media = await session.get(TemporaryMedia, media_id)
+    if (
+        media is None
+        or media.owner_id != owner_id
+        or media.deleted_at is not None
+        or media.expires_at <= current
+        or media.encrypted_content is None
+    ):
+        return None
+    return media.id
+
+
 async def load_conversation_work(
     database: Database,
     claim: ClaimedJob,
@@ -1672,6 +1714,13 @@ async def load_conversation_work(
         image_media_id = (
             UUID(str(raw_image_media_id)) if raw_image_media_id else None
         )
+        if image_media_id is None and agent_resume is None:
+            image_media_id = await recent_conversation_image(
+                session,
+                claim.owner_id,
+                generation.conversation_id,
+                current,
+            )
         if agent_resume is not None:
             messages: list[dict[str, Any]] = []
         else:
