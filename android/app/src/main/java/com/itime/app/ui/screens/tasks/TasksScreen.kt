@@ -102,7 +102,9 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
         } else {
             source.filter {
                 it.title.contains(query, ignoreCase = true) ||
-                    it.description.contains(query, ignoreCase = true)
+                    it.description.contains(query, ignoreCase = true) ||
+                    (it.projectName?.contains(query, ignoreCase = true) ?: false) ||
+                    it.labelsCsv.contains(query, ignoreCase = true)
             }
         }
     }
