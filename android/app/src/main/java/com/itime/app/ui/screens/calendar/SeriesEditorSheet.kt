@@ -63,6 +63,7 @@ fun SeriesEditorSheet(
     repository: CalendarRepository,
     initialDate: LocalDate,
     initial: SeriesDraft? = null,
+    existingId: String? = null,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -89,22 +90,28 @@ fun SeriesEditorSheet(
             return
         }
         scope.launch {
-            repository.createSeries(
-                SeriesDraft(
-                    kind = kind,
-                    name = name.trim(),
-                    teacher = teacher.trim(),
-                    location = location.trim(),
-                    startDate = date,
-                    startsAt = startTime,
-                    endsAt = endTime,
-                    recurrence = if (weekly) {
-                        RecurrenceSpec(frequency = "weekly", weekdays = weekdays.sorted())
-                    } else {
-                        RecurrenceSpec(frequency = "none")
-                    },
-                ),
+            val draft = SeriesDraft(
+                kind = kind,
+                termId = initial?.termId,
+                name = name.trim(),
+                teacher = teacher.trim(),
+                location = location.trim(),
+                description = initial?.description ?: "",
+                startDate = date,
+                startsAt = startTime,
+                endsAt = endTime,
+                recurrence = if (weekly) {
+                    RecurrenceSpec(frequency = "weekly", weekdays = weekdays.sorted())
+                } else {
+                    RecurrenceSpec(frequency = "none")
+                },
+                weekNumbers = initial?.weekNumbers ?: emptyList(),
             )
+            if (existingId == null) {
+                repository.createSeries(draft)
+            } else {
+                repository.updateSeries(existingId, draft)
+            }
             onDismiss()
         }
     }
@@ -119,7 +126,7 @@ fun SeriesEditorSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
         ) {
-            Text("新建日程", style = MaterialTheme.typography.titleLarge)
+            Text(if (existingId == null) "新建日程" else "编辑日程", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(12.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(

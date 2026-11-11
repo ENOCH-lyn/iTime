@@ -92,6 +92,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var anchor by remember { mutableStateOf(today) }
     var detail by remember { mutableStateOf<AgendaItem?>(null) }
     var showSeriesEditor by remember { mutableStateOf(false) }
+    var editingSeries by remember { mutableStateOf<com.itime.app.data.local.SeriesEntity?>(null) }
 
     val weekStart = anchor.with(DayOfWeek.MONDAY)
     val month = YearMonth.from(anchor)
@@ -258,6 +259,16 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
         )
     }
 
+    editingSeries?.let { series ->
+        SeriesEditorSheet(
+            repository = container.calendar,
+            initialDate = selected,
+            initial = com.itime.app.data.repository.seriesDraftFrom(series),
+            existingId = series.id,
+            onDismiss = { editingSeries = null },
+        )
+    }
+
     detail?.let { item ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
@@ -310,6 +321,16 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("删除任务") }
                 } else {
+                    val series = series.firstOrNull { it.id == item.sourceId }
+                    if (series != null && series.sourceType == "manual") {
+                        Button(
+                            onClick = {
+                                editingSeries = series
+                                detail = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("编辑日程") }
+                    }
                     TextButton(
                         onClick = {
                             scope.launch {

@@ -192,7 +192,7 @@ private fun SeriesDraft.toPayload(): SeriesCreatePayload = SeriesCreatePayload(
     endDayOffset = endDayOffset,
     startPeriodNumber = startPeriodNumber,
     endPeriodNumber = endPeriodNumber,
-    recurrence = recurrence.toBody(),
+    recurrence = recurrence.toBody().copy(week_numbers = weekNumbers),
 )
 
 private fun SeriesDraft.toUpdatePayload(): SeriesUpdatePayload = SeriesUpdatePayload(
@@ -210,7 +210,7 @@ private fun SeriesDraft.toUpdatePayload(): SeriesUpdatePayload = SeriesUpdatePay
     endDayOffset = endDayOffset,
     startPeriodNumber = startPeriodNumber,
     endPeriodNumber = endPeriodNumber,
-    recurrence = recurrence.toBody(),
+    recurrence = recurrence.toBody().copy(week_numbers = weekNumbers),
 )
 
 private fun SeriesDraft.toEntity(id: String): SeriesEntity = SeriesEntity(
@@ -233,6 +233,7 @@ private fun SeriesDraft.toEntity(id: String): SeriesEntity = SeriesEntity(
     recWeekdaysCsv = recurrence.weekdays.joinToString(","),
     recUntil = recurrence.until?.toString(),
     recCount = recurrence.count,
+    recWeekNumbersCsv = weekNumbers.joinToString(","),
     version = 0,
     pendingSync = true,
 )
@@ -258,4 +259,5 @@ fun seriesDraftFrom(series: SeriesEntity): SeriesDraft = SeriesDraft(
         until = com.itime.app.core.Times.parseDate(series.recUntil),
         count = series.recCount,
     ),
+    weekNumbers = series.weekNumbers,
 )

@@ -42,6 +42,7 @@ data class SeriesDraft(
     val startPeriodNumber: Int? = null,
     val endPeriodNumber: Int? = null,
     val recurrence: RecurrenceSpec = RecurrenceSpec(frequency = "weekly"),
+    val weekNumbers: List<Int> = emptyList(),
 ) {
     val term: Boolean get() = kind == "course"
 }
