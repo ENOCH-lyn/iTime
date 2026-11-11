@@ -85,6 +85,7 @@ fun TaskEditorSheet(
     var dueTime by remember { mutableStateOf(initial.dueTime) }
     var priority by remember { mutableStateOf(initial.priority) }
     var estimate by remember { mutableStateOf(initial.estimatedMinutes?.toString() ?: "") }
+    var labelsText by remember { mutableStateOf(initial.labels.joinToString(", ")) }
     var showDatePicker by remember { mutableStateOf(false) }
     var newStep by remember { mutableStateOf("") }
     val steps by remember(taskId) {
@@ -105,6 +106,7 @@ fun TaskEditorSheet(
                 description = notes.trim(),
                 priority = priority,
                 estimatedMinutes = estimate.trim().toIntOrNull()?.coerceIn(1, 525600),
+                labels = labelsText.split(',').map { it.trim() }.filter { it.isNotEmpty() },
                 dueDate = dueDate,
                 dueTime = if (dueDate == null) null else dueTime,
             )
@@ -211,6 +213,15 @@ fun TaskEditorSheet(
                 onValueChange = { estimate = it.filter(Char::isDigit) },
                 label = { Text("预计用时（分钟）") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = labelsText,
+                onValueChange = { labelsText = it },
+                label = { Text("标签（逗号分隔）") },
+                placeholder = { Text("学习, 本周") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
