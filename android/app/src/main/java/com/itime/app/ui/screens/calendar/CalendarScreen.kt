@@ -1,6 +1,7 @@
 package com.itime.app.ui.screens.calendar
 
 import androidx.compose.foundation.background
+import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -107,6 +109,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var editingSeries by remember { mutableStateOf<com.itime.app.data.local.SeriesEntity?>(null) }
     var moveTarget by remember { mutableStateOf<AgendaItem?>(null) }
 
+    val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val weekStart = anchor.with(DayOfWeek.MONDAY)
     val month = YearMonth.from(anchor)
     val gridStart = month.atDay(1).with(DayOfWeek.MONDAY)
@@ -136,6 +139,12 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 title = { Text("日历") },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
+                    IconButton(
+                        onClick = {
+                            editingSeries = null
+                            showSeriesEditor = true
+                        },
+                    ) { Icon(Icons.Filled.Add, contentDescription = "新建日程") }
                     IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh") } }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
                     }
@@ -143,11 +152,13 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showSeriesEditor = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("新建日程") },
-            )
+            if (isPortrait) {
+                ExtendedFloatingActionButton(
+                    onClick = { showSeriesEditor = true },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("新建日程") },
+                )
+            }
         },
     ) { padding ->
         Column(
