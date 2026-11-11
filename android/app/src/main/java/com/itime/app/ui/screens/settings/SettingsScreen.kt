@@ -126,7 +126,7 @@ fun SettingsScreen(container: AppContainer, syncState: SyncState) {
                 )
             }
             Button(
-                onClick = { scope.launch { container.sync.syncNow("settings-manual") } },
+                onClick = { scope.launch { container.sync.syncNow("settings-manual", force = true) } },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),

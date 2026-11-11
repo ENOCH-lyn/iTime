@@ -128,7 +128,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                 title = { Text("任务") },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
-                    IconButton(onClick = { scope.launch { container.sync.syncNow("tasks-refresh") } }) {
+                    IconButton(onClick = { scope.launch { container.sync.syncNow("tasks-refresh", force = true) } }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
                     }
                 },
@@ -225,7 +225,7 @@ fun TasksScreen(container: AppContainer, syncState: SyncState) {
                 PullToRefreshBox(
                     isRefreshing = syncState.phase == SyncPhase.Connecting ||
                         syncState.phase == SyncPhase.Syncing,
-                    onRefresh = { scope.launch { container.sync.syncNow("tasks-pull") } },
+                    onRefresh = { scope.launch { container.sync.syncNow("tasks-pull", force = true) } },
                     modifier = Modifier.fillMaxSize(),
                 ) {
                 LazyColumn(

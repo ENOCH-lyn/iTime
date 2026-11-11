@@ -162,7 +162,7 @@ fun TodayScreen(
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
                     IconButton(onClick = {
-                        scope.launch { container.sync.syncNow("today-refresh") }
+                        scope.launch { container.sync.syncNow("today-refresh", force = true) }
                     }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
                     }
@@ -196,7 +196,7 @@ fun TodayScreen(
         PullToRefreshBox(
             isRefreshing = syncState.phase == SyncPhase.Connecting ||
                 syncState.phase == SyncPhase.Syncing,
-            onRefresh = { scope.launch { container.sync.syncNow("today-pull") } },
+            onRefresh = { scope.launch { container.sync.syncNow("today-pull", force = true) } },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),

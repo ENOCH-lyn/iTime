@@ -145,7 +145,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                             showSeriesEditor = true
                         },
                     ) { Icon(Icons.Filled.Add, contentDescription = "新建日程") }
-                    IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh") } }) {
+                    IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh", force = true) } }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
                     }
                 },
@@ -299,7 +299,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 PullToRefreshBox(
                     isRefreshing = syncState.phase == SyncPhase.Connecting ||
                         syncState.phase == SyncPhase.Syncing,
-                    onRefresh = { scope.launch { container.sync.syncNow("calendar-pull") } },
+                    onRefresh = { scope.launch { container.sync.syncNow("calendar-pull", force = true) } },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = 88.dp),

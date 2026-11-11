@@ -49,6 +49,7 @@ import com.itime.app.data.remote.TimeSettingsDto
 import com.itime.app.data.remote.TimeSettingsUpdateBody
 import com.itime.app.data.session.SessionStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -86,17 +87,23 @@ class SyncEngine(
     private val _lastResetNotice = MutableStateFlow<String?>(null)
     val lastResetNotice get() = _lastResetNotice
 
+    private var failureCount = 0
+    private var nextAllowedAt = 0L
+
     fun requestSync(reason: String) {
         if (sessionStore.current() == null) return
         if (scheduled?.isActive == true) return
+        val wait = (nextAllowedAt - System.currentTimeMillis()).coerceAtLeast(0L)
         scheduled = scope.launch {
+            if (wait > 0) delay(wait)
             runCatching { syncNow(reason) }
         }
     }
 
     /** One full sync cycle.  Safe to call concurrently: calls are serialised. */
-    suspend fun syncNow(reason: String = "manual") {
+    suspend fun syncNow(reason: String = "manual", force: Boolean = false) {
         val session = sessionStore.current() ?: return
+        if (!force && System.currentTimeMillis() < nextAllowedAt) return
         mutex.withLock {
             status.update {
                 it.copy(
@@ -109,6 +116,8 @@ class SyncEngine(
                 pushAll()
                 pull()
                 val now = System.currentTimeMillis()
+                failureCount = 0
+                nextAllowedAt = 0L
                 db.settingsDao().upsertMeta(SyncMetaEntity(SyncMeta.LAST_SUCCESS_AT, now.toString()))
                 refreshPendingCounts()
                 status.update {
@@ -123,6 +132,9 @@ class SyncEngine(
                     )
                 }
             } catch (error: ApiException) {
+                failureCount += 1
+                nextAllowedAt = System.currentTimeMillis() +
+                    com.itime.app.domain.SyncBackoff.delayMillis(failureCount)
                 status.update {
                     it.copy(
                         phase = if (error.status == 0) SyncPhase.Offline else SyncPhase.Error,
@@ -130,6 +142,9 @@ class SyncEngine(
                     )
                 }
             } catch (error: Exception) {
+                failureCount += 1
+                nextAllowedAt = System.currentTimeMillis() +
+                    com.itime.app.domain.SyncBackoff.delayMillis(failureCount)
                 status.update {
                     it.copy(phase = SyncPhase.Error, lastError = error.message ?: "同步失败")
                 }
@@ -846,7 +861,7 @@ class SyncEngine(
             }
             db.outboxDao().resetToPending(operationId)
             refreshPendingCounts()
-            syncNow("resolve-conflict")
+            syncNow("resolve-conflict", force = true)
             return
         }
         if (keepLocal) {
@@ -876,7 +891,7 @@ class SyncEngine(
             }
         }
         refreshPendingCounts()
-        syncNow("resolve-conflict")
+        syncNow("resolve-conflict", force = true)
     }
 
     /** Creates a project directly on the server (editor needs a real id at once). */
@@ -892,7 +907,7 @@ class SyncEngine(
     suspend fun retryOperation(operationId: String) {
         db.outboxDao().resetToPending(operationId)
         refreshPendingCounts()
-        syncNow("retry-failed")
+        syncNow("retry-failed", force = true)
     }
 
     /** Drops a local write the user chose not to send. */
