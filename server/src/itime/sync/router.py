@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 
 from itime.auth.session import authorized
 from itime.sync.schemas import (
@@ -14,8 +14,34 @@ from itime.sync.service import (
     read_change_page,
     sync_status,
 )
+from itime.sync.snapshot import build_snapshot, read_entity
 
 router = APIRouter(prefix="/api/v1/sync", tags=["通用同步"])
+
+
+@router.get("/snapshot")
+async def snapshot(request: Request) -> dict:
+    async with authorized(request) as identity:
+        return await build_snapshot(
+            identity.session,
+            request.app.state.security,
+            identity.user.id,
+        )
+
+
+@router.get("/entities/{entity_type}/{entity_id}")
+async def entity(
+    entity_type: Annotated[str, Path(max_length=40)],
+    entity_id: UUID,
+    request: Request,
+) -> dict:
+    async with authorized(request) as identity:
+        return await read_entity(
+            identity.session,
+            identity.user.id,
+            entity_type,
+            entity_id,
+        )
 
 
 @router.get("/changes")
