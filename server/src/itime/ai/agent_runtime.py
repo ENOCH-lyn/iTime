@@ -20,6 +20,7 @@ from sqlalchemy import select
 from itime.ai.action_proposals import ActionProposal, create_proposal, get_proposal
 from itime.ai.agent_models import AgentRun
 from itime.ai.conversation_provider import (
+    LIVE_TOOL_STEP_LABELS,
     AgentCalendarBatch,
     AgentCourseCreate,
     AgentCourseDelete,
@@ -32,6 +33,7 @@ from itime.ai.conversation_provider import (
     AgentTaskComplete,
     AgentTaskDelete,
     AgentTaskUpdate,
+    ConversationGenerationSuperseded,
     ConversationProviderError,
     _live_weather,
     _live_web_search,
@@ -108,6 +110,8 @@ class AgentDependencies:
     image_media_id: UUID | None
     deadline_at: datetime
     on_request_started: Callable[[], Awaitable[bool]]
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None
+    on_step: Callable[[str], Awaitable[bool]] | None = None
     _image_cache: dict[str, str | None] = field(default_factory=dict)
 
 
@@ -216,6 +220,9 @@ async def _agent_node(state: AgentState, *, deps: AgentDependencies) -> dict:
         image_data_url=await _image_data_url(deps),
     )
     calls = _normalize_calls(turn.tool_calls, state["turn"])
+    if turn.reasoning.strip() and deps.on_reasoning is not None:
+        if not await deps.on_reasoning(turn.reasoning):
+            raise ConversationGenerationSuperseded
     assistant: dict[str, Any] = {
         "role": "assistant",
         "content": turn.content,
@@ -639,6 +646,10 @@ async def _tool_node(state: AgentState, *, deps: AgentDependencies) -> dict:
     if index >= len(calls):
         return {}
     call = calls[index]
+    if deps.on_step is not None:
+        label = LIVE_TOOL_STEP_LABELS.get(str(call.get("name") or ""), "调用工具")
+        if not await deps.on_step(label):
+            raise ConversationGenerationSuperseded
     result, memory_writes = await _execute_tool(deps, state, call)
     message = {
         "role": "tool",
@@ -763,6 +774,8 @@ async def start_agent_run(
     image_media_id: UUID | None,
     response_message_id: UUID,
     on_request_started: Callable[[], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
+    on_step: Callable[[str], Awaitable[bool]] | None = None,
 ) -> AgentOutcome:
     run_id = uuid4()
     thread_id = str(run_id)
@@ -799,6 +812,8 @@ async def start_agent_run(
         image_media_id=image_media_id,
         deadline_at=claim.deadline_at,
         on_request_started=on_request_started,
+        on_reasoning=on_reasoning,
+        on_step=on_step,
     )
     initial = {
         "messages": messages,
@@ -832,6 +847,8 @@ async def resume_agent_run(
     response_message_id: UUID,
     decision: str,
     on_request_started: Callable[[], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
+    on_step: Callable[[str], Awaitable[bool]] | None = None,
 ) -> AgentOutcome:
     async with database.transaction() as session:
         locked = await session.scalar(
@@ -865,6 +882,8 @@ async def resume_agent_run(
         image_media_id=run.image_media_id,
         deadline_at=claim.deadline_at,
         on_request_started=on_request_started,
+        on_reasoning=on_reasoning,
+        on_step=on_step,
     )
     try:
         result = await _run_graph(

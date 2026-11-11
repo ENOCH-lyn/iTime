@@ -796,9 +796,9 @@ def _event_delta(
     data: str,
     request_id: str | None,
     http_status: int,
-) -> tuple[str | None, object | None, bool]:
+) -> tuple[str | None, str | None, object | None, bool]:
     if data.strip() == "[DONE]":
-        return None, None, True
+        return None, None, None, True
     try:
         payload = json.loads(data)
         if not isinstance(payload, dict):
@@ -808,7 +808,7 @@ def _event_delta(
     except (TypeError, json.JSONDecodeError) as exc:
         raise _invalid_stream(request_id, http_status) from exc
     if not choices:
-        return None, usage, False
+        return None, None, usage, False
     if not isinstance(choices, list) or not isinstance(choices[0], dict):
         raise _invalid_stream(request_id, http_status, usage=usage)
     delta = choices[0].get("delta")
@@ -823,27 +823,30 @@ def _event_delta(
             http_status=http_status,
             usage=usage,
         )
-    content = delta.get("content")
-    if content is None:
-        return None, usage, False
-    if not isinstance(content, str):
+    reasoning = delta.get("reasoning_content")
+    if reasoning is not None and not isinstance(reasoning, str):
         raise _invalid_stream(request_id, http_status, usage=usage)
-    return content, usage, False
+    content = delta.get("content")
+    if content is not None and not isinstance(content, str):
+        raise _invalid_stream(request_id, http_status, usage=usage)
+    return content, reasoning, usage, False
 
 
 def _json_content(
     body: bytes,
     request_id: str | None,
     http_status: int,
-) -> tuple[str, object | None]:
+) -> tuple[str, str, object | None]:
     usage: object | None = None
     try:
         payload = json.loads(body)
         if not isinstance(payload, dict):
             raise TypeError
         usage = payload.get("usage")
-        choices = payload["choices"]
-        content = choices[0]["message"]["content"]
+        message = payload["choices"][0]["message"]
+        if not isinstance(message, dict):
+            raise TypeError
+        content = message["content"]
     except (
         KeyError,
         IndexError,
@@ -852,9 +855,12 @@ def _json_content(
         json.JSONDecodeError,
     ) as exc:
         raise _invalid_stream(request_id, http_status, usage=usage) from exc
+    reasoning = message.get("reasoning_content")
+    if reasoning is not None and not isinstance(reasoning, str):
+        raise _invalid_stream(request_id, http_status, usage=usage)
     if not isinstance(content, str):
         raise _invalid_stream(request_id, http_status, usage=usage)
-    return content, usage
+    return content, reasoning or "", usage
 
 
 def _agent_json_result(
@@ -1082,6 +1088,30 @@ def _agent_json_result(
         usage,
     )
 
+
+LIVE_TOOL_STEP_LABELS = {
+    "propose_itime_task_plan": "整理任务计划",
+    "propose_itime_timetable_import": "整理课表",
+    "propose_itime_task_update": "调整任务",
+    "propose_itime_task_complete": "完成任务",
+    "propose_itime_task_delete": "删除任务",
+    "propose_itime_course_delete": "删除课程",
+    "propose_itime_course_update": "调整课程",
+    "propose_itime_occurrence_exception": "调整单次课程",
+    "propose_itime_plan_block_update": "调整计划块",
+    "propose_itime_plan_block_create": "新增计划块",
+    "propose_itime_plan_block_delete": "移除计划块",
+    "propose_itime_plan_block_batch": "批量调整计划块",
+    "propose_itime_course_create": "新建课程",
+    "propose_itime_calendar_batch": "整理日程",
+    "propose_itime_term_create": "新建学期",
+    "propose_itime_term_update": "调整学期",
+    "get_weather": "查询天气",
+    "web_search": "搜索资料",
+    "save_memory": "记录偏好",
+    "list_terms": "读取学期",
+    "start_itime_timetable_import": "读取课表图片",
+}
 
 LIVE_TOOL_SPECS = [
     {
@@ -1319,6 +1349,7 @@ class AgentTurn:
     provider_request_id: str | None
     http_status: int
     usage: object | None
+    reasoning: str = ""
 
 
 
@@ -1472,6 +1503,8 @@ async def _generate_live_tool_reply(
     timeout_seconds: float,
     on_delta: Callable[[str], Awaitable[bool]],
     on_request_started: Callable[[], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
+    on_step: Callable[[str], Awaitable[bool]] | None = None,
 ) -> ConversationProviderResult:
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -1576,6 +1609,14 @@ async def _generate_live_tool_reply(
                     payload = response.json()
                     usage = payload.get("usage") or usage
                     message = payload["choices"][0]["message"]
+                    reasoning_piece = message.get("reasoning_content")
+                    if (
+                        isinstance(reasoning_piece, str)
+                        and reasoning_piece.strip()
+                        and on_reasoning is not None
+                    ):
+                        if not await on_reasoning(reasoning_piece):
+                            raise ConversationGenerationSuperseded
                     tool_calls = message.get("tool_calls")
                     if not tool_calls:
                         content = message.get("content") or ""
@@ -1583,6 +1624,13 @@ async def _generate_live_tool_reply(
                     chat_messages.append(message)
                     for call in tool_calls:
                         function = call.get("function") or {}
+                        if on_step is not None:
+                            label = LIVE_TOOL_STEP_LABELS.get(
+                                str(function.get("name") or ""),
+                                "调用工具",
+                            )
+                            if not await on_step(label):
+                                raise ConversationGenerationSuperseded
                         try:
                             arguments = json.loads(function.get("arguments") or "{}")
                         except json.JSONDecodeError:
@@ -1726,6 +1774,7 @@ async def generate_agent_turn(
     http_status: int | None = None
     usage: object | None = None
     content = ""
+    reasoning = ""
     tool_calls: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(timeout_seconds):
@@ -1772,6 +1821,9 @@ async def generate_agent_turn(
                 usage = payload.get("usage")
                 message = payload["choices"][0]["message"]
                 content = message.get("content") or ""
+                raw_reasoning = message.get("reasoning_content")
+                if isinstance(raw_reasoning, str):
+                    reasoning = raw_reasoning
                 raw_calls = message.get("tool_calls") or []
                 if isinstance(raw_calls, list):
                     tool_calls = [
@@ -1805,6 +1857,7 @@ async def generate_agent_turn(
         provider_request_id=request_id,
         http_status=http_status or 200,
         usage=usage,
+        reasoning=reasoning,
     )
 
 
@@ -1818,6 +1871,8 @@ async def generate_agent_reply(
     timeout_seconds: float,
     on_delta: Callable[[str], Awaitable[bool]],
     on_request_started: Callable[[], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
+    on_step: Callable[[str], Awaitable[bool]] | None = None,
 ) -> ConversationProviderResult:
     if context.get("_live_tool_loop"):
         return await _generate_live_tool_reply(
@@ -1829,6 +1884,8 @@ async def generate_agent_reply(
             timeout_seconds=timeout_seconds,
             on_delta=on_delta,
             on_request_started=on_request_started,
+            on_reasoning=on_reasoning,
+            on_step=on_step,
         )
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -1917,6 +1974,7 @@ async def generate_agent_reply(
                         ) = await _consume_agent_sse(
                             response,
                             on_delta=on_delta,
+                            on_reasoning=on_reasoning,
                         )
                     else:
                         body = await response.aread()
@@ -1999,8 +2057,9 @@ async def _consume_sse(
     response: httpx.Response,
     *,
     on_delta: Callable[[str], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
 ) -> tuple[str, object | None]:
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
     request_id = response.headers.get("x-request-id")
     usage: object | None = None
 
@@ -2008,15 +2067,17 @@ async def _consume_sse(
         nonlocal usage
         try:
             async for data in _iter_sse_data(response):
-                delta, event_usage, done = _event_delta(
+                delta, reasoning, event_usage, done = _event_delta(
                     data,
                     request_id,
                     response.status_code,
                 )
                 if event_usage is not None:
                     usage = event_usage
+                if reasoning:
+                    await queue.put(("reasoning", reasoning))
                 if delta:
-                    await queue.put(delta)
+                    await queue.put(("content", delta))
                 if done:
                     break
         finally:
@@ -2025,6 +2086,7 @@ async def _consume_sse(
     reader = asyncio.create_task(read_events())
     content = ""
     pending = ""
+    pending_reasoning = ""
 
     async def flush() -> None:
         nonlocal pending
@@ -2034,6 +2096,17 @@ async def _consume_sse(
             raise ConversationGenerationSuperseded
         pending = ""
 
+    async def flush_reasoning() -> None:
+        nonlocal pending_reasoning
+        if not pending_reasoning:
+            return
+        text = pending_reasoning
+        pending_reasoning = ""
+        if on_reasoning is None:
+            return
+        if not await on_reasoning(text):
+            raise ConversationGenerationSuperseded
+
     try:
         while True:
             try:
@@ -2042,14 +2115,22 @@ async def _consume_sse(
                     timeout=DELTA_FLUSH_SECONDS,
                 )
             except TimeoutError:
+                await flush_reasoning()
                 await flush()
                 continue
             if item is None:
                 await reader
+                await flush_reasoning()
                 await flush()
                 break
-            content += item
-            pending += item
+            kind, text = item
+            if kind == "reasoning":
+                pending_reasoning += text
+                if len(pending_reasoning.encode("utf-8")) >= DELTA_BATCH_BYTES:
+                    await flush_reasoning()
+                continue
+            content += text
+            pending += text
             if len(content) > MAX_CONVERSATION_OUTPUT_CHARS:
                 raise ConversationProviderError(
                     "conversation_output_too_large",
@@ -2071,6 +2152,7 @@ async def _consume_agent_sse(
     response: httpx.Response,
     *,
     on_delta: Callable[[str], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
 ) -> tuple[
     str,
     AgentTaskPlan | None,
@@ -2115,6 +2197,12 @@ async def _consume_agent_sse(
         delta = choices[0].get("delta")
         if not isinstance(delta, dict):
             raise _invalid_stream(request_id, response.status_code, usage=usage)
+        reasoning = delta.get("reasoning_content")
+        if reasoning and on_reasoning is not None:
+            if not isinstance(reasoning, str):
+                raise _invalid_stream(request_id, response.status_code, usage=usage)
+            if not await on_reasoning(reasoning):
+                raise ConversationGenerationSuperseded
         chunk = delta.get("content")
         if chunk is not None:
             if not isinstance(chunk, str):
@@ -2208,6 +2296,7 @@ async def stream_conversation_reply(
     timeout_seconds: float,
     on_delta: Callable[[str], Awaitable[bool]],
     on_request_started: Callable[[], Awaitable[bool]],
+    on_reasoning: Callable[[str], Awaitable[bool]] | None = None,
 ) -> ConversationProviderResult:
     try:
         enforce_endpoint_policy(config.endpoint_url, settings)
@@ -2279,6 +2368,7 @@ async def stream_conversation_reply(
                         content, usage = await _consume_sse(
                             response,
                             on_delta=on_delta,
+                            on_reasoning=on_reasoning,
                         )
                     else:
                         body = await response.aread()
@@ -2290,11 +2380,14 @@ async def stream_conversation_reply(
                                 provider_request_id=request_id,
                                 http_status=http_status,
                             )
-                        content, usage = _json_content(
+                        content, reasoning, usage = _json_content(
                             body,
                             request_id,
                             response.status_code,
                         )
+                        if reasoning and on_reasoning is not None:
+                            if not await on_reasoning(reasoning):
+                                raise ConversationGenerationSuperseded
                         if len(content) > MAX_CONVERSATION_OUTPUT_CHARS:
                             raise ConversationProviderError(
                                 "conversation_output_too_large",

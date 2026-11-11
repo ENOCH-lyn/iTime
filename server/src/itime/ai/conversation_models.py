@@ -126,6 +126,7 @@ class ConversationMessage(Base):
     role: Mapped[str] = mapped_column(String(10))
     status: Mapped[str] = mapped_column(String(12))
     content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    reasoning_content: Mapped[str] = mapped_column(Text, default="", server_default="")
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -242,7 +243,7 @@ class AIJobEvent(Base):
         CheckConstraint("sequence >= 1", name="sequence"),
         CheckConstraint("generation BETWEEN 0 AND 5", name="generation"),
         CheckConstraint(
-            "kind IN ('job_state', 'content_reset', 'content_delta')",
+            "kind IN ('job_state', 'content_reset', 'content_delta', 'reasoning_delta')",
             name="kind",
         ),
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="payload"),

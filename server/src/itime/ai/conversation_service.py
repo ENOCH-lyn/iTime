@@ -131,6 +131,7 @@ def message_result(
         "role": message.role,
         "status": message.status,
         "content": message.content,
+        "reasoning_content": message.reasoning_content,
         "error": (
             {"code": message.error_code, "message": message.error_message}
             if message.error_code is not None
@@ -1820,6 +1821,91 @@ async def append_conversation_delta(
             payload={
                 "message_id": str(message.id),
                 "text": text_delta,
+            },
+        )
+        return True
+
+
+async def append_conversation_reasoning_delta(
+    database: Database,
+    claim: ClaimedJob,
+    *,
+    generation_number: int,
+    text_delta: str,
+    lease_seconds: int,
+    step: str | None = None,
+) -> bool:
+    """Record a reasoning trace chunk or one visible agent step."""
+    if not text_delta and not step:
+        return True
+    current = now()
+    async with database.transaction() as session:
+        job = await session.scalar(
+            select(AIJob)
+            .where(
+                AIJob.id == claim.id,
+                AIJob.owner_id == claim.owner_id,
+                AIJob.status == "running",
+                AIJob.lease_id == claim.lease_id,
+                AIJob.lease_until > current,
+                AIJob.deadline_at > current,
+            )
+            .with_for_update()
+        )
+        if job is None:
+            return False
+        generation = await session.scalar(
+            select(ChatGeneration).where(
+                ChatGeneration.job_id == job.id,
+                ChatGeneration.stream_generation == generation_number,
+            )
+        )
+        if generation is None:
+            return False
+        message = await session.scalar(
+            select(ConversationMessage)
+            .where(
+                ConversationMessage.id == generation.response_message_id,
+                ConversationMessage.owner_id == claim.owner_id,
+            )
+            .with_for_update()
+        )
+        if message is None or message.status != "running":
+            return False
+        if text_delta:
+            reasoning = message.reasoning_content + text_delta
+            if len(reasoning) > 100_000:
+                raise ConversationWorkUnavailable(
+                    "conversation_output_too_large",
+                    "AI 思考内容超过可处理大小，请缩小问题范围后重试。",
+                    "validation",
+                )
+            message.reasoning_content = reasoning
+        elif step:
+            prefix = (
+                ""
+                if not message.reasoning_content
+                or message.reasoning_content.endswith("\n")
+                else "\n"
+            )
+            message.reasoning_content = (
+                message.reasoning_content + prefix + f"› {step}\n"
+            )
+        message.updated_at = current
+        job.lease_until = min(
+            current + timedelta(seconds=lease_seconds),
+            job.deadline_at,
+        )
+        job.updated_at = current
+        append_job_event(
+            session,
+            job,
+            generation=generation_number,
+            kind="reasoning_delta",
+            payload={
+                "message_id": str(message.id),
+                "text": text_delta,
+                "step": step,
             },
         )
         return True

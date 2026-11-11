@@ -25,6 +25,7 @@ from itime.ai.conversation_provider import (
 from itime.ai.conversation_service import (
     ConversationWorkUnavailable,
     append_conversation_delta,
+    append_conversation_reasoning_delta,
     cleanup_expired_job_events,
     complete_agent_job,
     complete_conversation_job,
@@ -333,6 +334,25 @@ async def _process_conversation(
             lease_seconds=settings.ai_job_lease_seconds,
         )
 
+    async def persist_reasoning(text: str) -> bool:
+        return await append_conversation_reasoning_delta(
+            database,
+            claim,
+            generation_number=work.generation,
+            text_delta=text,
+            lease_seconds=settings.ai_job_lease_seconds,
+        )
+
+    async def persist_step(label: str) -> bool:
+        return await append_conversation_reasoning_delta(
+            database,
+            claim,
+            generation_number=work.generation,
+            text_delta="",
+            lease_seconds=settings.ai_job_lease_seconds,
+            step=label,
+        )
+
     async def mark_started() -> bool:
         return await mark_provider_request_started(database, claim)
 
@@ -364,6 +384,8 @@ async def _process_conversation(
                 response_message_id=work.response_message_id,
                 decision=str(work.agent_resume.get("decision") or "approved"),
                 on_request_started=mark_started,
+                on_reasoning=persist_reasoning,
+                on_step=persist_step,
             )
         elif (
             work.agent_context is not None
@@ -380,6 +402,8 @@ async def _process_conversation(
                 image_media_id=work.image_media_id,
                 response_message_id=work.response_message_id,
                 on_request_started=mark_started,
+                on_reasoning=persist_reasoning,
+                on_step=persist_step,
             )
         elif work.agent_context is not None:
             operation = generate_agent_reply(
@@ -391,6 +415,8 @@ async def _process_conversation(
                 timeout_seconds=remaining,
                 on_delta=persist_delta,
                 on_request_started=mark_started,
+                on_reasoning=persist_reasoning,
+                on_step=persist_step,
             )
         else:
             operation = stream_conversation_reply(
@@ -401,6 +427,7 @@ async def _process_conversation(
                 timeout_seconds=remaining,
                 on_delta=persist_delta,
                 on_request_started=mark_started,
+                on_reasoning=persist_reasoning,
             )
         provider_result = await _with_lease_heartbeat(
             database,
