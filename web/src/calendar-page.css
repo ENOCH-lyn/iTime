@@ -1637,3 +1637,23 @@ dialog.calendar-settings-dialog .calendar-dialog-heading {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Mobile: keep every calendar filter visible instead of clipping the row. */
+@media (max-width: 600px) {
+  .calendar-filter-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 6px;
+    padding-bottom: 12px;
+  }
+  .calendar-filter-label {
+    flex: 0 0 100%;
+    margin-bottom: 2px;
+  }
+  .m3-filter-chip {
+    height: 30px;
+    padding: 0 10px;
+    gap: 4px;
+    font-size: 13px;
+  }
+}
