@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -144,6 +145,154 @@ fun TodayScreen(
         }
     }
 
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+
+    @Composable
+    fun HeaderBlocks() {
+        Column {
+            if (syncState.conflictCount > 0) {
+                ConflictBanner(
+                    count = syncState.conflictCount,
+                    onResolve = onOpenSettings,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+            if (syncState.phase == SyncPhase.Offline) {
+                OfflineBanner(Modifier.padding(vertical = 8.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard("今日日程", agenda.size.toString(), Modifier.weight(1f))
+                StatCard("待完成任务", todo.size.toString(), Modifier.weight(1f))
+                StatCard("已完成", doneToday.toString(), Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    fun androidx.compose.foundation.lazy.LazyListScope.agendaSection() {
+        item {
+            Text(
+                "今日日程",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+        }
+        items(agenda, key = { it.id }) { item ->
+            AgendaRow(item) {
+                if (item.sourceKind == "task") {
+                    scope.launch {
+                        val task = tasks.firstOrNull { it.id == item.sourceId }
+                        completeWithUndo(
+                            taskId = item.sourceId,
+                            occurrenceKey = item.occurrenceKey,
+                            repeating = task?.isRepeating == true,
+                        )
+                    }
+                }
+            }
+        }
+        if (agenda.isEmpty()) {
+            item {
+                Text(
+                    "今天没有课程或日程。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+        }
+    }
+
+    fun androidx.compose.foundation.lazy.LazyListScope.todoSection() {
+        item {
+            Text(
+                "待办任务",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 20.dp, bottom = 4.dp),
+            )
+        }
+        items(todo, key = { it.id }) { task ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                onClick = {
+                    editorTaskId.value = task.id
+                    editorDraft = task.toDraft()
+                    showEditor = true
+                },
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = false,
+                        onCheckedChange = {
+                            scope.launch {
+                                completeWithUndo(
+                                    taskId = task.id,
+                                    occurrenceKey = null,
+                                    repeating = false,
+                                )
+                            }
+                        },
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            task.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val due = Times.parseDate(task.dueDate)
+                        val time = Times.parseTime(task.dueTime)
+                        val label = buildString {
+                            if (due != null && due.isBefore(today)) append("已逾期 · ")
+                            if (time != null) append(time.format(DateTimeFormatter.ofPattern("HH:mm"))) else append("全天")
+                            if (task.estimatedMinutes != null) append(" · ${task.estimatedMinutes} 分钟")
+                        }
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (due != null && due.isBefore(today)) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    if (task.priority > 0) {
+                        Text(
+                            when (task.priority) {
+                                3 -> "高"
+                                2 -> "中"
+                                else -> "低"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
+        if (todo.isEmpty()) {
+            item {
+                Text(
+                    "没有到期的待办任务。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+        }
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -201,158 +350,36 @@ fun TodayScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
-        ) {
-            if (syncState.conflictCount > 0) {
-                item {
-                    ConflictBanner(
-                        count = syncState.conflictCount,
-                        onResolve = onOpenSettings,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            }
-            if (syncState.phase == SyncPhase.Offline) {
-                item {
-                    OfflineBanner(Modifier.padding(vertical = 8.dp))
-                }
-            }
-            item {
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    StatCard("今日日程", agenda.size.toString(), Modifier.weight(1f))
-                    StatCard("待完成任务", todo.size.toString(), Modifier.weight(1f))
-                    StatCard("已完成", doneToday.toString(), Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-            item {
-                Text(
-                    "今日日程",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-                )
-            }
-            items(agenda, key = { it.id }) { item ->
-                AgendaRow(item) {
-                    if (item.sourceKind == "task") {
-                        scope.launch {
-                            val task = tasks.firstOrNull { it.id == item.sourceId }
-                            completeWithUndo(
-                                taskId = item.sourceId,
-                                occurrenceKey = item.occurrenceKey,
-                                repeating = task?.isRepeating == true,
-                            )
-                        }
+            if (wide) {
+                Column(Modifier.fillMaxSize()) {
+                    Column(Modifier.padding(horizontal = 16.dp)) { HeaderBlocks() }
+                    Row(Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 8.dp, bottom = 120.dp),
+                        ) { agendaSection() }
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentPadding = PaddingValues(start = 8.dp, end = 16.dp, bottom = 120.dp),
+                        ) { todoSection() }
                     }
                 }
-            }
-            if (agenda.isEmpty()) {
-                item {
-                    Text(
-                        "今天没有课程或日程。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            }
-            item {
-                Text(
-                    "待办任务",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 20.dp, bottom = 4.dp),
-                )
-            }
-            items(todo, key = { it.id }) { task ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    onClick = {
-                        editorTaskId.value = task.id
-                        editorDraft = task.toDraft()
-                        showEditor = true
-                    },
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = false,
-                            onCheckedChange = {
-                                scope.launch {
-                                    completeWithUndo(
-                                        taskId = task.id,
-                                        occurrenceKey = null,
-                                        repeating = false,
-                                    )
-                                }
-                            },
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                task.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            val due = Times.parseDate(task.dueDate)
-                            val time = Times.parseTime(task.dueTime)
-                            val label = buildString {
-                                if (due != null && due.isBefore(today)) append("已逾期 · ")
-                                if (time != null) append(time.format(DateTimeFormatter.ofPattern("HH:mm"))) else append("全天")
-                                if (task.estimatedMinutes != null) append(" · ${task.estimatedMinutes} 分钟")
-                            }
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (due != null && due.isBefore(today)) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                        }
-                        if (task.priority > 0) {
-                            Text(
-                                when (task.priority) {
-                                    3 -> "高"
-                                    2 -> "中"
-                                    else -> "低"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.padding(end = 8.dp),
-                            )
-                        }
-                    }
+                    item { HeaderBlocks() }
+                    agendaSection()
+                    todoSection()
                 }
             }
-            if (todo.isEmpty()) {
-                item {
-                    Text(
-                        "没有到期的待办任务。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            }
-        }
         }
     }
-
     if (showEditor) {
         TaskEditorSheet(
             repository = container.tasks,
