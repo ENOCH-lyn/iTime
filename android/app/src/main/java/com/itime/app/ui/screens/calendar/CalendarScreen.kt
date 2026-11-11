@@ -51,6 +51,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -455,47 +457,6 @@ private fun MonthGrid(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DayCell(
-    day: LocalDate,
-    selected: Boolean,
-    count: Int,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        modifier = modifier,
-    ) {
-        Column(
-            Modifier.padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.CHINA),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                day.dayOfMonth.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-            if (count > 0) {
-                Box(
-                    Modifier
-                        .padding(top = 4.dp)
-                        .size(4.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape),
-                )
             }
         }
     }
