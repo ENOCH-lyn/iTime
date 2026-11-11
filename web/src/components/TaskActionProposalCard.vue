@@ -23,6 +23,7 @@ const title = computed(() => {
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isComplete = computed(() => proposal.value?.tool_name === 'complete_task')
 const isDelete = computed(() => proposal.value?.tool_name === 'delete_task')
+const isCreateTask = computed(() => proposal.value?.tool_name === 'create_task')
 const isPlan = computed(() => proposal.value?.tool_name === 'update_plan_block')
 const isPlanCreate = computed(() => proposal.value?.tool_name === 'create_plan_block')
 const isPlanDelete = computed(() => proposal.value?.tool_name === 'delete_plan_block')
@@ -32,6 +33,7 @@ const batchCount = computed(() => {
   return details && Array.isArray(details.changes) ? details.changes.length : 0
 })
 const actionLabel = computed(() => {
+  if (isCreateTask.value) return '新建'
   if (isDelete.value) return '删除'
   if (isPlan.value) return '调整'
   if (isPlanCreate.value) return '安排'
@@ -48,6 +50,20 @@ const statusLabel = computed(() => {
   return '已过期'
 })
 const changes = computed(() => {
+  if (isCreateTask.value) {
+    const details = proposal.value?.preview.details ?? {}
+    const time = (value: unknown) => String(value).slice(0, 5)
+    const rows: string[] = []
+    if (details.local_date != null) rows.push(`日期 ${String(details.local_date)}`)
+    if (details.starts_at != null && details.ends_at != null) {
+      rows.push(`时间 ${time(details.starts_at)}–${time(details.ends_at)}`)
+    }
+    if (details.estimated_minutes != null) {
+      rows.push(`预计 ${String(details.estimated_minutes)} 分钟`)
+    }
+    rows.push('写入任务列表，同时在日历里显示')
+    return rows
+  }
   if (isDelete.value) return ['移入回收站，30 天后清理']
   const details = proposal.value?.preview.details ?? {}
   const rows: string[] = []
@@ -161,9 +177,9 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <component :is="(isDelete || isPlanDelete) ? Trash2 : ((isPlan || isPlanCreate || isPlanBatch) ? CalendarClock : (isComplete ? Check : Pencil))" :size="17" aria-hidden="true" />
+        <component :is="(isDelete || isPlanDelete) ? Trash2 : ((isCreateTask || isPlan || isPlanCreate || isPlanBatch) ? CalendarClock : (isComplete ? Check : Pencil))" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ isPlanBatch ? `批量调整 ${batchCount} 个计划块` : (isPlanDelete ? `移除计划块「${title}」` : (isPlanCreate ? `安排计划块「${title}」` : (isPlan ? `调整计划块「${title}」` : `${actionLabel}任务「${title}」`))) }}</strong>
+          <strong>{{ isCreateTask ? `新建任务「${title}」` : (isPlanBatch ? `批量调整 ${batchCount} 个计划块` : (isPlanDelete ? `移除计划块「${title}」` : (isPlanCreate ? `安排计划块「${title}」` : (isPlan ? `调整计划块「${title}」` : `${actionLabel}任务「${title}」`)))) }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -174,7 +190,7 @@ watch(() => props.proposalId, load)
       <div v-if="proposal.status === 'pending'" class="task-proposal-actions">
         <ElButton type="primary" :loading="pending" @click="apply">
           <Check :size="15" aria-hidden="true" />
-          {{ isPlanBatch ? '确认批量调整' : (isPlanDelete ? '确认移除' : (isPlanCreate ? '确认安排' : (isPlan ? '确认调整' : (isDelete ? '确认删除' : (isComplete ? '确认完成' : '确认修改'))))) }}
+          {{ isCreateTask ? '确认新建' : (isPlanBatch ? '确认批量调整' : (isPlanDelete ? '确认移除' : (isPlanCreate ? '确认安排' : (isPlan ? '确认调整' : (isDelete ? '确认删除' : (isComplete ? '确认完成' : '确认修改')))))) }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝

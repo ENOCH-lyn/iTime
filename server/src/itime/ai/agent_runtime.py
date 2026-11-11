@@ -25,6 +25,7 @@ from itime.ai.conversation_provider import (
     AgentCourseCreate,
     AgentCourseDelete,
     AgentCourseUpdate,
+    AgentOccurrenceBatch,
     AgentOccurrenceException,
     AgentPlanBlockBatch,
     AgentPlanBlockCreate,
@@ -32,6 +33,7 @@ from itime.ai.conversation_provider import (
     AgentPlanBlockUpdate,
     AgentTaskComplete,
     AgentTaskDelete,
+    AgentTaskPlan,
     AgentTaskUpdate,
     AgentTimetableCourses,
     ConversationGenerationSuperseded,
@@ -58,6 +60,7 @@ TERM_TOOLS = {
 }
 
 ACTION_TOOLS: dict[str, tuple[str, type]] = {
+    "propose_itime_task_plan": ("create_task", AgentTaskPlan),
     "propose_itime_task_update": ("update_task", AgentTaskUpdate),
     "propose_itime_task_complete": ("complete_task", AgentTaskComplete),
     "propose_itime_task_delete": ("delete_task", AgentTaskDelete),
@@ -66,6 +69,10 @@ ACTION_TOOLS: dict[str, tuple[str, type]] = {
     "propose_itime_occurrence_exception": (
         "create_calendar_exception",
         AgentOccurrenceException,
+    ),
+    "propose_itime_occurrence_batch": (
+        "create_calendar_exception_batch",
+        AgentOccurrenceBatch,
     ),
     "propose_itime_plan_block_update": ("update_plan_block", AgentPlanBlockUpdate),
     "propose_itime_plan_block_create": ("create_plan_block", AgentPlanBlockCreate),
@@ -354,6 +361,12 @@ async def _action_details(
         for key, value in payload.items()
         if key != "assistant_message"
     }
+    if tool_name == "create_task":
+        details["task_title"] = payload.get("task_title")
+        details["local_date"] = payload.get("local_date")
+        details["starts_at"] = payload.get("starts_at")
+        details["ends_at"] = payload.get("ends_at")
+        details["estimated_minutes"] = payload.get("estimated_minutes")
     if tool_name in {"update_task", "complete_task", "delete_task"}:
         task = await session.get(Task, UUID(str(payload["task_id"])))
         if task is not None and task.owner_id == owner_id:
@@ -428,6 +441,40 @@ async def _action_details(
     if tool_name == "create_timetable_courses":
         courses = payload.get("courses")
         details["course_count"] = len(courses) if isinstance(courses, list) else 0
+    if tool_name == "create_calendar_exception_batch":
+        items = payload.get("items")
+        if isinstance(items, list):
+            details["item_count"] = len(items)
+            series_ids = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    series_ids.append(UUID(str(item.get("series_id"))))
+                except ValueError:
+                    continue
+            rows = list(
+                await session.scalars(
+                    select(CalendarSeries).where(
+                        CalendarSeries.owner_id == owner_id,
+                        CalendarSeries.id.in_(series_ids),
+                    )
+                )
+            ) if series_ids else []
+            titles = {row.id: row.name for row in rows}
+            details["items"] = [
+                {
+                    **item,
+                    "series_title": titles.get(
+                        UUID(str(item.get("series_id"))),
+                        "课程",
+                    )
+                    if isinstance(item, dict)
+                    else None,
+                }
+                for item in items
+                if isinstance(item, dict)
+            ]
     return details
 
 

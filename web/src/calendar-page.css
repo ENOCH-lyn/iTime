@@ -72,17 +72,34 @@
 }
 
 .calendar-view-switch {
-  background: var(--m3-surface-container-low);
+  gap: 2px;
+  padding: 3px;
+  overflow: visible;
   border-color: var(--m3-outline-variant);
+  background: var(--m3-surface-container-low);
 }
 
 .calendar-view-switch > button {
-  min-width: 52px;
-  padding: 0 16px;
-  border-right-color: var(--m3-outline-variant);
+  min-width: 48px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-right: 0;
+  border-radius: var(--m3-shape-full);
+  color: var(--m3-on-surface-variant);
+}
+
+.calendar-view-switch > button:hover {
+  background: color-mix(in srgb, var(--m3-on-surface) 6%, transparent);
+  color: var(--m3-on-surface);
 }
 
 .calendar-view-switch > button.selected {
+  border-radius: var(--m3-shape-full);
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+
+.calendar-view-switch > button.selected:hover {
   background: var(--m3-secondary-container);
   color: var(--m3-on-secondary-container);
 }

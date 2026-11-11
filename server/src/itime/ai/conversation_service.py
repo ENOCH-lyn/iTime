@@ -1109,6 +1109,7 @@ async def complete_agent_job(
                                     "delete_calendar_series",
                                     "update_calendar_series",
                                     "create_calendar_exception",
+                                    "create_calendar_exception_batch",
                                     "create_calendar_series",
                                 }
                                 else "task_action"
@@ -2547,6 +2548,7 @@ async def complete_conversation_job(
                                     "delete_calendar_series",
                                     "update_calendar_series",
                                     "create_calendar_exception",
+                                    "create_calendar_exception_batch",
                                     "create_calendar_series",
                                 }
                                 else "task_action"

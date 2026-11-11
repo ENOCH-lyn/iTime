@@ -538,13 +538,22 @@ function mergeOccurrences(
       const due = item.due_kind === 'datetime' && item.due_at
         ? instantInZone(item.due_at, displayTimeZone)
         : { date: item.due_date, time: item.due_time }
+      let endTime: string | null = null
+      const estimated = Number(item.estimated_minutes || 0)
+      if (due.time && estimated > 0) {
+        const [hours, minutes] = due.time.split(':').map(Number)
+        const total = hours * 60 + minutes + estimated
+        if (total < 1440) {
+          endTime = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+        }
+      }
       return {
         id: `task:${item.task_id}:${item.occurrence_key}`,
         source: 'task' as const,
         date: due.date,
         end_date: due.date,
         time: due.time,
-        end_time: null,
+        end_time: endTime,
         title: item.title,
         subtitle: item.estimated_minutes ? `预计 ${item.estimated_minutes} 分钟` : '',
         state: item.status,

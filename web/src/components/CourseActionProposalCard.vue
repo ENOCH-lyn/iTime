@@ -22,7 +22,18 @@ const batchItems = computed<Record<string, unknown>[]>(() => (
     ? details.value.items as Record<string, unknown>[]
     : []
 ))
-const isBatch = computed(() => batchItems.value.length > 0)
+const isBatch = computed(() => (
+  proposal.value?.tool_name === 'create_calendar_series'
+  && batchItems.value.length > 0
+))
+const isExceptionBatch = computed(() => (
+  proposal.value?.tool_name === 'create_calendar_exception_batch'
+))
+const exceptionBatchItems = computed<Record<string, unknown>[]>(() => (
+  isExceptionBatch.value && Array.isArray(details.value.items)
+    ? details.value.items as Record<string, unknown>[]
+    : []
+))
 const courseTitle = computed(() => String(details.value.series_title ?? '此课程'))
 const summary = computed(() => proposal.value?.preview.summary ?? '')
 const isUpdate = computed(() => proposal.value?.tool_name === 'update_calendar_series')
@@ -35,6 +46,22 @@ const exceptionTitle = computed(() => (
     : `调整本次「${courseTitle.value}」`
 ))
 const changes = computed(() => {
+  if (isExceptionBatch.value) {
+    const time = (value: unknown) => (
+      value ? String(value).slice(0, 5) : ''
+    )
+    return exceptionBatchItems.value.map((item) => {
+      const title = String(item.series_title ?? '课程')
+      if (String(item.action) === 'cancelled') {
+        return `${title} · ${String(item.occurrence_date ?? '')} 取消`
+      }
+      const movedDate = String(item.moved_start_date ?? item.occurrence_date ?? '')
+      const range = item.moved_starts_at
+        ? `${time(item.moved_starts_at)}–${time(item.moved_ends_at)}`
+        : ''
+      return `${title} · ${String(item.occurrence_date ?? '')} → ${movedDate}${range ? ` ${range}` : ''}`
+    })
+  }
   if (isBatch.value) {
     return batchItems.value.map((item) => {
       const repeat = String(item.repeat ?? 'none')
@@ -155,9 +182,9 @@ watch(() => props.proposalId, load)
     </div>
     <template v-else-if="proposal">
       <header>
-        <component :is="isCreate ? CalendarPlus : (isException ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="17" aria-hidden="true" />
+        <component :is="isCreate ? CalendarPlus : (isException || isExceptionBatch ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="17" aria-hidden="true" />
         <div>
-          <strong>{{ isBatch ? `新建 ${batchItems.length} 项安排` : (isCreate ? `新建课程「${courseTitle}」` : (isException ? exceptionTitle : (isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」`))) }}</strong>
+          <strong>{{ isExceptionBatch ? `调整 ${exceptionBatchItems.length} 次课程` : (isBatch ? `新建 ${batchItems.length} 项安排` : (isCreate ? `新建课程「${courseTitle}」` : (isException ? exceptionTitle : (isUpdate ? `修改课程「${courseTitle}」` : `删除课程「${courseTitle}」`)))) }}</strong>
           <span>{{ statusLabel }}</span>
         </div>
       </header>
@@ -165,12 +192,12 @@ watch(() => props.proposalId, load)
       <ul v-if="changes.length" class="course-proposal-changes">
         <li v-for="change in changes" :key="change">{{ change }}</li>
       </ul>
-      <p v-if="isException" class="course-proposal-hint">只影响这一次，不改整组重复安排。</p>
+      <p v-if="isException || isExceptionBatch" class="course-proposal-hint">只影响这几次，不改整组重复安排。</p>
       <p v-else-if="!isUpdate && !isCreate" class="course-proposal-hint">确认后整门课程（含重复安排）移入回收站。</p>
       <div v-if="proposal.status === 'pending'" class="course-proposal-actions">
         <ElButton :type="isUpdate || isCreate ? 'primary' : 'danger'" :loading="pending" @click="apply">
-          <component :is="isCreate ? CalendarPlus : (isException ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="15" aria-hidden="true" />
-          {{ isBatch ? '确认全部' : (isCreate ? '确认新建' : (isException ? (exceptionAction === 'cancelled' ? '确认取消' : '确认调整') : (isUpdate ? '确认修改' : '确认删除'))) }}
+          <component :is="isCreate ? CalendarPlus : (isException || isExceptionBatch ? CalendarDays : (isUpdate ? Pencil : Trash2))" :size="15" aria-hidden="true" />
+          {{ isExceptionBatch ? `确认调整 ${exceptionBatchItems.length} 次` : (isBatch ? '确认全部' : (isCreate ? '确认新建' : (isException ? (exceptionAction === 'cancelled' ? '确认取消' : '确认调整') : (isUpdate ? '确认修改' : '确认删除')))) }}
         </ElButton>
         <ElButton :disabled="pending" @click="reject">
           <X :size="15" aria-hidden="true" /> 拒绝

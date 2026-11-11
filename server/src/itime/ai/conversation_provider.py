@@ -77,6 +77,12 @@ AGENT_SYSTEM_PROMPT = (
     "the user asks to cancel or move only one occurrence (for example this Friday), "
     "call propose_itime_occurrence_exception with series_id, occurrence_date, "
     "and action cancelled or moved; do not change the whole series. When the "
+    "user asks for all affected classes or occurrences (for example 下周一全部调到"
+    "周日), call propose_itime_occurrence_batch once with every series_id + "
+    "occurrence_date so one card covers them all. When the user asks to schedule "
+    "a one-off activity such as playing ball, a meeting or an appointment, create "
+    "a task with propose_itime_task_plan; do not turn it into a fixed calendar "
+    "arrangement. When the "
     "user asks to move or resize a study plan block, call "
     "propose_itime_plan_block_update with plan_id and block_id from "
     "plan_blocks; do not invent IDs. When the user asks to schedule a task "
@@ -111,7 +117,13 @@ LIVE_AGENT_SYSTEM_PROMPT = (
     "That pause is only a tool-call approval: after the user decides, the same "
     "run resumes automatically, so continue the task instead of treating the "
     "approval card as the end. Never claim a write happened until its tool result "
-    "says it did. If the user attached a timetable image, read the image directly. "
+    "says it did. When the user asks to move or cancel several classes at once "
+    "(for example '下周一全部调到周日'), call propose_itime_occurrence_batch once "
+    "with every affected series_id and occurrence_date; do not leave some classes "
+    "out and do not ask the user to repeat the request. A one-off activity such as "
+    "打球、开会、看病 is a task: call propose_itime_task_plan, never "
+    "propose_itime_calendar_batch. If the user attached a timetable image, read "
+    "the image directly. "
     "Never ask for OCR text and never ask the user to repeat information already "
     "in the conversation. If the user wants a timetable import but no term exists, "
     "ask for the term start date and week count first. After the term is approved, "
@@ -307,6 +319,40 @@ class AgentOccurrenceException(Input):
         )
         if self.action == "cancelled" and moved:
             raise ValueError("取消单次安排时不能设置调课信息")
+        return self
+
+
+class AgentOccurrenceBatchItem(Input):
+    series_id: UUID
+    occurrence_date: date
+    action: Literal["cancelled", "moved"]
+    moved_start_date: date | None = None
+    moved_starts_at: time | None = None
+    moved_ends_at: time | None = None
+
+    @model_validator(mode="after")
+    def valid_move(self) -> "AgentOccurrenceBatchItem":
+        moved = (
+            self.moved_start_date is not None
+            or self.moved_starts_at is not None
+            or self.moved_ends_at is not None
+        )
+        if self.action == "cancelled" and moved:
+            raise ValueError("取消单次安排时不能设置调课信息")
+        return self
+
+
+class AgentOccurrenceBatch(Input):
+    """Move or cancel several occurrences of different series in one approval."""
+
+    assistant_message: str = Field(min_length=1, max_length=4000)
+    items: list[AgentOccurrenceBatchItem] = Field(min_length=2, max_length=30)
+
+    @model_validator(mode="after")
+    def unique_items(self) -> "AgentOccurrenceBatch":
+        keys = [(str(item.series_id), item.occurrence_date) for item in self.items]
+        if len(keys) != len(set(keys)):
+            raise ValueError("同一批里不能重复调整同一次安排")
         return self
 
 
@@ -681,6 +727,20 @@ def agent_request_body(
                         "series. Nothing changes until the user confirms."
                     ),
                     "parameters": AgentOccurrenceException.model_json_schema(),
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "propose_itime_occurrence_batch",
+                    "description": (
+                        "Preview cancelling or moving several occurrences at once, "
+                        "for requests like 'move all Monday classes to Sunday'. "
+                        "Pass every affected series_id + occurrence_date (from "
+                        "busy_calendar) in one call so the user approves once. "
+                        "Nothing changes until the user confirms."
+                    ),
+                    "parameters": AgentOccurrenceBatch.model_json_schema(),
                 },
             },
             {
@@ -1161,6 +1221,7 @@ LIVE_TOOL_STEP_LABELS = {
     "propose_itime_course_delete": "删除课程",
     "propose_itime_course_update": "调整课程",
     "propose_itime_occurrence_exception": "调整单次课程",
+    "propose_itime_occurrence_batch": "批量调整课程",
     "propose_itime_plan_block_update": "调整计划块",
     "propose_itime_plan_block_create": "新增计划块",
     "propose_itime_plan_block_delete": "移除计划块",
@@ -1294,6 +1355,13 @@ def _action_tool_spec(name: str, description: str, model) -> dict:
 
 AGENT_ACTION_TOOL_SPECS = [
     _action_tool_spec(
+        "propose_itime_task_plan",
+        "Create a task and schedule it in the calendar. Use this for one-off "
+        "activities such as playing ball, a meeting or an appointment. Times "
+        "must be 15-minute aligned and last 15-180 minutes.",
+        AgentTaskPlan,
+    ),
+    _action_tool_spec(
         "propose_itime_task_update",
         "Update an existing task. Use task_id from the service context tasks list; "
         "never invent an ID. Set only the fields that change.",
@@ -1326,6 +1394,13 @@ AGENT_ACTION_TOOL_SPECS = [
         "Cancel or move exactly one occurrence of a course series. Use series_id "
         "from busy_calendar and the real occurrence date.",
         AgentOccurrenceException,
+    ),
+    _action_tool_spec(
+        "propose_itime_occurrence_batch",
+        "Move or cancel several course occurrences in one approval, e.g. 'move "
+        "all Monday classes to Sunday'. Pass every affected series_id and "
+        "occurrence_date from busy_calendar; never leave some classes out.",
+        AgentOccurrenceBatch,
     ),
     _action_tool_spec(
         "propose_itime_plan_block_update",
