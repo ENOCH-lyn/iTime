@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -44,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.itime.app.data.repository.CalendarRepository
 import com.itime.app.domain.RecurrenceSpec
+import com.itime.app.domain.WeekNumbers
 import com.itime.app.domain.SeriesDraft
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -75,6 +77,9 @@ fun SeriesEditorSheet(
     var date by remember { mutableStateOf(initial?.startDate ?: initialDate) }
     var startTime by remember { mutableStateOf(initial?.startsAt ?: LocalTime.of(8, 0)) }
     var endTime by remember { mutableStateOf(initial?.endsAt ?: LocalTime.of(9, 40)) }
+    var weekText by remember {
+        mutableStateOf(WeekNumbers.format(initial?.weekNumbers ?: emptyList()))
+    }
     var weekly by remember { mutableStateOf(initial?.recurrence?.repeats ?: true) }
     var weekdays by remember {
         mutableStateOf(initial?.recurrence?.weekdays ?: listOf(date.dayOfWeek.value))
@@ -105,7 +110,7 @@ fun SeriesEditorSheet(
                 } else {
                     RecurrenceSpec(frequency = "none")
                 },
-                weekNumbers = initial?.weekNumbers ?: emptyList(),
+                weekNumbers = if (kind == "course") WeekNumbers.parse(weekText) else emptyList(),
             )
             if (existingId == null) {
                 repository.createSeries(draft)
@@ -120,6 +125,7 @@ fun SeriesEditorSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.92f)
                 .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
@@ -162,6 +168,15 @@ fun SeriesEditorSheet(
                     value = teacher,
                     onValueChange = { teacher = it },
                     label = { Text("教师") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = weekText,
+                    onValueChange = { weekText = it },
+                    label = { Text("周次（如 1-8,10-16）") },
+                    placeholder = { Text("留空表示学期内每周") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
