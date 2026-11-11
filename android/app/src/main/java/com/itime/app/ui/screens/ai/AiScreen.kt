@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +30,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -51,37 +54,51 @@ import com.itime.app.data.SyncPhase
 import com.itime.app.data.SyncState
 import com.itime.app.data.remote.AiConversationDto
 import com.itime.app.data.remote.AiMessageDto
+import com.itime.app.data.remote.AiToolProposalDto
+import com.itime.app.data.repository.AiRepository
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.SyncChip
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonPrimitive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiScreen(container: AppContainer, syncState: SyncState) {
-    val ai = remember { com.itime.app.data.repository.AiRepository(container.api) }
+    val ai = remember { AiRepository(container.api) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var conversation by remember { mutableStateOf<AiConversationDto?>(null) }
     var messages by remember { mutableStateOf<List<AiMessageDto>>(emptyList()) }
+    var proposal by remember { mutableStateOf<AiToolProposalDto?>(null) }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var deciding by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val expanded = remember { mutableStateListOf<String>() }
     val online = syncState.phase != SyncPhase.Offline
 
+    suspend fun refreshProposal() {
+        val last = messages.lastOrNull() ?: run {
+            proposal = null
+            return
+        }
+        val next = if (last.role == "assistant") ai.proposalFor(last) else null
+        proposal = next?.takeIf { it.status == "pending" }
+    }
+
     suspend fun reload() {
         loading = true
         runCatching {
-            val conv = ai.ensureConversation()
-            conversation = conv
+            val conv = conversation ?: ai.ensureConversation().also { conversation = it }
             messages = ai.messages(conv.id)
+            refreshProposal()
         }.onFailure { error = it.message }
         loading = false
     }
 
     LaunchedEffect(online) {
-        if (online && conversation == null) reload()
+        if (online && messages.isEmpty()) reload()
     }
 
     LaunchedEffect(messages.size) {
@@ -90,11 +107,12 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
 
     fun send() {
         val text = input.trim()
-        if (text.isEmpty() || sending) return
+        if (text.isEmpty() || sending || deciding) return
         val conv = conversation ?: return
         input = ""
         error = null
         sending = true
+        proposal = null
         messages = messages + AiMessageDto(
             id = "local-${System.currentTimeMillis()}",
             conversation_id = conv.id,
@@ -105,16 +123,35 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
         )
         scope.launch {
             runCatching {
-                ai.send(conv, text) { progress ->
+                ai.send(conv, text) { progress -> if (progress.isNotEmpty()) messages = progress }
+            }.onSuccess { latest ->
+                messages = latest
+                conversation = ai.ensureConversation()
+                refreshProposal()
+                container.sync.requestSync("ai-reply")
+            }.onFailure { error = it.message ?: "AI 请求失败，请稍后重试。" }
+            sending = false
+        }
+    }
+
+    fun decide(approve: Boolean) {
+        val current = proposal ?: return
+        val conv = conversation ?: return
+        if (deciding) return
+        deciding = true
+        error = null
+        scope.launch {
+            runCatching {
+                ai.decide(conv.id, current, approve, knownMessages = messages.size) { progress ->
                     if (progress.isNotEmpty()) messages = progress
                 }
             }.onSuccess { latest ->
                 messages = latest
+                proposal = null
                 conversation = ai.ensureConversation()
-            }.onFailure {
-                error = it.message ?: "AI 请求失败，请稍后重试。"
-            }
-            sending = false
+                container.sync.requestSync("ai-decided")
+            }.onFailure { error = it.message ?: "处理提案失败。" }
+            deciding = false
         }
     }
 
@@ -127,47 +164,55 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
                     IconButton(
                         onClick = { scope.launch { reload() } },
                         enabled = online && !loading,
-                    ) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "重新加载对话")
-                    }
+                    ) { Icon(Icons.Outlined.Refresh, contentDescription = "重新加载对话") }
                 },
             )
         },
         bottomBar = {
-            Surface(tonalElevation = 2.dp) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .imePadding(),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        placeholder = {
-                            Text(
-                                if (online) "问点什么，例如：帮我安排今晚复习高数" else "离线时不可用",
-                            )
-                        },
-                        enabled = online && !sending,
-                        maxLines = 4,
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.weight(1f),
+            Column {
+                proposal?.let { pending ->
+                    ProposalCard(
+                        proposal = pending,
+                        busy = deciding,
+                        onApprove = { decide(true) },
+                        onReject = { decide(false) },
                     )
-                    Spacer(Modifier.width(8.dp))
-                    FilledIconButton(
-                        onClick = ::send,
-                        enabled = online && !sending && input.isNotBlank(),
+                }
+                Surface(tonalElevation = 2.dp) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .imePadding(),
+                        verticalAlignment = Alignment.Bottom,
                     ) {
-                        if (sending) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                            )
-                        } else {
-                            Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "发送")
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            placeholder = {
+                                Text(
+                                    if (online) "问点什么，例如：帮我安排今晚复习高数" else "离线时不可用",
+                                )
+                            },
+                            enabled = online && !sending && !deciding,
+                            maxLines = 4,
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilledIconButton(
+                            onClick = ::send,
+                            enabled = online && !sending && !deciding && input.isNotBlank(),
+                        ) {
+                            if (sending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "发送")
+                            }
                         }
                     }
                 }
@@ -190,9 +235,9 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
                 messages.isEmpty() -> EmptyState(
-                    icon = Icons.Outlined.Refresh,
+                    icon = Icons.Outlined.ChatBubbleOutline,
                     title = "开始和 iTime 对话",
-                    message = "可以直接说“明天下午三点开组会”“把高数复习安排到周末”。",
+                    message = "可以直接说“明天下午三点开组会”“把高数复习安排到周末”；涉及改动会先给你确认卡片。",
                 )
                 else -> LazyColumn(
                     state = listState,
@@ -234,6 +279,68 @@ fun AiScreen(container: AppContainer, syncState: SyncState) {
             }
         }
     }
+}
+
+@Composable
+private fun ProposalCard(
+    proposal: AiToolProposalDto,
+    busy: Boolean,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+) {
+    val summary = runCatching {
+        proposal.preview?.get("summary")?.jsonPrimitive?.content
+    }.getOrNull() ?: "AI 准备修改你的数据，确认后才会生效。"
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                toolLabel(proposal.tool_name),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onApprove, enabled = !busy) {
+                    if (busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text("批准")
+                    }
+                }
+                OutlinedButton(onClick = onReject, enabled = !busy) { Text("拒绝") }
+            }
+        }
+    }
+}
+
+private fun toolLabel(toolName: String): String = when (toolName) {
+    "create_task" -> "新建任务"
+    "update_task" -> "修改任务"
+    "complete_task" -> "完成任务"
+    "delete_task" -> "删除任务"
+    "create_calendar_series" -> "新建日程"
+    "update_calendar_series" -> "修改日程"
+    "delete_calendar_series" -> "删除日程"
+    "create_calendar_exception" -> "调整单次课程"
+    "create_timetable_courses" -> "导入课表"
+    else -> "AI 修改建议"
 }
 
 @Composable

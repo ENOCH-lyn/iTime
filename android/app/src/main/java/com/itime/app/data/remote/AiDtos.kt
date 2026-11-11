@@ -2,6 +2,7 @@ package com.itime.app.data.remote
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class AiConversationDto(
@@ -31,6 +32,36 @@ data class AiMessageDto(
     val error: JsonElement? = null,
     val created_at: String? = null,
     val completed_at: String? = null,
+    val job: AiJobDto? = null,
+)
+
+@Serializable
+data class AiJobDto(
+    val id: String = "",
+    val capability: String = "",
+    val status: String = "",
+    val output: JsonObject? = null,
+)
+
+@Serializable
+data class AiToolProposalDto(
+    val id: String,
+    val tool_name: String = "",
+    val status: String = "pending",
+    val preview: JsonObject? = null,
+    val payload: JsonObject? = null,
+    val expected_version: Int? = null,
+    val version: Int = 1,
+    val expires_at: String? = null,
+)
+
+@Serializable
+data class AiToolProposalEnvelope(val proposal: AiToolProposalDto)
+
+@Serializable
+data class AiProposalActionBody(
+    val operation_id: String,
+    val expected_proposal_version: Int,
 )
 
 @Serializable

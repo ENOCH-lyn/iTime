@@ -214,6 +214,30 @@ class ItimeApi(
     ): AiMessageEnvelope =
         post("/api/v1/ai/conversations/$conversationId/messages", body, AiMessageEnvelope.serializer())
 
+    suspend fun aiToolProposal(proposalId: String): AiToolProposalDto =
+        getDecoded(
+            "/api/v1/ai/tool-proposals/$proposalId",
+            AiToolProposalEnvelope.serializer(),
+        ).proposal
+
+    suspend fun applyAiToolProposal(
+        proposalId: String,
+        body: AiProposalActionBody,
+    ): AiToolProposalEnvelope = post(
+        "/api/v1/ai/tool-proposals/$proposalId/apply",
+        body,
+        AiToolProposalEnvelope.serializer(),
+    )
+
+    suspend fun rejectAiToolProposal(
+        proposalId: String,
+        body: AiProposalActionBody,
+    ): AiToolProposalEnvelope = post(
+        "/api/v1/ai/tool-proposals/$proposalId/reject",
+        body,
+        AiToolProposalEnvelope.serializer(),
+    )
+
     // ------------------------------------------------------------ plumbing
 
     private suspend fun extractCookie(setCookie: String): String? {
@@ -320,6 +344,11 @@ class ItimeApi(
 
     suspend fun getRaw(path: String, query: Map<String, String?> = emptyMap()): String =
         requestRaw("GET", path, query).first
+
+    private suspend fun <T> getDecoded(
+        path: String,
+        serializer: kotlinx.serialization.DeserializationStrategy<T>,
+    ): T = json.decodeFromString(serializer, getRaw(path))
 
     private suspend inline fun <reified Req, Res> send(
         method: String,
