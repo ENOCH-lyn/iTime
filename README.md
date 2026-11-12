@@ -5,13 +5,14 @@
 iTime 把「任务 / 课表与日历 / AI 对话 / 执行记录 / 复盘与长期记忆 / 统计」放在同一个工作台里：用户用自然语言描述安排，AI 以受限工具生成提案，用户确认后才写入业务数据；所有内容经服务端同步，Web 与 Android 离线优先的本地库保持同一份事实。
 
 <p>
-  <img alt="Status" src="https://img.shields.io/badge/status-M8--B%2FM8--C%20pending-yellow">
+  <img alt="Status" src="https://img.shields.io/badge/status-2026--11--12%20scope-blue">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
   <img alt="Web" src="https://img.shields.io/badge/Web-Vue%203%20%2B%20Vite%207-42b883">
   <img alt="Server" src="https://img.shields.io/badge/Server-FastAPI%20%2B%20PostgreSQL-009688">
   <img alt="Android" src="https://img.shields.io/badge/Android-Kotlin%20%2B%20Compose%20M3-3ddc84">
 </p>
 
-> 当前状态：Web 首版功能闭环（M1—M8-A）已完成并通过真实浏览器与性能基线验证；原生 Android 客户端完成首轮（v0.1，模拟器主流程验收）；M8-B 备份恢复、M8-C 生产发布、正式模型质量评测与 iOS 客户端仍未完成，因此尚不宣称产品交付。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+> 当前状态：Web 首版功能闭环（M1—M8-A）已完成并通过真实浏览器与性能基线验证；原生 Android 客户端完成首轮（v0.1，模拟器主流程验收）。2026-11-12 维护者确认收敛范围：iOS 客户端、业务提醒、M8-B 备份恢复、M8-C 生产发布、正式模型质量评测与实体设备验收移出本项目。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 目录
 
@@ -231,13 +232,10 @@ cd android
 | M5—M6 | 订阅冲突、执行 / 困难、复盘与记忆、统计、同步、导出、注销 | 已完成 |
 | M7 | 完整 Web 闭环与真实浏览器回归 | 已完成 |
 | M8-A | 性能、容量与耐久基线（2 vCPU / 4 GiB 隔离环境） | 已完成 |
-| M8-B | 备份与恢复（RPO/RTO、删除台账重放） | 未开始 / 待排期 |
-| M8-C | 生产发布与正式模型质量评测 | 未开始 / 待排期 |
 | Android v0.1 | 原生客户端、离线优先、同步、AI 线上、宽屏适配 | 已完成（模拟器验收） |
-| iOS | 原生客户端 | 未开始 |
-| 业务提醒 | Android 提醒开关、静默与逐任务覆盖 | 未实现（Web 明确不做） |
+| 范围收敛（2026-11-12） | iOS 客户端、业务提醒、M8-B 备份恢复、M8-C 生产发布、正式模型质量评测、实体设备验收 | 已移出范围 |
 
-已知限制：真机与实体设备未验证；TalkBack 仅验证焦点；M8-B/C 未完成；Android 未实现提醒与 iOS 版本。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+已知限制：Android 离线冷启动以外的弱网矩阵未验证；TalkBack 仅验证焦点框。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
 ## 贡献
 
@@ -251,8 +249,10 @@ cd android
 
 - 请勿在公开 Issue 中披露未修复漏洞；使用 GitHub Security Advisory 或私下联系维护者。
 - 仓库历史已扫描常见凭据模式（token、私钥、`sk-` 等）为空；如发现泄露请立即报告。
-- 生产部署前必须更换全部示例密钥，并完成 M8-C 的发布检查。
+- 生产部署前必须更换全部示例密钥，并按部署清单逐项检查。
 
 ## 许可证
 
-本仓库暂未附带开源许可证文件（`LICENSE`）。在维护者明确选择许可证之前，保留所有权利；如需在其它项目中使用、分发或商用，请先联系维护者确认授权方式。
+本项目采用 [MIT License](LICENSE) 开源。
+
+Copyright (c) 2026 ENOCH-lyn
