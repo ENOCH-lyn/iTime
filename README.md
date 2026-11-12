@@ -1,78 +1,168 @@
 # iTime
 
-iTime 是面向个人的 AI 时间规划与复盘产品。学生优先，兼容通用个人场景，通过任务与课表整理、日周规划、执行记录和复盘形成完整闭环。
+**面向个人的 AI 时间规划与复盘系统 —— Web 与原生 Android 共用一套服务端语义。**
 
-**当前正在开发完整 Web 首版。服务运行基础、公开产品首页/演示/帮助/协议隐私、账号与后台用户管理、目标/项目与任务、任务名称与困难正文语音转写、任务公开链接读取、任务归档及 30 天回收站、课表与统一日历、全部日历导入、日历系列与 ICS 订阅源 30 天回收站、订阅 occurrence 单次例外、订阅来源更新后的已确认计划冲突处理、Chat-first 全局 AI 多会话和安全 Markdown、可恢复文本流、AI 能力级主备路由与作业级故障切换、AI 正文日志/质检/访问审计、供应商成本对账、用户每日额度、业务提案与日周规划、专注执行和困难记录、单日复盘与确认式长期记忆、个人日周月统计、统一设置、本人完整数据导出、账号隔离的通用同步，以及 7 天可撤销的账号注销已经完成。全部现有 Web 页面已通过 Chromium 和真实 Microsoft Edge 154 的电脑、手机、平板视口回归，完整核心用户闭环另在真实 Google Chrome 149 desktop 通过；M8-A 已在固定 2 vCPU / 4 GiB 隔离环境完成普通 API、长历史、AI/队列/维护隔离、60 分钟耐久、10—100 并发阶梯和负载下 Chromium/Edge 验证。学期、项目、AI 会话删除语义仍待确认且当前无删除旁路，M8-B 备份恢复、M8-C 生产发布、正式模型质量和实体设备仍未完成，因此尚未达到产品交付标准。** 实际证据见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+iTime 把「任务 / 课表与日历 / AI 对话 / 执行记录 / 复盘与长期记忆 / 统计」放在同一个工作台里：用户用自然语言描述安排，AI 以受限工具生成提案，用户确认后才写入业务数据；所有内容经服务端同步，Web 与 Android 离线优先的本地库保持同一份事实。
 
-2026-10-23：登录后的首页统一为**日历**（`/calendar`），周/月视图在同一页切换，课程、任务和计划共用同一日期与事件详情；AI 会话改为首次发送时才创建。交互记录见[交互重写：日历融合](../docs/29-交互重写-日历融合.md)。
+<p>
+  <img alt="Status" src="https://img.shields.io/badge/status-M8--B%2FM8--C%20pending-yellow">
+  <img alt="Web" src="https://img.shields.io/badge/Web-Vue%203%20%2B%20Vite%207-42b883">
+  <img alt="Server" src="https://img.shields.io/badge/Server-FastAPI%20%2B%20PostgreSQL-009688">
+  <img alt="Android" src="https://img.shields.io/badge/Android-Kotlin%20%2B%20Compose%20M3-3ddc84">
+</p>
 
-2026-10-23 晚：登录后主应用 UI 按 Material 3 重写：AppShell/日历/任务/AI/设置与日程、任务对话框；修复详情无法关闭、工具栏重叠、手机周视图 7 列溢出、设置页错误返回、任务复选框热区等问题。记录见[UI 重写：M3 与交互修正](../docs/31-UI重写-M3与交互修正.md)。
+> 当前状态：Web 首版功能闭环（M1—M8-A）已完成并通过真实浏览器与性能基线验证；原生 Android 客户端完成首轮（v0.1，模拟器主流程验收）；M8-B 备份恢复、M8-C 生产发布、正式模型质量评测与 iOS 客户端仍未完成，因此尚不宣称产品交付。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
 
-## 产品范围
+## 目录
 
-- 完整 Web 用户端及管理后台先发，再 Android、iOS；后端 Python、前端 Vue。
-- 全局 AI 对话为主入口，保留完整任务、课表、日历、规划、专注、复盘、统计和数据管理页面。
-- 邮箱账号、服务端存储与同步、服务端 AI；所有 AI 业务变更先预览确认。
-- 先免费运营，实行每日 AI 金额额度；后台管理用户、额度、AI 配置、日志、审计和质检。
-- Web 适配电脑、平板、手机，优先验收 Chrome/Edge；温和轻松，支持明暗主题及字号。
-- Web 首版不包含业务提醒、分享、协作、真实支付；App 保留完整功能目标，提醒在 App 阶段细化。
+- [功能特性](#功能特性)
+- [技术栈](#技术栈)
+- [仓库结构](#仓库结构)
+- [快速开始](#快速开始)
+- [配置](#配置)
+- [测试](#测试)
+- [文档](#文档)
+- [项目状态与路线图](#项目状态与路线图)
+- [贡献](#贡献)
+- [安全](#安全)
+- [许可证](#许可证)
 
-## 文档入口
+## 功能特性
 
-1. [需求规格](doc/需求/iTime-需求规格说明书.md)：当前产品基线、功能边界与未定细节。
-2. [文档索引](doc/README.md)：架构、设计、界面、计划、测试与验收。
-3. [需求追踪](doc/需求/iTime-需求追踪矩阵.md)：功能到设计、用例及交付阶段。
-4. [AI 协作规范](AGENTS.md)：事实来源、工程约束与完成标准。
+### 任务与日程
 
-原始 PRD 保留为输入档案，开发以现行规格为准；技术推荐和待定配置不视为已实现。
+- 统一任务：标题、描述、项目、标签、优先级、预估耗时、截止时间与重复规则；步骤顺序执行，不引入任务依赖。
+- 课表与日历统一：学期、周次、单双周、节次、单次例外（取消 / 改期 / 覆盖），周视图与月视图共用同一事件详情。
+- 导入：Excel、ICS 文件、课表截图、ICS URL 订阅与公开网页；候选先校对再入库，来源失败保留上次成功数据。
+- 生命周期：任务、困难、长期记忆、日历系列与 ICS 订阅源 30 天回收站；账号注销 7 天可撤销。
 
-## 本地开发
+### AI 对话与提案
 
-需要 Python 3.13（由 uv 管理）、uv、Node.js 24、pnpm 11 和 Docker Compose。依赖锁定在 `server/uv.lock`、`web/pnpm-lock.yaml`，容器固定镜像摘要。
+- 全局多会话对话，Agent 自动识别规划 / 导入 / 复盘意图，无需先选模式。
+- 服务端受限工具：只读工具可执行，所有业务写操作生成提案，用户确认后应用；版本变化时提示冲突再确认。
+- 截图识别、语音转写、日周规划、复盘报告、长期记忆候选；AI 正文日志默认 7 天、质检样本 30 天，均可审计。
+- 每日金额额度按用户时区 04:00 活动日冻结与结算，失败不扣额。
+
+### 执行、复盘与统计
+
+- 正计时 / 倒计时专注，全账号单一进行中会话，支持暂停、恢复、结束与补记修订。
+- 困难记录与主动求助 AI；单日复盘最多三轮追问，报告版本不可变，支持批注。
+- 日 / 自然周 / 自然月统计，计划、任务与专注事实分开展示，不合成单一效率分。
+
+### 同步与离线
+
+- 服务端变更流 + 快照：Web 用 IndexedDB 缓存与类型化队列；Android 用 Room + outbox 队列，离线可新建 / 编辑 / 勾选，联网自动补传。
+- 简单幂等改动自动收敛；实质冲突保留用户选择（Web 端同步工作区、Android 设置页），不做「最后写入覆盖」。
+
+### 管理后台
+
+- 单超级管理员，密码 + TOTP + 恢复码；邀请注册、用户状态、AI 能力配置（草稿 / 测试 / 发布 / 主备路由）、额度策略、成本对账、日志、质检与正文访问审计。
+- 平台 AI Key 仅存服务端，客户端与管理页面均不回显明文。
+
+## 技术栈
+
+| 层 | 选型 |
+| --- | --- |
+| 服务端 | Python 3.13、FastAPI、SQLAlchemy 2（async）、Alembic、PostgreSQL、psycopg 3、LangGraph 持久化 Agent |
+| Web | Vue 3.5、TypeScript 5.9、Vite 7、Vue Router 4、Element Plus 2、markdown-it + DOMPurify、Playwright |
+| Android | Kotlin 2.0、Jetpack Compose（Material 3）、Navigation Compose、Room 2.6 + KSP、OkHttp 4、kotlinx.serialization、DataStore、WorkManager |
+| 基础设施 | Docker Compose（PostgreSQL + Mailpit）、uv、pnpm |
+
+## 仓库结构
+
+```text
+iTime/
+├─ server/                 # FastAPI 服务、迁移、领域模块与后台进程
+│  ├─ src/itime/           # auth / tasks / calendar / planning / execution /
+│  │                       # review / statistics / sync / ai / quota / admin ...
+│  ├─ migrations/          # Alembic 迁移
+│  ├─ performance/         # 性能基线编排
+│  └─ tests/
+├─ web/                    # Vue 用户端与管理后台
+│  ├─ src/pages/           # 日历、任务、AI、规划、复盘、统计、设置、后台
+│  └─ e2e/                 # Playwright 真实服务端到端用例
+├─ android/                # 原生 Android 客户端（Kotlin + Compose M3）
+│  └─ app/src/main/java/com/itime/app/
+│     ├─ data/             # Room、outbox、同步引擎、API、会话
+│     ├─ repository/       # 任务 / 日历 / AI / 账号仓库（离线优先）
+│     └─ ui/               # 今天、日历、任务、AI、设置与自适应导航
+├─ doc/                    # 需求、架构、设计、计划、测试、验收
+├─ scripts/                # 初始化与工具脚本
+├─ compose.yaml            # PostgreSQL + Mailpit
+└─ .env.example            # 环境变量示例（复制为 .env.local）
+```
+
+## 快速开始
+
+### 前置条件
+
+- Python 3.13 与 [uv](https://docs.astral.sh/uv/)
+- Node.js 24 与 pnpm 11
+- Docker Compose（本地 PostgreSQL + Mailpit）
+- 构建 Android 需要 JDK 17、Android SDK（platform 35、build-tools 35.0.0），可选 Android 模拟器
+
+### 1. 启动依赖与服务端
 
 ```bash
 python3 scripts/bootstrap.py
 docker compose --env-file .env.local up -d --wait
+
 cd server
 uv sync --frozen
 uv run alembic upgrade head
 uv run uvicorn itime.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-另开终端，在 `server/` 执行 `uv run python -m itime.mail_worker` 启动邮件进程。账号接口把验证/找回邮件写入数据库队列，发送进程中断后可恢复。仅运行 API 不会发送队列中的邮件。
+健康检查：
 
-口述课表使用本地 Vosk 中文模型：在 `server/` 运行 `powershell -ExecutionPolicy Bypass -File scripts/download-vosk-model.ps1` 下载模型（约 42 MiB，目录已忽略），并确保 `ffmpeg` 在 PATH；也可用 `ITIME_VOSK_MODEL_PATH` 指定模型目录。音频在 API 进程内转换和识别，不发送到外部语音服务。
+- API 存活：`http://127.0.0.1:8000/api/health`
+- 数据库与迁移就绪：`http://127.0.0.1:8000/api/ready`
+- OpenAPI：`http://127.0.0.1:8000/api/docs`
+- 本地测试邮箱：`http://127.0.0.1:58025`（仅接收开发邮件）
 
-截图识别、语音转写、全局对话、日周规划和复盘还需要另开终端，在 `server/` 执行 `uv run python -m itime.ai.worker` 启动 AI 作业进程。管理员须按需创建、测试并发布 `calendar_screenshot`、`transcription`、`conversation`、`planning`、`review` 能力配置，并可为每项能力设置最多两个已测试备用版本；新作业冻结三次尝试的主备顺序，只有可重试故障才切换，且不重置总截止时间。转写按服务端校验的音频分钟计价，其他能力按 Token 计价。未发布对应配置时服务不会接收该能力的新作业。开发环境未设置独立 AI 加密密钥时暂回退到基础加密密钥，生产必须配置不同的 `ITIME_AI_ENCRYPTION_KEY`。
-
-ICS URL 订阅由独立刷新进程执行；在 `server/` 另开终端运行 `uv run python -m itime.calendar.subscription_worker`。生产必须配置独立的 `ITIME_CALENDAR_SUBSCRIPTION_ENCRYPTION_KEY`，用于加密可能包含访问令牌的订阅 URL；API 与日志只显示主机和省略敏感路径、查询参数后的地址。
-
-任务公开链接由独立受限抓取进程执行；在 `server/` 另开终端运行 `uv run python -m itime.public_links.worker`。新增链接、URL 变化或本人手动刷新后会异步读取公开 HTTPS HTML/XHTML/纯文本，任务页显示状态、来源、摘要和失败恢复；进程不使用浏览器 Cookie、平台凭据或系统代理。`--once` 可处理当前一个作业并退出。
-
-任务回收站到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.tasks.cleanup_worker`。它每批锁定最多 100 条到期任务，清空正文和直接关联明细并保留阻止旧操作复活的最小墓碑；`--once` 可供受控定时任务和运维检查使用。
-
-日历回收站到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.calendar.cleanup_worker`。它分别限批锁定到期日历系列和 ICS 订阅源，清除名称、地点、订阅 URL、来源事件及直接明细并保留最小墓碑；`--once` 可供受控定时任务和运维检查使用。
-
-AI 技术正文日志和质量样本到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.ai.retention_worker`。正文日志默认 7 天、质量样本默认 30 天，两类数据分别限批清理；`--once` 可供受控定时任务和运维检查使用。
-
-困难回收站到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.execution.cleanup_worker`。它每批锁定并清理最多 100 条已删除满 30 天的困难记录；`--once` 可供受控定时任务和运维检查使用。
-
-长期记忆回收站到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.review.cleanup_worker`。删除后记忆立即退出 AI 检索，并在回收站保留 30 天；`--once` 可供受控定时任务和运维检查使用。
-
-本人数据导出由独立进程生成和清理；在 `server/` 运行 `uv run python -m itime.data_export.worker`。作业在一致性只读快照中读取本人数据，生成完整 JSON 和分类 CSV/ICS/Markdown ZIP；产物加密保存并默认可下载 24 小时，终态元数据默认保留 30 天。生产必须配置与其他密钥不同的 `ITIME_EXPORT_ENCRYPTION_KEY`；`--once` 可处理当前批次并退出。
-
-通用同步变更事件由独立进程清理；在 `server/` 运行 `uv run python -m itime.sync.cleanup_worker`。事件默认保留 30 天，清理时按账号推进游标水位，不删除业务对象、操作去重记录或墓碑；`--once` 可执行一个受控清理批次并退出。
-
-账号注销到期清理由独立进程执行；在 `server/` 运行 `uv run python -m itime.account_deletion.worker`。用户申请后立即退出全部设备并停止账号在途工作，7 天内可用正确凭据撤销；到期后 worker 在单个事务中删除本人数据并保留不含邮箱、原用户 ID 或正文的最小回执。`--once` 可处理最多一个到期账号并退出。
-
-再在 `web/` 启动 Vue 前端：
+### 2. 启动 Web
 
 ```bash
+cd web
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-访问 `http://localhost:5173` 可查看公开产品首页，并从首页进入不保存数据的交互演示、帮助、用户协议、隐私说明、注册或登录。网页通过同源代理连接 `127.0.0.1:8000`；邮件中的链接指向这个网页地址。登录后默认进入 `/calendar` 日历；顶部导航为日历、任务、AI，规划、统计与统一设置继续位于个人中心和账号菜单。`/tasks` 的活动任务名称可录制最长 60 秒语音，校对后再替换或追加到未保存表单；`/calendar` 可删除并恢复日历系列或 ICS 订阅源，暂停订阅不会删除内容；`/plans` 支持查看与修改日周规划，`/focus` 已并入 AI 与任务/日历时间块，`/reviews` 支持按活动日补做复盘、短追问、版本报告、批注和长期记忆管理，`/me/stats` 支持按日、自然周和自然月查看计划、任务与专注的独立统计，`/settings` 集中管理账号安全、外观、时间、AI 隐私、额度、同步、数据导出和账号注销；旧 `/account/*` 地址继续兼容跳转。
+访问 `http://localhost:5173`：公开首页 → 注册 / 登录 → 默认进入 `/calendar`。网页通过同源代理连接 `127.0.0.1:8000`。
+
+### 3. 构建与运行 Android
+
+```bash
+cd android
+export JAVA_HOME=/path/to/jdk17
+export ANDROID_SDK_ROOT=/path/to/android-sdk
+
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+模拟器内的服务端地址填 `http://10.0.2.2:8000/`（回环到宿主机）；真机填电脑局域网 IP，例如 `http://192.168.1.10:8000/`，并确认该地址在 `ITIME_ALLOWED_HOSTS` 中。
+
+### 4. 后台进程（按需启动）
+
+邮件、AI 作业、订阅刷新、链接抓取与各类到期清理是独立进程；只跑 API 不会发送邮件或执行 AI 作业。均在 `server/` 下用 `uv run python -m <module>` 启动：
+
+| 模块 | 作用 |
+| --- | --- |
+| `itime.mail_worker` | 验证 / 找回邮件队列 |
+| `itime.ai.worker` | 截图识别、语音转写、对话、规划、复盘作业 |
+| `itime.calendar.subscription_worker` | ICS URL 订阅刷新 |
+| `itime.public_links.worker` | 任务公开链接受限抓取 |
+| `itime.tasks.cleanup_worker` / `itime.calendar.cleanup_worker` | 任务 / 日历 30 天回收站清理 |
+| `itime.execution.cleanup_worker` / `itime.review.cleanup_worker` | 困难 / 长期记忆回收站清理 |
+| `itime.ai.retention_worker` | AI 正文日志（7 天）与质检样本（30 天）清理 |
+| `itime.data_export.worker` | 本人数据导出生成与过期清理 |
+| `itime.sync.cleanup_worker` | 同步变更事件 30 天清理 |
+| `itime.account_deletion.worker` | 注销到期清理 |
+
+大部分 worker 支持 `--once` 供受控定时任务调用。
+
+### 5. 管理员
 
 首次创建管理员只能在服务器本机执行，命令交互读取密码并输出一次性 TOTP 设置链接：
 
@@ -81,56 +171,88 @@ cd server
 uv run python -m itime.admin.cli create --email admin@example.com
 ```
 
-TOTP 和恢复码全部丢失时，`reset-totp` 会撤销该管理员全部会话并生成新设置链接。设置链接打开 `/admin/setup`，完成后从 `/admin/login` 进入安全设置；不要通过普通注册提升管理员，也不要把一次性链接写入文档或日志。
+设置链接打开 `/admin/setup`，完成后从 `/admin/login` 进入；不要通过普通注册提升管理员。
 
-使用独立 Colima profile 时，在 Docker 命令中加 `--context colima-itime`。开发配置只在忽略的 `.env.local`，初始化不会覆盖已有文件。
+## 配置
 
-- API 存活：`http://127.0.0.1:8000/api/health`
-- 数据库与迁移就绪：`http://127.0.0.1:8000/api/ready`
-- 开发 OpenAPI：`http://127.0.0.1:8000/api/docs`
-- 本地测试邮箱：`http://127.0.0.1:58025`，只收取开发邮件，不外发。
+- 本地配置放在仓库根目录 `.env.local`（已被 `.gitignore` 忽略），从 `.env.example` 复制后修改；初始化脚本不会覆盖已有文件。
+- 生产必须为账号、AI、ICS 订阅、数据导出分别配置不同的加密密钥（`ITIME_*_ENCRYPTION_KEY`），不能用默认值。
+- AI 端点与 Key 通过管理后台「草稿 → 测试 → 发布」配置，客户端不接触明文 Key。
+- 对外地址与来源限制由 `ITIME_ALLOWED_HOSTS` 等变量控制；Android 真机访问时需加入对应局域网地址。
 
-## 服务验证
+完整变量、部署拓扑与成本说明见 [cloud.md](cloud.md)。
 
-在 `server/` 执行：
+## 测试
+
+服务端：
 
 ```bash
+cd server
 uv run ruff check .
 uv run pytest -q
 uv build --no-sources
 ```
 
-集成测试自动创建随机命名的本地 PostgreSQL 测试库、运行迁移、启动独立 HTTP 服务，结束后只删除测试库。覆盖数据库故障恢复、账号并发、会话撤销、真实邮件发送与重试。生产和外部数据库会被测试入口拒绝。
-
-在 `web/` 执行真实浏览器验证：
+Web（Playwright 会启动独立数据库、API、邮件与 worker，使用生产构建预览）：
 
 ```bash
+cd web
 pnpm build
 pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-UI 测试自动启动独立数据库、API、邮件及业务 worker 和生产构建预览，访问 `http://localhost:4173`；开发库不被改写。本地 PostgreSQL/Mailpit 需先运行。测试后清理独立进程和测试库；截图位于 `/tmp/itime-ui-evidence/`，失败证据位于 `/tmp/itime-ui-results/`。仓库默认 Chromium 回归不单独证明真实 Edge 或实体设备兼容性。
-
-`web/e2e/full-user-journey.spec.ts` 使用真实服务贯通注册、任务、AI 规划确认、日历专注、困难、
-明确任务完成、复盘及独立第二端同步；该核心流程已在 Google Chrome 149 desktop 和 Microsoft
-Edge 154 的 desktop、mobile、tablet 项目运行通过，全部 297 项 Web 测试也已在 Edge 154
-三视口完成。Playwright 配置可用 `ITIME_E2E_BROWSER_CHANNEL` 或
-`ITIME_E2E_BROWSER_EXECUTABLE_PATH` 显式选择本机浏览器；浏览器视口结果不替代实体设备测试。
-
-完整性能基线只允许在专用 `colima-itime-perf` context、随机 `itime_perf_*` 数据库和
-`ITIME_ENVIRONMENT=test` 下运行。它会占用约 3 小时，依次执行稳态、峰值、重历史、阶梯容量、
-AI 隔离、三类队列、维护和 60 分钟耐久场景，并精确清理本次资源：
+Android（JVM 单测无需模拟器，仪器测试需要已启动的模拟器或真机）：
 
 ```bash
-cd server
-uv run python -m performance.run baseline
-uv run python -m performance.run verify-clean
+cd android
+./gradlew :app:testDebugUnitTest
+./gradlew :app:connectedDebugAndroidTest
 ```
 
-负载下真实 UI 由 `uv run python -m performance.run scenario ui-load` 编排；Chromium 三视口和
-真实 Edge desktop 的最终证据、运行 ID、分位数及边界见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
-该本地结果不代表公网、正式 AI 供应商或最终生产拓扑 SLO。
+截至 2026-11-12：Android JVM 单测 30 个、仪器测试 33 个通过；Web Chromium 全量 Playwright `317 passed, 22 skipped`（339 项收集，22 项为既有 desktop-only/慢用例跳过），真实 Edge 154 关键路径 `28 passed`（三视口）；服务端 pytest 覆盖真实 PostgreSQL、HTTP、邮件与 worker。数字与证据以[实施与验证](doc/验收/iTime-Web实施与验证.md)与 Android 验收记录为准，不以本文代替执行结果。
 
-仓库：[ENOCH-lyn/iTime](https://github.com/ENOCH-lyn/iTime)，私有。
+性能基线只允许在专用 Docker context、随机测试库和 `ITIME_ENVIRONMENT=test` 下运行，详见 [cloud.md](cloud.md)；本地受控结果不代表公网或正式供应商 SLO。
 
+## 文档
+
+- [文档索引](doc/README.md) —— 需求、架构、设计、计划、测试与验收的入口
+- [需求规格说明书](doc/需求/iTime-需求规格说明书.md) —— 当前产品基线（版本 0.3）
+- [需求追踪矩阵](doc/需求/iTime-需求追踪矩阵.md) —— 需求 → 设计 → 用例 → 阶段
+- [架构决策记录](doc/架构/iTime-ADR架构决策文档.md) —— 已确认边界与待比较方案
+- [实施与验证](doc/验收/iTime-Web实施与验证.md) —— 真实执行证据与未完成项
+- [AI 协作规范](AGENTS.md) —— 事实优先级、工程约束与完成标准
+
+## 项目状态与路线图
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| M1—M4 | 账号、任务、日历与导入、AI 对话与提案、额度与后台 | 已完成 |
+| M5—M6 | 订阅冲突、执行 / 困难、复盘与记忆、统计、同步、导出、注销 | 已完成 |
+| M7 | 完整 Web 闭环与真实浏览器回归 | 已完成 |
+| M8-A | 性能、容量与耐久基线（2 vCPU / 4 GiB 隔离环境） | 已完成 |
+| M8-B | 备份与恢复（RPO/RTO、删除台账重放） | 未开始 / 待排期 |
+| M8-C | 生产发布与正式模型质量评测 | 未开始 / 待排期 |
+| Android v0.1 | 原生客户端、离线优先、同步、AI 线上、宽屏适配 | 已完成（模拟器验收） |
+| iOS | 原生客户端 | 未开始 |
+| 业务提醒 | Android 提醒开关、静默与逐任务覆盖 | 未实现（Web 明确不做） |
+
+已知限制：真机与实体设备未验证；TalkBack 仅验证焦点；M8-B/C 未完成；Android 未实现提醒与 iOS 版本。详见[实施与验证](doc/验收/iTime-Web实施与验证.md)。
+
+## 贡献
+
+1. 先读 [AGENTS.md](AGENTS.md) 与 [文档索引](doc/README.md)，确认事实来源与边界。
+2. 每个改动保持可说明、可回滚：提交信息用 `feat|fix|docs|refactor|chore(scope): 中文摘要`。
+3. 业务逻辑、数据持久化、鉴权、同步等行为变更需附对应测试；不要只提交页面或模拟数据。
+4. 不提交 `.env.local`、token、密钥或测试用户隐私数据；测试使用本地隔离数据库。
+5. 文档与实现同步：需求/设计/测试/验收发生语义变化时更新对应文档，而不是让 README 单独描述。
+
+## 安全
+
+- 请勿在公开 Issue 中披露未修复漏洞；使用 GitHub Security Advisory 或私下联系维护者。
+- 仓库历史已扫描常见凭据模式（token、私钥、`sk-` 等）为空；如发现泄露请立即报告。
+- 生产部署前必须更换全部示例密钥，并完成 M8-C 的发布检查。
+
+## 许可证
+
+本仓库暂未附带开源许可证文件（`LICENSE`）。在维护者明确选择许可证之前，保留所有权利；如需在其它项目中使用、分发或商用，请先联系维护者确认授权方式。
