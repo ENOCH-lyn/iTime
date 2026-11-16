@@ -92,17 +92,26 @@ docker compose -f compose.prod.yaml --env-file .env.prod exec api \
 
 ## AI 配置
 
-1. 用管理员登录 `/admin/login`（密码 + TOTP），在「AI 配置」为每项能力创建端点：
-   `conversation` / `planning` / `review` 需要兼容 OpenAI `/chat/completions` 的文本模型；
-   `calendar_screenshot` 需要支持 `image_url` 的视觉模型；`transcription` 需要支持
-   `/audio/transcriptions` 的语音模型。
-2. 每个版本先「测试」再「发布」；生产端点必须是 HTTPS。
-3. 发布额度策略前，`calendar_screenshot` 与 `conversation` 必须有已发布、币种一致且价格完整的配置
-   （服务端校验 `BASELINE_AI_CAPABILITIES`）。只用文本模型时，可直接插入一条已发布的额度策略
-   （见 `ai_quota_policy_versions` / `ai_quota_policy_state`）；但之后从后台发布新策略仍会被该校验拦住，
-   直到补上视觉能力配置。
-4. 额度策略按天配置币种与金额（例：CNY 5）；AI 配置价格币种必须与策略一致。
+DeepSeek 官方 API 的 `deepseek-flash` 支持图片输入（`input_modalities: ["text","image"]`），
+`deepseek-v4-pro` 为另一可用模型；`deepseek-chat` 目前仍可作为文本别名使用。
 
+当前生产配置（管理员后台「AI 配置」发布）：
+
+| 能力 | 模型 | 用途 |
+| --- | --- | --- |
+| `conversation` | `deepseek-chat` | 全局对话 |
+| `planning` | `deepseek-chat` | 日/周规划 |
+| `review` | `deepseek-chat` | 单日复盘 |
+| `calendar_screenshot` | `deepseek-flash` | 课表截图识别（视觉） |
+
+配置步骤：每个能力先创建版本（端点 `https://api.deepseek.com/v1`、模型、Key、CNY 价格）→「测试」→「发布」。
+视觉能力的测试会发送一张合成图片并要求只返回 JSON；文本能力发送合成文本或工具调用检查。
+
+额度策略（CNY 5/日）需在 `calendar_screenshot` 与 `conversation` 都有已发布、币种一致且价格完整的配置后才能发布；
+两者均已满足，`/admin/quota` 可正常发布新版本。
+
+语音转写（`transcription`）需要支持 `/audio/transcriptions` 的音频模型；DeepSeek 当前不提供该能力，
+未配置时语音输入不可用，但不影响对话/规划/复盘/截图。
 
 ## 升级与回滚
 
