@@ -11,6 +11,7 @@
 | 协作 | [AGENTS.md](../AGENTS.md) | AI 行为、凭据和交付规则 |
 | 界面 | [designer.md](../designer.md) | Web 首发页面与交互、后续 App 适配 |
 | 运维 | [cloud.md](../cloud.md) | 环境、配置、成本和发布准备 |
+| 部署 | [服务器 Docker 部署](部署/iTime-服务器Docker部署.md) | API + PostgreSQL 容器、Cloudflare Tunnel、升级与回滚 |
 | 输入 | [原始 PRD](需求/原始PRD-V1.0.md) | 用户上传原文，逐字保留 |
 | 分析 | [PRD 分析与缺口](需求/iTime-PRD分析与缺口.md) | 原文与现行规格的变化及剩余缺口 |
 | 访谈 | [需求访谈问题清单](需求/iTime-需求访谈问题清单.md) | 实施前剩余问题、技术推荐与配置项 |

@@ -174,6 +174,12 @@ uv run python -m itime.admin.cli create --email admin@example.com
 
 设置链接打开 `/admin/setup`，完成后从 `/admin/login` 进入；不要通过普通注册提升管理员。
 
+### 生产部署
+
+API + PostgreSQL 的容器化部署（只监听本机回环，配合 Cloudflare Tunnel 暴露 HTTPS）见
+[服务器 Docker 部署](doc/部署/iTime-服务器Docker部署.md)：复制 `.env.prod.example` 为
+`.env.prod`，生成四个独立 Fernet 密钥后执行 `docker compose -f compose.prod.yaml --env-file .env.prod up -d --build`。
+
 ## 配置
 
 - 本地配置放在仓库根目录 `.env.local`（已被 `.gitignore` 忽略），从 `.env.example` 复制后修改；初始化脚本不会覆盖已有文件。
