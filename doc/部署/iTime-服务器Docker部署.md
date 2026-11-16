@@ -12,7 +12,7 @@
 | `compose.prod.yaml` | `db`（postgres:16-alpine）、`api`（`server/Dockerfile.prod`）、`web`（`web/Dockerfile.prod`） |
 | `server/Dockerfile.prod` | Python 3.13 + uv 锁文件安装、非 root 运行；启动时先 `alembic upgrade head` |
 | `web/Dockerfile.prod` | Node 24 + pnpm 构建 Vue，Nginx 托管 `dist/` 并代理 `/api/` |
-| `web/nginx.conf` | SPA history 回退、同源 API 代理、静态资源缓存 |
+| `web/nginx.conf` | SPA history 回退、同源 API 代理（经 Docker DNS 运行时解析）、静态资源缓存 |
 | `.env.prod.example` | 生产环境变量模板（复制为 `.env.prod`，后者被 `.gitignore` 忽略） |
 
 端口约定：
@@ -60,6 +60,24 @@ curl -s https://<域名>/api/health
 
 公网 HTTPS 由 Tunnel 终止，源站不需要开放 80/443，也不需要证书。
 
+## 后台 worker
+
+`compose.prod.yaml` 还定义了 11 个常驻 worker（复用 API 镜像、`healthcheck: disable`）：
+
+| 服务 | 作用 |
+| --- | --- |
+| `ai-worker` | 对话、规划、复盘、截图、转写作业 |
+| `subscription-worker` | ICS URL 订阅刷新 |
+| `public-links-worker` | 任务公开链接受限抓取 |
+| `data-export-worker` | 本人数据导出生成 |
+| `account-deletion-worker` | 注销到期清理 |
+| `tasks-cleanup-worker` / `calendar-cleanup-worker` | 任务 / 日历 30 天回收站清理 |
+| `execution-cleanup-worker` / `review-cleanup-worker` | 困难 / 长期记忆回收站清理 |
+| `ai-retention-worker` | AI 正文日志 7 天、质检样本 30 天清理 |
+| `sync-cleanup-worker` | 同步事件 30 天清理 |
+
+邮件 worker 需要可用 SMTP；未配置 SMTP 时不启动，验证/找回邮件不可用。
+
 ## 首次账号与后台
 
 - 默认开放注册、无需邮箱验证；没有配置 SMTP 时，验证/找回邮件不可用（`email_available=false`）。
@@ -69,6 +87,22 @@ curl -s https://<域名>/api/health
 docker compose -f compose.prod.yaml --env-file .env.prod exec api \
   python -m itime.admin.cli create --email admin@example.com
 ```
+
+非交互创建可用 `--password-stdin`（密码从标准输入传入，仍只用于本机受控初始化）。
+
+## AI 配置
+
+1. 用管理员登录 `/admin/login`（密码 + TOTP），在「AI 配置」为每项能力创建端点：
+   `conversation` / `planning` / `review` 需要兼容 OpenAI `/chat/completions` 的文本模型；
+   `calendar_screenshot` 需要支持 `image_url` 的视觉模型；`transcription` 需要支持
+   `/audio/transcriptions` 的语音模型。
+2. 每个版本先「测试」再「发布」；生产端点必须是 HTTPS。
+3. 发布额度策略前，`calendar_screenshot` 与 `conversation` 必须有已发布、币种一致且价格完整的配置
+   （服务端校验 `BASELINE_AI_CAPABILITIES`）。只用文本模型时，可直接插入一条已发布的额度策略
+   （见 `ai_quota_policy_versions` / `ai_quota_policy_state`）；但之后从后台发布新策略仍会被该校验拦住，
+   直到补上视觉能力配置。
+4. 额度策略按天配置币种与金额（例：CNY 5）；AI 配置价格币种必须与策略一致。
+
 
 ## 升级与回滚
 
