@@ -1,5 +1,18 @@
 name: itime
 
+x-worker: &worker
+  image: itime-api
+  env_file:
+    - .env.prod
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+  healthcheck:
+    disable: true
+  security_opt:
+    - no-new-privileges:true
+
 services:
   db:
     image: postgres:16-alpine
@@ -43,6 +56,7 @@ services:
       interval: 15s
       timeout: 5s
       start_period: 40s
+      retries: 5
 
   web:
     build:
@@ -63,6 +77,50 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 5
+
+  ai-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.ai.worker"]
+
+  subscription-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.calendar.subscription_worker"]
+
+  public-links-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.public_links.worker"]
+
+  data-export-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.data_export.worker"]
+
+  account-deletion-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.account_deletion.worker"]
+
+  tasks-cleanup-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.tasks.cleanup_worker"]
+
+  calendar-cleanup-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.calendar.cleanup_worker"]
+
+  execution-cleanup-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.execution.cleanup_worker"]
+
+  review-cleanup-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.review.cleanup_worker"]
+
+  ai-retention-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.ai.retention_worker"]
+
+  sync-cleanup-worker:
+    <<: *worker
+    command: ["python", "-m", "itime.sync.cleanup_worker"]
 
 volumes:
   itime_db:

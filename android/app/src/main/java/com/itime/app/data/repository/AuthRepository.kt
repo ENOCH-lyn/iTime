@@ -3,6 +3,7 @@ package com.itime.app.data.repository
 import com.itime.app.data.local.ItimeDatabase
 import com.itime.app.data.remote.ApiException
 import com.itime.app.data.remote.ItimeApi
+import com.itime.app.data.remote.TimeSettingsUpdateBody
 import com.itime.app.data.session.Session
 import com.itime.app.data.session.SessionStore
 import com.itime.app.data.sync.SyncEngine
@@ -17,7 +18,7 @@ class AuthRepository(
     private val sessionStore: SessionStore,
     private val db: ItimeDatabase,
     private val sync: SyncEngine,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) {
     private val _session = MutableStateFlow<Session?>(null)
     val session: StateFlow<Session?> = _session.asStateFlow()
@@ -36,6 +37,7 @@ class AuthRepository(
                         sessionStore.updateCsrf(me.csrf_token)
                         _session.value = sessionStore.current()
                         sync.requestSync("session-restored")
+                        scope.launch { ensureTimeSettings() }
                     }
                     .onFailure { error ->
                         if (error is ApiException && error.isUnauthenticated) {
@@ -60,6 +62,7 @@ class AuthRepository(
         sessionStore.save(session)
         _session.value = session
         sync.requestSync("login")
+        scope.launch { ensureTimeSettings() }
         Result.success(Unit)
     } catch (error: ApiException) {
         Result.failure(error)
@@ -86,10 +89,33 @@ class AuthRepository(
             sessionStore.save(session)
             _session.value = session
             sync.requestSync("register")
+            scope.launch { ensureTimeSettings() }
             Result.success(Unit)
         }
     } catch (error: ApiException) {
         Result.failure(error)
+    }
+
+
+    /**
+     * AI and statistics refuse to run until the account has a time zone.
+     * Initialise it with the device zone (best effort, never blocks login).
+     */
+    private suspend fun ensureTimeSettings() {
+        runCatching {
+            val current = api.timeSettings()
+            if (!current.initialized) {
+                api.updateTimeSettings(
+                    TimeSettingsUpdateBody(
+                        operation_id = java.util.UUID.randomUUID().toString(),
+                        expected_version = current.version,
+                        time_zone = java.util.TimeZone.getDefault().id,
+                        week_starts_on = 1,
+                        activity_day_start_minute = 240,
+                    ),
+                )
+            }
+        }
     }
 
     suspend fun logout() {

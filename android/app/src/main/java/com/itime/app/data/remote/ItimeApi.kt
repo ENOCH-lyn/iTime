@@ -66,7 +66,12 @@ class ItimeApi(
             path = "/api/v1/auth/register",
             body = json.encodeToString(
                 RegisterRequest.serializer(),
-                RegisterRequest(email = email, password = password, device_name = deviceName),
+                RegisterRequest(
+                    email = email,
+                    password = password,
+                    device_name = deviceName,
+                    time_zone = java.util.TimeZone.getDefault().id,
+                ),
             ),
             authenticated = false,
         )
