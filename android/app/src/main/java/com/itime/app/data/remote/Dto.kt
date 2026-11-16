@@ -44,6 +44,14 @@ data class MeDto(
 )
 
 @Serializable
+data class RegisterResponseDto(
+    val status: String = "registered",
+    val message: String = "",
+    val verification_required: Boolean = false,
+    val session: SessionDto? = null,
+)
+
+@Serializable
 data class PolicyDto(
     val password_min_length: Int = 8,
     val password_max_length: Int = 128,

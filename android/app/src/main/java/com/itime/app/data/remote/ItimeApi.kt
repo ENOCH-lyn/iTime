@@ -72,17 +72,12 @@ class ItimeApi(
         val token = headers.filter { it.first.equals("Set-Cookie", ignoreCase = true) }
             .mapNotNull { (_, value) -> extractCookie(value) }
             .firstOrNull()
-        if (token == null) return null
-        val me = json.decodeFromString(MeDto.serializer(), body)
-        return LoginResult(
-            token = token,
-            session = SessionDto(
-                user = me.user,
-                session_id = me.session_id,
-                expires_at = me.expires_at,
-                csrf_token = me.csrf_token,
-            ),
-        )
+        // Registration may answer 202 without a session (email verification)
+        // or with a nested "session" object; never assume the /auth/me shape.
+        val response = json.decodeFromString(RegisterResponseDto.serializer(), body)
+        val session = response.session
+        if (token == null || response.verification_required || session == null) return null
+        return LoginResult(token = token, session = session)
     }
 
     suspend fun me(): MeDto = get("/api/v1/auth/me")
