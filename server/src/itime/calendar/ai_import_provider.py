@@ -60,6 +60,10 @@ class AIImportGenerationSuperseded(Exception):
     pass
 
 
+class _OutputTruncated(Exception):
+    """模型输出被 max_tokens 截断或正文为空，需要与结构错误区分。"""
+
+
 def _prompt(context: dict, source_type: AIImportSource) -> str:
     series_schema = SeriesFields.model_json_schema()
     series_schema.pop("title", None)
@@ -185,14 +189,27 @@ def parse_ai_import_response(
             raise TypeError
         usage = payload.get("usage")
         choices = payload["choices"]
-        content = choices[0]["message"]["content"]
+        choice = choices[0]
+        content = choice["message"]["content"]
         if not isinstance(content, str):
             raise TypeError
+        # 推理型模型会先花掉 completion 预算再输出正文；预算不够时正文为空且
+        # finish_reason=length。这属于容量问题，不能当成“结构不合法”报告。
+        finish_reason = choice.get("finish_reason")
+        if finish_reason == "length" or not content.strip():
+            raise _OutputTruncated
         return (
             ScreenshotRecognitionOutput.model_validate_json(content),
             content,
             usage,
         )
+    except _OutputTruncated:
+        raise AIImportProviderError(
+            "calendar_import_output_truncated",
+            "课表识别结果被截断，请重新尝试或裁剪图片后重试。",
+            "validation",
+            usage=usage,
+        ) from None
     except (
         KeyError,
         IndexError,

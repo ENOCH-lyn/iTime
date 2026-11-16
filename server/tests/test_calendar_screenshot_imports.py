@@ -535,8 +535,13 @@ def test_real_screenshot_job_creates_candidates_and_confirm_deletes_media(
     request = state.requests[0]
     assert request["path"] == "/v1/chat/completions"
     assert request["authorization"] == "Bearer sk-screenshot-secret"
-    image_url = request["body"]["messages"][1]["content"][1]["image_url"]["url"]
-    assert image_url.startswith("data:image/png;base64,")
+    content = request["body"]["messages"][1]["content"]
+    if isinstance(content, str):
+        # 本机装了本地 OCR 时图片先转成文字再交给模型，provider 不再收图片字节。
+        assert "OCR" in content
+    else:
+        image_url = content[1]["image_url"]["url"]
+        assert image_url.startswith("data:image/png;base64,")
 
 
 def test_screenshot_requires_published_config_and_ai_access(

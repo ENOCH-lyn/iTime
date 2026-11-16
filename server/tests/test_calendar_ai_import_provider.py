@@ -160,3 +160,42 @@ def test_invalid_or_plain_model_output_never_becomes_candidates(payload: bytes):
 
     assert caught.value.code == "calendar_import_output_invalid"
     assert caught.value.stage == "validation"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # 推理型模型把整份 completion 预算花在 reasoning 上：正文为空，finish_reason=length。
+        json.dumps(
+            {
+                "choices": [
+                    {"message": {"content": ""}, "finish_reason": "length"}
+                ],
+                "usage": {
+                    "prompt_tokens": 1535,
+                    "completion_tokens": 1024,
+                    "total_tokens": 2559,
+                },
+            }
+        ).encode(),
+        # 正文只写了一半 JSON 就被截断。
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {"content": '{"items":[{"raw_text":"周一'},
+                        "finish_reason": "length",
+                    }
+                ]
+            }
+        ).encode(),
+        json.dumps({"choices": [{"message": {"content": "   "}}]}).encode(),
+    ],
+)
+def test_truncated_output_is_reported_as_capacity_not_schema(payload: bytes):
+    with pytest.raises(AIImportProviderError) as caught:
+        parse_ai_import_response(payload)
+
+    assert caught.value.code == "calendar_import_output_truncated"
+    assert caught.value.stage == "validation"
+    assert caught.value.retryable is False

@@ -442,6 +442,7 @@ def _normalize_screenshot_draft(
 ) -> tuple[dict, list[str]]:
     kind = draft.get("kind")
     term = _screenshot_term(context, today)
+    warnings: list[str] = []
     recurrence = draft.get("recurrence")
     if kind == "fixed" and isinstance(recurrence, dict) and term:
         if (
@@ -458,42 +459,52 @@ def _normalize_screenshot_draft(
         return draft, []
     if kind != "course":
         return draft, []
-    if (
-        draft.get("start_period_number") is not None
-        and draft.get("end_period_number") is not None
-    ):
-        draft["starts_at"] = None
-        draft["ends_at"] = None
-        draft["end_day_offset"] = 0
+    start_period = draft.get("start_period_number")
+    end_period = draft.get("end_period_number")
+    if start_period is not None and end_period is not None:
+        configured = {
+            period.get("number")
+            for period in (term or {}).get("periods") or []
+            if isinstance(period, dict)
+        }
+        if {start_period, end_period} <= configured:
+            draft["starts_at"] = None
+            draft["ends_at"] = None
+            draft["end_day_offset"] = 0
+        else:
+            # 学期还没配节次时间时，节次号无法解析成时钟时间；图片上的上下课
+            # 时间比节次号更可靠，改成按时间导入而不是整条判无效。
+            draft["start_period_number"] = None
+            draft["end_period_number"] = None
+            warnings.append("本学期还没有配置节次时间，已按图片上的上下课时间导入。")
     if not isinstance(recurrence, dict):
-        return draft, []
+        return draft, warnings
     if recurrence.get("frequency") == "weekly":
         recurrence["count"] = None
         recurrence["until"] = None
     if recurrence.get("frequency") != "weekly" or recurrence.get("week_numbers"):
-        return draft, []
+        return draft, warnings
     weekdays = recurrence.get("weekdays")
     if not isinstance(weekdays, list) or not weekdays:
-        return draft, []
+        return draft, warnings
     if not term or not term.get("first_week_monday"):
-        return draft, []
+        return draft, warnings
     try:
         first_monday = date.fromisoformat(term["first_week_monday"])
         end_date = date.fromisoformat(term["end_date"])
         weekday = int(weekdays[0])
     except (KeyError, TypeError, ValueError):
-        return draft, []
+        return draft, warnings
     if weekday < 1 or weekday > 7:
-        return draft, []
+        return draft, warnings
     week_count = ((end_date - first_monday).days // 7) + 1
     if week_count < 1:
-        return draft, []
+        return draft, warnings
     recurrence["week_numbers"] = list(range(1, week_count + 1))
     draft["term_id"] = term.get("id")
     draft["start_date"] = None
-    return draft, [
-        "图片未显示课程周次，已按当前学期全周导入，请在审核时确认。",
-    ]
+    warnings.append("图片未显示课程周次，已按当前学期全周导入，请在审核时确认。")
+    return draft, warnings
 
 
 async def apply_ai_import_result(
