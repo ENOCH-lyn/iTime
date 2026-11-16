@@ -28,9 +28,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      # 只绑定本机回环，供 Cloudflare Tunnel / 反向代理访问。
-      - "127.0.0.1:18000:8000"
+    expose:
+      - "8000"
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -44,6 +43,25 @@ services:
       interval: 15s
       timeout: 5s
       start_period: 40s
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # 唯一公网入口：Cloudflare Tunnel 指向本机 18000。
+      - "127.0.0.1:18000:80"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
       retries: 5
 
 volumes:

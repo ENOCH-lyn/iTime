@@ -176,9 +176,11 @@ uv run python -m itime.admin.cli create --email admin@example.com
 
 ### 生产部署
 
-API + PostgreSQL 的容器化部署（只监听本机回环，配合 Cloudflare Tunnel 暴露 HTTPS）见
-[服务器 Docker 部署](doc/部署/iTime-服务器Docker部署.md)：复制 `.env.prod.example` 为
-`.env.prod`，生成四个独立 Fernet 密钥后执行 `docker compose -f compose.prod.yaml --env-file .env.prod up -d --build`。
+Web（Nginx + Vue 构建产物）+ API + PostgreSQL 的容器化部署见
+[服务器 Docker 部署](doc/部署/iTime-服务器Docker部署.md)：Web 容器是唯一公网入口
+（`127.0.0.1:18000`），同源代理 `/api/` 到内部 API 容器，配合 Cloudflare Tunnel 暴露 HTTPS。
+复制 `.env.prod.example` 为 `.env.prod`、生成四个独立 Fernet 密钥后执行
+`docker compose -f compose.prod.yaml --env-file .env.prod up -d --build`。
 
 ## 配置
 
