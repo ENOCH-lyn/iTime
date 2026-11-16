@@ -3,6 +3,7 @@ package com.itime.app.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -108,11 +109,14 @@ private fun MainShell(container: AppContainer) {
                 navController = navController,
                 container = container,
                 syncState = syncState,
+                onNavigate = { navigateTo(it) },
                 modifier = Modifier.weight(1f),
             )
         }
     } else {
         Scaffold(
+            // 每个页面自带 TopAppBar 并消费状态栏内边距；外层再补一次会在顶部留下双倍空白。
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (TopDestination.entries.any { it.route == currentRoute }) {
                     NavigationBar {
@@ -132,6 +136,7 @@ private fun MainShell(container: AppContainer) {
                 navController = navController,
                 container = container,
                 syncState = syncState,
+                onNavigate = { navigateTo(it) },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -145,6 +150,7 @@ private fun AppNavHost(
     navController: androidx.navigation.NavHostController,
     container: AppContainer,
     syncState: com.itime.app.data.SyncState,
+    onNavigate: (TopDestination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier) {
@@ -156,8 +162,8 @@ private fun AppNavHost(
                 TodayScreen(
                     container = container,
                     syncState = syncState,
-                    onOpenCalendar = { navController.navigate(TopDestination.Calendar.route) },
-                    onOpenSettings = { navController.navigate(TopDestination.Settings.route) },
+                    onOpenCalendar = { onNavigate(TopDestination.Calendar) },
+                    onOpenSettings = { onNavigate(TopDestination.Settings) },
                 )
             }
             composable(TopDestination.Calendar.route) {

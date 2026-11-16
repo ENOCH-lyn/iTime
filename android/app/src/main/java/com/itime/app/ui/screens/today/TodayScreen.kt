@@ -298,12 +298,13 @@ fun TodayScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("今天", style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.width(10.dp))
                         Text(
                             "${today.monthValue} 月 ${today.dayOfMonth} 日 · " +
-                                today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.CHINA),
-                            style = MaterialTheme.typography.labelMedium,
+                                today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.CHINA),
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
