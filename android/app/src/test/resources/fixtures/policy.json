@@ -1,0 +1,11 @@
+{
+  "password_min_length": 8,
+  "password_max_length": 128,
+  "session_hours": 720,
+  "verification_minutes": 30,
+  "password_reset_minutes": 15,
+  "mail_cooldown_seconds": 60,
+  "email_available": false,
+  "registration_mode": "open",
+  "require_email_verification": false
+}

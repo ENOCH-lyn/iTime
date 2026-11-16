@@ -3,6 +3,7 @@ package com.itime.app.data.remote
 import com.itime.app.data.session.SessionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -47,7 +48,7 @@ class ItimeApi(
             ),
             authenticated = false,
         )
-        val session = json.decodeFromString(SessionDto.serializer(), body)
+        val session = decode(SessionDto.serializer(), body)
         val token = headers.filter { it.first.equals("Set-Cookie", ignoreCase = true) }
             .mapNotNull { (_, value) -> extractCookie(value) }
             .firstOrNull()
@@ -74,7 +75,7 @@ class ItimeApi(
             .firstOrNull()
         // Registration may answer 202 without a session (email verification)
         // or with a nested "session" object; never assume the /auth/me shape.
-        val response = json.decodeFromString(RegisterResponseDto.serializer(), body)
+        val response = decode(RegisterResponseDto.serializer(), body)
         val session = response.session
         if (token == null || response.verification_required || session == null) return null
         return LoginResult(token = token, session = session)
@@ -108,7 +109,7 @@ class ItimeApi(
     )
 
     suspend fun getTask(id: String): TaskDto =
-        json.decodeFromString(TaskEnvelope.serializer(), getRaw("/api/v1/tasks/$id")).task
+        decode(TaskEnvelope.serializer(), getRaw("/api/v1/tasks/$id")).task
 
     suspend fun createTask(body: TaskCreateBody): TaskDto =
         post("/api/v1/tasks", body, TaskEnvelope.serializer()).task
@@ -310,6 +311,32 @@ class ItimeApi(
         return builder.build()
     }
 
+    /**
+     * Every server payload goes through here: a schema drift must surface as a
+     * readable ApiException instead of an uncaught SerializationException.
+     */
+    private fun <T> decode(deserializer: kotlinx.serialization.DeserializationStrategy<T>, text: String): T =
+        try {
+            json.decodeFromString(deserializer, text)
+        } catch (error: SerializationException) {
+            throw ApiException(
+                code = "invalid_response",
+                message = "服务返回数据格式异常，请稍后重试。",
+                status = 502,
+                retryable = false,
+            )
+        } catch (error: IllegalArgumentException) {
+            throw ApiException(
+                code = "invalid_response",
+                message = "服务返回数据格式异常，请稍后重试。",
+                status = 502,
+                retryable = false,
+            )
+        }
+
+    private inline fun <reified T> decode(text: String): T =
+        decode(kotlinx.serialization.serializer<T>(), text)
+
     private suspend fun requestRaw(
         method: String,
         path: String,
@@ -364,7 +391,7 @@ class ItimeApi(
     private suspend inline fun <reified T> get(
         path: String,
         query: Map<String, String?> = emptyMap(),
-    ): T = json.decodeFromString<T>(getRaw(path, query))
+    ): T = decode<T>(getRaw(path, query))
 
     suspend fun getRaw(path: String, query: Map<String, String?> = emptyMap()): String =
         requestRaw("GET", path, query).first
@@ -372,7 +399,7 @@ class ItimeApi(
     private suspend fun <T> getDecoded(
         path: String,
         serializer: kotlinx.serialization.DeserializationStrategy<T>,
-    ): T = json.decodeFromString(serializer, getRaw(path))
+    ): T = decode(serializer, getRaw(path))
 
     private suspend inline fun <reified Req, Res> send(
         method: String,
@@ -382,7 +409,7 @@ class ItimeApi(
     ): Res {
         val encoded = json.encodeToString(body)
         val text = requestRaw(method, path, body = encoded).first
-        return json.decodeFromString(responseSerializer, text)
+        return decode(responseSerializer, text)
     }
 
     private suspend inline fun <reified Req, Res> post(

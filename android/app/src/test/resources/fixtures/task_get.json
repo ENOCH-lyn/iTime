@@ -1,0 +1,60 @@
+{
+  "task": {
+    "id": "14c2904b-2974-4a00-a2ad-15fb334c4e56",
+    "title": "契约夹具任务",
+    "description": "用于 Android 反序列化回归",
+    "project": null,
+    "estimated_minutes": 30,
+    "estimate_source": "user",
+    "priority": 1,
+    "status": "open",
+    "completed_at": null,
+    "lifecycle": "active",
+    "archived_at": null,
+    "deleted_at": null,
+    "purge_after": null,
+    "purged_at": null,
+    "trash_remaining_days": null,
+    "version": 1,
+    "labels": [
+      {
+        "id": "412b648d-50b2-4b62-8535-56585679463b",
+        "name": "fixture",
+        "version": 1
+      }
+    ],
+    "step_progress": {
+      "total": 0,
+      "completed": 0
+    },
+    "link_count": 0,
+    "schedule": {
+      "configured": false,
+      "preferences_saved": false,
+      "predecessor_task_id": null,
+      "due_kind": "none",
+      "due_date": null,
+      "last_occurrence_date": null,
+      "due_time": null,
+      "due_at": null,
+      "time_zone": null,
+      "ambiguous_utc_offset_minutes": null,
+      "splittable": true,
+      "minimum_block_minutes": 15,
+      "recurrence": {
+        "frequency": "none",
+        "interval": 1,
+        "weekdays": [],
+        "month": null,
+        "day_of_month": null,
+        "until": null,
+        "count": null,
+        "week_numbers": []
+      }
+    },
+    "created_at": "2026-11-16T09:09:41.851671Z",
+    "updated_at": "2026-11-16T09:09:41.851671Z",
+    "steps": [],
+    "links": []
+  }
+}

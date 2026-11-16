@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-const val DEFAULT_BASE_URL = "http://10.0.2.2:8000/"
+const val DEFAULT_BASE_URL = "https://itime.kipfel.top/"
 
 data class Session(
     val token: String,

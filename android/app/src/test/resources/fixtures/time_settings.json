@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "initialized": false,
+    "time_zone": null,
+    "weather_location": null,
+    "week_starts_on": 1,
+    "activity_day_start_minute": 240,
+    "version": 0,
+    "created_at": null,
+    "updated_at": null
+  }
+}

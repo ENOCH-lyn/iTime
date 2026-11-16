@@ -1,0 +1,89 @@
+{
+  "cursor": "eyJvd25lcl9pZCI6IjcxNDE3MzZmLTFjNWYtNDU4OS04YmY0LTM1NWJhYjIyMGVmMSIsInNlcXVlbmNlIjo0LCJ2IjoxfQ.4fc7e6c8acd43430beedf40a147986ca80f64151b51e1cc8fa644e4ecf49cb9d",
+  "server_time": "2026-11-16T09:09:45.800971Z",
+  "time_settings": {
+    "initialized": false,
+    "time_zone": null,
+    "weather_location": null,
+    "week_starts_on": 1,
+    "activity_day_start_minute": 240,
+    "version": 0,
+    "created_at": null,
+    "updated_at": null
+  },
+  "projects": [
+    {
+      "id": "ed638c8a-15c9-4779-97a3-9173297891c5",
+      "kind": "project",
+      "name": "夹具项目",
+      "description": "",
+      "version": 1,
+      "created_at": "2026-11-16T09:09:44.253134Z",
+      "updated_at": "2026-11-16T09:09:44.253134Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "14c2904b-2974-4a00-a2ad-15fb334c4e56",
+      "title": "契约夹具任务",
+      "description": "用于 Android 反序列化回归",
+      "project": null,
+      "estimated_minutes": 30,
+      "estimate_source": "user",
+      "priority": 1,
+      "status": "open",
+      "completed_at": null,
+      "lifecycle": "active",
+      "archived_at": null,
+      "deleted_at": null,
+      "purge_after": null,
+      "purged_at": null,
+      "trash_remaining_days": null,
+      "version": 1,
+      "labels": [
+        {
+          "id": "412b648d-50b2-4b62-8535-56585679463b",
+          "name": "fixture",
+          "version": 1
+        }
+      ],
+      "step_progress": {
+        "total": 0,
+        "completed": 0
+      },
+      "link_count": 0,
+      "schedule": {
+        "configured": false,
+        "preferences_saved": false,
+        "predecessor_task_id": null,
+        "due_kind": "none",
+        "due_date": null,
+        "last_occurrence_date": null,
+        "due_time": null,
+        "due_at": null,
+        "time_zone": null,
+        "ambiguous_utc_offset_minutes": null,
+        "splittable": true,
+        "minimum_block_minutes": 15,
+        "recurrence": {
+          "frequency": "none",
+          "interval": 1,
+          "weekdays": [],
+          "month": null,
+          "day_of_month": null,
+          "until": null,
+          "count": null,
+          "week_numbers": []
+        }
+      },
+      "created_at": "2026-11-16T09:09:41.851671Z",
+      "updated_at": "2026-11-16T09:09:41.851671Z",
+      "steps": []
+    }
+  ],
+  "terms": [],
+  "series": [],
+  "calendar_exceptions": [],
+  "calendar_additions": [],
+  "task_occurrences": []
+}

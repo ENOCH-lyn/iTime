@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "ed638c8a-15c9-4779-97a3-9173297891c5",
+      "kind": "project",
+      "name": "夹具项目",
+      "description": "",
+      "version": 1,
+      "created_at": "2026-11-16T09:09:44.253134Z",
+      "updated_at": "2026-11-16T09:09:44.253134Z",
+      "task_count": 0,
+      "open_task_count": 0
+    }
+  ],
+  "next_cursor": null
+}
