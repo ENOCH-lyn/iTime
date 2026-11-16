@@ -1,0 +1,85 @@
+{
+  "operation_id": "329038a5-5e70-4f31-8f07-a35a48d7b995",
+  "batch": {
+    "id": "56eec8f4-9bb1-4f1f-8271-dbb8a4244757",
+    "source": {
+      "id": "6a2a3795-d600-406e-ab35-497d598f0485",
+      "kind": "image",
+      "name": "timetable.png",
+      "version": 1,
+      "created_at": "2026-11-16T12:02:35.611565Z",
+      "updated_at": "2026-11-16T12:02:35.611565Z"
+    },
+    "format": "image",
+    "source_type": "image",
+    "source_display": "timetable.png",
+    "filename": "timetable.png",
+    "state": "queued",
+    "candidate_count": 0,
+    "counts": {
+      "valid": 0,
+      "invalid": 0,
+      "duplicate": 0,
+      "confirmed": 0,
+      "skipped": 0
+    },
+    "input_summary": {
+      "source_type": "image",
+      "content_sha256": "2097e9e515ff1a390b9cf0939b533a6f1446be7f3ebb04734de497598ea0fb6e",
+      "filename": "timetable.png",
+      "content_type": "image/png",
+      "byte_size": 47869,
+      "width": 1100,
+      "height": 720
+    },
+    "conversation_id": null,
+    "message_id": null,
+    "job_id": "ca5ae980-8b9f-4eff-8eb7-37bc1243de69",
+    "error": null,
+    "version": 1,
+    "expires_at": "2026-11-23T12:02:35.852748Z",
+    "created_at": "2026-11-16T12:02:35.611565Z",
+    "updated_at": "2026-11-16T12:02:35.611565Z"
+  },
+  "job": {
+    "id": "ca5ae980-8b9f-4eff-8eb7-37bc1243de69",
+    "capability": "calendar_screenshot",
+    "conversation_id": null,
+    "review_session_id": null,
+    "status": "queued",
+    "input_summary": {
+      "source_type": "image",
+      "content_sha256": "2097e9e515ff1a390b9cf0939b533a6f1446be7f3ebb04734de497598ea0fb6e",
+      "filename": "timetable.png",
+      "content_type": "image/png",
+      "byte_size": 47869,
+      "width": 1100,
+      "height": 720,
+      "recognition_context": {
+        "time_zone": "Asia/Shanghai",
+        "terms": [
+          {
+            "id": "9e80a19e-4b9f-4eaf-a524-0aaf8604e5e7",
+            "name": "2026 秋季学期",
+            "start_date": "2026-11-16",
+            "end_date": "2027-04-04",
+            "first_week_monday": "2026-11-16",
+            "time_zone": "Asia/Shanghai",
+            "periods": []
+          }
+        ]
+      },
+      "batch_id": "56eec8f4-9bb1-4f1f-8271-dbb8a4244757"
+    },
+    "output": null,
+    "error": null,
+    "attempt_count": 0,
+    "max_attempts": 3,
+    "last_event_sequence": 0,
+    "deadline_at": "2026-11-16T12:05:35.705188Z",
+    "version": 1,
+    "created_at": "2026-11-16T12:02:35.611565Z",
+    "updated_at": "2026-11-16T12:02:35.611565Z",
+    "finished_at": null
+  }
+}

@@ -105,4 +105,22 @@ class ServerContractTest {
         val messages = decode<AiMessageListDto>("ai_messages_empty")
         assertTrue(messages.items.isEmpty())
     }
+
+    @Test
+    fun `calendar screenshot import decodes`() {
+        val created = decode<AiImportBatchResult>("calendar_import_created")
+        assertEquals("calendar_screenshot", created.job.capability)
+        assertEquals("image", created.batch.source_type)
+        assertTrue(created.batch.id.isNotBlank())
+        assertTrue(created.job.id.isNotBlank())
+
+        val detail = decode<ImportDetailDto>("calendar_import_detail")
+        assertEquals(7, detail.candidates.size)
+        assertTrue(detail.candidates.all { it.state == "valid" })
+        val draft = detail.candidates.first().draft
+        assertTrue(draft != null)
+        assertEquals("08:00:00", draft?.starts_at)
+        assertEquals(listOf(1), draft?.recurrence?.weekdays)
+        assertTrue(draft?.recurrence?.week_numbers?.isNotEmpty() == true)
+    }
 }

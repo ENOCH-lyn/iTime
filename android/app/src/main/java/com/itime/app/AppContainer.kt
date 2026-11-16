@@ -5,6 +5,7 @@ import com.itime.app.data.SyncStatusHolder
 import com.itime.app.data.local.ItimeDatabase
 import com.itime.app.data.remote.ItimeApi
 import com.itime.app.data.repository.AuthRepository
+import com.itime.app.data.repository.CalendarImportRepository
 import com.itime.app.data.repository.CalendarRepository
 import com.itime.app.data.repository.TaskRepository
 import com.itime.app.data.session.SessionStore
@@ -66,6 +67,8 @@ class AppContainer(context: Context) {
     val tasks = TaskRepository(database, json, sync)
 
     val calendar = CalendarRepository(database, json, sync)
+
+    val calendarImport = CalendarImportRepository(api, calendar, sync)
 
     val auth = AuthRepository(api, sessionStore, database, sync, scope)
 }

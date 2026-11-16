@@ -9,8 +9,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
@@ -268,6 +270,46 @@ class ItimeApi(
         AiToolProposalEnvelope.serializer(),
     )
 
+    // ------------------------------------------------------ 课表截图导入
+
+    /** 上传课表截图；返回的 job 需要在服务端识别完成后轮询。 */
+    suspend fun createAiCalendarImport(
+        bytes: ByteArray,
+        filename: String,
+        contentType: String,
+    ): AiImportBatchResult {
+        val mediaType = (contentType.takeIf { it.isNotBlank() } ?: "image/jpeg").toMediaType()
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("source_type", "image")
+            .addFormDataPart("file", filename, bytes.toRequestBody(mediaType))
+            .build()
+        val request = buildRequest(
+            method = "POST",
+            path = "/api/v1/calendar/imports/ai",
+            query = emptyMap(),
+            body = null,
+            authenticated = true,
+            explicitBody = body,
+            extraHeaders = mapOf("X-Operation-ID" to java.util.UUID.randomUUID().toString()),
+        )
+        return decode(AiImportBatchResult.serializer(), execute(request).first)
+    }
+
+    suspend fun aiJob(jobId: String): AiJobStatusDto = get("/api/v1/ai/jobs/$jobId")
+
+    suspend fun calendarImport(batchId: String): ImportDetailDto =
+        get("/api/v1/calendar/imports/$batchId")
+
+    suspend fun confirmCalendarImport(
+        batchId: String,
+        body: ImportConfirmBody,
+    ): ImportConfirmResult = post(
+        "/api/v1/calendar/imports/$batchId/confirm",
+        body,
+        ImportConfirmResult.serializer(),
+    )
+
     // ------------------------------------------------------------ plumbing
 
     private suspend fun extractCookie(setCookie: String): String? {
@@ -294,11 +336,14 @@ class ItimeApi(
         query: Map<String, String?>,
         body: String?,
         authenticated: Boolean,
+        explicitBody: RequestBody? = null,
+        extraHeaders: Map<String, String> = emptyMap(),
     ): Request {
         val builder = Request.Builder()
             .url(urlBuilder(path, query).build())
             .header("Accept", "application/json")
-            .header("X-Client", "itime-android/0.1.0")
+            .header("X-Client", "itime-android/${com.itime.app.BuildConfig.VERSION_NAME}")
+        extraHeaders.forEach { (key, value) -> builder.header(key, value) }
         if (authenticated) {
             val session = sessionStore.current()
             if (session != null) {
@@ -306,7 +351,7 @@ class ItimeApi(
                 if (method != "GET") builder.header("X-CSRF-Token", session.csrfToken)
             }
         }
-        val requestBody = if (body == null) {
+        val requestBody = explicitBody ?: if (body == null) {
             if (method == "GET" || method == "HEAD") null
             else ByteArray(0).toRequestBody(JSON_MEDIA)
         } else {
@@ -342,14 +387,9 @@ class ItimeApi(
     private inline fun <reified T> decode(text: String): T =
         decode(kotlinx.serialization.serializer<T>(), text)
 
-    private suspend fun requestRaw(
-        method: String,
-        path: String,
-        query: Map<String, String?> = emptyMap(),
-        body: String? = null,
-        authenticated: Boolean = true,
+    private suspend fun execute(
+        request: Request,
     ): Pair<String, List<Pair<String, String>>> = withContext(Dispatchers.IO) {
-        val request = buildRequest(method, path, query, body, authenticated)
         val response = try {
             client.newCall(request).execute()
         } catch (error: IOException) {
@@ -369,6 +409,15 @@ class ItimeApi(
             text to headers
         }
     }
+
+    private suspend fun requestRaw(
+        method: String,
+        path: String,
+        query: Map<String, String?> = emptyMap(),
+        body: String? = null,
+        authenticated: Boolean = true,
+    ): Pair<String, List<Pair<String, String>>> =
+        execute(buildRequest(method, path, query, body, authenticated))
 
     private fun parseError(status: Int, body: String): ApiException {
         val envelope = runCatching {

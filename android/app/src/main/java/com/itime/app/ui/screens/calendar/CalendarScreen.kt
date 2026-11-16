@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -108,6 +109,22 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var showSeriesEditor by remember { mutableStateOf(false) }
     var editingSeries by remember { mutableStateOf<com.itime.app.data.local.SeriesEntity?>(null) }
     var moveTarget by remember { mutableStateOf<AgendaItem?>(null) }
+    var importUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var termSetup by remember { mutableStateOf(false) }
+    val pickTimetable = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> if (uri != null) importUri = uri }
+    val launchTimetablePicker: () -> Unit = {
+        pickTimetable.launch(
+            androidx.activity.result.PickVisualMediaRequest(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+            ),
+        )
+    }
+    // 没有学期时识别不出日期，先补学期再选图。
+    val startTimetableImport: () -> Unit = {
+        if (terms.isEmpty()) termSetup = true else launchTimetablePicker()
+    }
 
     val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val weekStart = anchor.with(DayOfWeek.MONDAY)
@@ -292,6 +309,9 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 title = { Text("日历") },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
+                    IconButton(onClick = startTimetableImport) {
+                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "识别课表截图")
+                    }
                     IconButton(
                         onClick = {
                             editingSeries = null
@@ -329,6 +349,40 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 agendaBlock()
             }
         }
+    }
+
+    if (termSetup) {
+        TermSetupSheet(
+            defaultTimeZone = zone,
+            onCreate = { name, monday, weeks ->
+                container.calendarImport.prepareTerm(
+                    name = name,
+                    firstWeekMonday = monday,
+                    weeks = weeks,
+                    timeZone = zone.id,
+                )
+            },
+            onReady = {
+                termSetup = false
+                launchTimetablePicker()
+            },
+            onDismiss = { termSetup = false },
+        )
+    }
+
+    importUri?.let { uri ->
+        CalendarImportSheet(
+            repository = container.calendarImport,
+            uri = uri,
+            onDismiss = { importUri = null },
+            onImported = { count ->
+                importUri = null
+                if (count > 0) {
+                    anchor = today
+                    selected = today
+                }
+            },
+        )
     }
 
     moveTarget?.let { target ->
