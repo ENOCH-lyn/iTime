@@ -270,6 +270,50 @@ class ItimeApi(
         AiToolProposalEnvelope.serializer(),
     )
 
+    // ------------------------------------------------------ AI 对话附件
+
+    /**
+     * 对话图片走裸二进制上传（服务端上限 600 KiB），返回的 media_id 由消息引用；
+     * 与 multipart 的课表导入不是同一条接口。
+     */
+    suspend fun uploadAiImage(
+        bytes: ByteArray,
+        filename: String,
+        contentType: String,
+    ): AiImageUploadDto {
+        val request = buildRequest(
+            method = "POST",
+            path = "/api/v1/ai/images",
+            query = mapOf("filename" to filename),
+            body = null,
+            authenticated = true,
+            explicitBody = bytes.toRequestBody(contentType.toMediaType()),
+            extraHeaders = mapOf("X-Operation-ID" to java.util.UUID.randomUUID().toString()),
+        )
+        return decode(AiImageUploadDto.serializer(), execute(request).first)
+    }
+
+    /** PDF/Word/文本附件先在服务端抽成纯文本，再作为消息内容的一部分发送。 */
+    suspend fun extractAiDocument(
+        bytes: ByteArray,
+        filename: String,
+        contentType: String,
+    ): AiDocumentTextDto {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("document", filename, bytes.toRequestBody(contentType.toMediaType()))
+            .build()
+        val request = buildRequest(
+            method = "POST",
+            path = "/api/v1/ai/documents/extract",
+            query = emptyMap(),
+            body = null,
+            authenticated = true,
+            explicitBody = body,
+        )
+        return decode(AiDocumentTextDto.serializer(), execute(request).first)
+    }
+
     // ------------------------------------------------------ 课表截图导入
 
     /** 上传课表截图；返回的 job 需要在服务端识别完成后轮询。 */

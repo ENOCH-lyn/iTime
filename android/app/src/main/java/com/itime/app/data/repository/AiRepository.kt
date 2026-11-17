@@ -42,6 +42,32 @@ class AiRepository(private val api: ItimeApi) {
     suspend fun messages(conversationId: String): List<AiMessageDto> =
         api.aiMessages(conversationId).items.sortedBy { it.sequence }
 
+    /** 上传对话图片，返回服务端 media_id（消息用 image_media_id 引用）。 */
+    suspend fun uploadImage(bytes: ByteArray, filename: String, contentType: String): String {
+        val response = api.uploadAiImage(bytes, filename, contentType)
+        val mediaId = response.media_id.trim()
+        if (mediaId.isEmpty()) {
+            throw com.itime.app.data.remote.ApiException(
+                code = "image_upload_failed",
+                message = "图片上传没有返回凭据，请重试。",
+                status = 502,
+            )
+        }
+        return mediaId
+    }
+
+    /** PDF/Word/文本附件抽出纯文本，由调用方拼进消息内容。 */
+    suspend fun extractDocument(bytes: ByteArray, filename: String, contentType: String): String {
+        val extracted = api.extractAiDocument(bytes, filename, contentType)
+        return extracted.text.trim().ifEmpty {
+            throw com.itime.app.data.remote.ApiException(
+                code = "document_empty",
+                message = "这个文件里没有可用文字，换一个文件或直接描述需求。",
+                status = 200,
+            )
+        }
+    }
+
     /**
      * Sends one user message in agent mode and waits for the reply.
      *
@@ -52,6 +78,7 @@ class AiRepository(private val api: ItimeApi) {
     suspend fun send(
         conversation: AiConversationDto,
         content: String,
+        imageMediaId: String? = null,
         onProgress: suspend (List<AiMessageDto>) -> Unit = {},
     ): List<AiMessageDto> {
         val body = AiMessageCreateBody(
@@ -59,6 +86,7 @@ class AiRepository(private val api: ItimeApi) {
             expected_conversation_version = conversation.version,
             content = content,
             response_mode = "auto",
+            image_media_id = imageMediaId,
         )
         // Capture the baseline *before* posting, otherwise the server may
         // already have projected the new reply into the "accepted" snapshot and

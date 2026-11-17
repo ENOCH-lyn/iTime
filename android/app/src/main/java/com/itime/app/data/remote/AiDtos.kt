@@ -89,4 +89,21 @@ data class AiMessageCreateBody(
     val expected_conversation_version: Int,
     val content: String,
     val response_mode: String = "text",
+    val image_media_id: String? = null,
+)
+
+/** `POST /api/v1/ai/images` 只回 media_id，消息再引用它。 */
+@Serializable
+data class AiImageUploadDto(
+    val media_id: String = "",
+    val operation_id: String? = null,
+)
+
+/** `POST /api/v1/ai/documents/extract` 把 PDF/Word/文本抽成纯文本。 */
+@Serializable
+data class AiDocumentTextDto(
+    val filename: String = "",
+    val text: String = "",
+    val characters: Int = 0,
+    val truncated: Boolean = false,
 )
