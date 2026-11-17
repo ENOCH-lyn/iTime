@@ -21,8 +21,12 @@ import com.itime.app.data.sync.SettingsUpdatePayload
 import com.itime.app.data.sync.SyncEngine
 import com.itime.app.data.sync.TermCreatePayload
 import com.itime.app.data.sync.TermDeletePayload
+import com.itime.app.data.sync.TermPeriodItem
+import com.itime.app.data.sync.TermPeriodsPayload
 import com.itime.app.data.sync.TermUpdatePayload
+import com.itime.app.domain.PeriodInput
 import com.itime.app.domain.SeriesDraft
+import com.itime.app.domain.TermPeriods
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -335,6 +339,51 @@ class CalendarRepository(
         sync.requestSync("local-timezone")
     }
 
+    /**
+     * 整表替换学期节次。本地先落库（课表编辑器立刻能按节次选），
+     * 再把 `term.periods` 排进 outbox；离线也能改，联网补推。
+     */
+    suspend fun updateTermPeriods(termId: String, periods: List<PeriodInput>) {
+        val term = db.termDao().find(termId) ?: return
+        val rows = periods.sortedBy { it.periodNumber }.map { period ->
+            TermPeriodEntity(
+                termId = termId,
+                periodNumber = period.periodNumber,
+                name = period.name.trim(),
+                startsAt = TermPeriods.toWire(period.startsAt),
+                endsAt = TermPeriods.toWire(period.endsAt),
+            )
+        }
+        db.withTransaction {
+            db.termDao().deletePeriods(termId)
+            if (rows.isNotEmpty()) db.termDao().upsertPeriods(rows)
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_TERM,
+                    entityId = termId,
+                    intent = Intent.TERM_PERIODS,
+                    payloadJson = json.encodeToString(
+                        TermPeriodsPayload.serializer(),
+                        TermPeriodsPayload(
+                            periods = rows.map { row ->
+                                TermPeriodItem(
+                                    periodNumber = row.periodNumber,
+                                    name = row.name,
+                                    startsAt = row.startsAt,
+                                    endsAt = row.endsAt,
+                                )
+                            },
+                        ),
+                    ),
+                    baseVersion = term.version,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+        sync.requestSync("local-term-periods")
+    }
+
     suspend fun periods(termId: String): List<TermPeriodEntity> = db.termDao().periods(termId)
 }
 
@@ -347,9 +396,11 @@ private fun SeriesDraft.toPayload(): SeriesCreatePayload = SeriesCreatePayload(
     location = location.trim(),
     busy = busy,
     timeZone = null,
-    startDate = startDate.toString(),
-    startsAt = startsAt.toString(),
-    endsAt = endsAt.toString(),
+    // 课程的起始日由服务端按「学期第一周 + 周次 + 星期」推导，显式传会被判为不一致。
+    startDate = if (kind == "course") null else startDate.toString(),
+    // 按节次排课时服务端用节次表算时间，显式时刻要留空（否则 period_time_conflict）。
+    startsAt = if (startPeriodNumber != null) null else startsAt.toString(),
+    endsAt = if (endPeriodNumber != null) null else endsAt.toString(),
     endDayOffset = endDayOffset,
     startPeriodNumber = startPeriodNumber,
     endPeriodNumber = endPeriodNumber,
@@ -365,9 +416,9 @@ private fun SeriesDraft.toUpdatePayload(): SeriesUpdatePayload = SeriesUpdatePay
     location = location.trim(),
     busy = busy,
     timeZone = null,
-    startDate = startDate.toString(),
-    startsAt = startsAt.toString(),
-    endsAt = endsAt.toString(),
+    startDate = if (kind == "course") null else startDate.toString(),
+    startsAt = if (startPeriodNumber != null) null else startsAt.toString(),
+    endsAt = if (endPeriodNumber != null) null else endsAt.toString(),
     endDayOffset = endDayOffset,
     startPeriodNumber = startPeriodNumber,
     endPeriodNumber = endPeriodNumber,

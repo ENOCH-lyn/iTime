@@ -147,6 +147,17 @@ data class TermUpdatePayload(
 data class TermDeletePayload(val note: String = "")
 
 @Serializable
+data class TermPeriodItem(
+    val periodNumber: Int,
+    val name: String,
+    val startsAt: String,
+    val endsAt: String,
+)
+
+@Serializable
+data class TermPeriodsPayload(val periods: List<TermPeriodItem> = emptyList())
+
+@Serializable
 data class SettingsUpdatePayload(val timeZone: String)
 
 @Serializable
@@ -175,6 +186,7 @@ object Intent {
     const val TERM_CREATE = "term.create"
     const val TERM_UPDATE = "term.update"
     const val TERM_DELETE = "term.delete"
+    const val TERM_PERIODS = "term.periods"
     const val SETTINGS_UPDATE = "settings.update"
     const val PROJECT_CREATE = "project.create"
 

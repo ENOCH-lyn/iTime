@@ -156,6 +156,21 @@ data class TermUpdateBody(
 )
 
 @Serializable
+data class TermPeriodBody(
+    val period_number: Int,
+    val name: String,
+    val starts_at: String,
+    val ends_at: String,
+)
+
+@Serializable
+data class TermPeriodsBody(
+    val operation_id: String,
+    val expected_version: Int,
+    val periods: List<TermPeriodBody>,
+)
+
+@Serializable
 data class TimeSettingsUpdateBody(
     val operation_id: String,
     val expected_version: Int,

@@ -196,6 +196,10 @@ class ItimeApi(
     suspend fun updateTerm(id: String, body: TermUpdateBody): TermDto =
         put("/api/v1/terms/$id", body, TermEnvelope.serializer()).term
 
+    /** 整表替换学期节次（服务端校验编号/名称唯一、时间不重叠）。 */
+    suspend fun replaceTermPeriods(id: String, body: TermPeriodsBody): TermDto =
+        put("/api/v1/terms/$id/periods", body, TermEnvelope.serializer()).term
+
     suspend fun deleteTerm(id: String): TermDeleteAck {
         val (text, _) = requestRaw("DELETE", "/api/v1/terms/$id")
         return decode(TermDeleteAck.serializer(), text)

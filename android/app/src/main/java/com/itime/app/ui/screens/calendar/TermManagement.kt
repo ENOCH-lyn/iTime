@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,11 +31,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,11 +51,14 @@ import com.itime.app.core.Times
 import com.itime.app.data.local.SeriesEntity
 import com.itime.app.data.local.TermEntity
 import com.itime.app.data.local.TermPeriodEntity
+import com.itime.app.domain.PeriodInput
+import com.itime.app.domain.TermPeriods
 import com.itime.app.domain.Terms
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -60,13 +67,15 @@ import java.time.temporal.TemporalAdjusters
 /** 学期面板当前展示的是列表还是表单；表单里 term 为 null 表示新建。 */
 private data class TermEditorRequest(val term: TermEntity?)
 
+private data class TimePickRequest(val index: Int, val start: Boolean)
+
 private val dateFormat = DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日")
 private val shortDateFormat = DateTimeFormatter.ofPattern("yyyy/M/d")
 
 /**
- * 学期管理：列出全部学期（旧学期也留着），能改名、改起止周、删除。
+ * 学期管理：列出全部学期（旧学期也留着），能改名、改起止周、编节次表、删除。
  *
- * 课表截图导入和课程周次都靠学期，所以入口只有一个，建、改、删都在这里，
+ * 课表截图导入和课程周次都靠学期，所以入口只有一个，建、改、删、编节次都在这里，
  * 避免“再建一个”这种重复。删除会连带删除该学期的课程，服务端同此语义。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,8 +86,8 @@ fun TermManagerSheet(
     series: List<SeriesEntity>,
     zone: ZoneId,
     onDismiss: () -> Unit,
-    onCreate: suspend (String, LocalDate, Int) -> Unit,
-    onUpdate: suspend (TermEntity, String, LocalDate, Int) -> Unit,
+    onCreate: suspend (String, LocalDate, Int, List<PeriodInput>) -> Unit,
+    onUpdate: suspend (TermEntity, String, LocalDate, Int, List<PeriodInput>) -> Unit,
     onDelete: suspend (TermEntity) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -105,17 +114,24 @@ fun TermManagerSheet(
             TermFormContent(
                 editing = request.term,
                 terms = terms,
+                existingPeriods = request.term?.let { term ->
+                    periods.filter { it.termId == term.id }
+                        .sortedBy { it.periodNumber }
+                        .mapNotNull {
+                            TermPeriods.fromWire(it.periodNumber, it.name, it.startsAt, it.endsAt)
+                        }
+                }.orEmpty(),
                 defaultTimeZone = zone,
                 title = if (request.term == null) "新建学期" else "编辑学期",
                 description = "学期决定课程的周次和日期。写错了改这里，不用删了重建。",
                 confirmLabel = if (request.term == null) "创建学期" else "保存修改",
                 onBack = { editor = null },
-                onSave = { name, monday, weeks ->
+                onSave = { name, monday, weeks, periodRows ->
                     val target = request.term
                     if (target == null) {
-                        onCreate(name, monday, weeks)
+                        onCreate(name, monday, weeks, periodRows)
                     } else {
-                        onUpdate(target, name, monday, weeks)
+                        onUpdate(target, name, monday, weeks, periodRows)
                     }
                     error = null
                     editor = null
@@ -167,7 +183,7 @@ fun TermFormSheet(
     title: String,
     description: String,
     confirmLabel: String,
-    onSave: suspend (String, LocalDate, Int) -> Unit,
+    onSave: suspend (String, LocalDate, Int, List<PeriodInput>) -> Unit,
     onSaved: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -176,13 +192,14 @@ fun TermFormSheet(
         TermFormContent(
             editing = null,
             terms = terms,
+            existingPeriods = emptyList(),
             defaultTimeZone = defaultTimeZone,
             title = title,
             description = description,
             confirmLabel = confirmLabel,
             onBack = onDismiss,
-            onSave = { name, monday, weeks ->
-                onSave(name, monday, weeks)
+            onSave = { name, monday, weeks, periodRows ->
+                onSave(name, monday, weeks, periodRows)
                 onSaved()
             },
         )
@@ -210,14 +227,14 @@ private fun TermListContent(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "学期",
+                "学期与节次",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onClose) { Text("完成") }
         }
         Text(
-            "旧学期留着不影响课表，只用来折算周次；不用的学期可以删。节次表暂时在 Web 的日历设置里改。",
+            "旧学期留着不影响课表，只用来折算周次；不用的学期可以删。课程按学期周次和节次展开。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -236,7 +253,7 @@ private fun TermListContent(
                     Text("还没有学期", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "课表截图导入、课程显示第几周都要用学期，先建一个。",
+                        "课程要挂在学期上，课表截图导入也要用学期。先建一个，节次表会预填 10 节。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -373,12 +390,13 @@ private fun TermBadge(phase: Terms.Phase, week: Int?, modifier: Modifier = Modif
 private fun TermFormContent(
     editing: TermEntity?,
     terms: List<TermEntity>,
+    existingPeriods: List<PeriodInput>,
     defaultTimeZone: ZoneId,
     title: String,
     description: String,
     confirmLabel: String,
     onBack: () -> Unit,
-    onSave: suspend (String, LocalDate, Int) -> Unit,
+    onSave: suspend (String, LocalDate, Int, List<PeriodInput>) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val today = LocalDate.now(defaultTimeZone)
@@ -398,7 +416,16 @@ private fun TermFormContent(
             } ?: 20,
         )
     }
+    val periodRows = remember {
+        mutableStateListOf<PeriodInput>().apply {
+            // 新建时预填 10 节；编辑已有学期时按它真实的节次表来（空就保持空）。
+            addAll(existingPeriods.ifEmpty { if (editing == null) TermPeriods.defaults() else emptyList() })
+        }
+    }
     var pickerOpen by remember { mutableStateOf(false) }
+    var timePick by remember { mutableStateOf<TimePickRequest?>(null) }
+    // 节次表默认收起：10 节展开会把保存按钮挤到屏外，需要改时再展开。
+    var periodsExpanded by remember { mutableStateOf(false) }
     var snapNote by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -462,7 +489,86 @@ private fun TermFormContent(
             TextButton(onClick = { if (weeks > 1) weeks -= 1 }) { Text("-1") }
             TextButton(onClick = { if (weeks < 60) weeks += 1 }) { Text("+1") }
         }
-        Spacer(Modifier.height(4.dp))
+
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("节次表", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (periodRows.isEmpty()) {
+                        "没有节次时，课程只能按具体时间排。"
+                    } else {
+                        "已设 ${periodRows.size} 节 · ${TermPeriods.format(periodRows.first().startsAt)}–${TermPeriods.format(periodRows.last().endsAt)}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = { periodsExpanded = !periodsExpanded }) {
+                Text(if (periodsExpanded) "收起" else "编辑")
+            }
+        }
+        if (periodsExpanded) {
+            Text(
+                "相邻节次可以首尾衔接，但不能重叠；课程可以按节次排。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(
+                onClick = {
+                    val next = (periodRows.maxOfOrNull { it.periodNumber } ?: 0) + 1
+                    val previous = periodRows.maxByOrNull { it.periodNumber }
+                    val start = previous?.endsAt ?: LocalTime.of(8, 30)
+                    periodRows.add(
+                        PeriodInput(
+                            periodNumber = next,
+                            name = "第${next}节",
+                            startsAt = start,
+                            endsAt = start.plusMinutes(45),
+                        ),
+                    )
+                },
+            ) { Text("添加节次") }
+        }
+        if (periodsExpanded) periodRows.forEachIndexed { index, period ->
+            Column(Modifier.padding(vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = period.periodNumber.toString(),
+                        onValueChange = { raw ->
+                            raw.filter { it.isDigit() }.take(2).toIntOrNull()?.let { number ->
+                                periodRows[index] = period.copy(periodNumber = number)
+                            }
+                        },
+                        label = { Text("编号") },
+                        singleLine = true,
+                        modifier = Modifier.width(88.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = period.name,
+                        onValueChange = { periodRows[index] = period.copy(name = it) },
+                        label = { Text("名称") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { periodRows.removeAt(index) }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "删除第 ${index + 1} 节")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { timePick = TimePickRequest(index, start = true) }) {
+                        Text("开始 ${TermPeriods.format(period.startsAt)}")
+                    }
+                    Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { timePick = TimePickRequest(index, start = false) }) {
+                        Text("结束 ${TermPeriods.format(period.endsAt)}")
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
         when {
             duplicate != null -> Text(
                 duplicate,
@@ -493,10 +599,15 @@ private fun TermFormContent(
                     error = duplicate
                     return@Button
                 }
+                val periodError = TermPeriods.validate(periodRows)
+                if (periodError != null) {
+                    error = periodError
+                    return@Button
+                }
                 busy = true
                 error = null
                 scope.launch {
-                    runCatching { onSave(trimmed, monday, weeks) }
+                    runCatching { onSave(trimmed, monday, weeks, periodRows.toList()) }
                         .onFailure {
                             error = it.message ?: "保存失败，请稍后重试。"
                             busy = false
@@ -541,5 +652,37 @@ private fun TermFormContent(
                 TextButton(onClick = { pickerOpen = false }) { Text("取消") }
             },
         ) { DatePicker(state = state) }
+    }
+
+    timePick?.let { request ->
+        val current = periodRows.getOrNull(request.index) ?: return@let
+        val initial = if (request.start) current.startsAt else current.endsAt
+        val state = rememberTimePickerState(
+            initialHour = initial.hour,
+            initialMinute = initial.minute,
+            is24Hour = true,
+        )
+        AlertDialog(
+            onDismissRequest = { timePick = null },
+            title = { Text(if (request.start) "开始时间" else "结束时间") },
+            text = { TimePicker(state = state) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val picked = LocalTime.of(state.hour, state.minute)
+                    periodRows.getOrNull(request.index)?.let { row ->
+                        periodRows[request.index] = if (request.start) {
+                            row.copy(startsAt = picked)
+                        } else {
+                            row.copy(endsAt = picked)
+                        }
+                    }
+                    timePick = null
+                    error = null
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { timePick = null }) { Text("取消") }
+            },
+        )
     }
 }

@@ -45,6 +45,8 @@ import com.itime.app.data.remote.TaskLifecycleBody
 import com.itime.app.data.remote.TaskUpdateBody
 import com.itime.app.data.remote.TermCreateBody
 import com.itime.app.data.remote.TermDto
+import com.itime.app.data.remote.TermPeriodBody
+import com.itime.app.data.remote.TermPeriodsBody
 import com.itime.app.data.remote.TermUpdateBody
 import com.itime.app.data.remote.TimeSettingsDto
 import com.itime.app.data.remote.TimeSettingsUpdateBody
@@ -441,6 +443,25 @@ class SyncEngine(
                     db.termDao().deletePeriods(op.entityId)
                     db.termDao().delete(op.entityId)
                 }
+            }
+            Intent.TERM_PERIODS -> {
+                val payload = json.decodeFromString(TermPeriodsPayload.serializer(), op.payloadJson)
+                val term = api.replaceTermPeriods(
+                    op.entityId,
+                    TermPeriodsBody(
+                        operation_id = op.operationId,
+                        expected_version = currentTermVersion(op.entityId),
+                        periods = payload.periods.map { item ->
+                            TermPeriodBody(
+                                period_number = item.periodNumber,
+                                name = item.name,
+                                starts_at = item.startsAt,
+                                ends_at = item.endsAt,
+                            )
+                        },
+                    ),
+                )
+                applyTerm(op.entityId, term, force = true)
             }
             Intent.SETTINGS_UPDATE -> {
                 val payload = json.decodeFromString(SettingsUpdatePayload.serializer(), op.payloadJson)

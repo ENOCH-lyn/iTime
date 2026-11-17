@@ -358,7 +358,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("学期管理") },
+                                text = { Text("学期与节次") },
                                 leadingIcon = {
                                     Icon(Icons.Outlined.School, contentDescription = null)
                                 },
@@ -414,15 +414,19 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
             terms = terms,
             defaultTimeZone = zone,
             title = "先设置本学期",
-            description = "课表截图只有星期和节次，识别时要用学期的第一周推算具体日期。",
+            description = "课表截图只有星期和节次，识别时要用学期的第一周与节次表推算具体日期。",
             confirmLabel = "创建并选择课表截图",
-            onSave = { name, monday, weeks ->
-                container.calendarImport.prepareTerm(
+            onSave = { name, monday, weeks, periodRows ->
+                val termId = container.calendar.createTerm(
                     name = name,
+                    startDate = monday,
+                    endDate = Terms.endDate(monday, weeks),
                     firstWeekMonday = monday,
-                    weeks = weeks,
                     timeZone = zone.id,
                 )
+                container.calendar.updateTermPeriods(termId, periodRows)
+                // 上传截图前学期必须先落到服务端。
+                container.sync.syncNow("calendar-import-term", force = true)
             },
             onSaved = {
                 termSetupForImport = false
@@ -439,18 +443,20 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
             series = series,
             zone = zone,
             onDismiss = { showTermManager = false },
-            onCreate = { name, monday, weeks ->
+            onCreate = { name, monday, weeks, periodRows ->
                 // 学期管理里新建走本地队列：离线也能先建，联网后自动补推。
-                container.calendar.createTerm(
+                val termId = container.calendar.createTerm(
                     name = name,
                     startDate = monday,
                     endDate = Terms.endDate(monday, weeks),
                     firstWeekMonday = monday,
                     timeZone = zone.id,
                 )
+                container.calendar.updateTermPeriods(termId, periodRows)
             },
-            onUpdate = { term, name, monday, weeks ->
+            onUpdate = { term, name, monday, weeks, periodRows ->
                 container.calendar.updateTerm(term, name, monday, weeks)
+                container.calendar.updateTermPeriods(term.id, periodRows)
             },
             onDelete = { term -> container.calendar.deleteTerm(term) },
         )
