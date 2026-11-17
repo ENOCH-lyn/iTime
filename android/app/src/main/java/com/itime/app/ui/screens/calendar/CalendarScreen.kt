@@ -21,16 +21,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -87,6 +91,9 @@ import java.util.Locale
 
 private enum class CalendarMode(val label: String) { Week("周"), Month("月") }
 
+/** 学期面板的两种来意：只为建学期，或者建完立刻去选课表截图。 */
+private enum class TermSetupAction { CreateOnly, ThenImport }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(container: AppContainer, syncState: SyncState) {
@@ -110,7 +117,8 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var editingSeries by remember { mutableStateOf<com.itime.app.data.local.SeriesEntity?>(null) }
     var moveTarget by remember { mutableStateOf<AgendaItem?>(null) }
     var importUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var termSetup by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
+    var termSetupAction by remember { mutableStateOf<TermSetupAction?>(null) }
     val pickTimetable = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
     ) { uri -> if (uri != null) importUri = uri }
@@ -121,9 +129,9 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
             ),
         )
     }
-    // 没有学期时识别不出日期，先补学期再选图。
+    // 没有学期时识别不出日期：先补学期，建完再自动拉起相册。
     val startTimetableImport: () -> Unit = {
-        if (terms.isEmpty()) termSetup = true else launchTimetablePicker()
+        if (terms.isEmpty()) termSetupAction = TermSetupAction.ThenImport else launchTimetablePicker()
     }
 
     val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -309,17 +317,51 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                 title = { Text("日历") },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
-                    IconButton(onClick = startTimetableImport) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "识别课表截图")
-                    }
                     IconButton(
                         onClick = {
                             editingSeries = null
                             showSeriesEditor = true
                         },
                     ) { Icon(Icons.Filled.Add, contentDescription = "新建日程") }
-                    IconButton(onClick = { scope.launch { container.sync.syncNow("calendar-refresh", force = true) } }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "立即同步")
+                    Box {
+                        IconButton(onClick = { moreMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多日历操作")
+                        }
+                        DropdownMenu(
+                            expanded = moreMenu,
+                            onDismissRequest = { moreMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导入课表截图") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenu = false
+                                    startTimetableImport()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("新建学期") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.School, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenu = false
+                                    termSetupAction = TermSetupAction.CreateOnly
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("刷新日历") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                },
+                                onClick = {
+                                    moreMenu = false
+                                    scope.launch { container.sync.syncNow("calendar-refresh", force = true) }
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -351,7 +393,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
         }
     }
 
-    if (termSetup) {
+    termSetupAction?.let { action ->
         TermSetupSheet(
             defaultTimeZone = zone,
             onCreate = { name, monday, weeks ->
@@ -362,11 +404,16 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     timeZone = zone.id,
                 )
             },
-            onReady = {
-                termSetup = false
-                launchTimetablePicker()
+            onCreated = {
+                termSetupAction = null
+                if (action == TermSetupAction.ThenImport) launchTimetablePicker()
             },
-            onDismiss = { termSetup = false },
+            onDismiss = { termSetupAction = null },
+            confirmLabel = if (action == TermSetupAction.ThenImport) {
+                "创建并选择课表截图"
+            } else {
+                "创建学期"
+            },
         )
     }
 

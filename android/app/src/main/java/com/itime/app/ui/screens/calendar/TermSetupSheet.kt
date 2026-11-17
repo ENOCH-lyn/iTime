@@ -44,8 +44,9 @@ import java.time.temporal.TemporalAdjusters
 fun TermSetupSheet(
     defaultTimeZone: ZoneId,
     onCreate: suspend (name: String, firstWeekMonday: LocalDate, weeks: Int) -> Unit,
-    onReady: () -> Unit,
+    onCreated: () -> Unit,
     onDismiss: () -> Unit,
+    confirmLabel: String = "创建学期",
 ) {
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -112,7 +113,7 @@ fun TermSetupSheet(
                     error = null
                     scope.launch {
                         runCatching { onCreate(name.trim(), monday, weeks) }
-                            .onSuccess { onReady() }
+                            .onSuccess { onCreated() }
                             .onFailure { error = it.message ?: "学期创建失败，请稍后重试。" }
                         busy = false
                     }
@@ -120,7 +121,7 @@ fun TermSetupSheet(
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (busy) "正在创建…" else "创建并选择课表截图")
+                Text(if (busy) "正在创建…" else confirmLabel)
             }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("取消") }
         }
