@@ -223,6 +223,13 @@ data class TermListDto(val items: List<TermDto> = emptyList())
 @Serializable
 data class TermEnvelope(val term: TermDto)
 
+/** DELETE /terms/{id} 的回执：服务端会连带删除该学期下的课程。 */
+@Serializable
+data class TermDeleteAck(
+    val status: String = "deleted",
+    val deleted_courses: Int = 0,
+)
+
 @Serializable
 data class SeriesDto(
     val id: String,

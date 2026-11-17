@@ -74,6 +74,33 @@ class ServerContractTest {
     }
 
     @Test
+    fun `term delete ack decodes`() {
+        // DELETE /api/v1/terms/{id} 的响应体（走 service.term_delete 的形状）。
+        val ack = json.decodeFromString<TermDeleteAck>(
+            """{"status":"deleted","deleted_courses":7}""",
+        )
+        assertEquals("deleted", ack.status)
+        assertEquals(7, ack.deleted_courses)
+    }
+
+    @Test
+    fun `term update body matches the server field names`() {
+        val body = TermUpdateBody(
+            operation_id = "op-1",
+            expected_version = 3,
+            name = "2026-2027 秋季学期",
+            start_date = "2026-09-07",
+            end_date = "2027-01-24",
+            first_week_monday = "2026-09-07",
+            time_zone = "Asia/Shanghai",
+        )
+        val encoded = json.encodeToString(TermUpdateBody.serializer(), body)
+        assertTrue(encoded.contains("\"expected_version\":3"))
+        assertTrue(encoded.contains("\"first_week_monday\""))
+        assertTrue(encoded.contains("\"start_date\""))
+    }
+
+    @Test
     fun `calendar series list decodes`() {
         val series = decode<SeriesListDto>("series_empty")
         assertTrue(series.items.isEmpty())

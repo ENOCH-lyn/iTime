@@ -22,6 +22,8 @@ object ProposalFormat {
         "delete_calendar_series" -> "删除日程"
         "create_calendar_exception" -> "调整单次课程"
         "create_timetable_courses" -> "导入课表"
+        "create_term" -> "新建学期"
+        "update_term" -> "调整学期"
         else -> "AI 修改建议"
     }
 

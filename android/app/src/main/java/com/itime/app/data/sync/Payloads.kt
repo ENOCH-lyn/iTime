@@ -135,6 +135,18 @@ data class TermCreatePayload(
 )
 
 @Serializable
+data class TermUpdatePayload(
+    val name: String,
+    val startDate: String,
+    val endDate: String,
+    val firstWeekMonday: String,
+    val timeZone: String? = null,
+)
+
+@Serializable
+data class TermDeletePayload(val note: String = "")
+
+@Serializable
 data class SettingsUpdatePayload(val timeZone: String)
 
 @Serializable
@@ -161,6 +173,8 @@ object Intent {
     const val CALENDAR_EXCEPTION_CREATE = "calendar.exception.create"
     const val CALENDAR_EXCEPTION_MOVE = "calendar.exception.move"
     const val TERM_CREATE = "term.create"
+    const val TERM_UPDATE = "term.update"
+    const val TERM_DELETE = "term.delete"
     const val SETTINGS_UPDATE = "settings.update"
     const val PROJECT_CREATE = "project.create"
 

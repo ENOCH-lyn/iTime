@@ -78,6 +78,7 @@ import com.itime.app.data.SyncPhase
 import com.itime.app.data.SyncState
 import com.itime.app.domain.Agenda
 import com.itime.app.domain.AgendaItem
+import com.itime.app.domain.Terms
 import com.itime.app.ui.components.EmptyState
 import com.itime.app.ui.components.OfflineBanner
 import com.itime.app.ui.components.SyncChip
@@ -91,14 +92,12 @@ import java.util.Locale
 
 private enum class CalendarMode(val label: String) { Week("周"), Month("月") }
 
-/** 学期面板的两种来意：只为建学期，或者建完立刻去选课表截图。 */
-private enum class TermSetupAction { CreateOnly, ThenImport }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     val series by container.calendar.observeSeries().collectAsStateWithLifecycle(emptyList())
     val terms by container.calendar.observeTerms().collectAsStateWithLifecycle(emptyList())
+    val termPeriods by container.calendar.observeTermPeriods().collectAsStateWithLifecycle(emptyList())
     val exceptions by container.calendar.observeAllExceptions().collectAsStateWithLifecycle(emptyList())
     val additions by container.calendar.observeAdditions().collectAsStateWithLifecycle(emptyList())
     val tasks by container.tasks.observeActive().collectAsStateWithLifecycle(emptyList())
@@ -118,7 +117,9 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     var moveTarget by remember { mutableStateOf<AgendaItem?>(null) }
     var importUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var moreMenu by remember { mutableStateOf(false) }
-    var termSetupAction by remember { mutableStateOf<TermSetupAction?>(null) }
+    var showTermManager by remember { mutableStateOf(false) }
+    // 课表识别需要学期：没有学期时先补一个，建完自动拉起相册。
+    var termSetupForImport by remember { mutableStateOf(false) }
     val pickTimetable = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
     ) { uri -> if (uri != null) importUri = uri }
@@ -131,7 +132,7 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     }
     // 没有学期时识别不出日期：先补学期，建完再自动拉起相册。
     val startTimetableImport: () -> Unit = {
-        if (terms.isEmpty()) termSetupAction = TermSetupAction.ThenImport else launchTimetablePicker()
+        if (terms.isEmpty()) termSetupForImport = true else launchTimetablePicker()
     }
 
     val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -314,7 +315,22 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("日历") },
+                title = {
+                    val activeTerm = Terms.activeAt(terms, today)
+                    Column {
+                        Text("日历")
+                        if (activeTerm != null) {
+                            val week = Terms.weekNumber(activeTerm, today)
+                            Text(
+                                if (week != null) "${activeTerm.name} · 第 $week 周" else activeTerm.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                },
                 actions = {
                     SyncChip(syncState.phase, syncState.pendingCount, syncState.conflictCount)
                     IconButton(
@@ -342,13 +358,13 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("新建学期") },
+                                text = { Text("学期管理") },
                                 leadingIcon = {
                                     Icon(Icons.Outlined.School, contentDescription = null)
                                 },
                                 onClick = {
                                     moreMenu = false
-                                    termSetupAction = TermSetupAction.CreateOnly
+                                    showTermManager = true
                                 },
                             )
                             DropdownMenuItem(
@@ -393,10 +409,14 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
         }
     }
 
-    termSetupAction?.let { action ->
-        TermSetupSheet(
+    if (termSetupForImport) {
+        TermFormSheet(
+            terms = terms,
             defaultTimeZone = zone,
-            onCreate = { name, monday, weeks ->
+            title = "先设置本学期",
+            description = "课表截图只有星期和节次，识别时要用学期的第一周推算具体日期。",
+            confirmLabel = "创建并选择课表截图",
+            onSave = { name, monday, weeks ->
                 container.calendarImport.prepareTerm(
                     name = name,
                     firstWeekMonday = monday,
@@ -404,16 +424,35 @@ fun CalendarScreen(container: AppContainer, syncState: SyncState) {
                     timeZone = zone.id,
                 )
             },
-            onCreated = {
-                termSetupAction = null
-                if (action == TermSetupAction.ThenImport) launchTimetablePicker()
+            onSaved = {
+                termSetupForImport = false
+                launchTimetablePicker()
             },
-            onDismiss = { termSetupAction = null },
-            confirmLabel = if (action == TermSetupAction.ThenImport) {
-                "创建并选择课表截图"
-            } else {
-                "创建学期"
+            onDismiss = { termSetupForImport = false },
+        )
+    }
+
+    if (showTermManager) {
+        TermManagerSheet(
+            terms = terms,
+            periods = termPeriods,
+            series = series,
+            zone = zone,
+            onDismiss = { showTermManager = false },
+            onCreate = { name, monday, weeks ->
+                // 学期管理里新建走本地队列：离线也能先建，联网后自动补推。
+                container.calendar.createTerm(
+                    name = name,
+                    startDate = monday,
+                    endDate = Terms.endDate(monday, weeks),
+                    firstWeekMonday = monday,
+                    timeZone = zone.id,
+                )
             },
+            onUpdate = { term, name, monday, weeks ->
+                container.calendar.updateTerm(term, name, monday, weeks)
+            },
+            onDelete = { term -> container.calendar.deleteTerm(term) },
         )
     }
 

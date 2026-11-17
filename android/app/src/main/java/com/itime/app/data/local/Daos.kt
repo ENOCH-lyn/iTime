@@ -131,6 +131,9 @@ interface TermDao {
     @Query("SELECT * FROM term_periods WHERE termId = :termId ORDER BY periodNumber")
     suspend fun periods(termId: String): List<TermPeriodEntity>
 
+    @Query("SELECT * FROM term_periods ORDER BY termId, periodNumber")
+    fun observeAllPeriods(): Flow<List<TermPeriodEntity>>
+
     @Query("SELECT * FROM terms WHERE id = :id")
     suspend fun find(id: String): TermEntity?
 
@@ -139,6 +142,12 @@ interface TermDao {
 
     @Upsert
     suspend fun upsertPeriods(periods: List<TermPeriodEntity>)
+
+    @Query("DELETE FROM terms WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM term_periods WHERE termId = :termId")
+    suspend fun deletePeriods(termId: String)
 
     @Query("DELETE FROM terms")
     suspend fun clear()
@@ -175,6 +184,10 @@ interface SeriesDao {
 
     @Query("DELETE FROM calendar_series WHERE id = :id")
     suspend fun delete(id: String)
+
+    /** 学期删除时服务端会连带删掉该学期的课程，本地要同步清掉。 */
+    @Query("DELETE FROM calendar_series WHERE termId = :termId")
+    suspend fun deleteForTerm(termId: String)
 
     @Query("DELETE FROM calendar_series")
     suspend fun clear()

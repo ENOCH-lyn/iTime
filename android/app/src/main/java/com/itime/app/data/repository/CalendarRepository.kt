@@ -20,6 +20,8 @@ import com.itime.app.data.sync.SeriesUpdatePayload
 import com.itime.app.data.sync.SettingsUpdatePayload
 import com.itime.app.data.sync.SyncEngine
 import com.itime.app.data.sync.TermCreatePayload
+import com.itime.app.data.sync.TermDeletePayload
+import com.itime.app.data.sync.TermUpdatePayload
 import com.itime.app.domain.SeriesDraft
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
@@ -39,6 +41,7 @@ class CalendarRepository(
     fun observeAllExceptions(): Flow<List<ExceptionEntity>> = db.exceptionDao().observeAll()
     fun observeAdditions(): Flow<List<AdditionEntity>> = db.additionDao().observeAll()
     fun observeTerms(): Flow<List<TermEntity>> = db.termDao().observeAll()
+    fun observeTermPeriods(): Flow<List<TermPeriodEntity>> = db.termDao().observeAllPeriods()
     fun observeProjects(): Flow<List<ProjectEntity>> = db.projectDao().observeAll()
     fun observeTimeSettings(): Flow<TimeSettingsEntity?> = db.settingsDao().observe()
 
@@ -233,6 +236,79 @@ class CalendarRepository(
         }
         sync.requestSync("local-create-term")
         return localId
+    }
+
+    /**
+     * 改学期名称或起止周。本地先落库，服务端确认后版本号以服务端为准；
+     * 排队的写入还没推上去之前，拉取到的旧学期不会把本地改动盖回去。
+     */
+    suspend fun updateTerm(
+        term: TermEntity,
+        name: String,
+        firstWeekMonday: LocalDate,
+        weeks: Int,
+    ) {
+        val end = firstWeekMonday.plusWeeks(weeks.toLong()).minusDays(1)
+        db.withTransaction {
+            db.termDao().upsertAll(
+                listOf(
+                    term.copy(
+                        name = name.trim(),
+                        startDate = firstWeekMonday.toString(),
+                        endDate = end.toString(),
+                        firstWeekMonday = firstWeekMonday.toString(),
+                    ),
+                ),
+            )
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_TERM,
+                    entityId = term.id,
+                    intent = Intent.TERM_UPDATE,
+                    payloadJson = json.encodeToString(
+                        TermUpdatePayload.serializer(),
+                        TermUpdatePayload(
+                            name = name.trim(),
+                            startDate = firstWeekMonday.toString(),
+                            endDate = end.toString(),
+                            firstWeekMonday = firstWeekMonday.toString(),
+                            timeZone = term.timeZone,
+                        ),
+                    ),
+                    baseVersion = term.version,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+        sync.requestSync("local-term-update")
+    }
+
+    /**
+     * 删除学期。服务端会连带删掉该学期下的课程，所以本地也要一起清掉，
+     * 否则要等到下次快照重置才会消失。
+     */
+    suspend fun deleteTerm(term: TermEntity) {
+        db.withTransaction {
+            db.seriesDao().deleteForTerm(term.id)
+            db.termDao().deletePeriods(term.id)
+            db.termDao().delete(term.id)
+            db.outboxDao().upsert(
+                OutboxEntity(
+                    operationId = UUID.randomUUID().toString(),
+                    entityType = Intent.ENTITY_TERM,
+                    entityId = term.id,
+                    intent = Intent.TERM_DELETE,
+                    payloadJson = json.encodeToString(
+                        TermDeletePayload.serializer(),
+                        TermDeletePayload(),
+                    ),
+                    baseVersion = term.version,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+        sync.requestSync("local-term-delete")
     }
 
     suspend fun updateTimeZone(timeZone: String) {

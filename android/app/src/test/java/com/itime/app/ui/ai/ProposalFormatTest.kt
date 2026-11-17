@@ -68,6 +68,8 @@ class ProposalFormatTest {
         val card = proposal(tool = "create_timetable_courses")
         assertEquals("导入课表", ProposalFormat.toolLabel(card.tool_name))
         assertEquals("导入课表", ProposalFormat.toolLabel("create_timetable_courses"))
+        assertEquals("新建学期", ProposalFormat.toolLabel("create_term"))
+        assertEquals("调整学期", ProposalFormat.toolLabel("update_term"))
         assertEquals("AI 修改建议", ProposalFormat.toolLabel("something_new"))
         assertEquals(
             "明天 14:00–14:45 安排「整理实验报告」",

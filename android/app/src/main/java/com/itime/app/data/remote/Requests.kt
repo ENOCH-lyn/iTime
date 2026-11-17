@@ -135,7 +135,19 @@ data class SeriesDeletePayloadBody(
 )
 
 @Serializable
-data class TermCreateBody(    val operation_id: String,
+data class TermCreateBody(
+    val operation_id: String,
+    val name: String,
+    val start_date: String,
+    val end_date: String,
+    val first_week_monday: String,
+    val time_zone: String? = null,
+)
+
+@Serializable
+data class TermUpdateBody(
+    val operation_id: String,
+    val expected_version: Int,
     val name: String,
     val start_date: String,
     val end_date: String,

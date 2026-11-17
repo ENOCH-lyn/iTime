@@ -45,6 +45,7 @@ import com.itime.app.data.remote.TaskLifecycleBody
 import com.itime.app.data.remote.TaskUpdateBody
 import com.itime.app.data.remote.TermCreateBody
 import com.itime.app.data.remote.TermDto
+import com.itime.app.data.remote.TermUpdateBody
 import com.itime.app.data.remote.TimeSettingsDto
 import com.itime.app.data.remote.TimeSettingsUpdateBody
 import com.itime.app.data.session.SessionStore
@@ -410,7 +411,31 @@ class SyncEngine(
                         time_zone = payload.timeZone ?: defaultZone(),
                     ),
                 )
-                applyTerm(op.entityId, term)
+                applyTerm(op.entityId, term, force = true)
+            }
+            Intent.TERM_UPDATE -> {
+                val payload = json.decodeFromString(TermUpdatePayload.serializer(), op.payloadJson)
+                val term = api.updateTerm(
+                    op.entityId,
+                    TermUpdateBody(
+                        operation_id = op.operationId,
+                        expected_version = currentTermVersion(op.entityId),
+                        name = payload.name,
+                        start_date = payload.startDate,
+                        end_date = payload.endDate,
+                        first_week_monday = payload.firstWeekMonday,
+                        time_zone = payload.timeZone ?: defaultZone(),
+                    ),
+                )
+                applyTerm(op.entityId, term, force = true)
+            }
+            Intent.TERM_DELETE -> {
+                api.deleteTerm(op.entityId)
+                db.withTransaction {
+                    db.seriesDao().deleteForTerm(op.entityId)
+                    db.termDao().deletePeriods(op.entityId)
+                    db.termDao().delete(op.entityId)
+                }
             }
             Intent.SETTINGS_UPDATE -> {
                 val payload = json.decodeFromString(SettingsUpdatePayload.serializer(), op.payloadJson)
@@ -701,6 +726,14 @@ class SyncEngine(
             when (entity.entity_type) {
                 "task" -> db.taskDao().delete(entity.entity_id)
                 "project" -> Unit
+                "term" -> {
+                    // 学期删除会连带课程：服务端批量删课程不发单独事件，本地一起清。
+                    db.withTransaction {
+                        db.seriesDao().deleteForTerm(entity.entity_id)
+                        db.termDao().deletePeriods(entity.entity_id)
+                        db.termDao().delete(entity.entity_id)
+                    }
+                }
                 "calendar_series" -> db.seriesDao().delete(entity.entity_id)
                 "calendar_exception" -> db.exceptionDao().delete(entity.entity_id)
                 "calendar_addition" -> db.additionDao().delete(entity.entity_id)
@@ -774,7 +807,8 @@ class SyncEngine(
         db.seriesDao().upsert(series.toEntity())
     }
 
-    private suspend fun applyTerm(localId: String, term: TermDto) {
+    private suspend fun applyTerm(localId: String, term: TermDto, force: Boolean = false) {
+        if (!force && localId == term.id && hasPendingOps(term.id)) return
         db.withTransaction {
             db.termDao().upsertAll(listOf(term.toEntity()))
             db.termDao().upsertPeriods(term.toPeriods())
@@ -841,6 +875,9 @@ class SyncEngine(
 
     private suspend fun currentSeriesVersion(seriesId: String): Int =
         db.seriesDao().find(seriesId)?.version ?: 1
+
+    private suspend fun currentTermVersion(termId: String): Int =
+        db.termDao().find(termId)?.version ?: 1
 
     private suspend fun defaultZone(): String =
         db.settingsDao().get()?.timeZone ?: "Asia/Shanghai"

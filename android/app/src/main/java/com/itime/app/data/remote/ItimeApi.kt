@@ -193,6 +193,14 @@ class ItimeApi(
     suspend fun createTerm(body: TermCreateBody): TermDto =
         post("/api/v1/terms", body, TermEnvelope.serializer()).term
 
+    suspend fun updateTerm(id: String, body: TermUpdateBody): TermDto =
+        put("/api/v1/terms/$id", body, TermEnvelope.serializer()).term
+
+    suspend fun deleteTerm(id: String): TermDeleteAck {
+        val (text, _) = requestRaw("DELETE", "/api/v1/terms/$id")
+        return decode(TermDeleteAck.serializer(), text)
+    }
+
     suspend fun timeSettings(): TimeSettingsDto =
         get<TimeSettingsEnvelope>("/api/v1/time-settings").settings
 
