@@ -217,7 +217,7 @@ private fun TermListContent(
             TextButton(onClick = onClose) { Text("完成") }
         }
         Text(
-            "旧学期留着不影响课表，只用来折算周次；不用的学期可以删。",
+            "旧学期留着不影响课表，只用来折算周次；不用的学期可以删。节次表暂时在 Web 的日历设置里改。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
