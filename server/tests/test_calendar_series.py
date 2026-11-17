@@ -495,6 +495,46 @@ def test_course_series_uses_term_weeks_and_period_snapshot(client, database_url)
     assert conflicting_time.json()["error"]["code"] == "period_time_conflict"
 
 
+def test_deleting_a_term_removes_its_courses_and_is_scoped_to_the_owner(
+    client,
+    database_url,
+    live_server,
+):
+    create_account(client, database_url)
+    term = create_term_with_periods(client)
+    created = client.post(
+        "/api/v1/calendar/series",
+        json=fixed_payload(
+            kind="course",
+            term_id=term["id"],
+            name="操作系统",
+            start_date=None,
+            starts_at=None,
+            ends_at=None,
+            start_period_number=1,
+            end_period_number=2,
+            recurrence=recurrence("weekly", weekdays=[1], week_numbers=[1, 2]),
+        ),
+    )
+    assert created.status_code == 201, created.text
+    series_id = created.json()["series"]["id"]
+
+    with browser(live_server) as other:
+        create_account(other, database_url)
+        cross = other.delete(f"/api/v1/terms/{term['id']}")
+        assert cross.status_code == 404
+        assert cross.json()["error"]["code"] == "term_not_found"
+        assert client.get(f"/api/v1/terms/{term['id']}").status_code == 200
+        assert len(client.get("/api/v1/calendar/series").json()["items"]) == 1
+
+    removed = client.delete(f"/api/v1/terms/{term['id']}")
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {"status": "deleted", "deleted_courses": 1}
+    assert client.get(f"/api/v1/terms/{term['id']}").status_code == 404
+    assert client.get("/api/v1/calendar/series").json()["items"] == []
+    assert client.get(f"/api/v1/calendar/series/{series_id}").status_code == 404
+
+
 def test_dst_missing_and_ambiguous_local_times_are_explicit(client, database_url):
     create_account(client, database_url, time_zone="America/New_York")
 

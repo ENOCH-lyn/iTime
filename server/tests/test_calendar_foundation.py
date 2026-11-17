@@ -197,6 +197,7 @@ def test_time_settings_initialization_validation_idempotency_and_versioning(
     assert initial.json()["settings"] == {
         "initialized": False,
         "time_zone": None,
+        "weather_location": None,
         "week_starts_on": 1,
         "activity_day_start_minute": 240,
         "version": 0,
