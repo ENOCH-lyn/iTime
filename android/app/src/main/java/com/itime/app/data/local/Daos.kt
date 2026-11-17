@@ -189,6 +189,10 @@ interface SeriesDao {
     @Query("DELETE FROM calendar_series WHERE termId = :termId")
     suspend fun deleteForTerm(termId: String)
 
+    /** 临时学期拿到服务端 id 后，把离线建的课程挂回真实学期。 */
+    @Query("UPDATE calendar_series SET termId = :newId WHERE termId = :oldId")
+    suspend fun remapTerm(oldId: String, newId: String)
+
     @Query("DELETE FROM calendar_series")
     suspend fun clear()
 }

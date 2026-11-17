@@ -284,10 +284,12 @@ private fun TermRow(
     val start = Times.parseDate(term.startDate)
     val end = Times.parseDate(term.endDate)
     val weeks = if (start != null && end != null) Terms.weeksBetween(start, end) else 0
-    val meta = buildList {
-        if (start != null && end != null) {
-            add("${start.format(shortDateFormat)} – ${end.format(shortDateFormat)}")
-        }
+    val dates = if (start != null && end != null) {
+        "${start.format(shortDateFormat)} – ${end.format(shortDateFormat)}"
+    } else {
+        null
+    }
+    val stats = buildList {
         if (weeks > 0) add("$weeks 周")
         add("$courseCount 门课")
         if (periodCount == 0) add("未设节次") else add("$periodCount 个节次")
@@ -312,10 +314,20 @@ private fun TermRow(
                 TermBadge(phase = phase, week = week, modifier = Modifier.padding(start = 8.dp))
             }
             Spacer(Modifier.height(2.dp))
+            // 日期与统计分两行，窄屏上不会把「未设节次」折成半截。
+            dates?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
             Text(
-                meta,
+                stats,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
         IconButton(onClick = onEdit) {

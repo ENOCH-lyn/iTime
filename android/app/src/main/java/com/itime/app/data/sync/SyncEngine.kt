@@ -430,7 +430,12 @@ class SyncEngine(
                 applyTerm(op.entityId, term, force = true)
             }
             Intent.TERM_DELETE -> {
-                api.deleteTerm(op.entityId)
+                try {
+                    api.deleteTerm(op.entityId)
+                } catch (error: ApiException) {
+                    // 本地临时学期还没推到服务端就删掉时会 404：等同已删除，继续清本地。
+                    if (error.code != "term_not_found") throw error
+                }
                 db.withTransaction {
                     db.seriesDao().deleteForTerm(op.entityId)
                     db.termDao().deletePeriods(op.entityId)
@@ -807,13 +812,60 @@ class SyncEngine(
         db.seriesDao().upsert(series.toEntity())
     }
 
+    /**
+     * 学期以本地临时 id 新建，服务端确认后换成真实 id。
+     *
+     * 临时行必须删掉，否则学期管理里会出现两个一模一样的学期；离线期间
+     * 挂在这个学期上的课程（本地行 + 还没推出去的 series 写入）也要一起改挂。
+     */
     private suspend fun applyTerm(localId: String, term: TermDto, force: Boolean = false) {
         if (!force && localId == term.id && hasPendingOps(term.id)) return
         db.withTransaction {
             db.termDao().upsertAll(listOf(term.toEntity()))
             db.termDao().upsertPeriods(term.toPeriods())
             if (localId != term.id) {
+                db.seriesDao().remapTerm(localId, term.id)
+                db.termDao().deletePeriods(localId)
+                db.termDao().delete(localId)
                 db.outboxDao().remapEntity(localId, term.id)
+                remapQueuedTermReferences(localId, term.id)
+            }
+        }
+    }
+
+    /** 改写还排着队的课程写入，让它们指向学期的真实 id。 */
+    private suspend fun remapQueuedTermReferences(oldId: String, realId: String) {
+        db.outboxDao().all().forEach { queued ->
+            if (queued.state != "pending" && queued.state != "failed") return@forEach
+            when (queued.intent) {
+                Intent.SERIES_CREATE -> {
+                    val payload = runCatching {
+                        json.decodeFromString(SeriesCreatePayload.serializer(), queued.payloadJson)
+                    }.getOrNull() ?: return@forEach
+                    if (payload.termId == oldId) {
+                        db.outboxDao().updatePayload(
+                            queued.operationId,
+                            json.encodeToString(
+                                SeriesCreatePayload.serializer(),
+                                payload.copy(termId = realId),
+                            ),
+                        )
+                    }
+                }
+                Intent.SERIES_UPDATE -> {
+                    val payload = runCatching {
+                        json.decodeFromString(SeriesUpdatePayload.serializer(), queued.payloadJson)
+                    }.getOrNull() ?: return@forEach
+                    if (payload.termId == oldId) {
+                        db.outboxDao().updatePayload(
+                            queued.operationId,
+                            json.encodeToString(
+                                SeriesUpdatePayload.serializer(),
+                                payload.copy(termId = realId),
+                            ),
+                        )
+                    }
+                }
             }
         }
     }
